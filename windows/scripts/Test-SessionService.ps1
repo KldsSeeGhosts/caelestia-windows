@@ -50,7 +50,7 @@ $switchBackChecks = [ordered]@{
         ($versionsSource -match 'function Set-CaelestiaAutostart') -and
         ($versionsSource -match 'function Test-CaelestiaAutostart')
     registrationUsesSingleLaunchCommand = $versionsSource -match 'Get-CaelestiaAutostartValue \$Prefix' -and
-        $versionsSource -match 'New-CaelestiaHiddenCommand'
+        $versionsSource -match 'Get-CaelestiaLaunchCommand'
 }
 $structuralFailures = @($switchBackChecks.Keys | Where-Object { -not $switchBackChecks[$_] })
 $result.fallbackPaths = $fallbackPaths.Count

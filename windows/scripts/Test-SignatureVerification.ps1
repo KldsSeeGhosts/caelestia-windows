@@ -223,7 +223,7 @@ try {
     # --- Checked-in inventories parse and describe the reviewed set ---------
     $realExpected = Get-CaelestiaExpectedSigningInventory -SignedInventoryPath $signedInventoryPath `
         -VendorReviewPath $vendorReviewPath
-    Assert-True (@($realExpected.signed).Count -eq 56) 'reviewed signed inventory has 56 entries'
+    Assert-True (@($realExpected.signed).Count -eq 58) 'reviewed signed inventory has 58 entries'
     Assert-True (@($realExpected.qt).Count -eq 90) 'reviewed Qt supplier list has 90 entries'
     Assert-True (@($realExpected.signed) -contains 'payload/caelestia-capture.exe') 'reviewed inventory includes the capture host'
     Assert-True (@($realExpected.signed) -contains 'payload/DesktopTakeover.dll') 'reviewed inventory includes the supervisor'

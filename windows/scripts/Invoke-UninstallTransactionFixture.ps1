@@ -8,7 +8,11 @@ param(
     [switch]$Purge,
     [switch]$ThrowAtBoundary,
     [switch]$KeepAlive,
-    [switch]$AliasPrefix
+    [switch]$AliasPrefix,
+    # Route the real cleanup to disposable integration files and HKCU test
+    # roots, then inject the named external failure. Never the live desktop.
+    [switch]$RealIntegration,
+    [ValidateSet('', 'locked-shortcut', 'registry-denial')][string]$IntegrationFailure = ''
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -19,6 +23,9 @@ $env:CAELESTIA_FIXTURE_PREFIX = Join-Path $CaseRoot 'prefix'
 $env:CAELESTIA_FIXTURE_PROFILE = Join-Path $CaseRoot 'profile'
 $env:CAELESTIA_FIXTURE_PAUSE = $Pause
 $env:CAELESTIA_FIXTURE_THROW = [string][int][bool]$ThrowAtBoundary
+$env:CAELESTIA_FIXTURE_INTEGRATION_MODE = if ($RealIntegration) { 'real' } else { 'simulated' }
+$env:CAELESTIA_FIXTURE_INTEGRATION_FAILURE = $IntegrationFailure
+$env:CAELESTIA_FIXTURE_REGISTRY = 'HKCU:\Software\CaelestiaWindowsTests\' + (Get-CaelestiaInstallLockKey $CaseRoot).Substring(0, 16)
 $prefixArgument = $env:CAELESTIA_FIXTURE_PREFIX
 if ($AliasPrefix) { $prefixArgument = $prefixArgument.ToUpperInvariant().Replace('\', '/') + '/./' }
 $status = 'Success'
@@ -38,7 +45,7 @@ try {
                 -BuildRoot (Join-Path $CaseRoot 'source-build') -QtPrefix (Join-Path $CaseRoot 'source-qt') `
                 -VCRuntimeRoot (Join-Path $CaseRoot 'source-crt') -SourceRoot (Join-Path $CaseRoot 'source-repo') -NoIntegration -SkipSchemeRuntime
         }
-        Uninstall { & (Join-Path $CaseRoot 'scripts\Uninstall-Caelestia.ps1') -Prefix $prefixArgument -Purge:$Purge }
+        Uninstall { & (Join-Path $CaseRoot 'scripts\Uninstall-Caelestia.ps1') -Prefix $prefixArgument -Purge:$Purge -NoDialogs }
     }
 } catch {
     $message = Protect-CaelestiaText $_.Exception.Message

@@ -74,7 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Ca
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
 ```
 
-Supported flags: `-BuildRoot`, `-QtPrefix`, `-VCRuntimeRoot`, `-Prefix`, `-ProfileRoot`, and opt-in `-Autostart`. `BuildRoot` defaults to this checkout's `windows/.local/build`; Qt is read from its build record when omitted.
+Supported flags: `-BuildRoot`, `-QtPrefix`, `-VCRuntimeRoot`, `-Prefix`, `-ProfileRoot`, opt-in `-Autostart`, opt-in `-DesktopShortcut`, and `-NoIntegration` for a disposable prefix with no per-user entries. `BuildRoot` defaults to this checkout's `windows/.local/build`; Qt is read from its build record when omitted.
 
 For monitors sharing an edge, `windows.innerEdgeHoverWidth` in
 `config/shell.json` sets the additional OSD and utilities hover strip in
@@ -84,8 +84,45 @@ logical pixels. It defaults to 12, accepts 0 to disable it, and is capped at
 What the installer does:
 
 1. Copies the packaged runtime (`qs.exe`, Qt 6.11.2 runtime DLLs, Caelestia and `M3Shapes` QML plugins, staged QML tree, bundled Rubik / Material Symbols Rounded / Google Sans Flex fonts, and license notices) into `%LOCALAPPDATA%\Programs\caelestia-windows`.
-2. Records the profile path, defaulting to `%LOCALAPPDATA%\caelestia-windows`. First launch creates its directories and seeds `config/shell.json`, `config/keybinds.json`, and `config/windows.json` without overwriting existing files. A Start-menu shortcut launches the installed script.
+2. Records the profile path, defaulting to `%LOCALAPPDATA%\caelestia-windows`. First launch creates its directories and seeds `config/shell.json`, `config/keybinds.json`, and `config/windows.json` without overwriting existing files. Start-menu launch and switch-back entries and a Settings > Apps uninstall entry are registered; `-DesktopShortcut` adds a desktop shortcut. None of them opens a terminal window.
 3. Leaves Windows autostart **off by default** unless you opt in.
+
+### Start, switch back to Windows, and uninstall without a terminal
+
+Installation registers three per-user entrypoints. They start `conhost.exe
+--headless` with Windows PowerShell, so no console window appears and no
+VBScript host is used. `-ExecutionPolicy Bypass` is passed only to that single
+process; your execution policy is never changed.
+
+- **Start:** Start menu > **Caelestia Windows** starts the installed shell
+  through `Start-Caelestia.ps1`. The optional desktop shortcut does the same.
+- **Switch back to Windows:** Start menu > **Caelestia - Switch back to Windows**
+  quits this installation, restores the native taskbar and work areas, and offers
+  to turn autostart off. It calls the stable-root `Start-Caelestia.ps1 -Command Quit` entry, the same
+  path the shell uses; that entry does not depend on the shell answering and
+  also works when the shell is hung. Start Caelestia again with the launch entry.
+- **Uninstall:** Settings > Apps > Installed apps > **Caelestia for Windows** >
+  Uninstall. See [Uninstall](#uninstall) below.
+
+> Screenshot placeholder: Start menu showing "Caelestia Windows" and
+> "Caelestia - Switch back to Windows". To be added after live desktop
+> acceptance.
+
+> Screenshot placeholder: "Switch back to Windows" autostart dialog. To be added
+> after live desktop acceptance.
+
+> Screenshot placeholder: Settings > Apps > Installed apps with the Caelestia for
+> Windows uninstall action. To be added after live desktop acceptance.
+
+The installed `.ps1` files are unsigned. Under App Control or Smart App
+Control, Windows may block the launcher or action scripts until
+[issue #20](https://github.com/KldsSeeGhosts/caelestia-windows/issues/20)
+provides publisher signing; this is not a trust exemption. The entries fail
+closed when policy blocks them. The PowerShell commands in this guide run the
+same unsigned scripts, so they work only where that policy allows them; they
+are an alternative to the entries, not a way around a block. Smart App Control
+and SmartScreen also judge the unsigned
+`qs.exe` and `caelestia-capture.exe`.
 
 ### Opt-in autostart
 
@@ -98,9 +135,9 @@ To enable autostart at sign-in during installation or afterward:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -Autostart
 ```
 
-`-Autostart` creates a per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry named `CaelestiaWindows` (temporary/custom prefixes use a stable hash suffix).
+`-Autostart` creates a per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry named `CaelestiaWindows` (temporary/custom prefixes use a stable hash suffix). The value starts Caelestia through the same hidden launcher as the Start-menu entry, so sign-in does not flash a console window.
 
-To disable autostart without uninstalling:
+To disable autostart without uninstalling, answer **Yes** in the "Switch back to Windows" dialog, or remove the Run value:
 
 ```powershell
 # Disable autostart while keeping Caelestia installed
@@ -114,17 +151,33 @@ installation's autostart entry at the same time. The choice is off by default.
 If that entry cannot be removed, Caelestia still quits and restores the desktop,
 then reports which entry remains and where to remove it.
 
-The command above applies to the default prefix. Custom prefixes use the hash-suffixed Run entry shown by `Get-CaelestiaIntegration` in `Caelestia-InstallCommon.ps1`. There is no `-AutostartOnly` uninstall flag.
+The command above applies to the default prefix. Custom prefixes use the hash-suffixed Run entry shown by `Get-CaelestiaIntegration` in `Caelestia-InstallCommon.ps1`. The Apps & features key uses the same prefix-derived name. There is no `-AutostartOnly` uninstall flag.
 
 ### Uninstall
 
-To stop Caelestia, restore the Windows taskbar and work area, remove autostart, and uninstall the runtime:
+From Settings > Apps > Installed apps > **Caelestia for Windows** > Uninstall.
+One native dialog asks whether to also delete settings and profile data; **No**
+is the default, so configuration and logs are kept for a later reinstall. The
+equivalent command, for scripted or advanced use, is:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Uninstall-Caelestia.ps1
 ```
 
-Uninstall supports `-Prefix` and `-Purge`. It quits only that installation through IPC, removes its Start-menu shortcut and autostart entry, and preserves the profile by default. `-Purge` also removes the recorded profile.
+Uninstall supports `-Prefix`, `-Purge`, and `-AskPurge` (the Settings dialog).
+It quits only that installation through IPC, restores the native desktop, removes
+its Start-menu launch and switch-back entries, the optional desktop shortcut, its
+autostart entry and its Apps & features entry, and preserves the profile by
+default. `-Purge` also removes the recorded profile.
+
+Windows update trust data under `%LOCALAPPDATA%\caelestia-update-trust` is always
+kept, including with `-Purge`. The client records the newest signed update
+metadata it has accepted there so a rollback or a reinstall cannot roll update
+security back to older metadata; remove it manually only if you understand that
+consequence.
+
+This is a developer install path. The downloaded release registers the same
+entries; see [Install a Windows release](INSTALL-RELEASE.md).
 
 ### Migrating from `ksg-shell`
 

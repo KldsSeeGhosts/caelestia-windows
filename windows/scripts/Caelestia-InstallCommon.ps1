@@ -1,14 +1,64 @@
 # Shared by repository and installed scripts. No machine-wide changes.
 $ErrorActionPreference = 'Stop'
 
+# One long spelling for a path that is compared or matched. Windows can name
+# the same directory with an 8.3 short name, forward slashes, a \\?\ prefix or
+# a trailing separator. GetFullPath normalises the spelling and expands an
+# existing 8.3 name on Windows PowerShell 5.1; Get-Item returns the long name
+# even where GetFullPath leaves a short one. The path need not exist, so a
+# prefix that is about to be created still resolves consistently.
+function Get-CaelestiaLongPath([string]$Path) {
+    if (-not $Path) { throw 'A nonempty path is required.' }
+    if ($Path.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { $Path = '\\' + $Path.Substring(8) }
+    elseif ($Path.StartsWith('\\?\', [StringComparison]::Ordinal) -or $Path.StartsWith('\\.\', [StringComparison]::Ordinal)) { $Path = $Path.Substring(4) }
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+    # A volume root is already its own canonical spelling. Returning here keeps
+    # root checks free of I/O, including a UNC share that does not answer.
+    if ($full -eq $root) { return $full }
+    try {
+        $item = Get-Item -LiteralPath $full -Force -ErrorAction Stop
+        if ($item.FullName) {
+            $full = $item.FullName
+            if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+        }
+    } catch { }
+    return $full
+}
+
+# Compare two path spellings as the same Windows location. Both sides go
+# through the one normaliser above, so a short prefix, a long record path and a
+# differently cased drive all name the same installation. Empty on both sides
+# compares equal so optional record fields stay optional; empty on one side
+# does not.
+function Test-CaelestiaSamePath([string]$Left, [string]$Right) {
+    if (-not $Left -or -not $Right) { return (-not $Left -and -not $Right) }
+    try {
+        return [string]::Equals((Get-CaelestiaLongPath $Left), (Get-CaelestiaLongPath $Right), [StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
 function Resolve-CaelestiaDirectory([string]$Path) {
     if (-not $Path -or $Path.IndexOfAny([char[]]@('"', "`r", "`n")) -ge 0) {
         throw 'A nonempty Windows directory path is required.'
     }
-    $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
-    if ($full -eq [IO.Path]::GetPathRoot($full).TrimEnd('\')) { throw "Unsafe directory: $full" }
+    # A bare drive is drive-relative: GetFullPath resolves it against whatever
+    # directory is current on that drive, which can be the volume root or any
+    # user location. Refuse it before that process state is consulted.
+    if ($Path -match '^[A-Za-z]:$') { throw "Unsafe directory: $Path" }
+    $full = Get-CaelestiaLongPath $Path
+    # Get-CaelestiaLongPath keeps the trailing separator of a volume root, so
+    # compare both spellings without it. Without the trim, D:\ would pass the
+    # guard and an uninstall with -Purge could remove the whole volume.
+    $root = [IO.Path]::GetPathRoot($full)
+    if ($root -and $full.TrimEnd('\', '/') -eq $root.TrimEnd('\', '/')) { throw "Unsafe directory: $full" }
     foreach ($protected in @($env:USERPROFILE, $env:WINDIR, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, $env:APPDATA, $env:TEMP)) {
-        if ($protected -and ($protected -eq $full -or $protected.StartsWith($full + '\', [StringComparison]::OrdinalIgnoreCase))) {
+        if (-not $protected) { continue }
+        $protectedFull = Get-CaelestiaLongPath $protected
+        if ($protectedFull -eq $full -or $protectedFull.StartsWith($full + '\', [StringComparison]::OrdinalIgnoreCase)) {
             throw "Directory contains a protected Windows/user location: $full"
         }
     }
@@ -28,7 +78,11 @@ function Resolve-CaelestiaDirectory([string]$Path) {
 
 function Read-CaelestiaInstall([string]$Prefix) {
     $record = Get-Content -LiteralPath (Join-Path $Prefix 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($record.product -ne 'caelestia-windows' -or $record.version -notin @(1, 2) -or $record.prefix -ne $Prefix) {
+    # install.json records the prefix it was written for. A record written
+    # through a long path must still be readable through a short one (and the
+    # reverse), so both spellings are compared after normalisation.
+    if (-not $Prefix -or -not $record.prefix -or $record.product -ne 'caelestia-windows' -or
+        $record.version -notin @(1, 2) -or -not (Test-CaelestiaSamePath $record.prefix $Prefix)) {
         throw "Not a recognized Caelestia installation: $Prefix"
     }
     if ($record.version -eq 2) {
@@ -39,11 +93,18 @@ function Read-CaelestiaInstall([string]$Prefix) {
 }
 
 function Get-CaelestiaProcesses([string]$Prefix) {
-    $exe = Join-Path $Prefix 'qs.exe'
-    $versions = Join-Path $Prefix 'versions'
+    $exe = Get-CaelestiaLongPath (Join-Path $Prefix 'qs.exe')
+    $versions = Get-CaelestiaLongPath (Join-Path $Prefix 'versions')
     return @(Get-Process -Name qs -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -eq $exe -or ($_.Path -and
-            [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($_.Path)) -eq $versions)
+        try {
+            if (-not $_.Path) { return $false }
+            # Process.Path is normally long, but the prefix passed here may be
+            # short. Normalise both before deciding ownership.
+            $path = Get-CaelestiaLongPath $_.Path
+            $path -eq $exe -or [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($path)) -eq $versions
+        } catch {
+            $false
+        }
     })
 }
 
@@ -52,10 +113,10 @@ function Get-CaelestiaProcesses([string]$Prefix) {
 # never touched.
 function Get-CaelestiaHostProcesses([string]$Prefix, [string]$VersionRoot = '') {
     $root = $(if ($VersionRoot) { $VersionRoot } else { Join-Path $Prefix 'versions' })
-    $versions = $root.TrimEnd('\') + '\'
+    $versions = (Get-CaelestiaLongPath $root) + '\'
     return @(Get-Process -Name caelestia-capture, glazier -ErrorAction SilentlyContinue | Where-Object {
         try {
-            $_.Path -and $_.Path.StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)
+            $_.Path -and (Get-CaelestiaLongPath $_.Path).StartsWith($versions, [StringComparison]::OrdinalIgnoreCase)
         } catch {
             $false
         }
@@ -190,14 +251,12 @@ function Test-CaelestiaSchemeGeneration([string]$Generation) {
 # directory (trailing separators, forward slashes, \\?\ prefix, 8.3 short
 # names, letter case) names the same lock. The directory need not exist.
 function Get-CaelestiaCanonicalPath([string]$Path) {
-    if (-not $Path) { throw 'A nonempty path is required.' }
-    if ($Path.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { $Path = '\\' + $Path.Substring(8) }
-    elseif ($Path.StartsWith('\\?\', [StringComparison]::Ordinal) -or $Path.StartsWith('\\.\', [StringComparison]::Ordinal)) { $Path = $Path.Substring(4) }
-    $full = [IO.Path]::GetFullPath($Path)
+    $full = Get-CaelestiaLongPath $Path
     $root = [IO.Path]::GetPathRoot($full)
-    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
     if ($full.IndexOf('~') -ge 0 -and $full.Length -gt $root.Length) {
         # A directory pattern also matches 8.3 names and returns the long name.
+        # This covers an intermediate segment that Get-Item could not resolve
+        # because the full directory does not exist yet.
         $current = $root
         foreach ($segment in $full.Substring($root.Length).TrimStart('\').Split('\')) {
             if ($segment.IndexOf('~') -ge 0) {
@@ -1229,7 +1288,8 @@ function Restore-CaelestiaUpdate([string]$Prefix, [string]$ProfileRoot, [string]
     # Recovery must also work after a failed/partial mirror, where the new
     # launch script may not exist. Use the untouched backup's launcher to quit.
     $record = Get-Content -LiteralPath (Join-Path $Backup 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($record.product -ne 'caelestia-windows' -or $record.prefix -ne $Prefix -or $record.profile -ne $ProfileRoot) {
+    if ($record.product -ne 'caelestia-windows' -or -not (Test-CaelestiaSamePath $record.prefix $Prefix) -or
+        -not (Test-CaelestiaSamePath $record.profile $ProfileRoot)) {
         throw 'Rollback does not belong to this installation.'
     }
     $running = (Get-CaelestiaProcesses $Prefix) -or @(Get-CaelestiaSupervisors $ProfileRoot).Count
@@ -1315,24 +1375,557 @@ function Write-CaelestiaProfileOwner([string]$ProfileRoot, [string]$Prefix, [str
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $ProfileRoot 'profile-owner.json') -Encoding UTF8
 }
 
+# Test-only confinement. A packaging test that must exercise real integration
+# writes sets CAELESTIA_TEST_INTEGRATION_ROOT; every Start-menu, desktop and
+# HKCU entry then lives under that disposable directory and a test registry
+# root derived from it. Production runs leave the variable unset.
+function Get-CaelestiaIntegrationTestRoots {
+    $root = $env:CAELESTIA_TEST_INTEGRATION_ROOT
+    if (-not $root) { return $null }
+    $key = 'HKCU:\Software\CaelestiaWindowsTests\' + (Get-CaelestiaInstallLockKey $root).Substring(0, 16)
+    return @{ Programs = Join-Path $root 'Programs'; Desktop = Join-Path $root 'Desktop'; Registry = $key }
+}
+
+# Every per-user entry this product registers is named from one prefix-derived
+# suffix, so non-default prefixes never collide. Default is the unqualified name;
+# any other prefix gets 12 hex characters of the lowercased prefix hash.
 function Get-CaelestiaIntegration([string]$Prefix) {
-    $default = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')).TrimEnd('\')
+    $testRoots = Get-CaelestiaIntegrationTestRoots
+    $programs = if ($testRoots) { $testRoots.Programs } else { [Environment]::GetFolderPath('Programs') }
+    $desktop = if ($testRoots) { $testRoots.Desktop } else { [Environment]::GetFolderPath('Desktop') }
+    # One canonical spelling feeds both the default comparison and the hash, so
+    # a prefix named short at install time and long at uninstall time derives
+    # the same entries.
+    $default = Get-CaelestiaLongPath (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')
+    $canonicalPrefix = Get-CaelestiaLongPath $Prefix
     $suffix = ''
-    if ($Prefix -ne $default) {
+    if (-not [string]::Equals($canonicalPrefix, $default, [StringComparison]::OrdinalIgnoreCase)) {
         $hash = [Security.Cryptography.SHA256]::Create()
-        try { $suffix = '-' + ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant())))).Replace('-', '').Substring(0, 12) }
+        try { $suffix = '-' + ([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonicalPrefix.ToLowerInvariant())))).Replace('-', '').Substring(0, 12) }
         finally { $hash.Dispose() }
     }
     return @{
         RunName = "CaelestiaWindows$suffix"
-        Shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) "Caelestia Windows$suffix.lnk"
+        # Registry key name for Settings > Apps > Installed apps.
+        UninstallKey = "CaelestiaWindows$suffix"
+        Shortcut = Join-Path $programs "Caelestia Windows$suffix.lnk"
+        SwitchBackShortcut = Join-Path $programs "Caelestia - Switch back to Windows$suffix.lnk"
+        DesktopShortcut = Join-Path $desktop "Caelestia Windows$suffix.lnk"
+        # Installed launcher script. Get-CaelestiaLaunchCommand is the only
+        # generator of the conhost/powershell command that runs it.
+        Launcher = Join-Path $Prefix 'Caelestia-Launcher.ps1'
     }
 }
 
+function Get-CaelestiaUninstallKeyRoot {
+    $testRoots = Get-CaelestiaIntegrationTestRoots
+    if ($testRoots) { return $testRoots.Registry + '\Uninstall' }
+    return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+}
+
+function Get-CaelestiaUninstallKeyPath([string]$Prefix) {
+    $integration = Get-CaelestiaIntegration $Prefix
+    if (-not $integration.UninstallKey) { throw 'The installation has no Apps & features key name.' }
+    return (Join-Path (Get-CaelestiaUninstallKeyRoot) $integration.UninstallKey)
+}
+
+# One command shape for every user-visible entry: the Start-menu launch and
+# switch-back shortcuts, the optional desktop shortcut, the HKCU Run value and
+# the Apps & features UninstallString. conhost.exe --headless gives Windows
+# PowerShell a console without a window, so the entries never flash a console
+# and never need VBScript or another Windows Script Host engine. The launcher
+# derives its own prefix, so the command does not repeat the path and stays
+# under Windows' 260-character limit for a Run value. A future signed launcher
+# EXE (#20) replaces this helper and Caelestia-Launcher.ps1, nothing else.
+function New-CaelestiaLaunchCommand([string]$Conhost, [string]$PowerShell, [string]$Launcher, [string]$Action) {
+    # --headless must be followed directly by the child command. The action and
+    # the quoted launcher path are data; no cmd.exe or script host parses them.
+    # Both executables are fully qualified so neither a PATH entry nor a
+    # user-writable current directory can substitute one.
+    $arguments = '--headless "' + $PowerShell + '" -NoProfile -ExecutionPolicy Bypass -File "' +
+        $Launcher + '" -Action ' + $Action
+    return [pscustomobject]@{
+        Target = $Conhost
+        Arguments = $arguments
+        CommandLine = '"' + $Conhost + '" ' + $arguments
+        Launcher = $Launcher
+    }
+}
+
+# Windows' documented limit for a Run value is 260 characters. Only the launcher
+# path can be shortened: the 8.3 name is the same file, and it is kept only when
+# it resolves back to that file. An empty result means no safe shortening.
+function Get-CaelestiaShortPath([string]$Path) {
+    # The generated Run value keeps the short spelling as-is. Only the proof
+    # that it names the same file goes through the long-path normaliser.
+    $full = Get-CaelestiaLongPath $Path
+    $short = ''
+    $fileSystem = $null
+    try {
+        $fileSystem = New-Object -ComObject Scripting.FileSystemObject
+        $short = [string]$fileSystem.GetFile($full).ShortPath
+    } catch {
+        return ''
+    } finally {
+        if ($fileSystem) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($fileSystem) }
+    }
+    if (-not $short -or $short.Length -ge $full.Length) { return '' }
+    try {
+        $resolved = Get-CaelestiaLongPath ((Get-Item -LiteralPath $short -Force -ErrorAction Stop).FullName)
+    } catch {
+        return ''
+    }
+    if (-not [string]::Equals($resolved, $full, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+    return $short
+}
+
+function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action, [int]$MaxLength = 0) {
+    if ($Action -notin @('start', 'switch-back', 'uninstall', 'uninstall-quiet')) {
+        throw "Unknown Caelestia launch action: $Action"
+    }
+    $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
+    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $launcher = Join-Path $Prefix 'Caelestia-Launcher.ps1'
+    $command = New-CaelestiaLaunchCommand $conhost $powershell $launcher $Action
+    if (-not $MaxLength -or $command.CommandLine.Length -le $MaxLength) { return $command }
+    $short = Get-CaelestiaShortPath $launcher
+    if ($short) {
+        $shortCommand = New-CaelestiaLaunchCommand $conhost $powershell $short $Action
+        if ($shortCommand.CommandLine.Length -le $MaxLength) { return $shortCommand }
+    }
+    throw ("The Caelestia launch command for $Prefix is longer than the Windows limit of $MaxLength characters. " +
+        'Choose a shorter installation folder, then retry. Nothing was registered or changed.')
+}
+
+# App version from the installed payload, never from the root router: a rollback
+# must show the version it selected. Legacy records may only carry releaseId.
+function Get-CaelestiaInstalledVersion([string]$RuntimePrefix) {
+    $record = Read-CaelestiaInstall $RuntimePrefix
+    $version = [string]$record.appVersion
+    if ($version) { return $version }
+    $versionFile = Join-Path $RuntimePrefix 'version.json'
+    if (Test-Path -LiteralPath $versionFile -PathType Leaf) {
+        try { $version = [string](Get-Content -LiteralPath $versionFile -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { }
+        if ($version) { return $version }
+    }
+    return [string]$record.releaseId
+}
+
+# EstimatedSize is a DWORD of KiB in Apps & features. An unreadable entry is
+# skipped; the install directory size is informational, never a gate.
+function Get-CaelestiaIntegrationSizeKb([string]$Prefix) {
+    [long]$bytes = 0
+    try {
+        foreach ($file in [IO.Directory]::EnumerateFiles($Prefix, '*', [IO.SearchOption]::AllDirectories)) {
+            try { $bytes += (New-Object IO.FileInfo $file).Length } catch { }
+        }
+    } catch { }
+    $kb = [Math]::Ceiling($bytes / 1KB)
+    if ($kb -lt 1) { $kb = 1 }
+    return [uint32][Math]::Min($kb, [uint32]::MaxValue)
+}
+
+function Get-CaelestiaAppsFeaturesValueNames {
+    return @('DisplayName', 'DisplayVersion', 'Publisher', 'InstallLocation', 'UninstallString',
+        'QuietUninstallString', 'NoModify', 'NoRepair', 'EstimatedSize', 'DisplayIcon')
+}
+
+function Get-CaelestiaAppsFeaturesValues([string]$Prefix, [string]$RuntimePrefix) {
+    $values = [ordered]@{
+        DisplayName = 'Caelestia for Windows'
+        Publisher = 'KldsSeeGhosts'
+        InstallLocation = $Prefix
+        UninstallString = (Get-CaelestiaLaunchCommand $Prefix 'uninstall').CommandLine
+        QuietUninstallString = (Get-CaelestiaLaunchCommand $Prefix 'uninstall-quiet').CommandLine
+        NoModify = 1
+        NoRepair = 1
+        EstimatedSize = Get-CaelestiaIntegrationSizeKb $Prefix
+    }
+    $version = Get-CaelestiaInstalledVersion $RuntimePrefix
+    if ($version) { $values.Insert(1, 'DisplayVersion', $version) }
+    $icon = Join-Path $RuntimePrefix 'qs.exe'
+    if (Test-Path -LiteralPath $icon -PathType Leaf) { $values['DisplayIcon'] = $icon + ',0' }
+    return $values
+}
+
+# Snapshot only the values this product owns, so an existing entry written by an
+# interrupted earlier install is restored exactly and stranger values survive.
+function Get-CaelestiaRegistrySnapshot([string]$KeyPath, [string[]]$Names) {
+    $snapshot = @{ Exists = (Test-Path -LiteralPath $KeyPath); Values = @{} }
+    if (-not $snapshot.Exists) { return $snapshot }
+    $item = Get-Item -LiteralPath $KeyPath
+    foreach ($name in $Names) {
+        $kind = $null
+        try { $kind = $item.GetValueKind($name) } catch { }
+        if ($null -eq $kind) { continue }
+        $snapshot.Values[$name] = @{
+            Kind = $kind
+            Value = $item.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        }
+    }
+    return $snapshot
+}
+
+function Restore-CaelestiaRegistrySnapshot([string]$KeyPath, $Snapshot, [string[]]$Names) {
+    if (-not $Snapshot.Exists) {
+        if (Test-Path -LiteralPath $KeyPath) { Remove-Item -LiteralPath $KeyPath -Recurse -Force -ErrorAction SilentlyContinue }
+        return
+    }
+    # A removed Apps & features key must be recreated before its owned values
+    # are restored; New-ItemProperty cannot create intermediate keys.
+    if (-not (Test-Path -LiteralPath $KeyPath)) { New-CaelestiaRegistryKey $KeyPath }
+    foreach ($name in $Names) {
+        if ($Snapshot.Values.ContainsKey($name)) {
+            $entry = $Snapshot.Values[$name]
+            New-ItemProperty -LiteralPath $KeyPath -Name $name -PropertyType $entry.Kind -Value $entry.Value -Force | Out-Null
+        } else {
+            Remove-ItemProperty -LiteralPath $KeyPath -Name $name -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# New-Item on the registry provider does not create missing intermediate keys.
+function New-CaelestiaRegistryKey([string]$KeyPath) {
+    if (Test-Path -LiteralPath $KeyPath) { return }
+    $parent = Split-Path -Parent $KeyPath
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) { New-CaelestiaRegistryKey $parent }
+    New-Item -Path $KeyPath | Out-Null
+}
+
+# The Apps & features values live under the prefix-derived Uninstall key. This
+# writer restores the previous values if any write fails, so an update can never
+# leave a version string from a selection that was rolled back.
+function Write-CaelestiaAppsFeaturesEntry([string]$Prefix, [string]$RuntimePrefix) {
+    $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
+    $names = @(Get-CaelestiaAppsFeaturesValueNames)
+    $values = Get-CaelestiaAppsFeaturesValues $Prefix $RuntimePrefix
+    $snapshot = Get-CaelestiaRegistrySnapshot $keyPath $names
+    try {
+        New-CaelestiaRegistryKey $keyPath
+        foreach ($name in $values.Keys) {
+            $kind = $(if ($name -in @('NoModify', 'NoRepair', 'EstimatedSize')) { 'DWord' } else { 'String' })
+            New-ItemProperty -LiteralPath $keyPath -Name $name -PropertyType $kind -Value $values[$name] -Force | Out-Null
+        }
+        # A value this product once wrote but no longer sets must not linger.
+        foreach ($name in $names) {
+            if (-not $values.Contains($name)) { Remove-ItemProperty -LiteralPath $keyPath -Name $name -ErrorAction SilentlyContinue }
+        }
+    } catch {
+        try { Restore-CaelestiaRegistrySnapshot $keyPath $snapshot $names } catch { }
+        throw
+    }
+}
+
+function Copy-CaelestiaIntegrationBackup([string]$Path) {
+    $backup = $Path + '.integration-' + [guid]::NewGuid().ToString('N')
+    try { [IO.File]::Copy($Path, $backup) }
+    catch {
+        try { if ([IO.File]::Exists($backup)) { [IO.File]::Delete($backup) } } catch { }
+        throw "Could not snapshot the existing shortcut; integration was aborted: $($_.Exception.Message)"
+    }
+    return $backup
+}
+
+# Snapshot every owned per-user entry before uninstall moves the prefix aside.
+# A cleanup failure restores this snapshot together with the prefix, so the
+# Settings uninstall command never names a directory that no longer exists and
+# a retry can run. Only entries this prefix owns are captured.
+function Get-CaelestiaUserIntegrationSnapshot([string]$Prefix, $Integration = $null) {
+    if (-not $Integration) { $Integration = Get-CaelestiaIntegration $Prefix }
+    $files = @()
+    try {
+        foreach ($path in @($Integration.Shortcut, $Integration.SwitchBackShortcut, $Integration.DesktopShortcut)) {
+            if (-not $path) { continue }
+            $entry = @{ Path = $path; Existed = [IO.File]::Exists($path); Backup = '' }
+            if ($entry.Existed) { $entry.Backup = Copy-CaelestiaIntegrationBackup $path }
+            $files += $entry
+        }
+        $run = $null
+        if ($Integration.RunName) {
+            $runKey = Get-CaelestiaAutostartKey
+            $existing = Get-ItemProperty -LiteralPath $runKey -Name $Integration.RunName -ErrorAction SilentlyContinue
+            $run = @{ Key = $runKey; Name = $Integration.RunName; Existed = ($null -ne $existing); Value = '' }
+            if ($run.Existed) { $run.Value = [string]$existing.($Integration.RunName) }
+        }
+        $key = $null
+        if ($Integration.UninstallKey) {
+            $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
+            $names = @(Get-CaelestiaAppsFeaturesValueNames)
+            $key = @{ Path = $keyPath; Names = $names; Snapshot = (Get-CaelestiaRegistrySnapshot $keyPath $names) }
+        }
+        return @{ Files = $files; Run = $run; Key = $key }
+    } catch {
+        # Snapshot creation aborts the uninstall before the tombstone rename, so
+        # remove the backups this attempt already made. A leftover .integration-*
+        # copy would otherwise survive a failed uninstall.
+        foreach ($file in $files) {
+            if ($file.Backup) { try { [IO.File]::Delete($file.Backup) } catch { } }
+        }
+        throw
+    }
+}
+
+# Restore exactly the snapshot above. The caller restores the prefix first, so
+# the returned failure list describes entries a user can still repair. Backups
+# are deleted only after they are copied back; a failed restore keeps them.
+function Restore-CaelestiaUserIntegrationSnapshot($Snapshot) {
+    $failures = @()
+    foreach ($file in @($Snapshot.Files)) {
+        try {
+            if (-not [IO.File]::Exists($file.Path)) {
+                if ($file.Backup -and [IO.File]::Exists($file.Backup)) {
+                    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file.Path) | Out-Null
+                    [IO.File]::Copy($file.Backup, $file.Path, $false)
+                }
+            } elseif ($file.Existed -and $file.Backup -and [IO.File]::Exists($file.Backup) -and
+                (Get-FileHash -LiteralPath $file.Path).Hash -ne (Get-FileHash -LiteralPath $file.Backup).Hash) {
+                # A still-locked original may refuse the overwrite. Leave it in
+                # place and report the one entry that could not be verified.
+                [IO.File]::Copy($file.Backup, $file.Path, $true)
+            } elseif (-not $file.Existed) {
+                [IO.File]::Delete($file.Path)
+            }
+            if ($file.Backup -and [IO.File]::Exists($file.Backup)) { [IO.File]::Delete($file.Backup) }
+        } catch { $failures += "shortcut $($file.Path): $($_.Exception.Message)" }
+    }
+    if ($Snapshot.Run) {
+        try {
+            if ($Snapshot.Run.Existed) {
+                New-CaelestiaRegistryKey $Snapshot.Run.Key
+                New-ItemProperty -LiteralPath $Snapshot.Run.Key -Name $Snapshot.Run.Name -PropertyType String `
+                    -Value $Snapshot.Run.Value -Force | Out-Null
+            } else {
+                Remove-ItemProperty -LiteralPath $Snapshot.Run.Key -Name $Snapshot.Run.Name -ErrorAction SilentlyContinue
+            }
+        } catch { $failures += "autostart value $($Snapshot.Run.Name): $($_.Exception.Message)" }
+    }
+    if ($Snapshot.Key) {
+        try { Restore-CaelestiaRegistrySnapshot $Snapshot.Key.Path $Snapshot.Key.Snapshot $Snapshot.Key.Names }
+        catch { $failures += "Apps & features entry $($Snapshot.Key.Path): $($_.Exception.Message)" }
+    }
+    return $failures
+}
+
+function Remove-CaelestiaUserIntegrationSnapshot($Snapshot) {
+    foreach ($file in @($Snapshot.Files)) {
+        if ($file.Backup) { try { [IO.File]::Delete($file.Backup) } catch { } }
+    }
+}
+
+# Write every user-visible integration entry as one transaction: the Start-menu
+# launch entry, the Start-menu switch-back entry, the optional desktop entry,
+# the optional HKCU Run value and the Apps & features key. Everything is
+# snapshotted before the first write and restored on failure. -RefreshOnly is
+# used by rollback: it updates only entries that already exist, so a
+# -NoIntegration install can never be given entries later.
+function Set-CaelestiaUserIntegration {
+    param(
+        [string]$Prefix,
+        [string]$RuntimePrefix,
+        $Integration = $null,
+        [switch]$Autostart,
+        [switch]$DesktopShortcut,
+        [switch]$RefreshOnly
+    )
+    if (-not $Integration) { $Integration = Get-CaelestiaIntegration $Prefix }
+    $icon = $RuntimePrefix.TrimEnd('\') + '\qs.exe,0'
+    $launch = Get-CaelestiaLaunchCommand $Prefix 'start'
+    $switchBack = Get-CaelestiaLaunchCommand $Prefix 'switch-back'
+    $shortcuts = [Collections.Generic.List[object]]::new()
+    foreach ($pair in @(
+        @($Integration.Shortcut, $launch),
+        @($Integration.SwitchBackShortcut, $switchBack)
+    )) {
+        if (-not $pair[0]) { continue }
+        if ($RefreshOnly -and -not [IO.File]::Exists($pair[0])) { continue }
+        $shortcuts.Add(@{ Path = $pair[0]; Target = $pair[1].Target; Arguments = $pair[1].Arguments })
+    }
+    if ($Integration.DesktopShortcut -and ($DesktopShortcut -or [IO.File]::Exists($Integration.DesktopShortcut))) {
+        $shortcuts.Add(@{ Path = $Integration.DesktopShortcut; Target = $launch.Target; Arguments = $launch.Arguments })
+    }
+    $runKey = Get-CaelestiaAutostartKey
+    $runExisted = $false
+    $runValue = ''
+    # Refresh an existing owned Run value on every activation, not only when
+    # -Autostart is passed: an upgrade must replace the old command that
+    # flashed a console. This never creates the value for a user who never
+    # enabled autostart.
+    if ($Integration.RunName) {
+        $existing = Get-ItemProperty -LiteralPath $runKey -Name $Integration.RunName -ErrorAction SilentlyContinue
+        if ($null -ne $existing) {
+            $runExisted = $true
+            $runValue = [string]$existing.($Integration.RunName)
+        }
+    }
+    $writeRun = $Autostart -or $runExisted
+    # Build the Run command before the first write. It refuses a prefix whose
+    # command would exceed Windows' 260-character limit for a Run value, and a
+    # refusal here must leave every existing entry untouched.
+    $runCommand = ''
+    if ($writeRun) { $runCommand = Get-CaelestiaAutostartValue $Prefix }
+    $keyNames = @(Get-CaelestiaAppsFeaturesValueNames)
+    $keyPath = ''
+    $keySnapshot = $null
+    if ($Integration.UninstallKey) {
+        $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
+        if (-not $RefreshOnly -or (Test-Path -LiteralPath $keyPath)) { $keySnapshot = Get-CaelestiaRegistrySnapshot $keyPath $keyNames }
+    }
+    $fileSnapshots = @()
+    try {
+        foreach ($shortcut in $shortcuts) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $shortcut.Path) | Out-Null
+            $fileSnapshot = @{ Path = $shortcut.Path; Backup = ''; Existed = [IO.File]::Exists($shortcut.Path) }
+            if ($fileSnapshot.Existed) { $fileSnapshot.Backup = Copy-CaelestiaIntegrationBackup $shortcut.Path }
+            $fileSnapshots += $fileSnapshot
+        }
+    } catch {
+        # A snapshot failure aborts before any writes; remove the backups this
+        # attempt already made so the next run cannot misread them as originals.
+        foreach ($fileSnapshot in $fileSnapshots) {
+            if ($fileSnapshot.Backup) { try { [IO.File]::Delete($fileSnapshot.Backup) } catch { } }
+        }
+        throw
+    }
+    $runWriteAttempted = $false
+    try {
+        foreach ($shortcut in $shortcuts) {
+            New-CaelestiaShortcut $shortcut.Path $shortcut.Target $shortcut.Arguments $Prefix $icon
+        }
+        if ($writeRun) {
+            # Never New-Item -Force an existing registry key: it recreates the
+            # key empty and deletes every other application's startup entry.
+            New-CaelestiaRegistryKey $runKey
+            $runWriteAttempted = $true
+            New-ItemProperty -Path $runKey -Name $Integration.RunName -PropertyType String `
+                -Value $runCommand -Force | Out-Null
+        }
+        if ($keySnapshot) { Write-CaelestiaAppsFeaturesEntry $Prefix $RuntimePrefix }
+    } catch {
+        foreach ($fileSnapshot in $fileSnapshots) {
+            try {
+                if ($fileSnapshot.Backup -and [IO.File]::Exists($fileSnapshot.Backup)) {
+                    [IO.File]::Copy($fileSnapshot.Backup, $fileSnapshot.Path, $true)
+                    [IO.File]::Delete($fileSnapshot.Backup)
+                } elseif (-not $fileSnapshot.Existed -and [IO.File]::Exists($fileSnapshot.Path)) {
+                    [IO.File]::Delete($fileSnapshot.Path)
+                }
+            } catch { }
+        }
+        try {
+            if ($runWriteAttempted) {
+                if ($runExisted) { New-ItemProperty -Path $runKey -Name $Integration.RunName -PropertyType String -Value $runValue -Force | Out-Null }
+                else { Remove-ItemProperty -LiteralPath $runKey -Name $Integration.RunName -ErrorAction SilentlyContinue }
+            }
+        } catch { }
+        if ($keySnapshot) { try { Restore-CaelestiaRegistrySnapshot $keyPath $keySnapshot $keyNames } catch { } }
+        throw
+    }
+    # A backup that cannot be deleted is not an integration failure: never roll
+    # back a completed install over a cleanup problem.
+    foreach ($fileSnapshot in $fileSnapshots) {
+        if ($fileSnapshot.Backup) { try { [IO.File]::Delete($fileSnapshot.Backup) } catch { } }
+    }
+}
+
+# Rollback updates existing entries only. It must never recreate an entry that a
+# previous -NoIntegration install deliberately did not register.
+function Update-CaelestiaIntegrationRecords([string]$Prefix, [string]$RuntimePrefix) {
+    $integration = Get-CaelestiaIntegration $Prefix
+    if (-not $integration.UninstallKey) { return }
+    $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
+    $existing = @(Test-Path -LiteralPath $keyPath)
+    foreach ($path in @($integration.Shortcut, $integration.SwitchBackShortcut, $integration.DesktopShortcut)) {
+        if ($path) { $existing += [bool][IO.File]::Exists($path) }
+    }
+    if (-not ($existing -contains $true)) { return }
+    Set-CaelestiaUserIntegration $Prefix $RuntimePrefix -Integration $integration -RefreshOnly
+}
+
+# Uninstall removes exactly the entries this prefix derived, after the prefix has
+# been renamed aside. No process, profile or stranger entry is touched. The
+# caller resolves the integration before its destructive steps and passes it in,
+# so the names it removes are the ones it checked.
+function Remove-CaelestiaUserIntegration([string]$Prefix, $Integration = $null) {
+    if (-not $Integration) { $Integration = Get-CaelestiaIntegration $Prefix }
+    $runKey = Get-CaelestiaAutostartKey
+    if ($Integration.RunName -and
+        (Get-ItemProperty -LiteralPath $runKey -Name $Integration.RunName -ErrorAction SilentlyContinue)) {
+        Remove-ItemProperty -LiteralPath $runKey -Name $Integration.RunName
+    }
+    foreach ($path in @($Integration.Shortcut, $Integration.SwitchBackShortcut, $Integration.DesktopShortcut)) {
+        if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force }
+    }
+    if (-not $Integration.UninstallKey) { return }
+    $keyPath = Get-CaelestiaUninstallKeyPath $Prefix
+    if (Test-Path -LiteralPath $keyPath) { Remove-Item -LiteralPath $keyPath -Recurse -Force }
+}
+
+# Native dialog for the two interactive decisions (turn off autostart, delete
+# settings). Non-interactive callers get the documented default, never a hang.
+function Read-CaelestiaConfirmation([string]$Title, [string]$Text, [switch]$DefaultYes) {
+    if (-not [Environment]::UserInteractive) { return [bool]$DefaultYes }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $default = $(if ($DefaultYes) {
+            [System.Windows.Forms.MessageBoxDefaultButton]::Button1
+        } else {
+            [System.Windows.Forms.MessageBoxDefaultButton]::Button2
+        })
+        return [System.Windows.Forms.MessageBox]::Show($Text, $Title,
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question,
+            $default) -eq [System.Windows.Forms.DialogResult]::Yes
+    } catch {
+        return [bool]$DefaultYes
+    }
+}
+
+function Show-CaelestiaError([string]$Title, [string]$Text) {
+    if (-not [Environment]::UserInteractive) { return }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        [System.Windows.Forms.MessageBox]::Show($Text, $Title,
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
+    } catch { }
+}
+
+# The highwater rule (Caelestia-Update.ps1 Get-CaelestiaUpdateStatePath) is that
+# rollback and profile purge must not erase revocation/freshness highwater, so
+# uninstall keeps it too and the dialog says so instead of silently deleting it.
+function Get-CaelestiaPurgePromptText([string]$ProfileRoot) {
+    return @"
+Caelestia for Windows is installed per user.
+
+Yes: also delete this installation's settings, configuration, logs and other profile data in:
+$ProfileRoot
+
+No (default): keep them so a reinstall can reuse them.
+
+Either way, Windows update trust data in %LOCALAPPDATA%\caelestia-update-trust is kept.
+It records the newest signed update metadata this PC has accepted, so reinstalling
+Caelestia cannot roll update security back to older metadata.
+"@
+}
+
+function Get-CaelestiaAutostartPromptText {
+    return @"
+Caelestia is closing and Windows is taking the desktop back.
+
+Turn off Caelestia at sign-in too?
+
+Yes (default): Caelestia will not start automatically next time.
+No: keep starting Caelestia automatically at sign-in.
+"@
+}
+
 # Prefix-derived key shared by the new Global lock and the legacy Local name.
+# The canonical long spelling is hashed so a short and a long spelling of the
+# same prefix take the same lock.
 function Get-CaelestiaInstallLockKey([string]$Prefix) {
+    $canonical = Get-CaelestiaLongPath $Prefix
     $hash = [Security.Cryptography.SHA256]::Create()
-    try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($Prefix.ToLowerInvariant()))).Replace('-', '') }
+    try { return [BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical.ToLowerInvariant()))).Replace('-', '') }
     finally { $hash.Dispose() }
 }
 
@@ -1411,7 +2004,7 @@ function Initialize-CaelestiaInstall([string]$Prefix, [string]$ProfileRoot, [swi
             throw "Refusing to touch unowned backup directory without install.json: $backup"
         }
         $backupRecord = Get-Content -LiteralPath $backupInstall -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($backupRecord.product -ne 'caelestia-windows' -or $backupRecord.prefix -ne $Prefix) {
+        if ($backupRecord.product -ne 'caelestia-windows' -or -not (Test-CaelestiaSamePath $backupRecord.prefix $Prefix)) {
             throw "Refusing to touch backup directory belonging to another installation: $backup"
         }
         if (-not (Test-Path -LiteralPath $Prefix)) { [IO.Directory]::Move($backup, $Prefix) }
@@ -1422,10 +2015,10 @@ function Initialize-CaelestiaInstall([string]$Prefix, [string]$ProfileRoot, [swi
     if ((Test-Path -LiteralPath $Prefix) -and (Get-ChildItem -LiteralPath $Prefix -Force | Select-Object -First 1)) {
         if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {
             $old = Read-CaelestiaInstall $Prefix
-            if ($old.installRoot -and $old.installRoot -ne $Prefix) {
+            if ($old.installRoot -and -not (Test-CaelestiaSamePath $old.installRoot $Prefix)) {
                 throw 'Do not install into an immutable version directory. Use its stable installRoot.'
             }
-            if ($old.profile -ne $ProfileRoot) { throw 'An update must retain the installed ProfileRoot.' }
+            if (-not (Test-CaelestiaSamePath $old.profile $ProfileRoot)) { throw 'An update must retain the installed ProfileRoot.' }
         } elseif (-not $Force -or -not ((Test-Path -LiteralPath (Join-Path $Prefix 'qs.exe')) -or (Test-Path -LiteralPath (Join-Path $Prefix 'Start-Caelestia.ps1')))) {
             throw "$Prefix is not a recognized Caelestia installation. A partial install of Caelestia can be replaced with -Force."
         }
@@ -1438,7 +2031,7 @@ function Initialize-CaelestiaInstall([string]$Prefix, [string]$ProfileRoot, [swi
     if (-not (Test-CaelestiaProfileEmpty $ProfileRoot)) {
         $owner = Read-CaelestiaProfileOwner $ProfileRoot
         if ($owner) {
-            if ($owner.prefix -ne $Prefix) {
+            if (-not (Test-CaelestiaSamePath $owner.prefix $Prefix)) {
                 if (-not $Force) { throw "ProfileRoot $ProfileRoot belongs to another Caelestia installation ($($owner.prefix)). Choose a separate profile, or pass -Force to share it." }
                 $profileExclusive = $false
             } else { $profileExclusive = [bool]$owner.exclusive }

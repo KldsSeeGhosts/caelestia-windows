@@ -336,6 +336,8 @@ try {
         @('windows/release/update-trust.json', 'payload/update-trust.json'),
         @('windows/scripts/Export-CaelestiaSupport.ps1', 'payload/Export-CaelestiaSupport.ps1'),
         @('windows/scripts/Caelestia-Support.ps1', 'payload/Caelestia-Support.ps1'),
+        @('windows/scripts/Switch-CaelestiaToWindows.ps1', 'payload/Switch-CaelestiaToWindows.ps1'),
+        @('windows/scripts/Caelestia-Launcher.ps1', 'payload/Caelestia-Launcher.ps1'),
         @('windows/docs/SUPPORT-BUNDLE.md', 'payload/docs/SUPPORT-BUNDLE.md'),
         @('windows/support/support-bundle.schema.json', 'payload/support/support-bundle.schema.json'),
         @('windows/support/support-bundle.example.json', 'payload/support/support-bundle.example.json')

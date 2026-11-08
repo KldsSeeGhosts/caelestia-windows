@@ -5,6 +5,7 @@ param(
     [string]$ProfileRoot,
     [switch]$Restart,
     [switch]$Autostart,
+    [switch]$DesktopShortcut,
     [switch]$NoIntegration,
     # Optional Python/CLI downloads are not part of the basic shell install.
     [switch]$PrepareSchemeRuntime,
@@ -195,6 +196,7 @@ function Test-ReleaseBundle([string]$Root, [string]$ExpectedHash = '') {
         'payload/Start-Caelestia.ps1', 'payload/Start-CaelestiaEntry.ps1',
         'payload/Manage-Caelestia.ps1', 'payload/Uninstall-Caelestia.ps1',
         'payload/Caelestia-InstallCommon.ps1', 'payload/Caelestia-Versions.ps1',
+        'payload/Switch-CaelestiaToWindows.ps1', 'payload/Caelestia-Launcher.ps1',
         'payload/Start-DesktopShell.ps1', 'payload/Watch-DesktopShell.ps1', 'payload/Restore-Desktop.ps1',
         'payload/Install-SchemeRuntime.ps1', 'payload/Get-AccountPicture.ps1', 'payload/Banner-Suppression.ps1',
         'payload/scheme/requirements.lock.txt', 'payload/scheme/win_scheme.py', 'payload/scheme/fcntl.py',
@@ -274,12 +276,16 @@ if (-not $ProfileRoot) {
 }
 $ProfileRoot = Assert-ReleaseDirectory (Resolve-CaelestiaDirectory $ProfileRoot)
 foreach ($pair in @(@($Prefix, $ProfileRoot), @($Prefix, $BundleRoot), @($ProfileRoot, $BundleRoot))) {
-    if ($pair[0] -eq $pair[1] -or $pair[0].StartsWith($pair[1] + '\', [StringComparison]::OrdinalIgnoreCase) -or
-        $pair[1].StartsWith($pair[0] + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    $left = Get-CaelestiaLongPath $pair[0]
+    $right = Get-CaelestiaLongPath $pair[1]
+    if ([string]::Equals($left, $right, [StringComparison]::OrdinalIgnoreCase) -or
+        $left.StartsWith($right + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $right.StartsWith($left + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Prefix, profile and extracted release must be separate, non-nested directories.'
     }
 }
 if ($NoIntegration -and $Autostart) { throw '-NoIntegration cannot register autostart.' }
+if ($NoIntegration -and $DesktopShortcut) { throw '-NoIntegration cannot create a desktop shortcut.' }
 $lock = Enter-CaelestiaInstallLock $Prefix
 $payload = "$Prefix.staging-$PID"
 try {
@@ -352,15 +358,26 @@ try {
         $scheme = Install-CaelestiaSchemeRuntime $payload $ProfileRoot
         if (-not $scheme.available) { Write-Warning 'Optional scheme runtime unavailable; the shell will use its fixed palette.' }
     }
-    $runtime = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    $runtime = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart -Autostart:$Autostart -NoIntegration:$NoIntegration
     Remove-CaelestiaSchemeGenerations $Prefix $ProfileRoot
     $installed = Read-CaelestiaInstall $Prefix
     if (-not $NoIntegration) {
-        Complete-CaelestiaInstallIntegration $Prefix $runtime -Previous ([string]$installed.previous) -Restart:$Restart -Autostart:$Autostart
+        Complete-CaelestiaInstallIntegration $Prefix $runtime -Previous ([string]$installed.previous) `
+            -Restart:$Restart -Autostart:$Autostart -DesktopShortcut:$DesktopShortcut
     }
     Remove-CaelestiaRetiredVersions $Prefix
     Write-Output "Installed release $($release.releaseId): $Prefix"
     Write-Output ('Start: powershell -NoProfile -File "' + (Join-Path $Prefix 'Start-Caelestia.ps1') + '" -PreparedSchemeRuntime')
+    if (-not $NoIntegration) {
+        $integration = Get-CaelestiaIntegration $Prefix
+        if ($integration.Shortcut) {
+            Write-Output "Start menu: $(Split-Path -Leaf $integration.Shortcut) (starts without a terminal)"
+        }
+        if ($integration.SwitchBackShortcut) {
+            Write-Output "Switch back: $(Split-Path -Leaf $integration.SwitchBackShortcut)"
+        }
+        Write-Output 'Uninstall: Settings > Apps > Installed apps > Caelestia for Windows'
+    }
     Write-Output "Profile preserved: $ProfileRoot"
 } finally {
     try {

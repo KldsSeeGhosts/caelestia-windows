@@ -7,6 +7,8 @@ param(
     [string]$Prefix = (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows'),
     [string]$ProfileRoot = (Join-Path $env:LOCALAPPDATA 'caelestia-windows'),
     [switch]$Autostart,
+    # Optional per-user desktop shortcut, in addition to the Start-menu entries.
+    [switch]$DesktopShortcut,
     # Prepare with the current shell still running, then stop/swap/start.
     # The previous payload is retained until the replacement answers readiness.
     [switch]$Restart,
@@ -30,9 +32,9 @@ param(
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if ($SourceRoot) { $repoRoot = (Resolve-Path -LiteralPath $SourceRoot).Path }
 . (Join-Path $repoRoot 'windows\capture\Source.ps1')
-if ($NoIntegration -and ($Restart -or $Autostart -or
-    [IO.Path]::GetFullPath($Prefix).TrimEnd('\') -eq [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')).TrimEnd('\'))) {
-    throw '-NoIntegration requires a separate prefix and cannot launch or register autostart.'
+if ($NoIntegration -and ($Restart -or $Autostart -or $DesktopShortcut -or
+    (Test-CaelestiaSamePath $Prefix (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')))) {
+    throw '-NoIntegration requires a separate prefix and cannot launch or register autostart or a desktop shortcut.'
 }
 $timings = [ordered]@{}
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
@@ -104,8 +106,12 @@ foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $ProfileRoot = Resolve-CaelestiaDirectory $ProfileRoot
+$prefixFull = Get-CaelestiaLongPath $Prefix
 foreach ($sourceRoot in @($BuildRoot, $QtPrefix, $VCRuntimeRoot, $repoRoot, $ProfileRoot)) {
-    if ($Prefix -eq $sourceRoot -or $sourceRoot.StartsWith($Prefix + '\', [StringComparison]::OrdinalIgnoreCase) -or $Prefix.StartsWith($sourceRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    $sourceFull = Get-CaelestiaLongPath $sourceRoot
+    if ([string]::Equals($prefixFull, $sourceFull, [StringComparison]::OrdinalIgnoreCase) -or
+        $sourceFull.StartsWith($prefixFull + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        $prefixFull.StartsWith($sourceFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
         throw "Installation prefix must be separate from sources, build, Qt and profile: $sourceRoot"
     }
 }
@@ -159,7 +165,7 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\shell\shell.json" -Destination "$payload\defaults\shell.json"
     Copy-Item -LiteralPath "$repoRoot\windows\shell\windows.json" -Destination "$payload\defaults\windows.json"
     Copy-Item -LiteralPath "$repoRoot\defaults\windows\keybinds.json" -Destination "$payload\defaults\keybinds.json"
-    foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1', 'Export-CaelestiaSupport.ps1', 'Caelestia-Support.ps1')) {
+    foreach ($script in @('Start-Caelestia.ps1', 'Start-CaelestiaEntry.ps1', 'Manage-Caelestia.ps1', 'Caelestia-Versions.ps1', 'Uninstall-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Switch-CaelestiaToWindows.ps1', 'Caelestia-Launcher.ps1', 'Start-DesktopShell.ps1', 'Watch-DesktopShell.ps1', 'Restore-Desktop.ps1', 'DesktopTakeover.cs', 'Install-SchemeRuntime.ps1', 'Get-AccountPicture.ps1', 'Banner-Suppression.ps1', 'Export-CaelestiaSupport.ps1', 'Caelestia-Support.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $script) -Destination $payload
     }
     foreach ($script in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
@@ -322,7 +328,7 @@ try {
         }
     }
     $phaseClock.Restart()
-    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart
+    $runtimePrefix = Install-CaelestiaVersion $Prefix $payload -Restart:$Restart -Autostart:$Autostart -NoIntegration:$NoIntegration
     $timings.versionSelectionSeconds = $phaseClock.Elapsed.TotalSeconds
     # Pruning is deferred while any shell or supervisor can still be using a
     # generation; the next install without a live shell removes the rest.
@@ -332,12 +338,20 @@ try {
     # claims a replacement the caller was told failed.
     $installed = Read-CaelestiaInstall $Prefix
     if (-not $NoIntegration) {
-        Complete-CaelestiaInstallIntegration $Prefix $runtimePrefix -Previous ([string]$installed.previous) -Restart:$Restart -Autostart:$Autostart
+        Complete-CaelestiaInstallIntegration $Prefix $runtimePrefix -Previous ([string]$installed.previous) `
+            -Restart:$Restart -Autostart:$Autostart -DesktopShortcut:$DesktopShortcut
     }
     Remove-CaelestiaRetiredVersions $Prefix
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     Write-Output "Installed Caelestia: $Prefix"
     Write-Output "Run: powershell -NoProfile -File `"$launcher`""
+    if (-not $NoIntegration) {
+        $integration = Get-CaelestiaIntegration $Prefix
+        if ($integration.Shortcut) {
+            Write-Output "Start menu: $(Split-Path -Leaf $integration.Shortcut) (starts without a terminal)"
+        }
+        Write-Output 'Uninstall: Settings > Apps > Installed apps > Caelestia for Windows'
+    }
     Write-Output "Profile (seeded on first launch): $ProfileRoot"
     if ($TimingFile) { $timings | ConvertTo-Json | Set-Content -LiteralPath $TimingFile -Encoding UTF8 }
 } finally {

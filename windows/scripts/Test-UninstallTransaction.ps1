@@ -56,13 +56,14 @@ function Write-FixtureText([string]$Path, [string]$Text) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
     [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
 }
-function New-Case([string]$Name) {
+function New-Case([string]$Name, [switch]$RealIntegration) {
     $case = Join-Path $runRoot $Name
     $prefix = Join-Path $case 'prefix'
     $profile = Join-Path $case 'profile'
     $scripts = Join-Path $case 'scripts'
     [IO.Directory]::CreateDirectory($scripts) | Out-Null
-    foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1')) {
+    foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1',
+        'Switch-CaelestiaToWindows.ps1', 'Caelestia-Launcher.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $scripts
     }
     foreach ($name in @('Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
@@ -91,10 +92,10 @@ function New-Case([string]$Name) {
     }
     [IO.Directory]::CreateDirectory((Join-Path $case 'tasks')) | Out-Null
     $uninstall = Replace-Exactly $uninstallText $import ($import + $importBoundary)
-    # Exact direct Run-key boundary: never inspect or remove even a hashed
-    # temporary-prefix value from the user's actual startup key.
-    $uninstall = Replace-Exactly $uninstall "`$run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'" `
-        "`$run = Join-Path `$env:CAELESTIA_FIXTURE_CASE 'integration'"
+    # By default the boundary replaces the single integration cleanup function,
+    # so the real uninstall reaches no registry key, Start-menu directory or COM
+    # shortcut. The two integration-failure cases switch the boundary to real
+    # cleanup against disposable files and HKCU test roots only.
     Write-FixtureText (Join-Path $scripts 'Uninstall-Caelestia.ps1') $uninstall
     $launcher = @'
 param($Prefix, $Command = 'Start', [switch]$PreparedSchemeRuntime)
@@ -115,6 +116,7 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
         'payload/Start-Caelestia.ps1', 'payload/Start-CaelestiaEntry.ps1',
         'payload/Manage-Caelestia.ps1', 'payload/Uninstall-Caelestia.ps1',
         'payload/Caelestia-InstallCommon.ps1', 'payload/Caelestia-Versions.ps1',
+        'payload/Switch-CaelestiaToWindows.ps1', 'payload/Caelestia-Launcher.ps1',
         'payload/Caelestia-SemVer.ps1', 'payload/Caelestia-Update.ps1',
         'payload/Caelestia-UpdateTrust.ps1', 'payload/Caelestia-UpdateSecurity.cs',
         'payload/Start-DesktopShell.ps1', 'payload/Watch-DesktopShell.ps1', 'payload/Restore-Desktop.ps1',
@@ -127,6 +129,7 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     )
     foreach ($relative in $required) { Write-FixtureText (Join-Path $bundle $relative) 'synthetic fixture data' }
     foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1',
+        'Switch-CaelestiaToWindows.ps1', 'Caelestia-Launcher.ps1',
         'Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
         Copy-Item -LiteralPath (Join-Path $scripts $name) -Destination (Join-Path $bundle "payload\$name") -Force
     }
@@ -174,6 +177,7 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
         $runtime = Join-Path $prefix "versions\$id"
         [IO.Directory]::CreateDirectory($runtime) | Out-Null
         foreach ($name in @('Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1', 'Manage-Caelestia.ps1', 'Uninstall-Caelestia.ps1',
+            'Switch-CaelestiaToWindows.ps1', 'Caelestia-Launcher.ps1',
             'Caelestia-SemVer.ps1', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Caelestia-UpdateSecurity.cs')) {
             Copy-Item -LiteralPath (Join-Path $scripts $name) -Destination $runtime
         }
@@ -194,12 +198,23 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     Write-FixtureText (Join-Path $profile 'config\sentinel.txt') 'owned profile content'
     Write-FixtureText (Join-Path $profile 'state\update-operation.json') '{"schema":1,"phase":"fixture"}'
     Write-FixtureText (Join-Path $case 'unrelated-profile\sentinel.txt') 'unrelated profile content'
-    Write-FixtureText (Join-Path $case 'integration\fixture-run') 'owned run value'
+    # Prefix-derived per-user entries, simulated as data. The fixture boundary
+    # proves the real uninstall calls the single integration cleanup, and
+    # Assert-Uninstalled proves this whole directory is emptied. The real-
+    # integration cases use only the three shortcut files and a disposable HKCU
+    # root, so the production cleanup and its snapshot/restore run unchanged.
+    if (-not $RealIntegration) {
+        Write-FixtureText (Join-Path $case 'integration\fixture-run') 'owned run value'
+        Write-FixtureText (Join-Path $case 'integration\apps-features.json') 'owned Apps & features entry'
+    }
     Write-FixtureText (Join-Path $case 'integration\shortcut.lnk') 'owned shortcut'
+    Write-FixtureText (Join-Path $case 'integration\switch-back.lnk') 'owned switch-back shortcut'
+    Write-FixtureText (Join-Path $case 'integration\desktop.lnk') 'owned desktop shortcut'
     return $case
 }
 function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [bool]$Purge = $false,
-    [bool]$KeepAlive = $false, [bool]$ThrowAtBoundary = $false, [bool]$AliasPrefix = $false, [string]$OperationId = '') {
+    [bool]$KeepAlive = $false, [bool]$ThrowAtBoundary = $false, [bool]$AliasPrefix = $false, [string]$OperationId = '',
+    [switch]$RealIntegration, [string]$IntegrationFailure = '') {
     $control = Join-Path $Case ('control-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($control) | Out-Null
     $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
@@ -211,6 +226,8 @@ function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [b
     if ($ThrowAtBoundary) { $arguments += ' -ThrowAtBoundary' }
     if ($AliasPrefix) { $arguments += ' -AliasPrefix' }
     if ($OperationId) { $arguments += ' -OperationId ' + $OperationId }
+    if ($RealIntegration) { $arguments += ' -RealIntegration' }
+    if ($IntegrationFailure) { $arguments += ' -IntegrationFailure ' + $IntegrationFailure }
     $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $control 'stdout.txt') `
         -RedirectStandardError (Join-Path $control 'stderr.txt')
@@ -299,6 +316,9 @@ function Assert-Coherent([string]$Case) {
     Assert (Test-CaelestiaVersionPayload $prefix $record.previous) 'Previous payload is not coherent.'
     Assert ((Read-CaelestiaProfileOwner (Join-Path $Case 'profile')).installId -eq $record.installId) 'Profile owner changed.'
     Assert (@(Get-ChildItem -LiteralPath $Case -Directory -Filter 'prefix.staging-*').Count -eq 0) 'Staging sibling was left behind.'
+    # Install and rollback must leave the prefix-derived integration entries
+    # alone. The uninstall scenarios then prove they are really removed.
+    Assert (@(Get-ChildItem -LiteralPath (Join-Path $Case 'integration') -Force).Count -eq 5) 'A non-uninstall transaction changed the integration fixture.'
 }
 function Assert-Uninstalled([string]$Case, [bool]$Purge) {
     Assert (-not (Test-Path -LiteralPath (Join-Path $Case 'prefix'))) 'Prefix not removed.'
@@ -315,6 +335,37 @@ function Assert-Uninstalled([string]$Case, [bool]$Purge) {
         Assert ([IO.File]::ReadAllText((Join-Path $Case 'profile\config\sentinel.txt')) -eq 'owned profile content') 'Kept profile modified.'
     }
     Assert ([IO.File]::ReadAllText((Join-Path $Case 'unrelated-profile\sentinel.txt')) -eq 'unrelated profile content') 'Unrelated profile modified.'
+}
+# The real-integration cases use disposable files and an HKCU test root whose
+# name is derived from the case path, exactly as the fixture worker derives it.
+function Get-IntegrationRegistryRoot([string]$Case) {
+    return 'HKCU:\Software\CaelestiaWindowsTests\' + (Get-CaelestiaInstallLockKey $Case).Substring(0, 16)
+}
+function Initialize-RealIntegration([string]$Case, [string]$Root) {
+    $runKey = $Root + '\Run'
+    $appsKey = $Root + '\Uninstall\fixture-apps'
+    New-CaelestiaRegistryKey $runKey
+    New-ItemProperty -Path $runKey -Name 'fixture-run' -PropertyType String `
+        -Value '"C:\Windows\System32\wscript.exe" //B //Nologo "C:\old\Caelestia-Launcher.vbs" start "C:\old"' -Force | Out-Null
+    New-CaelestiaRegistryKey $appsKey
+    foreach ($pair in @(
+        @('DisplayName', 'Caelestia for Windows'), @('DisplayVersion', '1.0.0'),
+        @('Publisher', 'KldsSeeGhosts'), @('UninstallString', '"C:\old" uninstall')
+    )) {
+        New-ItemProperty -Path $appsKey -Name $pair[0] -PropertyType String -Value $pair[1] -Force | Out-Null
+    }
+}
+function Get-IntegrationRegistryState([string]$Root) {
+    $lines = @()
+    foreach ($path in @($Root + '\Run', $Root + '\Uninstall\fixture-apps')) {
+        if (-not (Test-Path -LiteralPath $path)) { $lines += "$path ABSENT"; continue }
+        $lines += $path
+        $key = Get-Item -LiteralPath $path
+        foreach ($name in @($key.GetValueNames() | Sort-Object)) {
+            $lines += $name + '=' + [string]$key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        }
+    }
+    return $lines -join "`n"
 }
 $passed = $false
 $failure = ''
@@ -482,6 +533,75 @@ try {
         Assert-Coherent $case
         Finish-Worker $owner
         $script:scenarios += $name
+    }
+
+    # An integration-cleanup failure must not strand the uninstall after the
+    # prefix is gone. The real cleanup runs against disposable shortcut files
+    # and a disposable HKCU root; a locked shortcut and a denied Apps & features
+    # key removal each fail after the tombstone rename. Recovery must restore
+    # the prefix and every owned entry byte-for-byte, and a retry must succeed.
+    foreach ($failure in @('locked-shortcut', 'registry-denial')) {
+        $name = "cleanup-failure-$failure"
+        $case = New-Case $name -RealIntegration
+        $registryRoot = Get-IntegrationRegistryRoot $case
+        try {
+            Initialize-RealIntegration $case $registryRoot
+            $before = Snapshot $case
+            $registryBefore = Get-IntegrationRegistryState $registryRoot
+            $lock = $null
+            if ($failure -eq 'locked-shortcut') {
+                $lock = [IO.File]::Open((Join-Path $case 'integration\shortcut.lnk'),
+                    [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            }
+            try {
+                $worker = Start-Worker $case 'Uninstall' '' $false $false $false $false '' `
+                    -RealIntegration -IntegrationFailure $failure
+                Assert-Result $worker 'Error'
+                Finish-ErrorWorker $worker
+            } finally {
+                if ($lock) { $lock.Dispose() }
+            }
+            Assert ((Snapshot $case) -ceq $before) 'A failed cleanup changed the installation, left a tombstone or lost an entry.'
+            Assert ((Get-IntegrationRegistryState $registryRoot) -ceq $registryBefore) 'A failed cleanup lost the Run value or the Apps & features entry.'
+            Assert (@(Get-ChildItem -LiteralPath $case -Directory -Filter 'prefix.uninstall-*').Count -eq 0) 'A failed cleanup left its tombstone.'
+            $retry = Start-Worker $case 'Uninstall' '' $false $false $false $false '' -RealIntegration
+            Assert-Result $retry 'Success'
+            Finish-Worker $retry
+            Assert-Uninstalled $case $false
+            Assert ($null -eq (Get-ItemProperty -LiteralPath ($registryRoot + '\Run') -Name 'fixture-run' -ErrorAction SilentlyContinue)) 'The retry left the Run value behind.'
+            Assert (-not (Test-Path -LiteralPath ($registryRoot + '\Uninstall\fixture-apps'))) 'The retry left the Apps & features key behind.'
+            $script:scenarios += $name
+        } finally {
+            if (Test-Path -LiteralPath $registryRoot) { Remove-Item -LiteralPath $registryRoot -Recurse -Force }
+        }
+    }
+    # A snapshot that fails on the second shortcut must not leak the backup it
+    # already made for the first one. The lock denies reads, so the snapshot copy
+    # fails before the tombstone rename and nothing is written.
+    $case = New-Case 'snapshot-partial-backup' -RealIntegration
+    $registryRoot = Get-IntegrationRegistryRoot $case
+    try {
+        Initialize-RealIntegration $case $registryRoot
+        $before = Snapshot $case
+        $switchBackPath = Join-Path $case 'integration\switch-back.lnk'
+        $lock = [IO.File]::Open($switchBackPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+        try {
+            $worker = Start-Worker $case 'Uninstall' '' $false $false $false $false '' -RealIntegration
+            Assert-Result $worker 'Error'
+            Finish-ErrorWorker $worker
+        } finally {
+            $lock.Dispose()
+        }
+        Assert ((Snapshot $case) -ceq $before) 'A failed snapshot changed the installation or left a backup behind.'
+        Assert (@(Get-ChildItem -LiteralPath (Join-Path $case 'integration') -Filter '*.integration-*' -Force).Count -eq 0) 'A failed snapshot leaked a shortcut backup.'
+        Assert (@(Get-ChildItem -LiteralPath $case -Directory -Filter 'prefix.uninstall-*').Count -eq 0) 'A failed snapshot left a tombstone.'
+        $retry = Start-Worker $case 'Uninstall' '' $false $false $false $false '' -RealIntegration
+        Assert-Result $retry 'Success'
+        Finish-Worker $retry
+        Assert-Uninstalled $case $false
+        $script:scenarios += 'snapshot-partial-backup'
+    } finally {
+        if (Test-Path -LiteralPath $registryRoot) { Remove-Item -LiteralPath $registryRoot -Recurse -Force }
     }
     $case = New-Case 'busy-before-manifest-read'
     $owner = Start-Worker $case 'Install' 'processes'
@@ -724,9 +844,26 @@ try {
             Assert ((Snapshot $case) -ceq $before) 'Post-rename contender changed transaction state.'
         }
         if ($interrupted) { $owner.Process.Kill(); Assert ($owner.Process.WaitForExit(10000)) 'Post-rename owner did not exit.' }
-        else { Release-Worker $owner; Assert-Result $owner 'Injected' }
+        else {
+            Release-Worker $owner
+            Assert-Result $owner 'Error'
+            Finish-ErrorWorker $owner
+        }
         Assert ([IO.File]::ReadAllText((Join-Path $case 'profile\config\sentinel.txt')) -eq 'owned profile content') 'Pre-purge interruption modified profile content.'
         Assert ([IO.File]::ReadAllText((Join-Path $case 'unrelated-profile\sentinel.txt')) -eq 'unrelated profile content') 'Post-rename interruption touched unrelated profile.'
+        if (-not $interrupted) {
+            # A thrown cleanup failure is not a crash: the uninstall restores
+            # the prefix and leaves no tombstone, so the Settings entry stays
+            # resolvable and the retry below can run.
+            Assert (Test-Path -LiteralPath $prefix) 'A post-rename cleanup exception did not restore the prefix.'
+            Assert (@(Get-ChildItem -LiteralPath $case -Directory -Filter 'prefix.uninstall-*').Count -eq 0) 'A post-rename cleanup exception left a tombstone.'
+            $retry = Start-Worker $case 'Uninstall' '' $true
+            Assert-Result $retry 'Success'
+            Finish-Worker $retry
+            Assert-Uninstalled $case $true
+            $script:scenarios += "post-rename-interrupted-$interrupted"
+            continue
+        }
         # Explicit fixture recovery, not a claim of automatic production crash
         # recovery. Validate exact owned paths before moving the tree back.
         $tombstone = Resolve-CaelestiaDirectory $tombstones[0].FullName
@@ -739,7 +876,6 @@ try {
         Assert-Result $retry 'Success'
         Finish-Worker $retry
         Assert-Uninstalled $case $true
-        if (-not $interrupted) { Finish-Worker $owner }
         $script:scenarios += "post-rename-interrupted-$interrupted"
     }
     }
