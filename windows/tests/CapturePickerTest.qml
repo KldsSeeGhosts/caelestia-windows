@@ -369,8 +369,8 @@ ShellRoot {
     function afterRightClick(): void {
         check(!picker.opened && windows().length === 0, "a right click closes every window");
 
-        // The clipboard variants write the image to a temporary file under the
-        // state folder and hand that path to the clipboard.
+        // The clipboard variants write the image to a temporary file in the OS
+        // temp directory and hand that path to the clipboard.
         check(CaptureUi.screenshot("openClip") === true && picker.opened && picker.clipboardOnly, "openClip opens a clipboard capture");
         readyAll();
         later(300, () => step(clipboardDrag));
@@ -584,13 +584,13 @@ ShellRoot {
                 check(!WindowsFiles.isFile(pathB), "and deletes it");
                 later(900, () => step(() => {
                     check(!picker.opened, "the picker closed");
-                    staleSweep();
+                    uniqueTempPathsStep();
                 }));
             }));
         }));
     }
 
-    function staleSweep(): void {
+    function uniqueTempPathsStep(): void {
         // Two fresh pickers, both at session 0, reserve different files in the
         // temp directory: names do not depend on the session.
         const first = extraPicker.createObject(root);
