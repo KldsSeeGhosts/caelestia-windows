@@ -11,8 +11,9 @@ param(
     [string]$Python = 'python',
     [string]$CompilerLauncher,
     [string]$RustCacheDirectory,
-    # Compile parallelism for the production build only; tests stay serial.
+    # Compile parallelism for the production build only.
     [ValidateRange(1, 16)][int]$Jobs = 2,
+    [ValidateRange(1, 4)][int]$QmlJobs = 1,
     # Early, unrecorded Services run for a fast first error. It writes only
     # under this fresh root, never Results, and is never pass evidence: the
     # recorded integration reruns the Services gate from scratch.
@@ -87,8 +88,10 @@ function Get-ServicesArguments([string]$OutputRoot) {
         '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', $OutputRoot)
 }
 function Get-ShellArguments {
-    return $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Shell',
+    $arguments = $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Shell',
         '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', "$Results\Shell")
+    if ($QmlJobs -gt 1) { $arguments += @('-QmlJobs', "$QmlJobs") }
+    return $arguments
 }
 function Get-PluginArguments {
     return @('--test-dir', "$BuildRoot\caelestia", '--output-on-failure',
