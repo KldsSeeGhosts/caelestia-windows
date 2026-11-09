@@ -228,6 +228,24 @@ def export(work, value, ctx):
     publication.write(out / PROOF, document)
 
 
+def echo_failure(work):
+    # Hosted main inputs only, as in the canonical candidate's --echo mode.
+    # Never retain raw logs or echo an artifact-selected path. A single bounded
+    # tail diagnoses a failed gate without changing its outcome or evidence.
+    try:
+        private = Path(work) / "private"
+        log = private / "supervisor.log"
+        for name in ("materialize", *STAGES):
+            stage = private / (name + ".state.json")
+            if stage.exists() and read(stage)["outcome"] != "success":
+                log = private / (name + ".log")
+                break
+        publication.no_links(log)
+        nexus_process.echo_failure_tail(log)
+    except (ValueError, OSError, KeyError, TypeError):
+        print("NEXUS_SHADOW_DIAGNOSTIC_UNAVAILABLE", file=sys.stderr)
+
+
 def join(work, ctx, integration_success, timeout=600):
     work = Path(work)
     result, reason = "failed", "shadow-join-failed"
@@ -254,6 +272,8 @@ def join(work, ctx, integration_success, timeout=600):
                 nexus_job.terminate(value["job"])
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:
         reason = candidate.failure_reason(error)
+    if result == "failed":
+        echo_failure(work)
     state(work, ctx, result, reason)
     atomic(work / "join-result.json", {
         "schema": "caelestia-nexus-shadow-join", "version": 1,

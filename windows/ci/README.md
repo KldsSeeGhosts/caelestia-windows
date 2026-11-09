@@ -499,6 +499,11 @@ cleanliness and native hashes are checked again after
 both tests and assembly finish. Only successful integration and all four
 successful packaging gates can export the one-day `nexus-shadow-*` artifact.
 Private logs and the local supervisor configuration are excluded.
+On failure only, the join echoes one fixed-name gate log's bounded tail into
+the disposable main job log, as the canonical candidate already does. It reads
+at most 64 KiB and prints at most 80 lines and 16,000 characters. Success and
+fallback never echo these private diagnostics. No raw log enters an artifact,
+proof, candidate, or release.
 
 The proof binds the exact run, attempt, source SHA, build receipt hash, native
 inventory, source inventory, ZIP, manifest and coverage inventory. It is
