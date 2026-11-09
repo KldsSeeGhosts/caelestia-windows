@@ -389,6 +389,13 @@ Source preparation labels each supplier, notice group and Git bundle.
 The three-day `nexus-stage-states` artifact contains stage name, outcome, exit,
 duration and budget, plus fixed-label payload verification phase timings.
 Publication retains the same path-free verification timings for seven days.
+Publication runs independent supplier-source reproduction and supplied-payload
+verification concurrently in two workers after receipt, version and source-history
+checks. Their output directories and private logs are separate. Both retain
+their existing checks and deadlines, and both must finish before any release or
+channel-pointer write. Either failure refuses publication. A separate
+`publication-checks-timing.json` records only fixed phase names, outcomes and
+elapsed seconds, including failed checks. It never enters release assets.
 Private logs never become release artifacts.
 Echoed failure tails remain bounded and limited to disposable CI inputs.
 These limits diagnose stalled work, not certify candidate assembly speed.

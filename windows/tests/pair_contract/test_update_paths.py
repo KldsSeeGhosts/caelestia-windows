@@ -112,7 +112,7 @@ class UpdatePathTests(unittest.TestCase):
         self.assertIn("C:/nexus-candidate/independent-payload/verification-timing.json", workflow)
         publication = workflow.split("      - name: Sanitized publication verification timings\n", 1)[1]
         self.assertIn("if: always()", publication)
-        self.assertIn("path: C:/nexus-publish/payload-check/verification-timing.json", publication)
+        self.assertIn("C:/nexus-publish/payload-check/verification-timing.json", publication)
         self.assertNotIn(".log", publication)
         source = (ROOT / "windows/ci/Test-NexusCandidatePayload.ps1").read_text()
         timing = source.split("function Save-PayloadTiming", 1)[1].split(
