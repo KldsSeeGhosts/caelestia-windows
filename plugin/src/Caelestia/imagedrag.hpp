@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -10,6 +11,7 @@
 #include <qsize.h>
 #include <qstring.h>
 
+class QDrag;
 class QObject;
 
 // A copy-only drag of an image file out of the shell, for the screenshot
@@ -41,10 +43,17 @@ Preview preview(const QMimeData& data, const QSizeF& logical, qreal dpr);
 // Copy is the only action offered. Returns the action the target chose
 // (Qt::IgnoreAction when dropped nowhere or cancelled), or nothing when no drag
 // ran: no data, or another drag from this function is still running. `source`
-// is the object Qt reports as the drag's source and must not be null. Needs the
-// GUI thread.
-std::optional<Qt::DropAction> run(
-    std::unique_ptr<QMimeData> data, const Preview& preview, QObject* source);
+// is the object that asked for the drag and must not be null. It does not own
+// anything: the drag, its data and its picture are owned by this call and freed
+// after the drag loop has returned, whatever happens to `source` meanwhile. If
+// `source` is destroyed while the drag runs, the drag is cancelled. Nothing
+// touches `source` once the call has returned. Needs the GUI thread.
+//
+// `exec` replaces the call that blocks in the system's drag loop. Only tests
+// pass it: a platform without a pointer (offscreen) never runs that loop, so a
+// test uses it to run an event loop of its own while the drag exists.
+std::optional<Qt::DropAction> run(std::unique_ptr<QMimeData> data, const Preview& preview, QObject* source,
+    const std::function<Qt::DropAction(QDrag&)>& exec = {});
 
 // The distance, in device pixels, that the pointer has to travel before a
 // press becomes a drag. The system's setting on Windows (SM_CXDRAG and

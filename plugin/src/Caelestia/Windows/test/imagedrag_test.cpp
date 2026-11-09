@@ -1,14 +1,20 @@
+#include <functional>
 #include <memory>
 
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
+#include <qdrag.h>
+#include <qevent.h>
+#include <qeventloop.h>
 #include <qguiapplication.h>
 #include <qimage.h>
 #include <qmimedata.h>
 #include <qobject.h>
 #include <qpainter.h>
+#include <qpointer.h>
 #include <qtemporarydir.h>
+#include <qtimer.h>
 #include <qtest.h>
 #include <qurl.h>
 
@@ -180,6 +186,131 @@ private slots:
         QVERIFY(!imagedrag::run(imagedrag::mimeData(save(sample(), QStringLiteral("run2.png"))), {}, nullptr).has_value());
     }
 
+    // The drag runs a nested event loop (OLE's on Windows). What a shell reload
+    // does to the object that asked for the drag must not free the drag, its data
+    // or its picture while that loop runs, and the data must be freed exactly once,
+    // after the loop has returned. The offscreen platform has no pointer and its
+    // drag returns at once, so most cases pass `exec`, which runs an event loop of
+    // the test's own in place of the system's.
+
+
+    // With the real exec the offscreen platform has no drag, and Qt frees the
+    // drag itself by deleteLater. Nothing may be left to run afterwards.
+    void theRealExecLeavesNothingToFreeLater() {
+        int freed = 0;
+        QObject source;
+        const auto action = imagedrag::run(std::make_unique<Tracked>(&freed), pixmapPreview(), &source);
+        QVERIFY(action.has_value());
+        QCOMPARE(freed, 1);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCoreApplication::processEvents();
+        QCOMPARE(freed, 1);
+    }
+
+    // The source is deleted inside the loop, as a reload does. Nothing under the
+    // drag is freed until the loop has returned.
+    void destroyingTheSourceMidDragFreesNothingUnderTheDrag() {
+        int freed = 0;
+        auto* source = new QObject;
+        int freedInLoop = -1;
+        bool dataAlive = false, picture = false;
+        const auto action = imagedrag::run(std::make_unique<Tracked>(&freed), pixmapPreview(), source,
+            loop([&](QDrag& drag) {
+                delete source;
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                freedInLoop = freed;
+                dataAlive = drag.mimeData() && drag.mimeData()->text() == QStringLiteral("tracked");
+                picture = !drag.pixmap().isNull();
+            }));
+        QVERIFY(action.has_value());
+        QCOMPARE(*action, Qt::IgnoreAction);
+        QCOMPARE(freedInLoop, 0);
+        QVERIFY(dataAlive);
+        QVERIFY(picture);
+        QCOMPARE(freed, 1);
+    }
+
+    // The deferred deletion that QML objects get (deleteLater), delivered inside
+    // the loop.
+    void aDeferredDeletionOfTheSourceMidDragIsSafe() {
+        int freed = 0;
+        auto* source = new QObject;
+        QPointer<QObject> guard(source);
+        int freedInLoop = -1;
+        bool dataAlive = false;
+        const auto action = imagedrag::run(std::make_unique<Tracked>(&freed), pixmapPreview(), source,
+            loop([&](QDrag& drag) {
+                source->deleteLater();
+                QCoreApplication::sendPostedEvents(source, QEvent::DeferredDelete);
+                QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                freedInLoop = freed;
+                dataAlive = drag.mimeData() && drag.mimeData()->hasText();
+            }));
+        QVERIFY(action.has_value());
+        QVERIFY(guard.isNull());
+        QCOMPARE(freedInLoop, 0);
+        QVERIFY(dataAlive);
+        QCOMPARE(freed, 1);
+    }
+
+    // The source goes away together with an object tree that parents it, as a
+    // reload tears down the engine's objects.
+    void destroyingTheOwnersParentMidDragIsSafe() {
+        int freed = 0;
+        auto* root = new QObject;
+        auto* source = new QObject(root);
+        new QObject(source);
+        int freedInLoop = -1;
+        const auto action = imagedrag::run(std::make_unique<Tracked>(&freed), pixmapPreview(), source,
+            loop([&](QDrag&) {
+                delete root;
+                freedInLoop = freed;
+            }));
+        QVERIFY(action.has_value());
+        QCOMPARE(freedInLoop, 0);
+        QCOMPARE(freed, 1);
+    }
+
+    // A second request that arrives inside the loop is refused and does not
+    // disturb the first. The guard is released when the first returns.
+    void aSecondDragInsideTheLoopIsRefusedAndTheNextOneRuns() {
+        int freed = 0, freedSecond = 0;
+        QObject source;
+        std::optional<std::optional<Qt::DropAction>> inner;
+        const auto action = imagedrag::run(std::make_unique<Tracked>(&freed), pixmapPreview(), &source,
+            loop([&](QDrag&) {
+                inner = imagedrag::run(std::make_unique<Tracked>(&freedSecond), {}, &source);
+            }));
+        QVERIFY(action.has_value());
+        QVERIFY(inner.has_value() && !inner->has_value());
+        QCOMPARE(freedSecond, 1);
+        QCOMPARE(freed, 1);
+
+        int freedThird = 0;
+        QVERIFY(imagedrag::run(std::make_unique<Tracked>(&freedThird), {}, &source).has_value());
+        QCOMPARE(freedThird, 1);
+    }
+
+    // The drag loop leaves by an exception: the data is still freed and the next
+    // drag can start.
+    void anExceptionInTheLoopFreesEverythingAndReleasesTheGuard() {
+        int freed = 0;
+        QObject source;
+        bool threw = false;
+        try {
+            imagedrag::run(std::make_unique<Tracked>(&freed), pixmapPreview(), &source, [](QDrag&) -> Qt::DropAction {
+                throw 7;
+            });
+        } catch (int) {
+            threw = true;
+        }
+        QVERIFY(threw);
+        QCOMPARE(freed, 1);
+        int freedNext = 0;
+        QVERIFY(imagedrag::run(std::make_unique<Tracked>(&freedNext), {}, &source).has_value());
+        QCOMPARE(freedNext, 1);
+    }
+
     void dragDistanceIsAtLeastOnePixel() {
         const auto distance = imagedrag::dragDistance();
         QVERIFY(distance.width() >= 1);
@@ -191,6 +322,36 @@ private slots:
     }
 
 private:
+    // Mime data that counts how often it is freed.
+    class Tracked : public QMimeData {
+    public:
+        explicit Tracked(int* freed) : freed(freed) { setText(QStringLiteral("tracked")); }
+        ~Tracked() override { ++*freed; }
+
+    private:
+        int* freed;
+    };
+
+    // Spins an event loop for the length of the "drag", with `during` running
+    // inside it, as the system's loop would be running.
+    static std::function<Qt::DropAction(QDrag&)> loop(std::function<void(QDrag&)> during) {
+        return [during = std::move(during)](QDrag& drag) {
+            QEventLoop nested;
+            QTimer::singleShot(30, &nested, [&] {
+                during(drag);
+                nested.quit();
+            });
+            nested.exec();
+            return Qt::IgnoreAction;
+        };
+    }
+    imagedrag::Preview pixmapPreview() {
+        imagedrag::Preview look;
+        look.pixmap = QPixmap::fromImage(sample());
+        look.hotSpot = QPoint(5, 5);
+        return look;
+    }
+
     QString save(const QImage& image, const QString& name) {
         const auto path = dir.filePath(name);
         [&] { QVERIFY(image.save(path)); }();

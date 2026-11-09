@@ -78,7 +78,8 @@ Preview preview(const QMimeData& data, const QSizeF& logical, qreal dpr) {
     return result;
 }
 
-std::optional<Qt::DropAction> run(std::unique_ptr<QMimeData> data, const Preview& preview, QObject* source) {
+std::optional<Qt::DropAction> run(std::unique_ptr<QMimeData> data, const Preview& preview, QObject* source,
+    const std::function<Qt::DropAction(QDrag&)>& exec) {
     // One drag at a time: the drag runs its own event loop, so a second press
     // could otherwise start inside it.
     static bool running = false;
@@ -86,15 +87,30 @@ std::optional<Qt::DropAction> run(std::unique_ptr<QMimeData> data, const Preview
         return std::nullopt;
 
     running = true;
-    QDrag drag(source);
-    drag.setMimeData(data.release());
+    struct Reset {
+        ~Reset() { running = false; }
+    } reset;
+
+    // The drag is allocated on the heap under a parent of its own. Qt requires a
+    // parent (it is the drag's source), and `source` cannot be it: the drag runs a
+    // nested event loop, and a shell reload can destroy `source` inside that loop,
+    // which would delete the drag and its data under OLE. The owner is local to
+    // this call, so no engine, QML or deferred deletion can reach it. The drag,
+    // its mime data and its pixmap are freed here, after exec has returned.
+    QObject owner;
+    auto* drag = new QDrag(&owner);
+    drag->setMimeData(data.release());
     if (!preview.pixmap.isNull()) {
-        drag.setPixmap(preview.pixmap);
-        drag.setHotSpot(preview.hotSpot);
+        drag->setPixmap(preview.pixmap);
+        drag->setHotSpot(preview.hotSpot);
     }
-    const auto action = drag.exec(Qt::CopyAction, Qt::CopyAction);
-    running = false;
-    return action;
+
+    // When `source` goes away mid-drag, its reload is under way: end the drag
+    // rather than keep a modal loop running in a half-destroyed engine. Nothing
+    // below uses `source` again.
+    QObject::connect(source, &QObject::destroyed, drag, [] { QDrag::cancel(); });
+
+    return exec ? exec(*drag) : drag->exec(Qt::CopyAction, Qt::CopyAction);
 }
 
 QSize dragDistance() {
