@@ -12,6 +12,9 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
 Initialize-CaelestiaToolchainModules
+# Enter-CaelestiaToolchain later prepends tools\Scripts to PATH. Keep using the
+# original interpreter for verification and recording, not the venv's python.
+$Python = (Get-Command $Python -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $spec = Get-CaelestiaToolchain
 $ToolRoot = [IO.Path]::GetFullPath($ToolRoot)
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..')).TrimEnd('\')

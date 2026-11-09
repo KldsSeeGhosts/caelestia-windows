@@ -93,6 +93,44 @@ class PreparedPythonTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(first, result.stdout.strip())
 
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
+    def test_preparation_keeps_base_python_when_toolchain_changes_path(self):
+        environment = self.root / "real-tools"
+        subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(environment)],
+                       check=True, capture_output=True, timeout=30)
+        for name in ("cmake.exe", "ninja.exe"):
+            (environment / "Scripts" / name).write_bytes(b"synthetic tool, never executed")
+        prepare = (ROOT / "windows/scripts/Prepare-Toolchain.ps1").read_text()
+        resolution = [line for line in prepare.splitlines()
+                      if line.startswith("$Python = (Get-Command $Python -CommandType Application")]
+        self.assertEqual(1, len(resolution))
+        harness = self.root / "shadow-python.ps1"
+        harness.write_text(
+            "param($BaseBin, $Environment, $Verifier)\n"
+            "$ErrorActionPreference = 'Stop'\n"
+            "$Python = 'python'\n"
+            "$env:PATH = \"$BaseBin;$env:PATH\"\n"
+            + resolution[0] + "\n"
+            # This is the actual PATH change made by Enter-CaelestiaToolchain.
+            "$env:PATH = \"$Environment\\Scripts;$env:PATH\"\n"
+            "if ((Get-Command python -CommandType Application | Select-Object -First 1).Source -eq $Python) {\n"
+            " throw 'Fixture did not shadow the base Python'\n}\n"
+            "& $Python -I -B $Verifier record --environment $Environment\n"
+            "if ($LASTEXITCODE -ne 0) { throw 'record failed' }\n"
+            "$basePython = Join-Path $BaseBin 'python.exe'\n"
+            "$state = & $basePython -I -B $Verifier verify --environment $Environment\n"
+            "if ($LASTEXITCODE -ne 0 -or $state -ne 'hit') { throw 'base Python refused the recorded cache' }\n")
+        command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+                   "-BaseBin", str(Path(sys.executable).parent), "-Environment", str(environment),
+                   "-Verifier", str(SCRIPT)]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        # Reproduce the original bug with the same real venv and PATH change.
+        harness.write_text(harness.read_text().replace(resolution[0], "# unpinned interpreter"))
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("base Python refused the recorded cache", result.stderr)
+
     def test_missing_required_tools_cannot_be_recorded(self):
         (self.environment / "Scripts/cmake.exe").unlink()
         with self.assertRaises(ValueError):
