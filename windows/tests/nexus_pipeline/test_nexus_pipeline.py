@@ -956,8 +956,8 @@ class Pipeline(unittest.TestCase):
         self.assertIn("New-NexusCandidate.ps1", candidate)
         self.assertNotIn("actions/cache/save@", candidate)
         saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", text)
-        self.assertEqual(4, text.count("actions/cache/save@"))
-        self.assertEqual(4, len(saves))
+        self.assertEqual(5, text.count("actions/cache/save@"))
+        self.assertEqual(5, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)

@@ -4,7 +4,10 @@ param(
     [Parameter(Mandatory)][string]$ToolRoot,
     [string]$Python = 'python',
     # Explicit provisioning only. Builds/checks never install or update Rust.
-    [switch]$InstallRust
+    [switch]$InstallRust,
+    # Exact-key, trusted-main cache only. Verify all files with the uncached
+    # setup-python interpreter before executing anything in the restored venv.
+    [switch]$ReusePreparedPython
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
@@ -53,23 +56,44 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($pythonVersion -join '') -ne "$($spec.pythonVersion)-64") {
         throw "Tool provisioning requires Python $($spec.pythonVersion) x64. Supply -Python <python.exe>."
     }
-    $clock = [Diagnostics.Stopwatch]::StartNew()
-    & $Python -m venv (Join-Path $ToolRoot 'tools')
-    Save-ToolchainTiming 'venv' $clock $LASTEXITCODE
-    if ($LASTEXITCODE -ne 0) { throw 'Python tool environment creation failed.' }
-    $venvPython = Join-Path $ToolRoot 'tools\Scripts\python.exe'
-    foreach ($lock in @('python-bootstrap.lock.txt', 'python-tools.lock.txt')) {
+    $env:PYTHONDONTWRITEBYTECODE = '1'
+    $environment = Join-Path $ToolRoot 'tools'
+    $preparedVerifier = Join-Path $PSScriptRoot '..\toolchain\prepared_python.py'
+    $prepared = $false
+    if ($ReusePreparedPython) {
         $clock = [Diagnostics.Stopwatch]::StartNew()
-        & $venvPython -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes `
-            -r (Join-Path $PSScriptRoot "..\toolchain\$lock")
-        Save-ToolchainTiming "pip-$lock" $clock $LASTEXITCODE
-        if ($LASTEXITCODE -ne 0) { throw "Hash-locked Python provisioning failed ($lock). Use Python 3.12 x64 and the committed public inputs." }
+        $state = & $Python -I -B $preparedVerifier verify --environment $environment
+        Save-ToolchainTiming 'verify-python-environment' $clock $LASTEXITCODE
+        if ($LASTEXITCODE -ne 0 -or $state -notin @('hit', 'miss')) { throw 'Prepared Python verification failed.' }
+        $prepared = $state -eq 'hit'
     }
+    $venvPython = Join-Path $ToolRoot 'tools\Scripts\python.exe'
+    # Keep archive verification even when the prepared environment is restored.
     $aqtArchive = Get-VerifiedToolchainArchive $spec.downloads.aqt
-    $clock = [Diagnostics.Stopwatch]::StartNew()
-    & $venvPython -m pip install --disable-pip-version-check --no-deps --no-build-isolation $aqtArchive
-    Save-ToolchainTiming 'pip-aqt' $clock $LASTEXITCODE
-    if ($LASTEXITCODE -ne 0) { throw 'Verified aqt installation failed.' }
+    if (-not $prepared) {
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        & $Python -m venv $environment
+        Save-ToolchainTiming 'venv' $clock $LASTEXITCODE
+        if ($LASTEXITCODE -ne 0) { throw 'Python tool environment creation failed.' }
+        foreach ($lock in @('python-bootstrap.lock.txt', 'python-tools.lock.txt')) {
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            & $venvPython -m pip install --disable-pip-version-check --only-binary=:all: --require-hashes `
+                -r (Join-Path $PSScriptRoot "..\toolchain\$lock")
+            Save-ToolchainTiming "pip-$lock" $clock $LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { throw "Hash-locked Python provisioning failed ($lock). Use Python 3.12 x64 and the committed public inputs." }
+        }
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        & $venvPython -m pip install --disable-pip-version-check --no-deps --no-build-isolation $aqtArchive
+        Save-ToolchainTiming 'pip-aqt' $clock $LASTEXITCODE
+        if ($LASTEXITCODE -ne 0) { throw 'Verified aqt installation failed.' }
+    } else {
+        Write-Host 'Verified every prepared Python environment file and pinned input.'
+        Save-ToolchainTiming 'venv' ([Diagnostics.Stopwatch]::new()) $null 'skipped'
+        foreach ($lock in @('python-bootstrap.lock.txt', 'python-tools.lock.txt')) {
+            Save-ToolchainTiming "pip-$lock" ([Diagnostics.Stopwatch]::new()) $null 'skipped'
+        }
+        Save-ToolchainTiming 'pip-aqt' ([Diagnostics.Stopwatch]::new()) $null 'skipped'
+    }
 
     $qtPrefix = Join-Path $ToolRoot $spec.qtDirectory
     $qtDownloads = Join-Path $downloads 'qt'
@@ -152,6 +176,12 @@ try {
         $assertionOutcome = 'success'
     } finally {
         Save-ToolchainTiming 'final-assertions' $clock $null $assertionOutcome
+    }
+    if ($ReusePreparedPython -and -not $prepared) {
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        & $Python -I -B $preparedVerifier record --environment $environment
+        Save-ToolchainTiming 'record-python-environment' $clock $LASTEXITCODE
+        if ($LASTEXITCODE -ne 0) { throw 'Prepared Python inventory creation failed.' }
     }
     Write-Host 'Supported toolchain prepared and asserted. toolchain.json contains only public version/hash fields.'
 } finally {

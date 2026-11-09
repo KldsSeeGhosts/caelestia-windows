@@ -152,10 +152,19 @@ minimum runtime or substitute for clean-VM acceptance.
 The versioned exact-match cache contains Qt, LLVM/CLI11 archives and extracted
 trees, and pip's download cache. Warm runs avoid extracting LLVM and CLI11
 again. Archive checksums still run after restore, and required tool files and
-versions are checked before use. Python tooling is installed fresh. The cache
-identity includes the specification and Python locks, not a floating channel. Only
-trusted pushes to `main` save this cache; pull requests and manual candidate
-dispatches may restore it but cannot save it. There are
+versions are checked before use. A separate exact-key cache contains the prepared
+Python venv, including pip, bootstrap packages, locked tools and verified aqt.
+Its key includes the full setup-python patch version and runtime fingerprint,
+specification, both locks, preparation recipe and verifier. A rebuilt interpreter
+with the same version selects a new key. Only a trusted main push saves it. Before any
+cached program runs, the uncached setup-python interpreter verifies the pinned
+input digest, interpreter identity, original installation paths and every file
+hash, including metadata and bytecode. Missing environments use the normal
+hash-locked installation. Incomplete or changed environments fail preparation.
+Archive verification, Rust provisioning and actual-toolchain assertions still
+run after a cache hit. This cache uses the same trusted-writer boundary as the
+extracted tool cache; its inventory is not a signature. Pull requests and manual
+candidate dispatches may restore either cache but cannot save them. There are
 no CMake build, Cargo target, staged-shell or installed-product caches.
 Change the cache schema key when the
 tooling selection or extraction contract changes.
@@ -254,8 +263,9 @@ the integration stage journal and the Services/Shell per-fixture summaries,
 even on failure. Integration also prints each completed stage's wall time,
 outcome and exit code in the job log. These files contain no
 commands or machine paths and never enter pair receipts, envelopes or Nexus
-inputs. Tool caches and writer restrictions are unchanged; prepared Python
-environments are still created fresh.
+inputs. Prepared Python verification and inventory creation have separate phase
+timings. Cache hits record the avoided venv and pip phases as skipped, not as
+new verification or test passes.
 The pair recorder retains bounded diagnostic categories in the public receipt.
 On isolated hosted fixtures the workflow explicitly enables its `--echo` mode,
 so producer, preparation, compile and test failures remain visible in the job
