@@ -8,11 +8,34 @@ param(
     [string]$Python = 'python',
     [string]$OutputRoot,
     [ValidateRange(1, 4)][int]$QmlJobs = 1,
-    [ValidateSet('1/2', '2/2')][string]$Shard,
+    [ValidateSet('1/2', '2/2', '1/3', '2/3', '3/3')][string]$Shard,
     [switch]$ListTests
 )
 
 $ErrorActionPreference = 'Stop'
+# One inventory for both the unsharded Unit suite and hosted shards. Hosted
+# run 42705595080 measured Test-CIAcceleration at 127s, Test-PairContract and
+# toolchain-modules at 91s and 34s, and all remaining checks together at about
+# 139s. Keep this order for unsharded runs.
+$unitTests = @(
+    @{ name = 'Test-PublicDocs'; shard = 3; kind = 'script' }
+    @{ name = 'Test-Toolchain'; shard = 3; kind = 'script' }
+    @{ name = 'Test-Versioning'; shard = 3; kind = 'script' }
+    @{ name = 'Test-PairContract'; shard = 2; kind = 'script' }
+    @{ name = 'Test-NexusPipeline'; shard = 3; kind = 'script'; extra = @('-Python', $Python) }
+    @{ name = 'Test-CaptureIntegration'; shard = 3; kind = 'script' }
+    @{ name = 'llvm-extraction'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/LlvmExtract.test.py'); outputDirectory = 'llvm-extraction' }
+    @{ name = 'toolchain-modules'; shard = 2; kind = 'python'; arguments = @('-B', 'windows/tests/ToolchainModules.test.py'); outputDirectory = 'toolchain-modules' }
+    @{ name = 'Test-CIChanges'; shard = 3; kind = 'script' }
+    @{ name = 'Test-CIAcceleration'; shard = 1; kind = 'script' }
+    @{ name = 'Test-SchemeProbeGuard'; shard = 3; kind = 'script' }
+    @{ name = 'Test-KsgSettingsImport'; shard = 3; kind = 'script' }
+    @{ name = 'Test-ShellLifecycle'; shard = 3; kind = 'script' }
+    @{ name = 'Test-ValidationCounts'; shard = 3; kind = 'script' }
+    @{ name = 'Test-RepositoryPolicy'; shard = 3; kind = 'script' }
+    @{ name = 'javascript'; shard = 3; kind = 'node'; testCountPattern = '(?m)^# tests ([0-9]+)\s*$' }
+    @{ name = 'quota-providers'; shard = 3; kind = 'python'; arguments = @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
+)
 # One inventory for both the unsharded suite and hosted shards. Warm hosted
 # 42421527915/2 measured VersionedInstall at 139.45s and the remainder at
 # 145.90s. Colour regressions run only beside shard 1 in the workflow.
@@ -26,15 +49,29 @@ $packagingTests = @(
     @{ name = 'Test-UninstallTransaction'; shard = 2; outputParameter = '-OutputRoot'; directory = 'uninstall-transactions' }
     @{ name = 'Test-CaptureRelease'; shard = 2; outputParameter = '-OutputRoot'; directory = 'capture-release' }
 )
-if (($Shard -or $ListTests) -and $Suite -ne 'Packaging') { throw 'Shard and ListTests apply only to Packaging.' }
+if (($Shard -or $ListTests) -and $Suite -notin @('Unit', 'Packaging')) {
+    throw 'Shard and ListTests apply only to Unit and Packaging.'
+}
+if ($Shard) {
+    $expectedDenominator = if ($Suite -eq 'Unit') { 3 } else { 2 }
+    if ([int]$Shard.Split('/')[1] -ne $expectedDenominator) {
+        throw "Shard $Shard does not match the $Suite suite."
+    }
+}
 if ($QmlJobs -ne 1 -and $Suite -ne 'Shell') { throw 'QmlJobs applies only to Shell.' }
+if (@($unitTests | Where-Object { $_.shard -isnot [int] -or $_.shard -notin @(1, 2, 3) }).Count -or
+    @($unitTests.name | Select-Object -Unique).Count -ne $unitTests.Count) {
+    throw 'Every unit test requires exactly one valid shard assignment and a unique name.'
+}
 if (@($packagingTests | Where-Object { $_.shard -notin @(1, 2) }).Count -or
     @($packagingTests.name | Select-Object -Unique).Count -ne $packagingTests.Count) {
     throw 'Every packaging test requires exactly one valid shard assignment and a unique name.'
 }
+$selectedUnitTests = @($unitTests | Where-Object { -not $Shard -or $_.shard -eq [int]$Shard.Split('/')[0] })
 $selectedPackagingTests = @($packagingTests | Where-Object { -not $Shard -or $_.shard -eq [int]$Shard.Split('/')[0] })
 if ($ListTests) {
-    ConvertTo-Json -InputObject @($selectedPackagingTests.name)
+    $selectedTests = if ($Suite -eq 'Unit') { $selectedUnitTests } else { $selectedPackagingTests }
+    ConvertTo-Json -InputObject @($selectedTests.name)
     return
 }
 $repoRoot = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
@@ -87,6 +124,30 @@ function Invoke-ValidationStep([string]$Name, [string]$Executable, [string[]]$Co
 
 function Invoke-ScriptCheck([string]$Name, [string[]]$Extra = @()) {
     Invoke-ValidationStep $Name $powershell (@('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot "$Name.ps1")) + $Extra)
+}
+
+function Invoke-UnitValidation([hashtable]$Test) {
+    switch ($Test.kind) {
+        'script' {
+            $extra = @()
+            if ($Test.extra) { $extra = @($Test.extra) }
+            Invoke-ScriptCheck $Test.name $extra
+        }
+        'python' {
+            $arguments = @($Test.arguments)
+            if ($Test.outputDirectory) {
+                $arguments += @('--output-root', (Join-Path $OutputRoot $Test.outputDirectory))
+            }
+            Invoke-ValidationStep $Test.name $Python $arguments $Test.testCountPattern
+        }
+        'node' {
+            $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+            $javascript = @(Get-ChildItem -LiteralPath "$repoRoot\windows\tests" -Filter '*.test.js' -File | Sort-Object Name | ForEach-Object FullName)
+            if (-not $javascript.Count) { throw 'No JavaScript regressions were discovered.' }
+            Invoke-ValidationStep $Test.name $node (@('--test', '--test-reporter=tap') + $javascript) $Test.testCountPattern
+        }
+        default { throw "Unknown Unit check kind for $($Test.name)." }
+    }
 }
 
 function ConvertTo-ValidationArgument([string]$Value) {
@@ -180,24 +241,7 @@ try {
         if (@($map.PSObject.Properties.Name | Where-Object { $_ -match '(^|/)(tests?|fixtures|validation)/|Test\.qml$' }).Count) {
             throw 'Production staging must not include test fixtures.'
         }
-        Invoke-ScriptCheck 'Test-PublicDocs'
-        Invoke-ScriptCheck 'Test-Toolchain'
-        Invoke-ScriptCheck 'Test-Versioning'
-        Invoke-ScriptCheck 'Test-PairContract'
-        Invoke-ScriptCheck 'Test-NexusPipeline' @('-Python', $Python)
-        Invoke-ScriptCheck 'Test-CaptureIntegration'
-        Invoke-ValidationStep 'llvm-extraction' $Python @('-I', '-B', 'windows/tests/LlvmExtract.test.py',
-            '--output-root', (Join-Path $OutputRoot 'llvm-extraction'))
-        Invoke-ValidationStep 'toolchain-modules' $Python @('-B', 'windows/tests/ToolchainModules.test.py',
-            '--output-root', (Join-Path $OutputRoot 'toolchain-modules'))
-        foreach ($name in @('Test-CIChanges', 'Test-CIAcceleration', 'Test-SchemeProbeGuard', 'Test-KsgSettingsImport', 'Test-ShellLifecycle', 'Test-ValidationCounts', 'Test-RepositoryPolicy')) {
-            Invoke-ScriptCheck $name
-        }
-        $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-        $javascript = @(Get-ChildItem -LiteralPath "$repoRoot\windows\tests" -Filter '*.test.js' -File | Sort-Object Name | ForEach-Object FullName)
-        if (-not $javascript.Count) { throw 'No JavaScript regressions were discovered.' }
-        Invoke-ValidationStep 'javascript' $node (@('--test', '--test-reporter=tap') + $javascript) '(?m)^# tests ([0-9]+)\s*$'
-        Invoke-ValidationStep 'quota-providers' $Python @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v') '(?m)^Ran ([0-9]+) tests?\b'
+        foreach ($test in $selectedUnitTests) { Invoke-UnitValidation $test }
     } elseif ($Suite -eq 'Packaging') {
         foreach ($test in $selectedPackagingTests) {
             $extra = @()

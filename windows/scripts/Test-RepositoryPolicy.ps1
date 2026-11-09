@@ -35,7 +35,7 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
     $issueTracker = 'https://github.com/KldsSeeGhosts/caelestia-windows/issues'
     $expectedJobs = @(
         'Change scope',
-        'Fast regressions',
+        'Fast regressions (${{ matrix.shard }}/3)',
         'Installer and colour regressions (${{ matrix.shard }}/2)',
         'Verified native reuse and offscreen regressions',
         'Backend fixtures and portable tier',
