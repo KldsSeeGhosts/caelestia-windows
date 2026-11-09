@@ -248,8 +248,11 @@ specification/lock digest and actual versions. Raw `build.json`, environment
 reports and build logs contain deployment paths and are not artifact inputs.
 Separate seven-day tooling diagnostics contain fixed directory labels, byte/file
 counts before and after preparation, and phase durations for venv, each pip
-install, aqt, Rust and final assertions. Production retains each native CMake
-configure/build/install duration beside capture timing. These files contain no
+install, aqt, Rust and final assertions. The seven-day production timing artifact
+retains each native CMake configure/build/install duration beside capture timing,
+the integration stage journal and the Services/Shell per-fixture summaries,
+even on failure. Integration also prints each completed stage's wall time,
+outcome and exit code in the job log. These files contain no
 commands or machine paths and never enter pair receipts, envelopes or Nexus
 inputs. Tool caches and writer restrictions are unchanged; prepared Python
 environments are still created fresh.

@@ -673,12 +673,16 @@ jobs:
             -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
-      - name: Production native command timings
+      - name: Production and offscreen fixture timings
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: production-timings-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/b-public/logs/*-timing.json
+          path: |
+            C:/b-public/logs/*-timing.json
+            C:/ci-pair/integration-stages.json
+            C:/ci-pair/Services/summary.json
+            C:/ci-pair/Shell/summary.json
           retention-days: 7
           if-no-files-found: ignore
       - name: Record production Rust cache statistics and stop server

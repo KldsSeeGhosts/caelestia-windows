@@ -351,6 +351,7 @@ class PairTests(unittest.TestCase):
                 self.assertEqual(1, result.returncode, result.stderr.decode(errors="replace"))
                 self.assertEqual(enabled, marker in output)
                 self.assertIn("stage=services exit=7", output)
+                self.assertRegex(output, r"Integration timing: services outcome=failure exit=7 seconds=[0-9]+\.[0-9]{6}")
                 self.assertIn("services.private.log", output)
                 self.assertNotIn("EARLIER_PRIVATE_DETAIL", output)
                 self.assertLess(len(output), 18000)
@@ -360,6 +361,20 @@ class PairTests(unittest.TestCase):
                 self.assertEqual(7, journal[0]["exitCode"])
                 self.assertTrue(all(row["outcome"] == "not_run" for row in journal[1:]))
                 self.assertNotIn(marker, (results / "integration.xml").read_text())
+
+    def test_production_timing_artifact_excludes_private_output(self):
+        workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
+        timing_step = workflow.split("      - name: Production and offscreen fixture timings\n", 1)[1].split(
+            "      - name:", 1)[0]
+        self.assertIn("if: always()", timing_step)
+        paths = timing_step.split("          path: |\n", 1)[1].split("          retention-days:", 1)[0]
+        self.assertEqual([
+            "C:/b-public/logs/*-timing.json",
+            "C:/ci-pair/integration-stages.json",
+            "C:/ci-pair/Services/summary.json",
+            "C:/ci-pair/Shell/summary.json",
+        ], [line.strip() for line in paths.splitlines()])
+        self.assertIn("retention-days: 7", timing_step)
 
     def integration_command(self, results, *extra, build=None):
         return ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",

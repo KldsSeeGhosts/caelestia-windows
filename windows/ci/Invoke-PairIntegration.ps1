@@ -176,6 +176,10 @@ function Invoke-Gate([int]$Index, [string]$Executable, [string[]]$CommandArgumen
         $item.durationSeconds = [Math]::Round($clock.Elapsed.TotalSeconds, 6)
         $item.outcome = if ($code -eq 0) { 'success' } else { 'failure' }
         Save-Journal
+        # Fixed stage labels and numeric state only, never the private output.
+        Write-Output ("Integration timing: {0} outcome={1} exit={2} seconds={3}" -f
+            $item.name, $item.outcome, $item.exitCode,
+            $item.durationSeconds.ToString('F6', [Globalization.CultureInfo]::InvariantCulture))
     }
     if ($code -ne 0) {
         Write-FailureTail $item.name $log
