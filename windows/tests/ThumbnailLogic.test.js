@@ -206,3 +206,40 @@ test("the pill fits the smallest card", () => {
     assert.ok(pill.x >= 0 && pill.x + pill.width <= size.width);
     assert.ok(pill.y >= 0 && pill.y + pill.height <= size.height);
 });
+
+test("a press becomes a drag once it moves the system distance on either axis", () => {
+    const distance = { width: 4, height: 4 };
+    const origin = { x: 100, y: 80 };
+    assert.equal(logic.dragStarts(origin, { x: 100, y: 80 }, distance, 1), false, "a click that does not move");
+    assert.equal(logic.dragStarts(origin, { x: 103, y: 82 }, distance, 1), false, "3 px across, 2 px down is below 4");
+    assert.equal(logic.dragStarts(origin, { x: 104, y: 80 }, distance, 1), true, "4 px across");
+    assert.equal(logic.dragStarts(origin, { x: 96, y: 80 }, distance, 1), true, "4 px to the left");
+    assert.equal(logic.dragStarts(origin, { x: 100, y: 84 }, distance, 1), true, "4 px down");
+    assert.equal(logic.dragStarts(origin, { x: 100, y: 76 }, distance, 1), true, "4 px up");
+});
+
+test("the drag distance is in device pixels, so a high scale starts the drag sooner", () => {
+    const distance = { width: 4, height: 4 };
+    const origin = { x: 0, y: 0 };
+    // 2 logical px are 3 device px at 150% and 4 at 200%.
+    assert.equal(logic.dragStarts(origin, { x: 2, y: 0 }, distance, 1.5), false);
+    assert.equal(logic.dragStarts(origin, { x: 2, y: 0 }, distance, 2), true);
+    assert.equal(logic.dragStarts(origin, { x: 2.67, y: 0 }, distance, 1.5), true);
+});
+
+test("the two axes keep their own distances", () => {
+    const distance = { width: 8, height: 2 };
+    const origin = { x: 0, y: 0 };
+    assert.equal(logic.dragStarts(origin, { x: 7, y: 1 }, distance, 1), false);
+    assert.equal(logic.dragStarts(origin, { x: 0, y: 2 }, distance, 1), true);
+    assert.equal(logic.dragStarts(origin, { x: 8, y: 0 }, distance, 1), true);
+});
+
+test("a missing press, point, distance or scale never starts a drag from nothing", () => {
+    assert.equal(logic.dragStarts(null, { x: 50, y: 50 }, { width: 4, height: 4 }, 1), false);
+    assert.equal(logic.dragStarts({ x: 0, y: 0 }, undefined, { width: 4, height: 4 }, 1), false);
+    // No distance means one device pixel on each axis, and a bad scale means 1.
+    assert.equal(logic.dragStarts({ x: 0, y: 0 }, { x: 0, y: 0 }, undefined, 0), false);
+    assert.equal(logic.dragStarts({ x: 0, y: 0 }, { x: 1, y: 0 }, undefined, 0), true);
+    assert.equal(logic.dragStarts({ x: 0, y: 0 }, { x: 0.5, y: 0 }, { width: 0, height: NaN }, -1), false);
+});

@@ -28,11 +28,14 @@ servers rather than real provider accounts.
   file-URL round trips and preview/copy boundaries with synthetic files.
 - `-Suite Scheme`: the real pinned colour generator's worker protocol,
   image downscaling, caching and wallpaper-input handling.
-- `Build-Prototype.ps1 -PluginTests` plus CTest: nine native plugin fixtures
+- `Build-Prototype.ps1 -PluginTests` plus CTest: ten native plugin fixtures
   for settings-layer migration, log-redaction policy, clipboard logic and QML
   transport, display-power messages, focus-follows-mouse policy, known
-  folders, focus guarding and WASAPI format/downmix decisions. OS mutation
-  boundaries are injected or consumed by recording test windows.
+  folders, focus guarding, WASAPI format/downmix decisions and the screenshot
+  thumbnail's drag data and picture. OS mutation boundaries are injected or
+  consumed by recording test windows. The thumbnail drag also has an opt-in
+  data-object test (`-DCAELESTIA_WINDOWS_DESKTOP_TESTS=ON`, not in CTest, replaces
+  the clipboard) that reads the formats a drop target receives back through OLE.
 
 Fixture assertion floors and error detection are retained. One background
 expectation now distinguishes the engine preview used for colour generation

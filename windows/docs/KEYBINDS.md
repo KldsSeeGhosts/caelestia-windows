@@ -184,7 +184,10 @@ Each monitor stacks its own upward with the newest at the bottom, and a sixth
 removes the oldest one wherever it is. Hovering shows buttons for Copy, Save (only for a capture that was
 copied and not saved), Show in folder and Close, and pauses the timeout. Clicking
 the card opens the image with the default application, because reopening it in
-the editor is not built yet. Dragging the file out of the card is not supported yet.
+the editor is not built yet. Press the card and move to drag the image into another app.
+A saved capture drags its saved file. A copied capture drags a temporary copy with a normal
+screenshot name, removed once its card has closed and 5 minutes have passed since the last drag. Dragging never saves to
+the screenshots folder.
 Two keys in `shell.json` control it:
 
 ```json

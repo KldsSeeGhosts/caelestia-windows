@@ -36,6 +36,22 @@ import "../../utils/FileUrls.js" as FileUrls
 // is tried again on a timer and at the next capture. A shell reload drops that
 // list, and a crash can leave one caelestia-clipboard-*.png behind, as it can
 // for the picker.
+//
+// Drag files. A saved capture is dragged from its saved file. A copy-only capture
+// is dragged from a file of its own, made on its first drag in a directory of its
+// own, <temp>\caelestia-drag-<uuid>\<screenshot name>.png (CUtils.newDragFile),
+// so the target sees a normal name. It is a copy of the preview file; the card and
+// the screenshots folder are untouched. The drag outlives the call: a target may
+// record the path at drop and open the file later. So the file stays until both
+// hold: its card has closed, and `dragGraceMs` (5 minutes) have passed since its
+// last drag ended. This scope keeps the exact paths it made in memory and removes
+// a due file with CUtils.removeDragFile, on a timer and at every new capture.
+// A clean shutdown or reload removes what is left (Component.onDestruction and
+// the application's aboutToQuit). A crash can leave a caelestia-drag-<uuid>
+// directory with one file in it, as it can leave a hand-over file. So can a
+// teardown while a target still holds the file open: teardown cannot block, and
+// the retry list dies with this scope. That is an accepted gap, and there is no
+// bulk cleanup of unknown caelestia-drag-* directories.
 Scope {
     id: root
 
@@ -50,6 +66,15 @@ Scope {
     // Opens a file or folder URL with the default application. Fixtures replace
     // it with a recorder so that no test starts a program.
     property var openUrl: url => Qt.openUrlExternally(url)
+    // Runs the system drag of an image file, offering the file and the image for
+    // copy only, and returns once the drag has ended. It gets the file's path and
+    // the Item that draws the image, for the drag picture. It returns false when
+    // no drag could start. Fixtures replace it with a recorder so that no test
+    // starts a real drag.
+    property var startDrag: (path, item) => CUtils.startImageDrag(path, item)
+    // How far, in device pixels, a press has to move before it becomes a drag:
+    // { width, height }. Fixtures replace it.
+    property var dragDistance: () => CUtils.dragDistance()
     property var entries: []
     property int lastId
     // Preview files that could not be deleted yet (a viewer holds them open).
@@ -59,6 +84,16 @@ Scope {
     // How many paths were dropped from a full list.
     property int droppedCount
     property int retryInterval: 30000
+    // The files made for dragging copy-only captures, newest last. Each is
+    // { path, closed, endedAt }: its exact path, whether its card has closed, and
+    // when its last drag ended (clock() milliseconds). Not saved anywhere.
+    property var dragFiles: []
+    // How long a drag file outlives its card and its last drag.
+    property int dragGraceMs: 300000
+    // How often due drag files are looked for while some card has closed.
+    property int dragSweepInterval: 30000
+    // The time source for the grace period. Fixtures replace it.
+    property var clock: () => Date.now()
 
     readonly property var settings: Logic.settings(GlobalConfig.windows?.capture)
     readonly property bool enabled: settings.enabled
@@ -75,6 +110,7 @@ Scope {
     // Both functions return whether a preview was added.
     function addSaved(info: var, path: string): bool {
         retryTemps();
+        sweepDragFiles();
         return add(info, path, "", true);
     }
 
@@ -82,6 +118,7 @@ Scope {
     // after the clipboard call. The preview keeps its own copy.
     function addCopy(info: var, source: string): bool {
         retryTemps();
+        sweepDragFiles();
         if (!canAdd(info))
             return false;
         const temp = CUtils.newCaptureTempPath().split("\\").join("/");
@@ -106,8 +143,12 @@ Scope {
             return false;
         // At most five previews exist in total, as in the classic tool. The oldest
         // goes first, on whichever screen it is. Each screen still lays out its
-        // own previews.
-        const doomed = Logic.evictions(entries.map(entry => entry.screen), Logic.MAX_PREVIEWS).map(index => entries[index]);
+        // own previews. A preview that is being dragged is not pushed out under
+        // the drag: the oldest one that is not goes instead, and the dragged
+        // preview counts toward the limit.
+        const idle = entries.filter(entry => !entry.dragging);
+        const busy = entries.length - idle.length;
+        const doomed = Logic.evictions(idle.map(entry => entry.screen), Logic.MAX_PREVIEWS - busy).map(index => idle[index]);
         const entry = entryComponent.createObject(root, {
             serial: ++lastId,
             screen: info.screen,
@@ -127,8 +168,14 @@ Scope {
         return true;
     }
 
-    // Starts the exit animation. The card calls finish() when it is done.
+    // Starts the exit animation. The card calls finish() when it is done. A
+    // preview that is being dragged stays as it is, because the target may still
+    // be reading its file, and closes as soon as the drag has ended.
     function close(entry: var): void {
+        if (entry.dragging) {
+            entry.closeAfterDrag = true;
+            return;
+        }
         entry.closing = true;
     }
 
@@ -137,17 +184,87 @@ Scope {
             close(entry);
     }
 
-    // Removes a preview and its temporary file at once.
+    // Removes a preview and its temporary file at once. A preview that is being
+    // dragged is removed when the drag ends (see drag()).
     function finish(entry: var): void {
         if (!entries.includes(entry))
             return;
+        if (entry.dragging) {
+            entry.closeAfterDrag = true;
+            return;
+        }
         entries = entries.filter(other => other !== entry);
         discard(entry);
     }
 
     function discard(entry: var): void {
         release(entry);
+        // The card is gone. Its drag file, if it made one, now only waits out the
+        // grace period since its last drag.
+        const record = dragRecord(entry.dragFile);
+        if (record) {
+            record.closed = true;
+            dragFiles = dragFiles.slice();
+            sweepDragFiles();
+        }
         entry.destroy();
+    }
+
+    function dragRecord(path: string): var {
+        return path ? dragFiles.find(record => record.path === path) ?? null : null;
+    }
+
+    // Removes one drag file and its directory. True when the directory is gone.
+    // The plugin refuses everything that is not exactly such a file.
+    function removeDragFile(path: string): bool {
+        return CUtils.removeDragFile(path);
+    }
+
+    // Removes the drag files that are due: the card has closed and the last drag
+    // ended `dragGraceMs` ago or earlier. A file that cannot be removed yet (a
+    // target holds it open) stays and is tried again by the next sweep.
+    function sweepDragFiles(): void {
+        if (dragFiles.length === 0)
+            return;
+        const at = clock();
+        const left = dragFiles.filter(record => !(record.closed && at - record.endedAt >= dragGraceMs && removeDragFile(record.path)));
+        if (left.length !== dragFiles.length)
+            dragFiles = left;
+    }
+
+    // Removes every drag file at once, whatever its age. A shutdown does this.
+    function removeAllDragFiles(): void {
+        if (dragFiles.length === 0)
+            return;
+        dragFiles = dragFiles.filter(record => !removeDragFile(record.path));
+    }
+
+    // The file that a drag of this preview offers. A saved capture offers its
+    // saved file. A copy-only capture offers a file of its own, with a normal
+    // screenshot name, made on the first drag and offered again by later drags for
+    // as long as it exists. Returns "" when none can be made.
+    function dragSource(entry: var): string {
+        if (entry.saved)
+            return entry.path;
+        const known = dragRecord(entry.dragFile);
+        if (known && WindowsFiles.isFile(known.path))
+            return known.path;
+        if (known) {
+            // Someone deleted the file. Drop the record and its empty directory.
+            removeDragFile(known.path);
+            dragFiles = dragFiles.filter(record => record !== known);
+            entry.dragFile = "";
+        }
+        const path = CUtils.newDragFile(Capture.fileStem(new Date(), "") + ".png").split("\\").join("/");
+        if (!path)
+            return "";
+        if (!CUtils.copyFile(FileUrls.fromLocalPath(entry.path), FileUrls.fromLocalPath(path), true)) {
+            removeDragFile(path);
+            return "";
+        }
+        dragFiles = dragFiles.concat([{ path: path, closed: false, endedAt: clock() }]);
+        entry.dragFile = path;
+        return path;
     }
 
     // Deletes the entry's own preview file. Only an exact capture temp path is
@@ -253,6 +370,54 @@ Scope {
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be opened."), "screenshot_region", Toast.Error);
     }
 
+    // The card body was pulled past the drag distance: drags the image out of the
+    // shell. `item` is the Item that draws the image, for the drag picture. A
+    // saved capture drags its saved file. A copy-only capture drags a file of its
+    // own in the temp directory (see dragSource), made on its first drag, with a
+    // normal screenshot name; the preview file the card draws is not offered. A
+    // drag never saves a copy-only capture and writes nothing to the screenshots
+    // folder. Returns whether a drag ran. Dropping nowhere or cancelling with Esc
+    // is a drag that ran and changes nothing.
+    // While the drag runs the preview cannot close, be pushed out or lose its
+    // file. A close that arrives meanwhile happens when the drag has ended. After
+    // that the drag file is kept for `dragGraceMs` more, because a target can open
+    // the path after the drop (see the note at the top).
+    function drag(entry: var, item: Item): bool {
+        if (entry.dragging || !entries.includes(entry))
+            return false;
+        const file = WindowsFiles.isFile(entry.path) ? dragSource(entry) : "";
+        if (!file) {
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be dragged."), "screenshot_region", Toast.Error);
+            return false;
+        }
+        let ran = false;
+        entry.dragging = true;
+        try {
+            ran = startDrag(file, item) === true;
+        } finally {
+            // A shell reload destroys the preview while its drag runs.
+            if (entries.includes(entry))
+                entry.dragging = false;
+            const record = dragRecord(file);
+            if (record)
+                record.endedAt = clock();
+        }
+        if (!entries.includes(entry))
+            return ran;
+        if (!ran)
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be dragged."), "screenshot_region", Toast.Error);
+        if (entry.closeAfterDrag) {
+            entry.closeAfterDrag = false;
+            // A preview whose screen went away during the drag has no panel to
+            // run its exit.
+            if (Array.from(screenList).some(screen => screen.name === entry.screen))
+                close(entry);
+            else
+                finish(entry);
+        }
+        return ran;
+    }
+
     // Turning the thumbnail off closes the ones on screen.
     onEnabledChanged: {
         if (!enabled)
@@ -280,9 +445,31 @@ Scope {
         for (const entry of gone)
             release(entry);
         retryTemps();
+        // Nothing is dragged any more, so no drag file has to wait.
+        removeAllDragFiles();
+    }
+
+    // The application is quitting, which may not destroy this scope in order.
+    Connections {
+        target: Qt.application
+
+        function onAboutToQuit(): void {
+            root.removeAllDragFiles();
+        }
     }
 
     readonly property alias retrying: retryTimer.running
+    // Whether some drag file is waiting out its grace period.
+    readonly property alias sweeping: dragTimer.running
+
+    Timer {
+        id: dragTimer
+
+        interval: root.dragSweepInterval
+        repeat: true
+        running: root.dragFiles.some(record => record.closed)
+        onTriggered: root.sweepDragFiles()
+    }
 
     Timer {
         id: retryTimer
@@ -305,11 +492,18 @@ Scope {
             property string imagePath
             // The preview file made for a copy-only capture, or "".
             property string temp
+            // The file made for dragging this copy-only capture, or "". The
+            // owner's dragFiles list tracks it and outlives the entry.
+            property string dragFile
             property bool saved
             property int imageWidth
             property int imageHeight
             property real dpr: 1
             property bool closing
+            // The system drag of this preview's file is running.
+            property bool dragging
+            // A close came in while it ran.
+            property bool closeAfterDrag
         }
     }
 

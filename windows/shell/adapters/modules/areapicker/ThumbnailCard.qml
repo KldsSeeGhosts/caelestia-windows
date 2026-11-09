@@ -25,7 +25,7 @@ Item {
 
     required property var owner
     // A Thumbnails entry: path, imagePath, saved, closing, imageWidth,
-    // imageHeight, dpr.
+    // imageHeight, dpr. `dragging` is optional (false when missing).
     required property var entry
     // This card's rectangle in the panel, from ThumbnailLogic.stackRects().
     required property var slot
@@ -35,10 +35,25 @@ Item {
 
     // Fixtures set this because offscreen windows receive no pointer.
     property bool manualHover
-    readonly property bool hovered: hover.hovered || manualHover
-    readonly property bool paused: hovered || owner.suspended
+    // The drag modal loop takes the pointer events, so the hover handler can keep
+    // reporting "hovered" after a drag has ended somewhere else. After a drag the
+    // handler is ignored until it reports a change or a movement of its own.
+    property bool afterDrag
+    readonly property bool hovered: (hover.hovered && !afterDrag) || manualHover
+    // The owner sets this on the entry for as long as the system drag runs. The
+    // card then keeps its timeout still, as it does under the pointer.
+    readonly property bool dragging: entry.dragging === true
+    readonly property bool paused: hovered || dragging || owner.suspended
     // Milliseconds of timeout used so far. Only unpaused time counts.
     property real elapsed
+
+    // The press that may become a drag, in the card's coordinates. `armed` is
+    // true from the press on the card body until it ends or becomes a drag.
+    // `dragged` stays true after a drag until the next press, so the click that
+    // the end of a drag can leave behind does not open the image.
+    property point pressPoint
+    property bool armed
+    property bool dragged
 
     readonly property bool shown: present && !entry.closing
     // 0 to 1. `slide` moves the card in from the right with spatial motion and
@@ -58,6 +73,35 @@ Item {
             owner.reveal(entry);
         else if (name === "close")
             owner.close(entry);
+    }
+
+    // A press on the card body. The action buttons are above the body, so a
+    // press on one of them never gets here.
+    function bodyPressed(x: real, y: real): void {
+        dragged = false;
+        armed = true;
+        pressPoint = Qt.point(x, y);
+    }
+
+    // The pointer moved with the button down. Past the system drag distance the
+    // press becomes a drag of the image file. A press that never moves that far
+    // is a click, which the body handles on release as before.
+    function bodyMoved(x: real, y: real): void {
+        if (!armed || dragging)
+            return;
+        if (!Logic.dragStarts(pressPoint, { x: x, y: y }, owner.dragDistance(), dpr))
+            return;
+        armed = false;
+        dragged = true;
+        owner.drag(entry, image);
+        // The drag ate the button release, so the body still holds the pointer
+        // grab. Turning it off and on lets go of it.
+        body.enabled = false;
+        body.enabled = true;
+    }
+
+    function bodyReleased(): void {
+        armed = false;
     }
 
     function updateTarget(): void {
@@ -83,6 +127,11 @@ Item {
     opacity: fade
     transform: Translate {
         x: (1 - root.slide) * Logic.DRIFT
+    }
+
+    onDraggingChanged: {
+        if (!dragging)
+            afterDrag = true;
     }
 
     onShownChanged: updateTarget()
@@ -162,6 +211,9 @@ Item {
 
     HoverHandler {
         id: hover
+
+        onHoveredChanged: root.afterDrag = false
+        onPointChanged: root.afterDrag = false
     }
 
     // The rectangle this card occupies on screen, for the panel's input mask. It
@@ -220,13 +272,23 @@ Item {
         mipmap: true
     }
 
-    // The card body opens the image. Nothing here edits it: the editor does not
-    // exist yet.
+    // The card body opens the image, and pulling it past the system drag distance
+    // drags the image file out instead. Nothing here edits it: the editor does
+    // not exist yet.
     MouseArea {
+        id: body
+
         objectName: "captureThumbnailBody"
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.owner.open(root.entry)
+        onPressed: mouse => root.bodyPressed(mouse.x, mouse.y)
+        onPositionChanged: mouse => root.bodyMoved(mouse.x, mouse.y)
+        onReleased: root.bodyReleased()
+        onCanceled: root.bodyReleased()
+        onClicked: {
+            if (!root.dragged)
+                root.owner.open(root.entry);
+        }
     }
 
     StyledRect {

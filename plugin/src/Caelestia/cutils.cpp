@@ -13,26 +13,15 @@
 #include <qtconcurrentrun.h>
 #include <quuid.h>
 
-#ifdef Q_OS_WIN
-#include <qt_windows.h>
-#endif
-
+#include "dragfile.hpp"
+#include "imagedrag.hpp"
 #include "util/metaenum.hpp"
 
 namespace {
 
 Q_LOGGING_CATEGORY(lcCUtils, "caelestia.cutils", QtInfoMsg)
 
-// A junction, a symlink or any other reparse point. Anything that cannot be
-// inspected counts as one, so cleanup refuses rather than guesses.
-bool isReparsePoint(const QString& path) {
-#ifdef Q_OS_WIN
-    const auto attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()));
-    return attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
-#else
-    return QFileInfo(path).isSymLink();
-#endif
-}
+using caelestia::shell::dragfile::isReparsePoint;
 
 const QRegularExpression& captureTempName() {
     static const QRegularExpression name(QStringLiteral("^[0-9a-f]{32}\\.png\\z"));
@@ -198,6 +187,38 @@ bool CUtils::removeCaptureTemp(const QString& path) {
     }
 
     return QFile::remove(path);
+}
+
+QString CUtils::newDragFile(const QString& fileName) {
+    return dragfile::create(QDir::tempPath(), fileName);
+}
+
+bool CUtils::removeDragFile(const QString& path) {
+    return dragfile::remove(QDir::tempPath(), path);
+}
+
+bool CUtils::startImageDrag(const QString& path, QQuickItem* preview) {
+#ifdef Q_OS_WIN
+    auto data = imagedrag::mimeData(path);
+    if (!data) {
+        qCWarning(lcCUtils) << "startImageDrag: cannot offer" << path;
+        return false;
+    }
+
+    const auto scale = preview && preview->window() ? preview->window()->devicePixelRatio() : 1.0;
+    const auto look = imagedrag::preview(
+        *data, preview ? QSizeF(preview->width(), preview->height()) : QSizeF(), scale);
+    return imagedrag::run(std::move(data), look, this).has_value();
+#else
+    Q_UNUSED(path);
+    Q_UNUSED(preview);
+    qCWarning(lcCUtils) << "startImageDrag: only supported on Windows";
+    return false;
+#endif
+}
+
+QSize CUtils::dragDistance() {
+    return imagedrag::dragDistance();
 }
 
 QString CUtils::toLocalFile(const QUrl& url) {
