@@ -1087,7 +1087,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: nexus-stage-states-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/nexus-candidate/private/*.state.json
+          path: |
+            C:/nexus-candidate/private/*.state.json
+            C:/nexus-candidate/independent-payload/verification-timing.json
           retention-days: 3
           if-no-files-found: ignore
 
@@ -1137,3 +1139,11 @@ jobs:
           & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
             -Mode development -CandidateDirectory C:\nexus-input -WorkDirectory C:\nexus-publish
           if ($LASTEXITCODE -ne 0) { throw 'Nexus development publication refused.' }
+      - name: Sanitized publication verification timings
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-publication-timings-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-publish/payload-check/verification-timing.json
+          retention-days: 7
+          if-no-files-found: ignore

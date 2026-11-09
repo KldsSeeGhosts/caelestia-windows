@@ -6,10 +6,17 @@ function Assert-CaelestiaUpdatePath([string]$Path) {
         [IO.Path]::GetFullPath($Path).TrimEnd('\') -cne $Path.TrimEnd('\') -or
         $Path.TrimEnd('\') -eq [IO.Path]::GetPathRoot($Path).TrimEnd('\')) { throw 'Unsafe update path.' }
     foreach ($part in $Path.Substring(3).TrimEnd('\').Split('\')) { Assert-CaelestiaZipComponent $part }
-    for ($ancestor = $Path; $ancestor; $ancestor = Split-Path -Parent $ancestor) {
-        if ((Test-Path -LiteralPath $ancestor) -and
-            ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw 'Linked update path refused.'
+    for ($ancestor = $Path; $ancestor; $ancestor = [IO.Path]::GetDirectoryName($ancestor)) {
+        # Check every ancestor on every call. Native metadata reads avoid
+        # repeated PowerShell provider lookup for each extracted ZIP entry.
+        # Missing descendants are normal before extraction creates them;
+        # access failures and other errors must still fail closed.
+        try {
+            if ([IO.File]::GetAttributes($ancestor) -band [IO.FileAttributes]::ReparsePoint) {
+                throw 'Linked update path refused.'
+            }
+        } catch [IO.FileNotFoundException] {
+        } catch [IO.DirectoryNotFoundException] {
         }
     }
 }

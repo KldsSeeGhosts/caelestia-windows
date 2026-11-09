@@ -990,7 +990,8 @@ class Pipeline(unittest.TestCase):
         self.assertNotIn("workflow_run", text)
         self.assertNotIn("pull_request_target", text)
         self.assertIn("actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131", text)
-        self.assertIn("path: C:/nexus-candidate/private/*.state.json", text)
+        self.assertIn("path: |\n            C:/nexus-candidate/private/*.state.json\n"
+                      "            C:/nexus-candidate/independent-payload/verification-timing.json", text)
         self.assertNotIn("path: C:/nexus-candidate/private/*.log", text)
         for file in ("nexus-promote.yml", "nexus-refresh.yml"):
             text = (ROOT / ".github/workflows" / file).read_text()

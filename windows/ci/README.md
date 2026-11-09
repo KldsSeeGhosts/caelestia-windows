@@ -266,6 +266,11 @@ commands or machine paths and never enter pair receipts, envelopes or Nexus
 inputs. Prepared Python verification and inventory creation have separate phase
 timings. Cache hits record the avoided venv and pip phases as skipped, not as
 new verification or test passes.
+Candidate and publication diagnostics also retain path-free payload verification
+phase timings for ZIP extraction, manifest/native checks, privacy scanning and
+source coverage. They never enter candidate assets, signed metadata or gate
+decisions. ZIP path checks still inspect every ancestor on every call. They use
+native filesystem metadata reads without caching earlier link-check results.
 The pair recorder retains bounded diagnostic categories in the public receipt.
 On isolated hosted fixtures the workflow explicitly enables its `--echo` mode,
 so producer, preparation, compile and test failures remain visible in the job
@@ -371,8 +376,10 @@ commit history fetches allow 300 seconds, source preparation 1800, assembly
 Fetches are anonymous, noninteractive, nonrecursive and limited to the chosen
 commit's ancestry; standalone bundles still require complete history.
 Source preparation labels each supplier, notice group and Git bundle.
-Only stage name, outcome, exit, duration and budget enter the three-day
-`nexus-stage-states` artifact; private logs never become release artifacts.
+The three-day `nexus-stage-states` artifact contains stage name, outcome, exit,
+duration and budget, plus fixed-label payload verification phase timings.
+Publication retains the same path-free verification timings for seven days.
+Private logs never become release artifacts.
 Echoed failure tails remain bounded and limited to disposable CI inputs.
 These limits diagnose stalled work, not certify candidate assembly speed.
 
