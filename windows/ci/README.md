@@ -379,9 +379,17 @@ save their own compiler objects on trusted main pushes.
 
 No object/CMake trees, PDBs, environment dumps or unrelated diagnostics transfer.
 The candidate checks out the exact SHA recursively,
-completes source histories as needed, re-bootstraps the same digest-pinned
-trusted producer and restores (never saves) the identical tooling cache key.
-`Prepare-Toolchain.ps1` verifies/prepares the matching Qt deployment prefix.
+completes source histories as needed and re-bootstraps the same digest-pinned
+trusted producer. It restores a separate exact-key deployment cache containing
+only Qt and its pinned Qt archives, never LLVM, CLI11, pip or a prepared venv.
+Only the full production prepare on trusted main can save this subset. Its
+lookup uses `lookup-only`, so no restore overwrites the verified build tools.
+`Prepare-DeploymentToolchain.ps1` rechecks every Qt archive hash, required files,
+supplier metadata and actual Qt version. A miss explicitly runs full canonical
+tool preparation; an invalid hit fails without fallback. The native producer's
+complete measured toolchain, candidate provenance checks, and exact packaging
+CRT supplier checks remain unchanged. Deployment readiness is not a compiler
+receipt.
 `New-NexusCandidate.ps1` and its independent eligibility checks are unchanged.
 
 Assembly and both independent payload gates scan their complete file inventories

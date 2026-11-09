@@ -956,12 +956,12 @@ class Pipeline(unittest.TestCase):
         self.assertIn("New-NexusCandidate.ps1", candidate)
         self.assertNotIn("actions/cache/save@", candidate)
         saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", text)
-        self.assertEqual(6, text.count("actions/cache/save@"))
-        self.assertEqual(6, len(saves))
+        self.assertEqual(7, text.count("actions/cache/save@"))
+        self.assertEqual(7, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
-        self.assertEqual(4, text.count("key: windows-x64-tools-contract-v1-py"))
+        self.assertEqual(3, text.count("key: windows-x64-tools-contract-v1-py"))
         self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
         self.assertIn("path: C:/", candidate)
         build = text.split("\n  build:\n")[1].split("\n  pair:\n")[0]

@@ -154,7 +154,7 @@ class PreparedPythonTests(unittest.TestCase):
                          (ROOT / ".github/workflows/windows-build.yml").read_bytes())
         keys = [line.strip() for line in workflow.splitlines()
                 if "key: windows-x64-prepared-python-v1-" in line]
-        self.assertEqual(3, len(keys))
+        self.assertEqual(2, len(keys))
         self.assertEqual(1, len(set(keys)))
         for name in p.INPUTS:
             if name.endswith(".lock.txt"):
@@ -163,14 +163,17 @@ class PreparedPythonTests(unittest.TestCase):
                 self.assertIn(f"'{name}'", keys[0])
         self.assertIn("steps.python.outputs.python-version", keys[0])
         self.assertIn("steps.python-runtime.outputs.digest", keys[0])
-        self.assertEqual(3, workflow.count("id: python-runtime"))
-        self.assertEqual(3, workflow.count("-ReusePreparedPython"))
-        for name, next_name in (("fixtures", "build"), ("build", "pair"), ("candidate", "publish")):
+        self.assertEqual(2, workflow.count("id: python-runtime"))
+        self.assertEqual(2, workflow.count("-ReusePreparedPython"))
+        for name, next_name in (("fixtures", "build"), ("build", "pair")):
             job = workflow.split(f"\n  {name}:\n", 1)[1].split(f"\n  {next_name}:\n", 1)[0]
             block = job.split("      - name: Restore verified prepared Python", 1)[1].split(
                 "      - name:", 1)[0]
             self.assertIn(r"path: C:\t-public\tools", block)
             self.assertNotIn("restore-keys:", block)
+        candidate = workflow.split("\n  candidate:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        self.assertNotIn("prepared-python-v1-", candidate)
+        self.assertIn("Prepare-DeploymentToolchain.ps1", candidate)
         save = workflow.split("      - name: Save verified prepared Python from trusted main only", 1)[1].split(
             "      - name:", 1)[0]
         self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", save)
