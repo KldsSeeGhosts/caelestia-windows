@@ -117,6 +117,9 @@ Assert-Contains $policy ('Required ' + $scopeName + ' gate: `' + $requiredGate +
 Assert-Contains $policyNormalized 'not claimed as active or verified' 'policy doc must not claim settings were applied'
 if ($scopeName -eq 'shell') {
     Assert-Contains $policy 'documentation-only' 'the documentation-only classification path is not documented'
+    Assert-Contains $workflow 'needs: [scope, sources]' 'unsigned assembly must start independently of validation'
+    Assert-Contains $workflow 'needs: [candidate, pair, validation]' 'publication must require assembly and final validation'
+    Assert-Contains $policy 'credential-free sealing precedes signing' 'the delivery job inventory must document sealing'
 } else {
     Assert-Contains $policyNormalized 'docs-only changes' 'the backend workflow behavior for documentation-only changes is not documented'
 }

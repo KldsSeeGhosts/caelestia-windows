@@ -55,6 +55,7 @@ def run_stage(command, log, name, timeout, heartbeat=15, echo=False):
             # The candidate path never signs. Do not pass an accidentally
             # inherited publication key to builds, fetches or diagnostics.
             environment.pop("NEXUS_SIGNING_KEY", None)
+            environment.pop("GH_TOKEN", None)
             process = subprocess.Popen(
                 list(map(str, command)), stdin=subprocess.DEVNULL,
                 stdout=output, stderr=subprocess.STDOUT, env=environment,

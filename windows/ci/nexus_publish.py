@@ -29,7 +29,8 @@ GATES = ["independent-pair", "sources", "assembly", "coverage", "license-lifecyc
 REQUIRED_JOBS = {"Fast regressions (1/3)", "Fast regressions (2/3)", "Fast regressions (3/3)",
                  "Installer and colour regressions (1/2)",
                  "Installer and colour regressions (2/2)",
-                 "Native build and offscreen regressions", "Windows validation"}
+                 "Native build and offscreen regressions", "Windows validation",
+                 "Assemble exact-tested release candidate"}
 EVIDENCE = {"pair-result.json", "candidate-result.json", "pair-request.json", "integration-stages.json",
             "services-summary.json", "shell-summary.json", "portable.xml", "integration.xml",
             "plugins.xml", "native-build.json", "project-source.zip", "supplier-source.zip",
@@ -67,6 +68,10 @@ def no_links(path):
 
 
 def checked_run(arguments, *, cwd=None, env=None, input_bytes=None, timeout=120, diagnostic_log=None):
+    if env is None:
+        env = dict(os.environ)
+        env.pop("GH_TOKEN", None)
+        env.pop("NEXUS_SIGNING_KEY", None)
     result = subprocess.run(list(map(str, arguments)), cwd=cwd, env=env, input=input_bytes,
                             capture_output=True, timeout=timeout)
     if result.returncode != 0:
@@ -81,13 +86,17 @@ def checked_run(arguments, *, cwd=None, env=None, input_bytes=None, timeout=120,
 
 class GitHub:
     """Only env GH_TOKEN; never login, auth setup, credential persistence or clobber."""
+    def __init__(self, timeout=120):
+        self.timeout = timeout
+
     def api(self, path, method="GET", body=None, missing=False):
         args = ["gh", "api", "--hostname", "github.com", path, "--method", method]
         payload = None
         if body is not None:
             args += ["--input", "-"]
             payload = json.dumps(body).encode()
-        result = subprocess.run(args, input=payload, capture_output=True, timeout=120)
+        timeout = self.timeout() if callable(self.timeout) else self.timeout
+        result = subprocess.run(args, input=payload, capture_output=True, timeout=timeout)
         if result.returncode:
             error = result.stderr.decode(errors="replace")
             if "HTTP 401" in error or "HTTP 403" in error:
@@ -164,7 +173,10 @@ class GitHub:
 
     def upload(self, tag, path):
         # No --clobber, delete, replacement, latest or existing-tag mutation.
-        checked_run(["gh", "release", "upload", tag, str(path), "--repo", REPO], timeout=600)
+        environment = dict(os.environ)
+        environment.pop("NEXUS_SIGNING_KEY", None)
+        checked_run(["gh", "release", "upload", tag, str(path), "--repo", REPO],
+                    timeout=600, env=environment)
 
 
 def validate_run(github, ctx, artifact=False):
@@ -185,7 +197,7 @@ def validate_run(github, ctx, artifact=False):
                 and matching[0]["head_sha"] == ctx["sha"], "required-job-nonpass")
     if artifact:
         rows = github.pages(f"repos/{REPO}/actions/runs/{ctx['runId']}/artifacts", "artifacts")
-        name = f"nexus-candidate-{ctx['runId']}-{ctx['runAttempt']}"
+        name = f"nexus-unsealed-{ctx['runId']}-{ctx['runAttempt']}"
         matching = [row for row in rows if row["name"] == name]
         require(len(matching) == 1 and matching[0]["expired"] is False
                 and str(matching[0]["workflow_run"]["id"]) == ctx["runId"]
@@ -212,6 +224,7 @@ class Crypto:
             write(directory / "payload.json", payload)
         environment = dict(os.environ)
         environment.pop("NEXUS_SIGNING_KEY", None)
+        environment.pop("GH_TOKEN", None)
         if action.startswith("Sign"):
             environment["NEXUS_SIGNING_KEY"] = self.secret
         checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
@@ -429,6 +442,10 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
     version = read(source / "windows/release/version.json")
     require(release["buildVersion"] == version["version"] + "-dev." + str(version["developmentEpoch"]) +
             "." + ctx["runNumber"] + "." + ctx["runAttempt"], "version-source-binding")
+    if not historical:
+        # The unprivileged assembler already checked bundle/source contents.
+        # Seal bound those exact bytes to the final independent pair evidence.
+        return data
     # Independently rerun reviewed supplier acquisition/notices, not merely an
     # edited "coverage passed" field. No rebuild and no historical code runs.
     for root in (shell, shell / "windows/deps/quickshell", shell / "windows/deps/m3shapes"):

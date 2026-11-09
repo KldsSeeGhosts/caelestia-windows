@@ -48,6 +48,7 @@ def create(root, source):
     put("windows/ci/pair-contract.json", c.read(source / "windows/ci/pair-contract.json"))
     put("windows/ci/Invoke-PairIntegration.ps1", {})
     put("windows/release/version.json", {"schema": 1, "version": "0.2.0", "developmentEpoch": "1", "profileSchema": 1})
+    put("windows/release/update-trust.json", c.read(source / "windows/release/update-trust.json"))
     (shell / "windows/capture").mkdir()
     (shell / "windows/capture/Cargo.lock").write_bytes(capture)
     git(shell, "add", "--all")

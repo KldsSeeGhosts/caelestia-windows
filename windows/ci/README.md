@@ -37,9 +37,10 @@ before checkout. Scope uses a full-history checkout; its
 - `fixtures` prepares tools, records sources/producer/prepare, then runs backend
   configure/build/portable and inventory on its own unfinalized receipt. It also
   runs the first-party capture Rust regressions and retains `capture-rust-*`.
-- `build` prepares the Windows tools and runs recorded integration:
-  Services, the production payload/plugin-test build, the read-only release
-  toolchain preflight, plugin CTest, shell fixtures and production smoke.
+- `build` prepares the Windows tools and runs `-ProductionOnly` for the
+  production payload/plugin-test build and read-only release toolchain preflight.
+  Main pushes export native files immediately. The recorded integration wrapper
+  then runs `-ResumeProduction` for Services, plugin CTest, shell and smoke.
   Compile parallelism comes from the runner's processors and memory. Shell
   fixtures use two independent PowerShell processes at a time, with separate
   output roots and disposable profiles. Every fixture still checks its original
@@ -47,8 +48,9 @@ before checkout. Scope uses a full-history checkout; its
   not cancel the remaining fixtures. Services, CTest and integration stages
   stay serial. Local validation defaults to serial; `-Suite Shell -QmlJobs 2`
   opts into the same scheduling.
-  Recorded Services runs before compilation. CI omits the duplicate unrecorded
-  preflight; the local `-ServicesPreflightRoot` diagnostic remains available.
+  Resume checks successful production rows, the clean checkout HEAD and every
+  native hash before testing. The local `-ServicesPreflightRoot` diagnostic
+  remains available.
 
 `pair` waits for both native jobs to succeed, checks out the same recursive ref,
 re-resolves the pair and re-bootstraps the trusted producer. It requires identical
@@ -59,7 +61,8 @@ computes the envelope. It does not compile or restore tools.
 Full-build graph: `{scope, checks[1/3..3/3], packaging[1/2], packaging[2/2]}` start together;
 `scope -> {fixtures, build}`;
 `{fixtures, build} -> pair`; `{scope, checks, packaging, fixtures, build, pair}
--> validation`; `{scope, pair, validation} -> candidate -> publish`.
+-> validation`; `{scope, sources, early native artifact} -> candidate`;
+`{candidate, pair, validation} -> seal -> publish`.
 Estimated native critical path: `max(fixtures, build) + join overhead`.
 Observed stage durations of 8m45s and 9m30s suggest roughly 9m30s plus join
 instead of 18m15s sequential work, excluding checkout/tool preparation and
@@ -336,27 +339,46 @@ performance improvement. Hardware, input, DPI, hotplug, sleep/wake and
 long-running desktop acceptance still require the
 [live checklist](../docs/LIVE-CHECKLIST.md).
 
-## Inactive Nexus delivery
+## Nexus assembly and sealing
 
-After the exact-main pair gate, `New-NexusCandidate.ps1` independently
-recomputes eligibility with the pinned producer validator and checks actual
-tested native bytes/toolchain/source/version identities. It prepares full
-source histories/notices, assembles without recompilation, checks final source
-coverage/privacy and runs NoIntegration license lifecycle and original ZIP
-verification. Server 2022 verification is data-only; actual install still
-requires Windows 11. Assembly runs in its own bounded 120-minute job,
-`Assemble exact-tested release candidate`, only after `Windows validation`
-succeeds on a native main push. It never delays the required validation result
-and cannot start after a failed packaging gate.
+Development releases are signed after one full verification pass on the exact
+main commit. Preview or stable promotion re-verifies independently.
+`New-NexusCandidate.ps1` runs on main pushes after unsigned source preparation.
+It waits for `nexus-native-<run>-<attempt>`, checks the clean checkout, build
+revision, version provenance and every native hash, then assembles without
+recompilation while tests continue on another runner. The API wait polls every
+five seconds and refuses a concluded build without its artifact or a 45-minute
+timeout. The job has only contents-read and actions-read permissions.
+
+Sources, assembly, coverage, NoIntegration license lifecycle, original-ZIP
+verification and independent payload verification each run in this job.
+Coverage, license lifecycle and original-ZIP checks run concurrently with
+separate outputs. Payload verification consumes the completed coverage output.
+The one-day `nexus-unsealed-<run>-<attempt>` contains assets and `unsealed.json`,
+with release metadata, asset hashes, native inventory, supervisor metadata,
+measured toolchain and gate names. It is not release evidence and has no pair
+provenance hashes.
+
+Publication requires assembly, pair and `Windows validation` success.
+`Seal-NexusCandidate.ps1` receives no token or signing key. It independently
+recomputes live evidence with the pinned validator, requires exact equality
+between the early and final native inventories/toolchains and checks every
+asset row. It exports sanitized evidence and checks receipts, public metadata
+and hash bindings before writing today's unchanged `candidate.json`.
+Only then does the next step receive publication credentials. The development
+publisher rechecks the candidate header, run/jobs/artifact, receipt and version
+binding without re-deriving source or payload contents. Promotion still
+reproduces sources and verifies payload independently. Server 2022 checks are
+data-only, not Windows 11 installation or graphics acceptance.
 
 The receipt join stages `nexus-inputs-<run_id>-<run_attempt>` for one day. Its
-allowlist preserves these paths, restored under `C:\` on the candidate runner:
+allowlist preserves these paths, restored under `C:\` on the sealing runner:
 
 - `b-public/logs/build.json`: tested provenance, toolchain and native hash inventory.
 - `b-public/quickshell/qs.exe`, `b-public/install/caelestia-capture.exe`,
   `b-public/install/DesktopTakeover.dll`: tested executable/supervisor bytes.
 - Every file recursively under `b-public/install/qml/`: tested plugins, helper
-  DLLs and module metadata, independently re-hashed before assembly.
+  DLLs and module metadata, independently re-hashed at sealing.
 - `ci-pair/pair-request.json`, `candidate-result.json`, `pair-result.json`:
   immutable request, producer receipt and independent eligibility envelope.
 - `ci-pair/integration-stages.json`: exact integration stage journal.
@@ -383,10 +405,10 @@ Only build can save the trusted-main tooling cache; fixtures and build each
 save their own compiler objects on trusted main pushes.
 
 No object/CMake trees, PDBs, environment dumps or unrelated diagnostics transfer.
-The candidate checks out the exact SHA recursively,
-completes source histories as needed and re-bootstraps the same digest-pinned
-trusted producer. It restores a separate exact-key deployment cache containing
-only Qt and its pinned Qt archives, never LLVM, CLI11, pip or a prepared venv.
+The candidate checks out the exact SHA recursively and completes source
+histories as needed. Sealing re-bootstraps the digest-pinned trusted producer.
+Assembly restores a separate exact-key deployment cache containing only Qt and
+its pinned Qt archives, never LLVM, CLI11, pip or a prepared venv.
 Only the full production prepare on trusted main can save this subset. Its
 lookup uses `lookup-only`, so no restore overwrites the verified build tools.
 `Prepare-DeploymentToolchain.ps1` rechecks every Qt archive hash, required files,
@@ -395,8 +417,8 @@ tool preparation; an invalid hit fails without fallback. The native producer's
 complete measured toolchain, candidate provenance checks, and exact packaging
 CRT supplier checks remain unchanged. Deployment readiness is not a compiler
 receipt.
-The independent eligibility checks still run before candidate assembly or
-consumption of prepared source data.
+The native export uses the same allowlist with `-NativeOnly`, without evidence.
+It has one-day retention and exists only on main pushes.
 
 On main, `Prepare unsigned corresponding sources` starts beside native
 validation. It runs the unchanged source recipe and standalone bundle
@@ -409,12 +431,12 @@ transferred byte, source/project revisions, recipe and toolchain, then safely
 extracts and checks the embedded inventories before its existing coverage and
 payload gates. A failed or missing transfer has no fallback to a different run.
 The transfer index is consistency data, not a signature or release receipt.
-The isolated publisher still independently reproduces all source and notice
-data and verifies the payload. Native validation, pair joining and signing
-authority are unchanged. Unsigned acquisition before eligibility is deliberate;
-it does not make an unvalidated output eligible for release.
+The independent payload gate checks the supplied source data before sealing.
+Native validation, pair joining and signing authority are unchanged.
+Unsigned acquisition and assembly before eligibility are deliberate.
+They do not make an unvalidated output eligible for release.
 
-Assembly and both independent payload gates scan their complete file inventories
+Assembly and independent payload verification scan their complete file inventories
 with two bounded PowerShell runspace workers. Each worker runs the same reviewed
 `Get-ReleaseFilePrivacy` function under the caller's culture and receives the
 same private roots. Vendor exceptions remain in the calling gate, unchanged.
@@ -468,75 +490,13 @@ The key change also invalidates object caches through the extractor hash and
 prepared Python through the preparation script hash. The change PR and first
 main run are cold until the trusted writer seeds the new caches. Compare a
 later warm main run's cache size, restore duration and tool-directory metrics;
-do not count the cold run toward warm shadow-assembly qualification.
+do not treat the cold run as a warm delivery measurement.
 
-### Unsigned assembly shadow experiment
+### Bounded assembly gates
 
-Main also attempts unsigned assembly beside the recorded plugin, Shell and
-smoke tests. This is diagnostic only. The isolated candidate still runs its
-complete canonical path, and the publisher and signed v1 formats are unchanged.
-No speculative ZIP is a publication input. PR and dispatch native execution
-does not start this experiment.
-
-One same-run source download immediately before integration either supplies
-verified sources or selects `fallback` before any assembly work starts. Invalid
-downloaded sources select `failed`, never fallback. No new token or permission
-is used. A separate supervisor waits for the existing `production` and
-`release-toolchain` journal entries. It does not change the pinned integration
-wrapper or write into the checkout, build tree or pair results.
-
-The supervisor owns a non-inherited Windows job handle with
-`KILL_ON_JOB_CLOSE` and BelowNormal priority for its process tree. Normal exit,
-abrupt termination and hosted runner cancellation close that handle. The
-always-run bounded join also terminates this locally named job. It never kills
-an artifact-supplied PID or processes found by name. The supervisor retains
-`RUNNER_TRACKING_ID`; it receives no signing key or Actions token.
-
-Assembly, source coverage, license lifecycle with `-NoIntegration`, and the
-original-ZIP verification use the same scripts, parameters and individual
-deadlines as the canonical candidate. The outer packaging deadline is 2400
-seconds. Production readiness allows 3600 seconds; the post-integration join
-allows at most 600 and aborts immediately when integration failed. Both waits
-also stop by minute 110 of the build job's 120-minute budget. No native test
-deadline changes. Polled JSON readers allow Windows delete sharing, so reading
-cannot block the canonical journal writer's file replacement. Source
-cleanliness and native hashes are checked again after
-both tests and assembly finish. Only successful integration and all four
-successful packaging gates can export the one-day `nexus-shadow-*` artifact.
-Private logs and the local supervisor configuration are excluded.
-On failure only, the join echoes one fixed-name gate log's bounded tail into
-the disposable main job log, as the canonical candidate already does. It reads
-at most 64 KiB and prints at most 80 lines and 16,000 characters. Success and
-fallback never echo these private diagnostics. No raw log enters an artifact,
-proof, candidate, or release.
-
-The proof binds the exact run, attempt, source SHA, build receipt hash, native
-inventory, source inventory, ZIP, manifest and coverage inventory. It is
-consistency data, not authentication or release evidence. The candidate records
-exact byte equality for ZIP, manifest and final coverage in the seven-day
-`nexus-shadow-comparison-*` diagnostic artifact. `ready` without its artifact,
-changed bytes, failed work and wrong identities are diagnostic failures, not
-fallback. Shadow failures do not redefine the required Windows validation
-check or replace canonical release acceptance.
-
-Payload ownership remains split. Native bytes match the build inventory, Qt
-runtime bytes match reference hashes, support files match committed
-`sourceSha256`, ordinary staging entries match Git-derived hashes, and notices
-match their inventories. `shell.qml` and `Workspace.qml` undergo reviewed
-transformations; the staging record, supervisor executable and other generated
-files also need the fresh-checkout assembler and independent payload checks.
-They are not all covered by a direct source-byte hash. Exact shadow versus
-canonical manifest and coverage equality tests those cases against today's
-isolated packaging path. It does not prove a stronger provenance claim.
-
-Consumption stays disabled until a separate reviewed PR. Required controls are
-at least three warm first-attempt main runs with all three byte comparisons equal, zero
-timeouts or flakes, unchanged test deadlines, and a hosted mid-integration
-cancellation with no remaining supervisor or proof upload. Compare plugin,
-Shell and smoke durations against the preceding three warm runs. Any flake or
-suite slowdown over 15 percent blocks consumption pending investigation.
-Report source readiness and transfer overhead too. Shadow runs do duplicate
-work and can temporarily lengthen delivery; no speedup is claimed for them.
+Early assembly replaces the deleted shadow experiment. No supervisor,
+comparison proof or diagnostic-only assembly runs beside the authoritative
+assembly job.
 
 Candidate children run through `nexus_process.py`: start/end labels,
 15-second heartbeats, private combined logs and explicit deadlines. Exact
@@ -548,8 +508,8 @@ commit's ancestry; standalone bundles still require complete history.
 Source preparation labels each supplier, notice group and Git bundle.
 The three-day `nexus-stage-states` artifact contains stage name, outcome, exit,
 duration and budget, plus fixed-label payload verification phase timings.
-Publication retains the same path-free verification timings for seven days.
-Publication runs independent supplier-source reproduction and supplied-payload
+Development publication does not repeat these content gates.
+Promotion runs independent supplier-source reproduction and supplied-payload
 verification concurrently in two workers after receipt, version and source-history
 checks. Their output directories and private logs are separate. Both retain
 their existing checks and deadlines, and both must finish before any release or
@@ -561,8 +521,8 @@ Echoed failure tails remain bounded and limited to disposable CI inputs.
 These limits diagnose stalled work, not certify candidate assembly speed.
 
 The aggregate gate depends only on scope, fast, packaging and applicable native
-validation, never candidate output. Publication waits for candidate success and
-aggregate validation. Its write token and
+validation, never candidate output. Publication waits for candidate, pair and
+aggregate validation success. Its write token and
 development secret exist only in the variable/environment-gated main publish
 job. Same-run artifact and exact successful prerequisite jobs are checked
 again through GitHub. No PR artifact can reach publication.

@@ -5,14 +5,15 @@ param(
     [string]$PairResults,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [switch]$Integration,
-    [switch]$Reuse
+    [switch]$Reuse,
+    [switch]$NativeOnly
 )
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
 $BuildRoot = Resolve-CaelestiaDirectory $BuildRoot
-if ($Reuse -and $Integration) { throw 'Reuse is not pair integration evidence.' }
-if (-not $Reuse -and -not $PairResults) { throw 'PairResults is required outside native reuse export.' }
-if (-not $Reuse) { $PairResults = Resolve-CaelestiaDirectory $PairResults }
+if (@($Reuse, $Integration, $NativeOnly | Where-Object { $_ }).Count -gt 1) { throw 'Select only one export mode.' }
+if (-not $Reuse -and -not $NativeOnly -and -not $PairResults) { throw 'PairResults is required outside native-only export.' }
+if ($PairResults) { $PairResults = Resolve-CaelestiaDirectory $PairResults }
 $OutputDirectory = Resolve-CaelestiaDirectory $OutputDirectory
 foreach ($root in @($BuildRoot, $PairResults) | Where-Object { $_ }) {
     if ($OutputDirectory -eq $root -or $OutputDirectory.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase) -or
@@ -38,6 +39,7 @@ if (-not (Test-Path -LiteralPath $qml -PathType Container)) { throw 'Missing nat
 foreach ($file in Get-ChildItem -LiteralPath $qml -File -Recurse -Force) {
     Copy-TransferFile $BuildRoot $file.FullName.Substring($BuildRoot.Length + 1) 'b-public'
 }
+if ($NativeOnly) { return }
 if ($Reuse) {
     # CTest is test-only: preserve its generated entry points and native test
     # executables, not CMake caches, object files, PDBs or pair/release receipts.

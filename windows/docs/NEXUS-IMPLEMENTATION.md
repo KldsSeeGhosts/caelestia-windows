@@ -58,11 +58,23 @@ its template remain byte-identical, temporarily pinning backend PR #24 producer
 bd5c68196edbdaad23db8f28ca64214d075711b4 and validator digest
 e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0.
 
+Development releases are signed after one full verification pass on the exact
+main commit. Production runs before the recorded tests and exports its native
+files. The read-only assembly job consumes that same-run artifact and prepared
+sources while tests continue. It runs the source, assembly, coverage, license,
+original-ZIP and payload content gates once. A credential-free sealing step
+independently verifies final pair evidence, exact native inventory equality and
+all asset hashes, then writes the unchanged candidate schema and evidence
+provenance. Development publication retains run, receipt, version and header
+checks without repeating content verification. Preview or stable promotion
+re-verifies sources and payload independently. The deleted shadow experiment
+has no remaining workflow path.
+
 - Independently validate the pinned trusted validator/receipt, raw nonzero test
   inventories, pair request, tested outputs and exact main
   repo/event/head/run/attempt/toolchain/source identity. Do not trust an
   editable pair-result boolean or weaken existing pair eligibility.
-- Assemble from the tested native tree without recompilation, including the
+- Assemble from the production native tree without recompilation, including the
   prebuilt managed supervisor. The pre-validation build inventory hashes every
   consumed native output, rechecked before assembly and against the final
   manifest. Complete

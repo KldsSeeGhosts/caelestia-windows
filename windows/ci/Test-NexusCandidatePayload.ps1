@@ -5,6 +5,8 @@ param(
     [Parameter(Mandatory)][string]$OutputDirectory,
     [Parameter(Mandatory)][string]$SourceDataRoot,
     [Parameter(Mandatory)][string]$AssetsRoot,
+    [switch]$Unsealed,
+    [string]$NativeBuildRoot,
     [string]$Python = 'python'
 )
 $ErrorActionPreference = 'Stop'
@@ -38,10 +40,25 @@ foreach ($path in @($CandidateDirectory, $OutputDirectory, $SourceDataRoot, $Ass
     if (Test-Path -LiteralPath $path) { Assert-CaelestiaNoReparsePoints $path }
     elseif ($path -ne $OutputDirectory) { throw 'Missing payload verification input.' }
 }
-$doc = Read-CaelestiaStrictJsonFile "$CandidateDirectory\candidate.json" 1048576
+$documentName = if ($Unsealed) { 'unsealed.json' } else { 'candidate.json' }
+$doc = Read-CaelestiaStrictJsonFile (Join-Path $CandidateDirectory $documentName) 1048576
 $release = $doc.release
 $trust = Read-CaelestiaStrictJsonFile "$PSScriptRoot\..\release\update-trust.json"
-Assert-CaelestiaReleaseMetadata $release $trust 'development'
+if ($Unsealed) {
+    if (-not $NativeBuildRoot -or $doc.schema -cne 'caelestia-nexus-unsealed') { throw 'Missing early native inputs.' }
+    Assert-CaelestiaFields $release.provenance @('runId', 'runAttempt')
+    # Validate all static release fields with an in-memory copy. These two
+    # placeholders never enter the handoff or signed metadata. Seal supplies
+    # real evidence hashes only after independent exact-tested verification.
+    $validationRelease = [Collections.Generic.Dictionary[string, object]]::new($release, [StringComparer]::Ordinal)
+    $validationRelease['provenance'] = [Collections.Generic.Dictionary[string, object]]::new(
+        $release.provenance, [StringComparer]::Ordinal)
+    $validationRelease['provenance']['pairResultSha256'] = '0' * 64
+    $validationRelease['provenance']['candidateReceiptSha256'] = '0' * 64
+    Assert-CaelestiaReleaseMetadata $validationRelease $trust 'development'
+} else {
+    Assert-CaelestiaReleaseMetadata $release $trust 'development'
+}
 $bundle = $release.bundle
 $zip = Join-Path $CandidateDirectory $bundle.name
 if ((Get-Item -LiteralPath $zip).Length -ne $bundle.size -or
@@ -55,6 +72,14 @@ $null = & "$PSScriptRoot\..\scripts\Install-CaelestiaRelease.ps1" -BundleRoot $r
     -ExpectedManifestSha256 $release.manifestSha256
 Save-PayloadTiming 'manifest-files'
 $manifest = Read-CaelestiaStrictJsonFile "$root\release.json" 16777216 -AllowUtf8Bom
+if ($Unsealed) {
+    $NativeBuildRoot = Resolve-CaelestiaDirectory $NativeBuildRoot
+    Assert-CaelestiaNoReparsePoints $NativeBuildRoot
+    # build.json also contains local diagnostics. Read only for comparisons;
+    # it is never copied to the public assets.
+    $native = Read-CaelestiaStrictJsonFile "$NativeBuildRoot\logs\build.json" 1048576 -AllowUtf8Bom
+    $receiptActual = $native.toolchain
+} else {
 $native = Read-CaelestiaStrictJsonFile "$CandidateDirectory\native-build.json" 1048576
 # The producer receipt records fractional stage durations, which the
 # integer-only strict reader rejects by design. Extract only the measured
@@ -84,6 +109,7 @@ with open(sys.argv[2], 'x', encoding='utf-8') as output:
 & $Python -I -B -c $extract "$CandidateDirectory\candidate-result.json" $receiptToolchain
 if ($LASTEXITCODE -ne 0) { throw 'Trusted receipt toolchain could not be read.' }
 $receiptActual = Read-CaelestiaStrictJsonFile $receiptToolchain 1048576
+}
 $version = Read-CaelestiaVersion "$SourceDataRoot\windows\release\version.json"
 if ($manifest.sourceRevision -cne $doc.sourceRevision -or $manifest.nativeSourceRevision -cne $doc.sourceRevision -or
     $manifest.releaseId -cne $release.buildVersion -or $manifest.backendRevision -cne $release.backendRevision -or

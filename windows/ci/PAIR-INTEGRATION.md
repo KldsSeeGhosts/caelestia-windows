@@ -68,15 +68,16 @@ with independent sources/producer/prepare stages and an unfinalized receipt.
 The `pair` join requires both jobs to succeed and their actual-toolchain records
 to be identical before trusted merge, normal finalize and independent envelope.
 One-day exact-run/attempt artifacts carry allowlisted inputs. Candidate assembly
-depends on the join and aggregate validation. Documentation-only runs must skip
+starts from source preparation and the early native artifact. Sealing and
+publication depend on the join and aggregate validation. Documentation-only runs must skip
 fixtures, build and pair together. Estimated critical path is
 `max(fixtures, build) + join overhead`, plus checkout/tool preparation.
 The fixtures job also runs first-party capture Rust regressions with its measured
 `BUILD_JOBS` and retains the separate `capture-rust-<run>-<attempt>` receipt.
 Neither production integration nor the receipt join consumes that receipt.
 A capture failure fails fixtures and therefore `Windows validation`, before any
-candidate assembly. Capture output never enters pair or Nexus inputs.
-Integration executes:
+publication. Capture output never enters pair or Nexus inputs.
+The default local integration invocation executes:
 
 1. Services suite.
 2. Production `Build-Prototype.ps1 -PublicRelease -PluginTests -Jobs <jobs>`,
@@ -98,9 +99,22 @@ read-only. The suite still runs every script and checks the same exit codes,
 assertion floors and timeouts. It writes the same per-script logs and summary
 fields for receipt verification. Failure does not cancel the other fixtures.
 
-Recorded integration runs Services before production compilation. CI no longer
-repeats it in an unrecorded preflight, which added 29 seconds to the warm
-critical path without adding evidence. For local diagnostics,
+CI splits execution without changing the six-row journal or producer receipt.
+`-ProductionOnly` requires a fresh build root, runs production and
+release-toolchain, and leaves every other journal row `not_run`. It writes no
+integration report. Main pushes export the native files at this point.
+`-ResumeProduction` requires those two successful rows and exit codes, verifies
+the clean checkout HEAD and all recorded native hashes, then runs Services,
+plugins, shell and smoke inside the existing recorded integration wrapper.
+Only resume writes the complete integration report. PRs use the same split
+without exporting early native files. The pinned producer and all pair checks
+remain unchanged.
+
+Development releases are signed after one full verification pass on the exact
+main commit. Assembly checks source, bundle and payload contents once. A
+credential-free seal verifies final pair evidence and exact native/asset hash
+bindings. Preview or stable promotion re-verifies independently.
+For local diagnostics,
 `-ServicesPreflightRoot` runs an early copy that writes only under its own
 fresh root, disjoint from pair results, the production build, sources and
 read-only tools in both directions. Preflight rejects junction/symlink

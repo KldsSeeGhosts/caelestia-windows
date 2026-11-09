@@ -4,7 +4,7 @@ param([string]$Python = 'python')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
 foreach ($name in @('Resolve-PairRequest.ps1', 'Invoke-PairIntegration.ps1', 'Get-BuildJobs.ps1',
-    'Get-NativeBuildRequired.ps1', 'Export-NexusCandidateInputs.ps1', 'Invoke-NexusShadowAssembly.ps1')) {
+    'Get-NativeBuildRequired.ps1', 'Export-NexusCandidateInputs.ps1', 'Seal-NexusCandidate.ps1')) {
     $tokens = $null
     $parseErrors = $null
     $null = [Management.Automation.Language.Parser]::ParseFile(
@@ -13,7 +13,8 @@ foreach ($name in @('Resolve-PairRequest.ps1', 'Invoke-PairIntegration.ps1', 'Ge
 }
 $workflow = [IO.File]::ReadAllText("$root\.github\workflows\windows-build.yml")
 if (-not $workflow.Contains('needs: [scope, fixtures, build]') -or
-    -not $workflow.Contains('needs: [scope, pair, validation, sources]')) {
+    -not $workflow.Contains('needs: [scope, sources]') -or
+    -not $workflow.Contains('needs: [candidate, pair, validation]')) {
     throw 'Receipt join and candidate dependencies must remain explicit.'
 }
 if (-not $workflow.Contains('needs: [scope, checks, packaging, reuse, fixtures, build, pair]') -or

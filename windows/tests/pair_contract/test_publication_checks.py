@@ -1,4 +1,4 @@
-"""Publisher scheduling controls. No network, signing or artifact code runs."""
+"""Historical promotion scheduling controls. No network, signing or artifact code runs."""
 
 import contextlib
 import copy
@@ -33,6 +33,8 @@ class PublicationCheckTests(unittest.TestCase):
                           "notices": [{"path": "notice.txt", "sha256": "c" * 64}]}
         n.write(self.directory / "source-assets-inventory.json", self.inventory)
         self.ctx = {"sha": "a" * 40, "runNumber": "5", "runAttempt": "1"}
+        n.write(self.directory / "pair-result.json", {})
+        n.write(self.directory / "pair-request.json", {"shell": "a" * 40, "backend": "b" * 40})
 
     def run_checks(self, fail=None, mismatch=False):
         barrier = threading.Barrier(2, timeout=5)
@@ -40,6 +42,13 @@ class PublicationCheckTests(unittest.TestCase):
         output = io.StringIO()
 
         def command(args, **kwargs):
+            if args[0] == "git":
+                name = args[-1].split(":", 1)[1]
+                if name == "windows/release/version.json":
+                    return (self.shell / name).read_bytes()
+                if name == "windows/sources.lock.json":
+                    return json.dumps({"quickshell": {"revision": "b" * 40}}).encode()
+                return b"{}"
             script = Path(args[4]).name
             phase = {"Prepare-CaelestiaSourceAssets.ps1": "sources",
                      "Test-NexusCandidatePayload.ps1": "payload"}[script]
@@ -60,12 +69,20 @@ class PublicationCheckTests(unittest.TestCase):
             finally:
                 self.finished.add(phase)
 
-        with patch.object(n.candidate, "verify_receipt", return_value=({}, {})), \
-                patch.object(n.pair, "git", return_value="false"), \
+        def git(root, *args):
+            if args[:3] == ("remote", "get-url", "origin"):
+                return n.REMOTE
+            if args[0] == "ls-tree":
+                return "160000 commit " + "b" * 40 + "\twindows/deps/quickshell"
+            return "false"
+
+        with patch.object(n.candidate, "verify_receipt_data", return_value=({}, {})), \
+                patch.object(n.candidate, "check_pair_header"), \
+                patch.object(n.pair, "git", side_effect=git), \
                 patch.object(n, "extract_source", side_effect=lambda archive, target: target.mkdir()), \
                 patch.object(n, "checked_run", side_effect=command), contextlib.redirect_stdout(output):
             try:
-                return n.verify_payload(self.shell, self.directory, self.work, self.ctx, "validator")
+                return n.verify_payload(self.shell, self.directory, self.work, self.ctx, "validator", historical=True)
             finally:
                 self.output = output.getvalue()
 
