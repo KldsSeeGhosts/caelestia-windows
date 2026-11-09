@@ -1,8 +1,12 @@
+#include <cstdio>
+
+#include <qcoreapplication.h>
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
 #include <qprocess.h>
 #include <qregularexpression.h>
+#include <qsysinfo.h>
 #include <qtemporarydir.h>
 #include <qtest.h>
 #include <quuid.h>
@@ -139,8 +143,7 @@ private slots:
         QCOMPARE(QDir(root).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).size(), 0);
     }
 
-    void failsWithoutATempDirectory() {
-        QVERIFY(dragfile::create(root + QStringLiteral("/missing"), shotName).isEmpty());
+    void failsWithoutATempDirectory() {        QVERIFY(dragfile::create(root + QStringLiteral("/missing"), shotName).isEmpty());
         QVERIFY(dragfile::create(QString(), shotName).isEmpty());
         // A file is not a directory.
         QVERIFY(write(root + QStringLiteral("/file")));
@@ -564,5 +567,97 @@ private:
     QString root;
 };
 
-QTEST_MAIN(DragFileTest)
+namespace {
+
+// What the failing machine looks like, for a log that is read without access to it.
+QString environmentReport() {
+    QStringList lines;
+    lines << QStringLiteral("environment: TEMP=%1 TMP=%2 tempPath=%3")
+                 .arg(qEnvironmentVariable("TEMP"), qEnvironmentVariable("TMP"), QDir::tempPath());
+#ifdef Q_OS_WIN
+    const auto wide = QDir::toNativeSeparators(QDir::tempPath()).toStdWString();
+    wchar_t volumeName[MAX_PATH] = {};
+    DWORD flags = 0;
+    wchar_t fileSystem[MAX_PATH] = {};
+    wchar_t volumeRoot[MAX_PATH] = {};
+    if (GetVolumePathNameW(wide.c_str(), volumeRoot, MAX_PATH)
+        && GetVolumeInformationW(volumeRoot, volumeName, MAX_PATH, nullptr, nullptr, &flags, fileSystem, MAX_PATH)) {
+        lines << QStringLiteral("environment: volume %1 file system %2 flags 0x%3")
+                     .arg(QString::fromWCharArray(volumeRoot), QString::fromWCharArray(fileSystem))
+                     .arg(flags, 0, 16);
+    }
+    HANDLE directory = CreateFileW(wide.c_str(), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr);
+    if (directory != INVALID_HANDLE_VALUE) {
+        wchar_t finalPath[2048] = {};
+        if (GetFinalPathNameByHandleW(directory, finalPath, 2048, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS))
+            lines << QStringLiteral("environment: final path of the temp directory %1").arg(QString::fromWCharArray(finalPath));
+        CloseHandle(directory);
+    }
+    lines << QStringLiteral("environment: %1").arg(QSysInfo::prettyProductName());
+#endif
+    return lines.join(QLatin1Char('\n'));
+}
+
+// The part of a Qt Test text log that explains the failures: each FAIL! line with
+// its detail lines, the warnings of the failing tests, and the totals. Passing tests
+// are left out so that the reason is not lost in a log tail.
+QString failureLines(const QString& log) {
+    if (log.isEmpty())
+        return QStringLiteral("(no test log was written)");
+
+    const auto lines = log.split(QLatin1Char('\n'));
+    static const QRegularExpression testName(QStringLiteral("DragFileTest::(\\w+)\\(\\)"));
+    QStringList failing;
+    for (const auto& line : lines) {
+        if (!line.startsWith(QStringLiteral("FAIL!")))
+            continue;
+        if (const auto match = testName.match(line); match.hasMatch())
+            failing << match.captured(0);
+    }
+
+    QStringList kept;
+    for (const auto& line : lines) {
+        const bool detail = line.startsWith(QLatin1Char(' ')) || line.startsWith(QStringLiteral("FAIL!"))
+            || line.startsWith(QStringLiteral("Totals"));
+        bool warning = false;
+        if (line.startsWith(QStringLiteral("QWARN"))) {
+            for (const auto& name : failing)
+                warning = warning || (!name.isEmpty() && line.contains(name));
+        }
+        if (detail || warning)
+            kept << line;
+    }
+    return kept.isEmpty() ? log : kept.join(QLatin1Char('\n'));
+}
+
+} // namespace
+
+// Qt Test's own stdout logger prints nothing when stdout is redirected, which is how
+// ctest runs it, so a failure on a machine without a console left no reason at all.
+// This main logs to a file and echoes that file, with the environment, to stdout
+// when a test fails.
+int main(int argc, char* argv[]) {
+    QCoreApplication app(argc, argv);
+    DragFileTest test;
+
+    const auto logPath = QDir::temp().filePath(QStringLiteral("dragfile-tests-%1.log").arg(newId()));
+    QStringList arguments = app.arguments();
+    arguments << QStringLiteral("-o") << (logPath + QStringLiteral(",txt"));
+
+    const int result = QTest::qExec(&test, arguments);
+    if (result != 0) {
+        QFile log(logPath);
+        const auto text = log.open(QIODevice::ReadOnly) ? QString::fromUtf8(log.readAll()) : QString();
+        const auto report = QStringLiteral("dragfile-tests failed with %1\n%2\n%3\n")
+                                .arg(result)
+                                .arg(environmentReport(), failureLines(text));
+        std::fputs(report.toLocal8Bit().constData(), stdout);
+        std::fflush(stdout);
+    }
+    QFile::remove(logPath);
+    return result;
+}
+
 #include "dragfile_test.moc"
