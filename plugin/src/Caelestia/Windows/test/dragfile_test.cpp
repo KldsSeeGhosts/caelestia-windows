@@ -388,6 +388,19 @@ private slots:
         QVERIFY(!QFileInfo::exists(directory));
     }
 
+    // The hard-link test below needs the machine to make hard links at all. This says
+    // so with the Win32 error when it cannot, instead of failing inside a hook.
+    void theTestVolumeMakesHardLinks() {
+        const auto original = root + QStringLiteral("/original.txt");
+        const auto link = root + QStringLiteral("/link.txt");
+        QVERIFY(write(original, "keep"));
+        const bool made = CreateHardLinkW(QDir::toNativeSeparators(link).toStdWString().c_str(),
+            QDir::toNativeSeparators(original).toStdWString().c_str(), nullptr);
+        const DWORD error = made ? ERROR_SUCCESS : GetLastError();
+        QVERIFY2(made, qPrintable(QStringLiteral("CreateHardLinkW failed with Win32 error %1").arg(error)));
+        QVERIFY(QFileInfo(link).isFile());
+    }
+
     // A hard link to a file elsewhere, put in the file's place after the directory
     // was listed: deleting it would be deleting a name of someone else's file.
     void refusesAFileSwappedForAHardLink() {
@@ -396,18 +409,25 @@ private slots:
         const auto outside = root + QStringLiteral("/outside.txt");
         QVERIFY(write(outside, "keep"));
 
+        bool unlinked = false;
         bool linked = false;
+        DWORD linkError = ERROR_SUCCESS;
         dragfile::testing::setHook([&](Step step, const QString& dir) {
-            if (step == Step::BeforeFileRemoval) {
-                linked = QFile::remove(dir + QStringLiteral("/") + shotName)
-                    && CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
-                        QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
-            }
+            if (step != Step::BeforeFileRemoval)
+                return;
+            unlinked = QFile::remove(dir + QStringLiteral("/") + shotName);
+            if (!unlinked)
+                return;
+            linked = CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
+                QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
+            if (!linked)
+                linkError = GetLastError();
         });
         const bool removed = dragfile::remove(root, path);
         dragfile::testing::setHook({});
 
-        QVERIFY(linked);
+        QVERIFY2(unlinked, "the test could not delete the drag file to put a hard link in its place");
+        QVERIFY2(linked, qPrintable(QStringLiteral("the test could not make a hard link in the pinned directory, Win32 error %1").arg(linkError)));
         QVERIFY(!removed);
         QVERIFY(QFileInfo(path).isFile());
         QVERIFY(QFileInfo(directory).isDir());
