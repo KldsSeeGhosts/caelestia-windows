@@ -252,7 +252,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
+          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-llvm-native-v1-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
           path: |
             C:\t-public\Qt
             C:\t-public\downloads
@@ -381,7 +381,7 @@ jobs:
       - name: Restore versioned tooling (never save)
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
+          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-llvm-native-v1-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
           path: |
             C:\t-public\Qt
             C:\t-public\downloads
@@ -408,7 +408,7 @@ jobs:
           python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
             --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage prepare --echo -- `
             powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Prepare-Toolchain.ps1" `
-            -ToolRoot $env:TOOL_ROOT -InstallRust -ReusePreparedPython
+            -ToolRoot $env:TOOL_ROOT -InstallRust -ReusePreparedPython -NativeRuntimeOnly
           if ($LASTEXITCODE -ne 0) { throw 'Supported public toolchain preparation failed.' }
       - name: Measure prepared tooling directories
         run: |
@@ -601,7 +601,7 @@ jobs:
         id: tools
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
-          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
+          key: windows-x64-tools-contract-v1-py${{ steps.python.outputs.python-version }}-llvm-native-v1-${{ hashFiles('windows/toolchain.json', 'windows/toolchain/*.lock.txt', 'windows/toolchain/extract_llvm.py') }}
           path: |
             C:\t-public\Qt
             C:\t-public\downloads
@@ -631,7 +631,7 @@ jobs:
           python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
             --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage prepare --echo -- `
             powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Prepare-Toolchain.ps1" `
-            -ToolRoot $env:TOOL_ROOT -InstallRust -ReusePreparedPython
+            -ToolRoot $env:TOOL_ROOT -InstallRust -ReusePreparedPython -NativeRuntimeOnly
           if ($LASTEXITCODE -ne 0) { throw 'Supported public toolchain preparation failed.' }
 
       - name: Measure prepared tooling directories

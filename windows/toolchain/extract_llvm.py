@@ -11,6 +11,14 @@ import stat
 import tarfile
 import time
 
+NATIVE_PROFILE = "windows-native-v1"
+NATIVE_BINARIES = (
+    "clang-cl.exe", "clang-scan-deps.exe", "lld-link.exe",
+    "llvm-ar.exe", "llvm-lib.exe", "llvm-ranlib.exe", "llvm-nm.exe",
+    "llvm-rc.exe", "llvm-mt.exe",
+)
+PROFILES = ("full", NATIVE_PROFILE)
+
 
 def safe_name(name):
     name = name.rstrip("/")
@@ -38,17 +46,75 @@ def local_path(root, name):
     return path
 
 
-def extract(archive, destination, directory, expected_hash, major, timeout=900):
+def contract(directory, expected_hash, major, profile):
     if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9+._-]+", directory)
             or not re.fullmatch(r"[a-f0-9]{64}", expected_hash)
-            or not re.fullmatch(r"[0-9]+", major)):
+            or not re.fullmatch(r"[0-9]+", major) or profile not in PROFILES):
         raise ValueError("invalid-extraction-contract")
     safe_name(directory)
+
+
+def selected(name, prefix, profile):
+    if name.startswith(prefix + "lib/clang/"):
+        return True
+    return (name.startswith(prefix + "bin/") if profile == "full"
+            else name.casefold() in {(prefix + "bin/" + leaf).casefold() for leaf in NATIVE_BINARIES})
+
+
+def required(major, profile):
+    names = NATIVE_BINARIES if profile == NATIVE_PROFILE else ("clang-cl.exe", "lld-link.exe", "llvm-rc.exe")
+    return tuple("bin/" + name for name in names) + (f"lib/clang/{major}/include/stddef.h",)
+
+
+def marker_data(path):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def native_tree(destination, directory):
+    """Never prune an existing SDK or treat non-profile files as a small tree."""
+    root = local_path(destination, directory)
+    marker = local_path(destination, directory + "/.caelestia-extraction.json")
+    record = marker_data(marker)
+    if marker.exists() and (record.get("schemaVersion") != 2 or record.get("profile") != NATIVE_PROFILE):
+        raise ValueError("llvm-profile-mismatch-use-fresh-root")
+    if root.exists():
+        for path in root.rglob("*"):
+            relative = path.relative_to(destination).as_posix()
+            local_path(destination, relative)
+            if path.is_file() and relative not in (
+                    directory + "/.caelestia-extraction.json", directory + "/.caelestia-extraction.tmp"
+            ) and not selected(relative, directory + "/", NATIVE_PROFILE):
+                raise ValueError("non-profile-file-use-fresh-root")
+
+
+def verify_tree(destination, directory, expected_hash, major, profile="full"):
+    """Readiness only. The caller must separately verify the pinned archive."""
+    contract(directory, expected_hash, major, profile)
+    destination = Path(destination).absolute()
+    marker = local_path(destination, directory + "/.caelestia-extraction.json")
+    if profile == NATIVE_PROFILE:
+        native_tree(destination, directory)
+    record = marker_data(marker)
+    valid_profile = (record.get("schemaVersion") == 1 and profile == "full"
+                     or record.get("schemaVersion") == 2 and record.get("profile") == profile)
+    return (valid_profile and record.get("archiveSha256") == expected_hash
+            and record.get("directory") == directory
+            and all(local_path(destination, directory + "/" + name).is_file()
+                    for name in required(major, profile)))
+
+
+def extract(archive, destination, directory, expected_hash, major, timeout=900, profile="full"):
+    contract(directory, expected_hash, major, profile)
     destination = Path(destination).absolute()
     destination.mkdir(parents=True, exist_ok=True)
     prefix = directory + "/"
-    selected = (prefix + "bin/", prefix + "lib/clang/")
     marker = local_path(destination, prefix + ".caelestia-extraction.json")
+    if profile == NATIVE_PROFILE:
+        native_tree(destination, directory)
     # A failed retry must never retain an earlier success marker.
     if marker.exists():
         marker.unlink()
@@ -72,7 +138,7 @@ def extract(archive, destination, directory, expected_hash, major, timeout=900):
         for member in bundle:
             check_time()
             name = safe_name(member.name)
-            if not (name.startswith(selected)
+            if not (selected(name, prefix, profile)
                     or name in (prefix + "bin", prefix + "lib/clang")):
                 continue
             path = local_path(destination, name)
@@ -88,7 +154,7 @@ def extract(archive, destination, directory, expected_hash, major, timeout=900):
                 target = (posixpath.normpath(posixpath.join(posixpath.dirname(name), member.linkname))
                           if member.issym() else member.linkname)
                 target = safe_name(target)
-                if not target.startswith(selected):
+                if not selected(target, prefix, profile):
                     raise ValueError("link-outside-selected-tree")
                 links[name] = target
                 continue
@@ -130,11 +196,11 @@ def extract(archive, destination, directory, expected_hash, major, timeout=900):
             progressed = True
         if not progressed:
             raise ValueError("unresolved-selected-link")
-    required = ("bin/clang-cl.exe", "bin/lld-link.exe", "bin/llvm-rc.exe",
-                f"lib/clang/{major}/include/stddef.h")
-    if any(not local_path(destination, prefix + name).is_file() for name in required):
+    # A stale on-disk file cannot stand in for an omitted archive member.
+    if any((prefix + name).casefold() not in seen
+           or not local_path(destination, prefix + name).is_file() for name in required(major, profile)):
         raise ValueError("incomplete-compiler-tree")
-    result = {"schemaVersion": 1, "archiveSha256": expected_hash,
+    result = {"schemaVersion": 2, "profile": profile, "archiveSha256": expected_hash,
               "directory": directory, "files": files, "bytes": total_bytes,
               "seconds": round(time.monotonic() - started, 3)}
     temporary = local_path(destination, prefix + ".caelestia-extraction.tmp")
@@ -148,9 +214,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("archive", "destination", "directory", "sha256", "clang-major"):
         parser.add_argument("--" + name, required=True)
+    parser.add_argument("--profile", choices=PROFILES, default="full")
+    parser.add_argument("--verify-tree", action="store_true")
     args = parser.parse_args()
     try:
-        extract(args.archive, args.destination, args.directory, args.sha256, args.clang_major)
+        if args.verify_tree:
+            return 0 if verify_tree(args.destination, args.directory, args.sha256,
+                                    args.clang_major, args.profile) else 2
+        extract(args.archive, args.destination, args.directory, args.sha256,
+                args.clang_major, profile=args.profile)
     except (OSError, ValueError, tarfile.TarError, TimeoutError):
         print("Verified LLVM extraction failed; no completion marker was written.", flush=True)
         return 1

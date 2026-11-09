@@ -30,7 +30,7 @@ class ExtractionTests(unittest.TestCase):
             ("llvm/include/unused.h", b"unused"),
         ]
 
-    def run_extract(self, extra=(), omit=(), expected_hash=None, timeout=900):
+    def run_extract(self, extra=(), omit=(), expected_hash=None, timeout=900, profile="full"):
         with tarfile.open(self.archive, "w:xz") as bundle:
             for name, payload in self.members + list(extra):
                 if name in omit:
@@ -45,7 +45,17 @@ class ExtractionTests(unittest.TestCase):
                     bundle.addfile(entry, io.BytesIO(payload))
         digest = hashlib.sha256(self.archive.read_bytes()).hexdigest()
         return extractor.extract(self.archive, self.destination, "llvm",
-                                 expected_hash or digest, "20", timeout)
+                                 expected_hash or digest, "20", timeout, profile)
+
+    def native_members(self):
+        existing = {name for name, _ in self.members}
+        self.members += [("llvm/bin/" + name, name.encode()) for name in extractor.NATIVE_BINARIES
+                         if "llvm/bin/" + name not in existing]
+        self.members += [
+            ("llvm/bin/clang.exe", b"unused-driver"),
+            ("llvm/bin/clangd.exe", b"unused-language-server"),
+            ("llvm/bin/libclang.dll", b"unused-library"),
+            ("llvm/lib/clang/20/lib/windows/clang_rt.builtins.lib", b"compiler-runtime")]
 
     def assert_refused(self, *args, **kwargs):
         with self.assertRaises((ValueError, OSError, tarfile.TarError, TimeoutError)):
@@ -112,6 +122,94 @@ class ExtractionTests(unittest.TestCase):
 
     def test_deadline_never_writes_success_marker(self):
         self.assert_refused(timeout=-1)
+
+    def test_native_profile_is_exact_and_preserves_all_compiler_resources(self):
+        self.native_members()
+        result = self.run_extract(profile=extractor.NATIVE_PROFILE)
+        root = self.destination / "llvm"
+        self.assertEqual(set(extractor.NATIVE_BINARIES), {path.name for path in (root / "bin").iterdir()})
+        self.assertEqual(b"compiler-runtime", (root / "lib/clang/20/lib/windows/clang_rt.builtins.lib").read_bytes())
+        self.assertEqual(2, result["schemaVersion"])
+        self.assertEqual(extractor.NATIVE_PROFILE, result["profile"])
+        self.assertTrue(extractor.verify_tree(self.destination, "llvm", result["archiveSha256"], "20",
+                                              extractor.NATIVE_PROFILE))
+        self.assertFalse(extractor.verify_tree(self.destination, "llvm", result["archiveSha256"], "20", "full"))
+
+    def test_every_native_tool_is_required_from_archive_not_stale_disk(self):
+        self.native_members()
+        self.run_extract(profile=extractor.NATIVE_PROFILE)
+        for name in extractor.NATIVE_BINARIES:
+            with self.subTest(name=name):
+                self.assert_refused(omit=["llvm/bin/" + name], profile=extractor.NATIVE_PROFILE)
+
+    def test_cache_readiness_checks_every_native_tool(self):
+        self.native_members()
+        result = self.run_extract(profile=extractor.NATIVE_PROFILE)
+        for name in extractor.NATIVE_BINARIES:
+            path = self.destination / "llvm/bin" / name
+            original = path.read_bytes()
+            path.unlink()
+            self.assertFalse(extractor.verify_tree(self.destination, "llvm", result["archiveSha256"], "20",
+                                                   extractor.NATIVE_PROFILE), name)
+            path.write_bytes(original)
+
+    def test_native_request_never_prunes_or_relabels_existing_full_tree(self):
+        self.native_members()
+        result = self.run_extract()
+        marker = self.destination / "llvm/.caelestia-extraction.json"
+        original = marker.read_bytes()
+        with self.assertRaisesRegex(ValueError, "profile-mismatch"):
+            self.run_extract(profile=extractor.NATIVE_PROFILE)
+        self.assertEqual(original, marker.read_bytes())
+        self.assertEqual(b"unused-driver", (self.destination / "llvm/bin/clang.exe").read_bytes())
+        # An older full marker has the same refusal and remains readable by
+        # the default developer profile.
+        result.pop("profile")
+        result["schemaVersion"] = 1
+        marker.write_text(json.dumps(result))
+        self.assertTrue(extractor.verify_tree(self.destination, "llvm", result["archiveSha256"], "20"))
+        with self.assertRaisesRegex(ValueError, "profile-mismatch"):
+            extractor.verify_tree(self.destination, "llvm", result["archiveSha256"], "20",
+                                  extractor.NATIVE_PROFILE)
+
+    def test_unmarked_non_profile_files_refuse_without_deletion(self):
+        self.native_members()
+        unknown = self.destination / "llvm/bin/owner-tool.exe"
+        unknown.parent.mkdir(parents=True)
+        unknown.write_bytes(b"preserve")
+        self.assert_refused(profile=extractor.NATIVE_PROFILE)
+        self.assertEqual(b"preserve", unknown.read_bytes())
+
+    def test_interrupted_native_retry_and_full_expansion_are_safe(self):
+        self.native_members()
+        self.assert_refused(profile=extractor.NATIVE_PROFILE, timeout=-1)
+        native = self.run_extract(profile=extractor.NATIVE_PROFILE)
+        self.assertEqual(extractor.NATIVE_PROFILE, native["profile"])
+        full = self.run_extract()
+        self.assertEqual("full", full["profile"])
+        self.assertEqual(b"unused-library", (self.destination / "llvm/bin/libclang.dll").read_bytes())
+
+    def test_native_link_cannot_expand_to_an_unselected_binary(self):
+        self.native_members()
+        self.members = [(name, (tarfile.SYMTYPE, "clang.exe") if name == "llvm/bin/clang-cl.exe" else payload)
+                        for name, payload in self.members]
+        self.assert_refused(profile=extractor.NATIVE_PROFILE)
+
+    def test_native_profile_rejects_case_colliding_allowed_tools(self):
+        self.native_members()
+        self.assert_refused(extra=[("llvm/bin/CLANG-CL.exe", b"collision")], profile=extractor.NATIVE_PROFILE)
+
+    def test_shared_hosted_cache_has_one_profile_and_two_preparation_consumers(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github/workflows/windows-build.yml").read_bytes()
+        self.assertEqual(workflow, (root / "windows/ci/windows-build.yml.template").read_bytes())
+        keys = [line.strip() for line in workflow.decode().splitlines()
+                if "key: windows-x64-tools-contract-v1-py" in line]
+        self.assertEqual(3, len(keys))
+        self.assertEqual(1, len(set(keys)))
+        self.assertIn("-llvm-native-v1-", keys[0])
+        self.assertEqual(2, workflow.decode().count("-ReusePreparedPython -NativeRuntimeOnly"))
+        self.assertNotIn("NativeRuntimeOnly", (root / "windows/scripts/Prepare-DeploymentToolchain.ps1").read_text())
 
 
 if __name__ == "__main__":

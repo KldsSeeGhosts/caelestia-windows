@@ -39,7 +39,9 @@ def main():
             entry = tarfile.TarInfo(name)
             entry.type = tarfile.DIRTYPE
             bundle.addfile(entry)
-        for name in ("bin/clang-cl.exe", "bin/lld-link.exe", "bin/llvm-rc.exe", "lib/clang/20/include/stddef.h",
+        for name in ("bin/clang-cl.exe", "bin/lld-link.exe", "bin/llvm-rc.exe", "bin/clang-scan-deps.exe",
+                     "bin/llvm-ar.exe", "bin/llvm-lib.exe", "bin/llvm-ranlib.exe", "bin/llvm-nm.exe",
+                     "bin/llvm-mt.exe", "bin/unused.exe", "bin/unused.dll", "lib/clang/20/include/stddef.h",
                      "lib/unused-sdk.lib", "include/unused-api.h"):
             payload = b"synthetic archive member, never executed"
             entry = tarfile.TarInfo("fixture-llvm/" + name)
@@ -251,6 +253,7 @@ $spec = [pscustomobject]@{{ llvmDirectory = 'fixture-llvm'; clangVersion = '20.1
     downloads = [pscustomobject]@{{ llvm = [pscustomobject]@{{ sha256 = '{llvm_digest}' }} }} }}
 $venvPython = {quote(sys.executable)}
 $llvmExtractor = {quote(prepare.parent.parent / 'toolchain' / 'extract_llvm.py')}
+$llvmProfile = 'full'
 $null = [IO.Directory]::CreateDirectory($ToolRoot)
 & ([scriptblock]::Create($extract.Extent.Text))
 if ($LASTEXITCODE -ne 0) {{ throw 'Production LLVM member extraction failed.' }}
@@ -266,6 +269,26 @@ if ((Test-Path "$ToolRoot/fixture-llvm/lib/unused-sdk.lib") -or
 if (-not (Test-Path "$ToolRoot/fixture-llvm/.caelestia-extraction.json")) {{
     throw 'Complete extraction marker missing.'
 }}
+$ToolRoot = {quote(root / (name + "-llvm-native"))}
+$llvmProfile = 'windows-native-v1'
+$null = [IO.Directory]::CreateDirectory($ToolRoot)
+& ([scriptblock]::Create($extract.Extent.Text))
+if ($LASTEXITCODE -ne 0) {{ throw 'Production native LLVM profile extraction failed.' }}
+if ((Test-Path "$ToolRoot/fixture-llvm/bin/unused.exe") -or
+    (Test-Path "$ToolRoot/fixture-llvm/bin/unused.dll")) {{ throw 'Native profile retained unselected bin payload.' }}
+$marker = Get-Content "$ToolRoot/fixture-llvm/.caelestia-extraction.json" -Raw | ConvertFrom-Json
+if ($marker.schemaVersion -ne 2 -or $marker.profile -cne $llvmProfile) {{ throw 'Native marker did not bind profile.' }}
+$readiness = $ast.Find({{
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        $node.Extent.Text -match '\\$llvmExtractor\\s+--verify-tree'
+}}, $true)
+if ($null -eq $readiness) {{ throw 'Missing production LLVM profile readiness command.' }}
+& ([scriptblock]::Create($readiness.Extent.Text))
+if ($LASTEXITCODE -ne 0) {{ throw 'Complete native cache was not accepted.' }}
+[IO.File]::Delete("$ToolRoot/fixture-llvm/bin/clang-scan-deps.exe")
+& ([scriptblock]::Create($readiness.Extent.Text))
+if ($LASTEXITCODE -ne 2) {{ throw 'Incomplete native cache was accepted.' }}
 'PASS {name}: actual LLVM extraction command preserves binaries/resources and excludes unused SDK'
 'PASS {name}: production archive download bounds, cache, checksum and timeout refusal (fake curl; no network)'
 'PASS {name}: verified hash, extraction, invalid hash, malformed hash, missing file, unchanged module path'
