@@ -20,6 +20,7 @@
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#include <shlobj.h>
 #endif
 
 #include "../../imagedrag.hpp"
@@ -54,12 +55,37 @@ private slots:
         const auto path = save(sample(), QStringLiteral("shot.png"));
         const auto data = imagedrag::mimeData(path);
         QVERIFY(data);
+#ifdef Q_OS_WIN
+        // Not a URL: Qt would deliver a URL list as UniformResourceLocator(W) too,
+        // which chat boxes and browsers paste as text beside the file.
+        QVERIFY(!data->hasUrls());
+        QVERIFY(!data->hasFormat(QStringLiteral("text/uri-list")));
+        QCOMPARE(QString::fromUtf8(data->data(QLatin1StringView(imagedrag::fileDropMime))),
+            QDir::toNativeSeparators(path));
+#else
         QVERIFY(data->hasUrls());
         QCOMPARE(data->urls().size(), 1);
         QCOMPARE(data->urls().constFirst(), QUrl::fromLocalFile(path));
-        QCOMPARE(data->urls().constFirst().toLocalFile(), path);
-        QVERIFY(data->hasFormat(QStringLiteral("text/uri-list")));
+#endif
     }
+
+#ifdef Q_OS_WIN
+    // CF_HDROP: a DROPFILES header, the wide path, then two nulls.
+    void dropFilesHoldsTheWidePath() {
+        const auto path = QStringLiteral("C:/Users/someone/AppData/Local/Temp/caelestia-drag-0/annotate.png");
+        const auto bytes = imagedrag::dropFiles(path);
+        QVERIFY(bytes.size() > qsizetype(sizeof(DROPFILES)));
+        DROPFILES header{};
+        memcpy(&header, bytes.constData(), sizeof(header));
+        QCOMPARE(header.pFiles, DWORD(sizeof(DROPFILES)));
+        QVERIFY(header.fWide);
+        const auto* wide = reinterpret_cast<const char16_t*>(bytes.constData() + sizeof(DROPFILES));
+        const auto native = QDir::toNativeSeparators(path);
+        QCOMPARE(QString::fromUtf16(wide), native);
+        QCOMPARE(bytes.size(), qsizetype(sizeof(DROPFILES)) + (native.size() + 2) * 2);
+        QVERIFY(imagedrag::dropFiles({}).isEmpty());
+    }
+#endif
 
     // The decoded image is what Qt's Windows converters turn into PNG, CF_DIB
     // and CF_DIBV5. This is the image data, unchanged.
@@ -83,6 +109,7 @@ private slots:
         QVERIFY(!data->hasColor());
         for (const auto& format : data->formats()) {
             const bool known = format == QStringLiteral("text/uri-list") || format == QStringLiteral("application/x-qt-image")
+                || format == QStringLiteral("application/x-caelestia-file-drop")
                 || format.startsWith(QStringLiteral("application/x-qt-windows-mime;value="));
             QVERIFY2(known, qPrintable(format));
         }
@@ -156,9 +183,9 @@ private slots:
     }
 
     void previewWithoutASizeUsesTheImage() {
-        const auto small = imagedrag::mimeData(save(sample(40, 24), QStringLiteral("p3.png")));
-        QCOMPARE(imagedrag::preview(*small, QSizeF(), 1.0).pixmap.size(), QSize(40, 24));
-        QCOMPARE(imagedrag::preview(*small, QSizeF(0, 50), 1.0).pixmap.size(), QSize(40, 24));
+        const auto smallImage = imagedrag::mimeData(save(sample(40, 24), QStringLiteral("p3.png")));
+        QCOMPARE(imagedrag::preview(*smallImage, QSizeF(), 1.0).pixmap.size(), QSize(40, 24));
+        QCOMPARE(imagedrag::preview(*smallImage, QSizeF(0, 50), 1.0).pixmap.size(), QSize(40, 24));
 
         const auto big = imagedrag::mimeData(save(sample(1024, 512), QStringLiteral("p4.png")));
         const auto look = imagedrag::preview(*big, QSizeF(), 1.0);
