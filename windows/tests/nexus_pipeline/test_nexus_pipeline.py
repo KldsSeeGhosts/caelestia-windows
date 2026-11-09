@@ -940,7 +940,7 @@ class Pipeline(unittest.TestCase):
         self.assertNotIn("candidate", validation.lower())
         self.assertIn("needs.scope.outputs.native", validation)
         self.assertIn("-notin @('none', 'reuse', 'full')", validation)
-        self.assertIn("needs: [scope, pair, validation]", candidate)
+        self.assertIn("needs: [scope, pair, validation, sources]", candidate)
         # The PR-only reuse job is a skipped ancestor on every main push; an
         # implicit success() would silently skip delivery (main run 42411463069).
         publish = text.split("\n  publish:\n")[1]

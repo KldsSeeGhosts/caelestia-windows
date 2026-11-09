@@ -42,6 +42,7 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
         'Native build and offscreen regressions',
         'Exact-pair receipt',
         'Windows validation',
+        'Prepare unsigned corresponding sources',
         'Assemble exact-tested release candidate',
         'Nexus development publication'
     )

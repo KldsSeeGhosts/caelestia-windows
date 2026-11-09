@@ -44,6 +44,8 @@ The shell workflow is `Windows build` and currently defines these job names:
 - `Native build and offscreen regressions` (conditional on the native-change classifier)
 - `Exact-pair receipt` (joins successful fixture and integration evidence)
 - `Windows validation` (the always-run aggregate)
+- `Prepare unsigned corresponding sources` (main-only, read-only preparation
+  beside validation; candidate assembly requires it, native validation does not)
 - `Assemble exact-tested release candidate` (native main pushes, only after
   aggregate validation succeeds; not a required validation prerequisite)
 - `Nexus development publication` (main-only, after validation, inert unless the

@@ -7,6 +7,9 @@ param(
     [Parameter(Mandatory)][string]$PairResults,
     [Parameter(Mandatory)][string]$TrustedRoot,
     [Parameter(Mandatory)][string]$OutputDirectory,
+    # Optional same-run public data, prepared without release eligibility.
+    # Context and source identity are checked; bytes must match the same-run index.
+    [string]$PreparedSources,
     [string]$Python = 'python',
     # Only disposable CI source/build diagnostics may be echoed. Logs never
     # enter the public candidate directory or its release assets.
@@ -20,8 +23,9 @@ Initialize-CaelestiaToolchainModules
 foreach ($name in @('ShellRoot', 'BuildRoot', 'ToolRoot', 'PairResults', 'TrustedRoot', 'OutputDirectory')) {
     Set-Variable -Name $name -Value (Resolve-CaelestiaDirectory (Get-Variable -Name $name -ValueOnly))
 }
+if ($PreparedSources) { $PreparedSources = Resolve-CaelestiaDirectory $PreparedSources }
 if ($ShellRoot -ne (Resolve-Path "$PSScriptRoot\..\..").Path) { throw 'Use the candidate checkout entrypoint.' }
-foreach ($root in @($ShellRoot, $BuildRoot, $ToolRoot, $PairResults, $TrustedRoot)) {
+foreach ($root in @($ShellRoot, $BuildRoot, $ToolRoot, $PairResults, $TrustedRoot, $PreparedSources) | Where-Object { $_ }) {
     if ($OutputDirectory -eq $root -or $OutputDirectory.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase) -or
         $root.StartsWith($OutputDirectory + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Candidate output overlaps an input.' }
 }
@@ -30,8 +34,9 @@ $validator = Join-Path $TrustedRoot '.github\scripts\candidate_contract.py'
 $identity = & $Python -I -B "$PSScriptRoot\nexus_candidate.py" --shell $ShellRoot --build $BuildRoot `
     --results $PairResults --validator $validator
 if ($LASTEXITCODE -ne 0 -or -not (Test-CaelestiaDevVersion "$identity")) { throw 'Independent candidate eligibility refused before assembly.' }
-# Only the independent exact-main gate above may reach source acquisition,
-# assembly, or any output creation. This script never calls a compiler/build.
+# Only the independent exact-main gate above may consume prepared sources or
+# assemble a candidate. Unsigned source preparation may already have run in a
+# separate read-only job. This script never calls a compiler/build.
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $privateLogs = Join-Path $OutputDirectory 'private'
 [IO.Directory]::CreateDirectory($privateLogs) | Out-Null
@@ -74,18 +79,25 @@ function Complete-CandidateHistory([string]$Root, [string]$Name) {
             'fetch', '--unshallow', '--no-tags', '--recurse-submodules=no', 'origin', $revision) 300
     }
 }
-foreach ($project in @(@{ name = 'shell'; root = $ShellRoot },
-    @{ name = 'backend'; root = "$ShellRoot\windows\deps\quickshell" },
-    @{ name = 'm3shapes'; root = "$ShellRoot\windows\deps\m3shapes" })) {
-    Complete-CandidateHistory $project.root $project.name
+if (-not $PreparedSources) {
+    foreach ($project in @(@{ name = 'shell'; root = $ShellRoot },
+        @{ name = 'backend'; root = "$ShellRoot\windows\deps\quickshell" },
+        @{ name = 'm3shapes'; root = "$ShellRoot\windows\deps\m3shapes" })) {
+        Complete-CandidateHistory $project.root $project.name
+    }
 }
 $scripts = Join-Path $ShellRoot 'windows\scripts'
 $assets = Join-Path $OutputDirectory 'sources'
 $spec = Get-Content "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
 $qt = Join-Path $ToolRoot $spec.qtDirectory
-Invoke-CandidateGate 'sources' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
-    '-SourceRoot', $ShellRoot, '-SourceRevision', $env:GITHUB_SHA, '-OutputDirectory', $assets,
-    '-CacheDirectory', (Join-Path $OutputDirectory 'source-cache')) 1800
+if ($PreparedSources) {
+    Invoke-CandidateCommand 'sources' $Python @('-I', '-B', "$PSScriptRoot\nexus_sources.py", 'materialize',
+        '--shell', $ShellRoot, '--transfer', $PreparedSources, '--output', $assets) 1800
+} else {
+    Invoke-CandidateGate 'sources' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
+        '-SourceRoot', $ShellRoot, '-SourceRevision', $env:GITHUB_SHA, '-OutputDirectory', $assets,
+        '-CacheDirectory', (Join-Path $OutputDirectory 'source-cache')) 1800
+}
 $assembly = Join-Path $OutputDirectory 'assembly'
 Invoke-CandidateGate 'assembly' "$scripts\New-CaelestiaRelease.ps1" @(
     '-BuildRoot', $BuildRoot, '-ReleaseId', "$identity", '-OutputDirectory', $assembly,

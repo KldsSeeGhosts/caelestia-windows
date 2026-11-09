@@ -13,7 +13,7 @@ foreach ($name in @('Resolve-PairRequest.ps1', 'Invoke-PairIntegration.ps1', 'Ge
 }
 $workflow = [IO.File]::ReadAllText("$root\.github\workflows\windows-build.yml")
 if (-not $workflow.Contains('needs: [scope, fixtures, build]') -or
-    -not $workflow.Contains('needs: [scope, pair, validation]')) {
+    -not $workflow.Contains('needs: [scope, pair, validation, sources]')) {
     throw 'Receipt join and candidate dependencies must remain explicit.'
 }
 if (-not $workflow.Contains('needs: [scope, checks, packaging, reuse, fixtures, build, pair]') -or
