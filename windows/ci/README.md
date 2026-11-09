@@ -187,6 +187,14 @@ launcher. The workflow then passes neither `-CompilerLauncher` nor
 `-RustCacheDirectory` to the production integration, skips the statistics steps
 and saves no cache. A checksum mismatch, extraction failure or version mismatch
 still fails the step.
+Fixtures and production restore a separate exact-key archive cache at
+`C:\sccache-tool`, keyed on the provisioning script that pins the version and
+digest. Only the production job on a trusted main push saves it, after archive
+hash, extraction and executable-version verification. This avoids relying on
+the older large tooling cache, which was saved before sccache provisioning.
+Cold downloads retry transient HTTP failures within bounded curl deadlines.
+An unavailable archive still selects a real uncached build, never a skipped
+gate. No warm-path timing saving is claimed without a hosted measurement.
 Backend hosted windows-2022 measurements reduced fixture compilation from
 366 seconds cold to 104 seconds warm: 290/291 hits, zero non-cacheable
 compilations, zero errors, about 8 MB of objects. Unlike ccache, sccache handles

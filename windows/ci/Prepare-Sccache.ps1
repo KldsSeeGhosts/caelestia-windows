@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$ToolRoot,
+    # Hosted archive cache is separate from the large canonical tooling cache.
+    [string]$ArchiveRoot,
     # Overridden only by regression tests. The pinned SHA-256 below still gates any archive.
     [string]$ReleaseBaseUrl = 'https://github.com/mozilla/sccache/releases/download'
 )
@@ -12,10 +14,12 @@ $ErrorActionPreference = 'Stop'
 $version = '0.15.0'
 $sha256 = 'b0b257a164bf438b2dea134ca7ded41c100f59a64b3bf275a202f1e8102ab217'
 $name = "sccache-v$version-x86_64-pc-windows-msvc"
-$archive = Join-Path $ToolRoot "downloads/$name.tar.gz"
+if (-not $ArchiveRoot) { $ArchiveRoot = Join-Path $ToolRoot 'downloads' }
+$archive = Join-Path $ArchiveRoot "$name.tar.gz"
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive) | Out-Null
 if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
-    curl.exe -L --fail --silent --show-error --connect-timeout 30 --max-time 180 `
+    curl.exe -L --fail --silent --show-error --connect-timeout 30 --max-time 60 `
+        --retry 2 --retry-delay 2 --retry-max-time 120 `
         "$ReleaseBaseUrl/v$version/$name.tar.gz" -o $archive
     if ($LASTEXITCODE -ne 0) {
         Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue

@@ -425,9 +425,14 @@ jobs:
             C:/t-public/logs/prepare-timing.json
           retention-days: 7
           if-no-files-found: ignore
+      - name: Restore pinned compiler-cache archive (never save)
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: windows-x64-sccache-archive-v1-${{ hashFiles('windows/ci/Prepare-Sccache.ps1') }}
+          path: C:\sccache-tool
       - name: Prepare optional pinned compiler cache
         run: |
-          & "$env:GITHUB_WORKSPACE\windows\ci\Prepare-Sccache.ps1" -ToolRoot $env:TOOL_ROOT
+          & "$env:GITHUB_WORKSPACE\windows\ci\Prepare-Sccache.ps1" -ToolRoot $env:TOOL_ROOT -ArchiveRoot C:\sccache-tool
       - name: Restore fixture objects (never save implicitly)
         id: objects
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -655,9 +660,21 @@ jobs:
         with:
           key: ${{ steps.python-tools.outputs.cache-primary-key }}
           path: C:\t-public\tools
+      - name: Restore pinned compiler-cache archive (never save implicitly)
+        id: sccache-tool
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: windows-x64-sccache-archive-v1-${{ hashFiles('windows/ci/Prepare-Sccache.ps1') }}
+          path: C:\sccache-tool
       - name: Prepare optional pinned compiler cache
         run: |
-          & "$env:GITHUB_WORKSPACE\windows\ci\Prepare-Sccache.ps1" -ToolRoot $env:TOOL_ROOT
+          & "$env:GITHUB_WORKSPACE\windows\ci\Prepare-Sccache.ps1" -ToolRoot $env:TOOL_ROOT -ArchiveRoot C:\sccache-tool
+      - name: Save verified compiler-cache archive from trusted main only
+        if: env.CI_COMPILER_LAUNCHER != '' && steps.sccache-tool.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          key: ${{ steps.sccache-tool.outputs.cache-primary-key }}
+          path: C:\sccache-tool
       - name: Restore production objects (never save implicitly)
         id: objects
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
