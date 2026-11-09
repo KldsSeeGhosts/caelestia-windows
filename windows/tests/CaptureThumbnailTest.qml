@@ -97,13 +97,23 @@ ShellRoot {
         }
         startDrag: (path, item) => root.dragRecorder.start(path, item)
         dragDistance: () => ({ width: 4, height: 4 })
+        // The grace period of a drag file is measured on this clock, which the
+        // cases move by hand instead of waiting 5 minutes.
+        clock: () => root.fakeNow
     }
 
+    // An instance for the reload cases, with the same recorders.
     Component {
         id: extraThumbnails
 
-        Thumbnails {}
+        Thumbnails {
+            startDrag: (path, item) => root.dragRecorder.start(path, item)
+            dragDistance: () => ({ width: 4, height: 4 })
+            clock: () => root.fakeNow
+        }
     }
+
+    property real fakeNow: 1000000
 
     Process {
         id: shell
@@ -234,6 +244,18 @@ ShellRoot {
     // Exits with the number of hand-over files in the temp directory.
     function countTemp(callback): void {
         powershell("exit @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'caelestia-clipboard-*.png' -ErrorAction SilentlyContinue).Count", callback);
+    }
+
+    // Exits with the number of drag directories in the temp directory.
+    function countDragDirs(callback): void {
+        powershell("exit @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'caelestia-drag-*' -ErrorAction SilentlyContinue).Count", callback);
+    }
+
+    // <temp>/caelestia-drag-<32 hex>/annotate-<stamp>.png, the scheme of a drag file.
+    function isDragPath(path): bool {
+        const prefix = root.tempFolder + "/caelestia-drag-";
+        return root.tempFolder !== "" && path.toLowerCase().indexOf(prefix.toLowerCase()) === 0
+            && /^[0-9a-f]{32}\/annotate-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.png$/.test(path.substring(prefix.length));
     }
 
     function winPath(path): string {
@@ -668,6 +690,7 @@ ShellRoot {
         check(card.dragged && !card.armed, "the click that its end can leave is not a click");
         check(entry.closing && !entry.closeAfterDrag, "and the close that arrived during it happens now");
         check(WindowsFiles.isFile(savedPath), "a saved file is never deleted by a drag");
+        check(entry.dragFile === "" && thumbs.dragFiles.length === 0, "and a saved capture makes no drag file");
         check(before.x === card.x && before.y === card.y, "the card did not move during it: " + card.x + ", " + card.y);
         check(opener.urls.length === opened + 1, "and the drag opened nothing");
         body.clicked(null);
@@ -709,22 +732,29 @@ ShellRoot {
         const card = cardFor(entry);
         const temp = entry.temp;
         check(!entry.saved && temp !== "" && entry.path === temp && WindowsFiles.isFile(temp), "a copy-only capture shows its preview file");
-        countTemp(filesBefore => countFiles(saveRoot + "/Screenshots", shotsBefore => {
+        check(entry.dragFile === "" && thumbs.dragFiles.length === 0, "and has no drag file before it is dragged");
+        countTemp(filesBefore => countFiles(saveRoot + "/Screenshots", shotsBefore => countDragDirs(dirsBefore => {
             dragRecorder.during = path => {
-                check(path === temp && WindowsFiles.isFile(path), "a copy-only capture drags its own preview file: " + path);
-                check(/\/caelestia-clipboard-[0-9a-f]{32}\.png$/.test(path) && inTemp(path), "which has the exact-path temp name");
+                check(path !== temp && WindowsFiles.isFile(path), "a copy-only capture drags a file of its own, not the preview file: " + path);
+                check(isDragPath(path), "named like a screenshot, in a drag directory of its own in the temp directory: " + path);
+                check(thumbs.entries[0].dragFile === path && thumbs.dragRecord(path) !== null, "which the owner tracks by that exact path");
             };
             card.bodyPressed(10, 10);
             card.bodyMoved(10, 30);
             dragRecorder.during = null;
             const call = dragRecorder.calls[dragRecorder.calls.length - 1];
-            check(call.path === temp, "the drag was of the preview file");
+            const file = entry.dragFile;
+            check(call.path === file && call.path !== temp && call.existed, "the drag was of the drag file");
+            shot.source = "file:///" + file;
+            check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 40, "which holds the same image: " + shot.sourceSize);
             check(!entry.saved && entry.temp === temp && entry.path === temp && entry.imagePath === temp, "the capture is still copy-only, and not saved by being dragged");
             check(WindowsFiles.isFile(temp), "the preview file survives the drag");
+            check(WindowsFiles.isFile(file), "and so does the drag file, because a target may open it after the drop");
             check(thumbs.entries.includes(entry) && !entry.closing && !entry.dragging, "and the card stays");
-            countTemp(filesAfter => countFiles(saveRoot + "/Screenshots", shotsAfter => {
-                check(filesAfter === filesBefore, "no file was made in the temp directory: " + filesBefore + " then " + filesAfter);
+            countTemp(filesAfter => countFiles(saveRoot + "/Screenshots", shotsAfter => countDragDirs(dirsAfter => {
+                check(filesAfter === filesBefore, "no hand-over or preview file was made: " + filesBefore + " then " + filesAfter);
                 check(shotsAfter === shotsBefore, "and none in the screenshots folder: " + shotsBefore + " then " + shotsAfter);
+                check(dirsAfter === dirsBefore + 1, "one drag directory was made: " + dirsBefore + " then " + dirsAfter);
                 check(toastWith("could not be dragged") === "", "with no error");
                 // Esc or a drop nowhere is a drag that ran. A drag that could not
                 // start is reported.
@@ -734,9 +764,15 @@ ShellRoot {
                 dragRecorder.result = true;
                 check(toastWith("could not be dragged") !== "", "a drag that cannot start is reported");
                 check(!entry.dragging && thumbs.entries.includes(entry) && WindowsFiles.isFile(temp), "and changes nothing");
-                dragMissing(entry);
-            }));
-        }));
+                // The second drag of the same card offers the same file.
+                check(dragRecorder.calls[dragRecorder.calls.length - 1].path === file && entry.dragFile === file, "a repeated drag reuses the drag file");
+                check(thumbs.dragFiles.length === 1, "and makes no second one");
+                countDragDirs(dirsReused => {
+                    check(dirsReused === dirsBefore + 1, "nor a second directory");
+                    dragMissing(entry);
+                });
+            })));
+        })));
     }
 
     function dragMissing(entry): void {
@@ -749,7 +785,177 @@ ShellRoot {
         check(thumbs.drag(entry, null) === false && dragRecorder.calls.length === calls, "a missing file starts no drag");
         entry.path = path;
         check(!entry.dragging, "and leaves the preview as it was");
-        dragPaused();
+        dragLifetime(entry);
+    }
+
+    // The lifetime of a drag file: it is removed once its card has closed and 5
+    // minutes have passed since its last drag ended, whichever comes last. The
+    // grace period is measured on the owner's clock, which these cases move.
+
+    // A. The card closes first, a minute after the drag. The file waits.
+    function dragLifetime(entry): void {
+        const file = entry.dragFile;
+        const temp = entry.temp;
+        const record = thumbs.dragRecord(file);
+        check(record !== null && !record.closed && record.path === file && thumbs.dragFiles.length === 1, "the drag file is tracked by its exact path, and its card is open");
+        const ended = record.endedAt;
+        check(ended === root.fakeNow, "with the time its last drag ended: " + ended);
+        thumbs.dragSweepInterval = 200;
+        root.fakeNow = ended + 60000;
+        thumbs.close(entry);
+        later(1500, () => step(() => {
+            check(!thumbs.entries.includes(entry), "the card closed");
+            check(!WindowsFiles.isFile(temp), "and took its preview file");
+            check(WindowsFiles.isFile(file), "but its drag file is still there, 1 minute after the last drag");
+            const waiting = thumbs.dragRecord(file);
+            check(waiting !== null && waiting.closed && waiting.endedAt === ended, "which now waits for the end of the grace period");
+            check(thumbs.sweeping, "with a timer that looks for due files");
+            root.fakeNow = ended + 299999;
+            thumbs.sweepDragFiles();
+            check(WindowsFiles.isFile(file), "1 ms short of 5 minutes it is kept");
+            root.fakeNow = ended + 300000;
+            later(700, () => step(() => {
+                check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "5 minutes after the last drag the timer removes it");
+                check(!thumbs.sweeping, "and the timer stops");
+                countDragDirs(count => {
+                    check(count === 0, "with its directory: " + count);
+                    dragGraceFirst();
+                });
+            }));
+        }));
+    }
+
+    // B. The 5 minutes pass first, with the card still open. The file stays
+    // until the card closes, and then goes at once.
+    function dragGraceFirst(): void {
+        check(thumbs.entries.length === 0, "the stack is empty");
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
+        later(900, () => step(() => {
+            const entry = thumbs.entries[0];
+            const card = cardFor(entry);
+            card.bodyPressed(10, 10);
+            card.bodyMoved(10, 30);
+            const file = entry.dragFile;
+            check(isDragPath(file) && WindowsFiles.isFile(file), "it was dragged");
+            root.fakeNow += 400000;
+            thumbs.sweepDragFiles();
+            check(WindowsFiles.isFile(file) && !thumbs.dragRecord(file).closed, "10 minutes on, an open card still keeps its drag file");
+            thumbs.close(entry);
+            later(1500, () => step(() => {
+                check(!thumbs.entries.includes(entry), "the card closed");
+                check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "and the file went with it, because the grace period was over");
+                countDragDirs(count => {
+                    check(count === 0, "and its directory: " + count);
+                    dragEvict();
+                });
+            }));
+        }));
+    }
+
+    // C. A sixth capture pushes the card out. The file outlives it by the grace
+    // period and is removed by the first capture after that.
+    function dragEvict(): void {
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail, the oldest");
+        later(900, () => step(() => {
+            const first = thumbs.entries[0];
+            cardFor(first).bodyPressed(10, 10);
+            cardFor(first).bodyMoved(10, 30);
+            const file = first.dragFile;
+            const ended = thumbs.dragRecord(file).endedAt;
+            check(isDragPath(file) && WindowsFiles.isFile(file), "that was dragged");
+            for (let i = 0; i < 4; i++)
+                check(thumbs.addSaved(info(), savedPath), "a saved thumbnail is added");
+            check(thumbs.entries.length === 5, "five thumbnails");
+            root.fakeNow = ended + 1000;
+            check(thumbs.addSaved(info(), savedPath), "a sixth arrives");
+            check(!thumbs.entries.includes(first), "and pushes the oldest out");
+            check(WindowsFiles.isFile(file) && thumbs.dragRecord(file).closed, "its drag file outlives it, 1 s after its last drag");
+            root.fakeNow = ended + 299999;
+            check(thumbs.addSaved(info(), savedPath), "another capture, 1 ms short of 5 minutes");
+            check(WindowsFiles.isFile(file), "keeps it");
+            root.fakeNow = ended + 300000;
+            check(thumbs.addSaved(info(), savedPath), "and one at 5 minutes");
+            check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "removes it");
+            check(WindowsFiles.isFile(savedPath), "while the saved files are never touched");
+            thumbs.closeAll();
+            later(1500, () => step(() => countDragDirs(count => {
+                check(count === 0 && thumbs.entries.length === 0, "no drag directory is left: " + count);
+                dragLocked();
+            })));
+        }));
+    }
+
+    // D. A target still holds the file when it is due. The file stays and is
+    // tried again until the target lets go.
+    function dragLocked(): void {
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
+        later(900, () => step(() => {
+            const entry = thumbs.entries[0];
+            cardFor(entry).bodyPressed(10, 10);
+            cardFor(entry).bodyMoved(10, 30);
+            const file = entry.dragFile;
+            holdFile(file, () => step(() => {
+                root.fakeNow += 400000;
+                thumbs.close(entry);
+                later(1500, () => step(() => {
+                    check(!thumbs.entries.includes(entry), "the card closed");
+                    check(WindowsFiles.isFile(file), "a file that a target holds open is not removed");
+                    check(thumbs.dragRecord(file) !== null && thumbs.sweeping, "it is remembered and tried again");
+                    letGo(() => step(() => {
+                        later(700, () => step(() => {
+                            check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "once the target lets go the timer removes it");
+                            countDragDirs(count => {
+                                check(count === 0, "with its directory: " + count);
+                                thumbs.dragSweepInterval = 30000;
+                                dragShutdown();
+                            });
+                        }));
+                    }));
+                }));
+            }));
+        }));
+    }
+
+    // E. A shell reload (or quit) removes the drag files at once: one whose card
+    // is still open, and one that is closed and not yet due.
+    function dragShutdown(): void {
+        const extra = extraThumbnails.createObject(root);
+        check(CaptureUi.thumbnails === extra, "a new instance registers itself");
+        check(extra.addCopy(info(), savedPath) && extra.addCopy(info(), savedPath), "it holds two copy-only thumbnails");
+        const open = extra.entries[0];
+        const closed = extra.entries[1];
+        check(extra.drag(open, null) && extra.drag(closed, null), "both were dragged");
+        const files = [open.dragFile, closed.dragFile];
+        check(files.every(isDragPath) && files[0] !== files[1] && files.every(path => WindowsFiles.isFile(path)), "each has a drag file of its own");
+        extra.finish(closed);
+        check(extra.dragFiles.length === 2 && extra.dragRecord(files[1]).closed && !extra.dragRecord(files[0]).closed, "one card has closed, one is open, and both files are kept");
+        check(files.every(path => WindowsFiles.isFile(path)), "within the grace period");
+        extra.destroy();
+        later(300, () => step(() => {
+            check(files.every(path => !WindowsFiles.isFile(path)), "destroying the instance removes both");
+            countDragDirs(count => {
+                check(count === 0, "with their directories: " + count);
+                check(CaptureUi.thumbnails === null, "and unregisters it");
+                CaptureUi.thumbnails = thumbs;
+                dragShutdownApi();
+            });
+        }));
+    }
+
+    // The same through the explicit call that the quit signal also makes.
+    function dragShutdownApi(): void {
+        check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
+        later(900, () => step(() => {
+            const entry = thumbs.entries[0];
+            cardFor(entry).bodyPressed(10, 10);
+            cardFor(entry).bodyMoved(10, 30);
+            const file = entry.dragFile;
+            check(isDragPath(file) && WindowsFiles.isFile(file), "that was dragged");
+            thumbs.removeAllDragFiles();
+            check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "removeAllDragFiles removes it whatever its age");
+            thumbs.closeAll();
+            later(1500, () => step(dragPaused));
+        }));
     }
 
     // The timeout stands still for as long as the drag runs, and then goes on
@@ -1113,13 +1319,14 @@ ShellRoot {
         thumbs.closeAll();
         later(1500, () => step(() => {
             check(thumbs.entries.length === 0 && panels().length === 0, "everything is closed");
-            countTemp(left => {
+            countTemp(left => countDragDirs(dirs => {
                 check(left === 0, "no hand-over or preview file is left in the temp directory: " + left);
+                check(dirs === 0 && thumbs.dragFiles.length === 0, "and no drag file or directory: " + dirs);
                 GlobalConfig.windows = { capture: { ui: "classic" } };
                 CaptureUi.glazierProvider = Glazier;
                 console.log("CAELESTIA_CAPTURE_THUMBNAIL_PASS " + assertions);
                 Qt.quit();
-            });
+            }));
         }));
     }
 }

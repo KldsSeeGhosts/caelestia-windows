@@ -89,7 +89,14 @@ if(CAELESTIA_WINDOWS_TESTS)
     target_compile_definitions(imagedrag-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(imagedrag-tests PRIVATE Qt::Core Qt::Gui Qt::Test user32)
 
-    foreach(fixture clipboard-logic clipboard-qml displaypower focus-follows-mouse knownfolders windowsfocusguard wasapi-format imagedrag)
+    # The drag file scheme (a directory of its own under the temp directory) and
+    # its strict remover. The source file is shared with the plugin (caelestia-core).
+    add_executable(dragfile-tests test/dragfile_test.cpp ../dragfile.cpp ../dragfile.hpp)
+    target_include_directories(dragfile-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    target_compile_definitions(dragfile-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(dragfile-tests PRIVATE Qt::Core Qt::Test)
+
+    foreach(fixture clipboard-logic clipboard-qml displaypower focus-follows-mouse knownfolders windowsfocusguard wasapi-format imagedrag dragfile)
         add_test(NAME ${fixture} COMMAND ${fixture}-tests)
         set_tests_properties(${fixture} PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endforeach()

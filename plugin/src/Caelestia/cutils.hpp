@@ -36,6 +36,19 @@ public:
     // names, directories and reparse points. It returns whether it deleted the file.
     Q_INVOKABLE static QString newCaptureTempPath();
     Q_INVOKABLE static bool removeCaptureTemp(const QString& path);
+    // Drag files, kept in the OS temp directory. A copy-only screenshot that is
+    // dragged out offers its own file, which has a normal screenshot name.
+    // newDragFile(name) creates a new directory <QDir::tempPath()>/caelestia-drag-<uuid>/
+    // (it must not exist yet), puts the empty file `name` in it and returns the
+    // file's path, or an empty string and nothing left behind. `name` is one file
+    // name that ends in ".png" and has no separator or character that Windows
+    // forbids. removeDragFile(path) deletes such a file and then its directory. It
+    // accepts only a path exactly equal to the temp directory plus that scheme, and
+    // refuses anything else: other paths, nested paths, reparse points, a directory
+    // with any entry besides the file. It returns whether the directory is gone
+    // afterwards, and false when it refused or could not delete.
+    Q_INVOKABLE static QString newDragFile(const QString& fileName);
+    Q_INVOKABLE static bool removeDragFile(const QString& path);
 
     // Drags the image file at `path` out of the shell, Windows only. It offers
     // the file (CF_HDROP) and the decoded image (PNG, CF_DIB), allows copy only
@@ -44,7 +57,10 @@ public:
     // Esc cancelled it. It returns false when no drag ran: the path is not an
     // image file, another drag is running, or the platform is not Windows. It
     // never writes a file. Call it from a pointer handler while the left button
-    // is down.
+    // is down. The drag, its data and its picture belong to the call, not to this
+    // object or any item: tearing down the QML engine while the drag runs cancels
+    // the drag and frees nothing under it. Nothing touches this object, the item
+    // or the file after the call returns, so it is safe if they are gone by then.
     Q_INVOKABLE bool startImageDrag(const QString& path, QQuickItem* preview = nullptr);
     // How far the pointer has to move, in device pixels, before a press becomes
     // a drag: { width, height }.
