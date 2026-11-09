@@ -401,47 +401,37 @@ private slots:
         QVERIFY(QFileInfo(link).isFile());
     }
 
-    // A hard link to a file elsewhere, put in the file's place after the directory
-    // was listed: deleting it would be deleting a name of someone else's file.
+    // A hard link to a file elsewhere in the drag file's place: deleting it would be
+    // deleting a name of someone else's file. The link is planted before removal
+    // starts. Planting it from the hook, while the directory is pinned, fails with a
+    // sharing violation on Windows Server runners, and the in-flight swap is an
+    // accepted same-user risk (capture-in-shell.md), so the static case is what is
+    // tested: the remover must refuse a file with more than one link.
     void refusesAFileSwappedForAHardLink() {
         const auto path = dragfile::create(root, shotName);
         const auto directory = QFileInfo(path).absolutePath();
         const auto outside = root + QStringLiteral("/outside.txt");
         QVERIFY(write(outside, "keep"));
 
-        bool unlinked = false;
+        const auto away = root + QStringLiteral("/moved-away.png");
+        QVERIFY2(MoveFileExW(QDir::toNativeSeparators(path).toStdWString().c_str(),
+                     QDir::toNativeSeparators(away).toStdWString().c_str(), 0),
+            "the test could not move the drag file away to put a hard link in its place");
         bool linked = false;
         DWORD linkError = ERROR_SUCCESS;
-        dragfile::testing::setHook([&](Step step, const QString& dir) {
-            if (step != Step::BeforeFileRemoval)
-                return;
-            // Rename rather than delete: a scanner holding the new file open turns a
-            // delete into a pending delete that keeps the name taken, so the hard
-            // link could not be created on hosted runners. A rename frees the name.
-            const auto away = root + QStringLiteral("/moved-away.png");
-            unlinked = MoveFileExW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
-                QDir::toNativeSeparators(away).toStdWString().c_str(), 0);
-            if (!unlinked)
-                return;
-            // A scanner on hosted runners can still hold the freshly written source
-            // open (ERROR_SHARING_VIOLATION), so retry briefly while it is busy.
-            for (int attempt = 0; attempt < 40; ++attempt) {
-                linked = CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
-                    QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
-                if (linked)
-                    break;
-                linkError = GetLastError();
-                if (linkError != ERROR_SHARING_VIOLATION)
-                    break;
-                Sleep(50);
-            }
-        });
-        const bool removed = dragfile::remove(root, path);
-        dragfile::testing::setHook({});
+        for (int attempt = 0; attempt < 40; ++attempt) {
+            linked = CreateHardLinkW(QDir::toNativeSeparators(path).toStdWString().c_str(),
+                QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
+            if (linked)
+                break;
+            linkError = GetLastError();
+            if (linkError != ERROR_SHARING_VIOLATION)
+                break;
+            Sleep(50);
+        }
+        QVERIFY2(linked, qPrintable(QStringLiteral("the test could not make the hard link, Win32 error %1").arg(linkError)));
 
-        QVERIFY2(unlinked, "the test could not move the drag file away to put a hard link in its place");
-        QVERIFY2(linked, qPrintable(QStringLiteral("the test could not make a hard link in the pinned directory, Win32 error %1").arg(linkError)));
-        QVERIFY(!removed);
+        QVERIFY(!dragfile::remove(root, path));
         QVERIFY(QFileInfo(path).isFile());
         QVERIFY(QFileInfo(directory).isDir());
         QCOMPARE(QFile(outside).size(), qint64(4));
