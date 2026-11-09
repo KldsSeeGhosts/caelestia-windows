@@ -2,6 +2,8 @@
 import copy
 import ctypes
 from ctypes import wintypes
+from contextlib import redirect_stderr
+import io
 import json
 import os
 from pathlib import Path
@@ -238,6 +240,38 @@ if (-not $VerifyOnly -or -not [IO.File]::Exists("$BundleRoot\release.json")) { e
         with self.assertRaisesRegex(ValueError, "shadow-gate-nonpass"):
             self.export()
         self.assertFalse((self.work / "out").exists())
+
+    def test_failed_join_echoes_only_bounded_failed_gate_without_publishing_logs(self):
+        path = self.work / "private/coverage.state.json"
+        row = shadow.read(path)
+        row["outcome"], row["exitCode"] = "failure", 1
+        self.put(path, row)
+        self.put(self.work / "private/coverage.log",
+                 (("excluded prefix\n" * 10000) + "coverage failure detail\n").encode())
+        self.put(self.work / "private/assembly.log", b"never echo successful gate")
+        shadow.state(self.work, self.ctx, "failed", "fixture")
+        output = io.StringIO()
+        with redirect_stderr(output), patch.object(shadow.nexus_job, "terminate"):
+            self.assertEqual(1, shadow.join(self.work, self.ctx, True))
+        self.assertIn("coverage failure detail", output.getvalue())
+        self.assertNotIn("never echo successful gate", output.getvalue())
+        self.assertLessEqual(len(output.getvalue().splitlines()), 80)
+        self.assertFalse((self.work / "out").exists())
+        self.assertNotIn("coverage failure detail", (self.work / "join-result.json").read_text())
+        self.put(self.work / "private/coverage.log", b"x" * 100000)
+        output = io.StringIO()
+        with redirect_stderr(output):
+            shadow.echo_failure(self.work)
+        self.assertLessEqual(len(output.getvalue()), 16001)
+        self.assertTrue(output.getvalue().startswith("[earlier output truncated]"))
+
+    def test_success_and_fallback_never_echo_private_diagnostics(self):
+        for mode in ("ready", "fallback"):
+            shadow.state(self.work, self.ctx, mode, "fixture")
+            with patch.object(shadow, "echo_failure") as echo, patch.object(shadow.nexus_job, "terminate"):
+                with patch.object(shadow.candidate.pair, "git", side_effect=[self.ctx["sha"], ""]):
+                    self.assertEqual(0, shadow.join(self.work, self.ctx, True))
+                echo.assert_not_called()
 
     def canonical_fixture(self):
         for source, target in (

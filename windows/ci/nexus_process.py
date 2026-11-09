@@ -26,6 +26,17 @@ def stop_tree(process):
     process.wait(timeout=10)
 
 
+def echo_failure_tail(log):
+    # Read only a bounded suffix, not an arbitrarily large build log.
+    with Path(log).open("rb") as source:
+        source.seek(max(0, Path(log).stat().st_size - 65536))
+        tail = source.read(65536).decode("utf-8-sig", errors="replace").splitlines()[-80:]
+    text = "\n".join(tail)
+    if len(text) > 16000:
+        text = "[earlier output truncated]\n" + text[-15970:]
+    print(text, file=sys.stderr, flush=True)
+
+
 def run_stage(command, log, name, timeout, heartbeat=15, echo=False):
     if (not re.fullmatch(r"[a-z][a-z0-9-]{0,63}", name)
             or not math.isfinite(timeout) or not 0 < timeout <= 3600
@@ -76,14 +87,7 @@ def run_stage(command, log, name, timeout, heartbeat=15, echo=False):
     if code:
         print(f"Private diagnostic log: {log}", file=sys.stderr, flush=True)
         if echo:
-            # Read only a bounded suffix, not an arbitrarily large build log.
-            with log.open("rb") as source:
-                source.seek(max(0, log.stat().st_size - 65536))
-                tail = source.read().decode("utf-8-sig", errors="replace").splitlines()[-80:]
-            text = "\n".join(tail)
-            if len(text) > 16000:
-                text = "[earlier output truncated]\n" + text[-15970:]
-            print(text, file=sys.stderr, flush=True)
+            echo_failure_tail(log)
     return code
 
 
