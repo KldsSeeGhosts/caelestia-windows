@@ -221,6 +221,17 @@ class PreparedSourcesTests(unittest.TestCase):
         self.assertIn("needs: [scope, checks, packaging, reuse, fixtures, build, pair]", workflow)
         self.assertNotIn("validation, sources]", workflow.split("\n  validation:\n")[0])
 
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell repository policy boundary")
+    def test_repository_policy_keeps_exact_job_inventory_and_required_validation_gate(self):
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+             str(ROOT / "windows/scripts/Test-RepositoryPolicy.ps1"), "-RepositoryRoot", str(ROOT)],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        policy = (ROOT / "windows/docs/REPOSITORY-POLICY.md").read_text()
+        self.assertIn("Required shell gate: `Windows validation`.", policy)
+        self.assertIn("`Prepare unsigned corresponding sources`", policy)
+
 
 if __name__ == "__main__":
     unittest.main()
