@@ -151,10 +151,12 @@ foreach ($entry in $vendor.files) {
     }
     $exceptions[$entry.path] = $true
 }
-foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
-    $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
-    $flags = Get-ReleaseFilePrivacy ([IO.File]::ReadAllBytes($file.FullName)) $file.Extension @(
-        $CandidateDirectory, $OutputDirectory, $SourceDataRoot, $env:USERPROFILE)
+. "$PSScriptRoot\..\scripts\Caelestia-ReleasePrivacy.ps1"
+$privacyFiles = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force)
+foreach ($flags in @(Invoke-CaelestiaReleasePrivacyScan -Files $privacyFiles -PrivateRoots @(
+    $CandidateDirectory, $OutputDirectory, $SourceDataRoot, $env:USERPROFILE) `
+    -ScannerDefinition ${function:Get-ReleaseFilePrivacy}.ToString())) {
+    $relative = $flags.FullName.Substring($root.Length + 1).Replace('\', '/')
     $reviewed = $relative.StartsWith('payload/', [StringComparison]::Ordinal) -and $exceptions.ContainsKey($relative.Substring(8))
     if ($flags.Sensitive -or ($flags.GenericPath -and -not $reviewed)) { throw 'Candidate privacy scan refused publication.' }
 }

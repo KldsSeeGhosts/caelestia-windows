@@ -376,6 +376,14 @@ trusted producer and restores (never saves) the identical tooling cache key.
 `Prepare-Toolchain.ps1` verifies/prepares the matching Qt deployment prefix.
 `New-NexusCandidate.ps1` and its independent eligibility checks are unchanged.
 
+Assembly and both independent payload gates scan their complete file inventories
+with two bounded PowerShell runspace workers. Each worker runs the same reviewed
+`Get-ReleaseFilePrivacy` function under the caller's culture and receives the
+same private roots. Vendor exceptions remain in the calling gate, unchanged.
+The scheduler returns no verdicts until every file completes; unreadable files,
+worker errors and malformed or extra output fail the scan. No verdict cache,
+artifact-supplied code or previously published scan result is accepted.
+
 A candidate-only rerun fails closed: its new run attempt has no matching
 transfer artifact. Even if old evidence were supplied, the independent gate
 rejects its pair run attempt (`pair-run-mismatch`). Rerun all jobs to regenerate

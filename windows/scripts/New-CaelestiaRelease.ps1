@@ -208,6 +208,7 @@ function Get-ReleaseVendorPrivacyExceptions([string]$PayloadRoot, [string]$Revie
     }
     return $exceptions
 }
+# Keep this scanner pure: independent runspaces receive only these parameters.
 function Get-ReleaseFilePrivacy([byte[]]$Bytes, [string]$Extension, [string[]]$PrivateRoots) {
     $texts = @([Text.Encoding]::UTF8.GetString($Bytes), [Text.Encoding]::Unicode.GetString($Bytes))
     if ($Bytes.Length -gt 1) { $texts += [Text.Encoding]::Unicode.GetString($Bytes, 1, $Bytes.Length - 1) }
@@ -377,10 +378,12 @@ try {
     # a distributable result. Report relative names, not matched identities.
     $privateRoots = @($repoRoot, $BuildRoot, $QtPrefix, $VCRuntimeRoot, $scratch, $SupplementalNoticesRoot,
         $env:USERPROFILE, $env:CARGO_HOME, $env:RUSTUP_HOME) | Where-Object { $_ }
+    . (Join-Path $PSScriptRoot 'Caelestia-ReleasePrivacy.ps1')
     $privacyCandidates = @()
-    foreach ($file in Get-ChildItem -LiteralPath $bundle -File -Recurse -Force) {
-        $flags = Get-ReleaseFilePrivacy ([IO.File]::ReadAllBytes($file.FullName)) $file.Extension $privateRoots
-        $relative = $file.FullName.Substring($bundle.Length + 1).Replace('\', '/')
+    $privacyFiles = @(Get-ChildItem -LiteralPath $bundle -File -Recurse -Force)
+    foreach ($flags in @(Invoke-CaelestiaReleasePrivacyScan -Files $privacyFiles -PrivateRoots $privateRoots `
+        -ScannerDefinition ${function:Get-ReleaseFilePrivacy}.ToString())) {
+        $relative = $flags.FullName.Substring($bundle.Length + 1).Replace('\', '/')
         $reviewedVendor = $relative.StartsWith('payload/', [StringComparison]::Ordinal) -and
             $vendorExceptions.ContainsKey($relative.Substring(8))
         if ($flags.Sensitive -or ($flags.GenericPath -and -not $reviewedVendor)) { $privacyCandidates += $relative }
