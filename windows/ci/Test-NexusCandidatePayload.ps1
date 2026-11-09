@@ -8,6 +8,23 @@ param(
     [string]$Python = 'python'
 )
 $ErrorActionPreference = 'Stop'
+$payloadClock = [Diagnostics.Stopwatch]::StartNew()
+$payloadTimings = [Collections.Generic.List[object]]::new()
+$payloadTimingReady = $false
+function Save-PayloadTiming([string]$Phase) {
+    $payloadClock.Stop()
+    $payloadTimings.Add([ordered]@{
+        phase = $Phase; seconds = [Math]::Round($payloadClock.Elapsed.TotalSeconds, 6)
+    })
+    # Only fixed phase labels and wall times. Keep this outside the extracted
+    # bundle and candidate assets, never in release metadata or verification.
+    if ($payloadTimingReady -and (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
+        [ordered]@{ schemaVersion = 1; phases = @($payloadTimings.ToArray()) } |
+            ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath (Join-Path $OutputDirectory 'verification-timing.json') -Encoding UTF8
+    }
+    $payloadClock.Restart()
+}
 . (Join-Path $PSScriptRoot '..\scripts\Caelestia-Toolchain.ps1')
 Initialize-CaelestiaToolchainModules
 . "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
@@ -29,10 +46,14 @@ $bundle = $release.bundle
 $zip = Join-Path $CandidateDirectory $bundle.name
 if ((Get-Item -LiteralPath $zip).Length -ne $bundle.size -or
     (Get-FileHash -LiteralPath $zip).Hash.ToLowerInvariant() -cne $bundle.sha256) { throw 'Candidate ZIP hash/size mismatch.' }
+Save-PayloadTiming 'metadata-and-zip-hash'
 $root = Expand-CaelestiaUpdate $zip $OutputDirectory $bundle.root $bundle.entries $bundle.unpackedSize
+$payloadTimingReady = $true
+Save-PayloadTiming 'zip-extraction'
 # Execute only the checkout verifier, not a script supplied by the artifact.
 $null = & "$PSScriptRoot\..\scripts\Install-CaelestiaRelease.ps1" -BundleRoot $root -VerifyOnly `
     -ExpectedManifestSha256 $release.manifestSha256
+Save-PayloadTiming 'manifest-files'
 $manifest = Read-CaelestiaStrictJsonFile "$root\release.json" 16777216 -AllowUtf8Bom
 $native = Read-CaelestiaStrictJsonFile "$CandidateDirectory\native-build.json" 1048576
 # The producer receipt records fractional stage durations, which the
@@ -102,6 +123,7 @@ foreach ($inputRecord in $manifest.nativeInputs) {
 foreach ($required in @('quickshell/qs.exe', 'install/caelestia-capture.exe', 'install/DesktopTakeover.dll')) {
     if (-not $seen.Contains($required)) { throw 'Incomplete tested native inventory.' }
 }
+Save-PayloadTiming 'identity-and-native-inventory'
 # Independently execute the existing assembler's pure privacy scanner. No
 # artifact-supplied code or broad "supplier exemption" is loaded.
 $tokens = $null; $errors = $null
@@ -136,6 +158,7 @@ foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
     $reviewed = $relative.StartsWith('payload/', [StringComparison]::Ordinal) -and $exceptions.ContainsKey($relative.Substring(8))
     if ($flags.Sensitive -or ($flags.GenericPath -and -not $reviewed)) { throw 'Candidate privacy scan refused publication.' }
 }
+Save-PayloadTiming 'privacy-scan'
 $prepared = Read-CaelestiaStrictJsonFile "$CandidateDirectory\source-assets-inventory.json" 16777216 -AllowUtf8Bom
 $final = Read-CaelestiaStrictJsonFile "$CandidateDirectory\component-inventory.json" 16777216 -AllowUtf8Bom
 if ($prepared.recipeSha256 -cne (Get-SourceRecipeHash "$SourceDataRoot\windows\release\source-assets.json") -or
@@ -157,6 +180,7 @@ for ($index = 0; $index -lt $files.Count; $index++) {
         if ($recorded[$field] -cne $files[$index][$field]) { throw 'Final source coverage row differs from original verified bundle.' }
     }
 }
+Save-PayloadTiming 'source-coverage'
 foreach ($project in $prepared.projects) {
     Assert-SourceRelativePath $project.bundle
     $path = Join-Path "$AssetsRoot\project-source" $project.bundle
@@ -185,6 +209,7 @@ foreach ($project in $prepared.projects) {
         throw 'Source Git bundle contains unreviewed extra refs.'
     }
 }
+Save-PayloadTiming 'project-git-bundles'
 foreach ($supplier in $prepared.suppliers) {
     if ($supplier.includedInSourceAsset) {
         Assert-SourceRelativePath $supplier.path
@@ -200,4 +225,5 @@ foreach ($asset in @('project-source', 'supplier-source')) {
         throw 'Source asset refers to a different prepared inventory.'
     }
 }
+Save-PayloadTiming 'supplier-hashes'
 Write-Output 'NEXUS_PAYLOAD_PASS same-tested-native/source/supplier/notice coverage; no install/native acceptance.'
