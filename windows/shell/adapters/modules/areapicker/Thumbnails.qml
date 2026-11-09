@@ -48,7 +48,10 @@ import "../../utils/FileUrls.js" as FileUrls
 // a due file with CUtils.removeDragFile, on a timer and at every new capture.
 // A clean shutdown or reload removes what is left (Component.onDestruction and
 // the application's aboutToQuit). A crash can leave a caelestia-drag-<uuid>
-// directory with one file in it, as it can leave a hand-over file.
+// directory with one file in it, as it can leave a hand-over file. So can a
+// teardown while a target still holds the file open: teardown cannot block, and
+// the retry list dies with this scope. That is an accepted gap, and there is no
+// bulk cleanup of unknown caelestia-drag-* directories.
 Scope {
     id: root
 

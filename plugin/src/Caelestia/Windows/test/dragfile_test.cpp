@@ -50,6 +50,20 @@ void dropJunction(const QString& link) {
     QFile::remove(link);
 }
 
+#ifdef Q_OS_WIN
+// What another process could do between two steps: move the directory away and put
+// a junction to `target` where it was. False when the directory could not be moved.
+bool swapForJunction(const QString& directory, const QString& target) {
+    const auto moved = directory + QStringLiteral(".moved");
+    if (!MoveFileW(QDir::toNativeSeparators(directory).toStdWString().c_str(),
+            QDir::toNativeSeparators(moved).toStdWString().c_str()))
+        return false;
+    return junction(directory, target);
+}
+#endif
+
+using Step = dragfile::testing::Step;
+
 } // namespace
 
 class DragFileTest : public QObject {
@@ -61,7 +75,11 @@ private slots:
         root = temp.path();
     }
 
-    void cleanup() { QDir(root).removeRecursively(); QDir().mkpath(root); }
+    void cleanup() {
+        dragfile::testing::setHook({});
+        QDir(root).removeRecursively();
+        QDir().mkpath(root);
+    }
 
     // The file sits alone in a directory of its own, with the name it was given.
     void createsOneFileInADirectoryOfItsOwn() {
@@ -302,6 +320,244 @@ private slots:
         QVERIFY(!dragfile::remove(root, plain));
         QVERIFY(QFileInfo(plain + QStringLiteral("/") + shotName).isFile());
     }
+
+#ifdef Q_OS_WIN
+    // The swap tests below use the test hook to change the file system at the exact
+    // step where a race would, so they do not depend on timing.
+
+    // Another process cannot move the drag directory away and put a junction in its
+    // place once remove() holds it, so the delete cannot reach the junction's target.
+    void removalPinsTheDirectoryAgainstASwap() {
+        const auto path = dragfile::create(root, shotName);
+        const auto directory = QFileInfo(path).absolutePath();
+        const auto target = root + QStringLiteral("/target");
+        QVERIFY(QDir().mkpath(target));
+        QVERIFY(write(target + QStringLiteral("/") + shotName, "keep"));
+        QVERIFY(write(target + QStringLiteral("/keep.txt"), "keep"));
+
+        bool ran = false;
+        bool swapped = true;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::BeforeFileRemoval) {
+                ran = true;
+                swapped = swapForJunction(dir, target);
+            }
+        });
+        const bool removed = dragfile::remove(root, path);
+        dragfile::testing::setHook({});
+        if (swapped)
+            dropJunction(directory);
+
+        QVERIFY(ran);
+        QVERIFY2(QFileInfo(target + QStringLiteral("/") + shotName).isFile(), "a file outside the drag directory was deleted");
+        QCOMPARE(QFile(target + QStringLiteral("/") + shotName).size(), qint64(4));
+        QVERIFY(QFileInfo(target + QStringLiteral("/keep.txt")).isFile());
+        QVERIFY2(!swapped, "the directory could be swapped while it was supposed to be held");
+        QVERIFY(removed);
+        QVERIFY(!QFileInfo::exists(directory));
+    }
+
+    // The same swap, between the file delete and the directory delete.
+    void removalKeepsThePinUntilTheDirectoryIsGone() {
+        const auto path = dragfile::create(root, shotName);
+        const auto directory = QFileInfo(path).absolutePath();
+        const auto target = root + QStringLiteral("/target");
+        QVERIFY(QDir().mkpath(target));
+        QVERIFY(write(target + QStringLiteral("/keep.txt"), "keep"));
+
+        bool ran = false;
+        bool swapped = true;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::BeforeDirectoryRemoval) {
+                ran = true;
+                swapped = swapForJunction(dir, target);
+            }
+        });
+        const bool removed = dragfile::remove(root, path);
+        dragfile::testing::setHook({});
+        if (swapped)
+            dropJunction(directory);
+
+        QVERIFY(ran);
+        QVERIFY2(!swapped, "the directory could be swapped while it was supposed to be held");
+        QVERIFY(QFileInfo(target + QStringLiteral("/keep.txt")).isFile());
+        QVERIFY(removed);
+        QVERIFY(!QFileInfo::exists(directory));
+    }
+
+    // A hard link to a file elsewhere, put in the file's place after the directory
+    // was listed: deleting it would be deleting a name of someone else's file.
+    void refusesAFileSwappedForAHardLink() {
+        const auto path = dragfile::create(root, shotName);
+        const auto directory = QFileInfo(path).absolutePath();
+        const auto outside = root + QStringLiteral("/outside.txt");
+        QVERIFY(write(outside, "keep"));
+
+        bool linked = false;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::BeforeFileRemoval) {
+                linked = QFile::remove(dir + QStringLiteral("/") + shotName)
+                    && CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
+                        QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
+            }
+        });
+        const bool removed = dragfile::remove(root, path);
+        dragfile::testing::setHook({});
+
+        QVERIFY(linked);
+        QVERIFY(!removed);
+        QVERIFY(QFileInfo(path).isFile());
+        QVERIFY(QFileInfo(directory).isDir());
+        QCOMPARE(QFile(outside).size(), qint64(4));
+    }
+
+    // A junction put in the file's place after the directory was listed.
+    void refusesAFileSwappedForAJunction() {
+        const auto path = dragfile::create(root, shotName);
+        const auto directory = QFileInfo(path).absolutePath();
+        const auto target = root + QStringLiteral("/target");
+        QVERIFY(QDir().mkpath(target));
+        QVERIFY(write(target + QStringLiteral("/keep.txt"), "keep"));
+
+        bool swapped = false;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::BeforeFileRemoval)
+                swapped = QFile::remove(dir + QStringLiteral("/") + shotName)
+                    && junction(dir + QStringLiteral("/") + shotName, target);
+        });
+        const bool removed = dragfile::remove(root, path);
+        dragfile::testing::setHook({});
+
+        QVERIFY(swapped);
+        QVERIFY(!removed);
+        QVERIFY(dragfile::isReparsePoint(path));
+        QVERIFY(QFileInfo(target + QStringLiteral("/keep.txt")).isFile());
+        QVERIFY(QFileInfo(directory).isDir());
+        dropJunction(path);
+        QVERIFY(QFileInfo(target + QStringLiteral("/keep.txt")).isFile());
+    }
+
+    // The temp root is swapped for a junction to a decoy after its final path was
+    // resolved. The decoy holds a directory of the same name, which is a plain
+    // directory, but its final path is not the expected one, so nothing is deleted.
+    void refusesADirectoryWhoseFinalPathIsNotTheExpectedOne() {
+        const auto realRoot = root + QStringLiteral("/tmproot");
+        const auto decoy = root + QStringLiteral("/decoy");
+        QVERIFY(QDir().mkpath(realRoot));
+        const auto path = dragfile::create(realRoot, shotName);
+        QVERIFY(!path.isEmpty());
+        const auto name = QFileInfo(QFileInfo(path).absolutePath()).fileName();
+        QVERIFY(QDir().mkpath(decoy + QStringLiteral("/") + name));
+        const auto decoyFile = decoy + QStringLiteral("/") + name + QStringLiteral("/") + shotName;
+        QVERIFY(write(decoyFile, "keep"));
+
+        bool swapped = false;
+        dragfile::testing::setHook([&](Step step, const QString&) {
+            if (step == Step::AfterRootResolved)
+                swapped = swapForJunction(realRoot, decoy);
+        });
+        const bool removed = dragfile::remove(realRoot, path);
+        dragfile::testing::setHook({});
+        if (swapped)
+            dropJunction(realRoot);
+
+        QVERIFY(swapped);
+        QVERIFY(!removed);
+        QCOMPARE(QFile(decoyFile).size(), qint64(4));
+        QVERIFY(QFileInfo(realRoot + QStringLiteral(".moved/") + name + QStringLiteral("/") + shotName).isFile());
+    }
+
+    // A failed directory check on a new drag directory must roll back nothing. The
+    // directory was swapped for a junction right after it was made, so the path now
+    // names the junction's target, which holds a file of the same name.
+    void rollbackAfterAFailedDirectoryCheckDeletesNothing() {
+        const auto target = root + QStringLiteral("/target");
+        QVERIFY(QDir().mkpath(target));
+        QVERIFY(write(target + QStringLiteral("/") + shotName, "keep"));
+
+        QString directory;
+        bool swapped = false;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::AfterDirectoryCreated) {
+                directory = dir;
+                swapped = swapForJunction(dir, target);
+            }
+        });
+        const auto path = dragfile::create(root, shotName);
+        dragfile::testing::setHook({});
+
+        QVERIFY(swapped);
+        const bool junctionStays = dragfile::isReparsePoint(directory);
+        dropJunction(directory);
+        QVERIFY(path.isEmpty());
+        QVERIFY(junctionStays);
+        QVERIFY(QFileInfo(target + QStringLiteral("/") + shotName).isFile());
+        QCOMPARE(QFile(target + QStringLiteral("/") + shotName).size(), qint64(4));
+    }
+
+    // A file already in the new directory makes the exclusive create fail. The
+    // rollback must not delete that file, which this call did not create.
+    void rollbackAfterAFailedNewOnlyDeletesNothing() {
+        QString directory;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::BeforeFileCreated) {
+                directory = dir;
+                write(dir + QStringLiteral("/") + shotName, "planted");
+            }
+        });
+        const auto path = dragfile::create(root, shotName);
+        dragfile::testing::setHook({});
+
+        QVERIFY(path.isEmpty());
+        QVERIFY(!directory.isEmpty());
+        QCOMPARE(QFile(directory + QStringLiteral("/") + shotName).size(), qint64(7));
+    }
+
+    // The new directory is held from the moment it was checked until the file exists,
+    // so it cannot be swapped for a junction and receive the file elsewhere.
+    void creationPinsTheDirectoryAgainstASwap() {
+        const auto target = root + QStringLiteral("/target");
+        QVERIFY(QDir().mkpath(target));
+        QVERIFY(write(target + QStringLiteral("/keep.txt"), "keep"));
+
+        QString directory;
+        bool swapped = true;
+        dragfile::testing::setHook([&](Step step, const QString& dir) {
+            if (step == Step::BeforeFileCreated) {
+                directory = dir;
+                swapped = swapForJunction(dir, target);
+            }
+        });
+        const auto path = dragfile::create(root, shotName);
+        dragfile::testing::setHook({});
+        if (swapped)
+            dropJunction(directory);
+
+        QVERIFY2(!QFileInfo::exists(target + QStringLiteral("/") + shotName), "the file was created outside the drag directory");
+        QVERIFY2(!swapped, "the directory could be swapped while it was supposed to be held");
+        QVERIFY(!path.isEmpty());
+        QVERIFY(QFileInfo(path).isFile());
+        QVERIFY(dragfile::remove(root, path));
+    }
+
+    // A temp root that is itself a junction works: its final path is resolved once
+    // and the drag directory must resolve below it.
+    void worksWhenTheTempRootIsAJunction() {
+        const auto real = root + QStringLiteral("/real");
+        const auto link = root + QStringLiteral("/link");
+        QVERIFY(QDir().mkpath(real));
+        QVERIFY2(junction(link, real), "the junction could not be made");
+
+        const auto path = dragfile::create(link, shotName);
+        QVERIFY(!path.isEmpty());
+        QVERIFY(path.startsWith(link + QStringLiteral("/caelestia-drag-")));
+        QVERIFY(QFileInfo(path).isFile());
+        QCOMPARE(QDir(real).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).size(), 1);
+        QVERIFY(dragfile::remove(link, path));
+        QCOMPARE(QDir(real).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).size(), 0);
+        dropJunction(link);
+    }
+#endif
 
 private:
     QTemporaryDir temp;

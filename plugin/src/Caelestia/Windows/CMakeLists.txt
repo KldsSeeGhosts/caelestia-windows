@@ -91,9 +91,11 @@ if(CAELESTIA_WINDOWS_TESTS)
 
     # The drag file scheme (a directory of its own under the temp directory) and
     # its strict remover. The source file is shared with the plugin (caelestia-core).
+    # CAELESTIA_DRAGFILE_HOOKS compiles in the seam that lets the swap tests change
+    # the file system between two steps. The plugin is built without it.
     add_executable(dragfile-tests test/dragfile_test.cpp ../dragfile.cpp ../dragfile.hpp)
     target_include_directories(dragfile-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
-    target_compile_definitions(dragfile-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_definitions(dragfile-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN CAELESTIA_DRAGFILE_HOOKS)
     target_link_libraries(dragfile-tests PRIVATE Qt::Core Qt::Test)
 
     foreach(fixture clipboard-logic clipboard-qml displaypower focus-follows-mouse knownfolders windowsfocusguard wasapi-format imagedrag dragfile)
