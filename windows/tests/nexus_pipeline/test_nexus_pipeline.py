@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -25,6 +26,8 @@ import nexus_candidate as c
 import nexus_publish as n
 import pair_result as p
 import nexus_process
+import nexus_assembly as assembly
+import wait_native_artifact as waiter
 import evidence_fixture
 
 MATERIAL = json.loads(os.environ.pop("NEXUS_TEST_KEY_MATERIAL"))
@@ -37,6 +40,17 @@ def fixture_script(template, **values):
 
 
 class Diagnostics(unittest.TestCase):
+    def test_checked_children_receive_no_publication_credentials(self):
+        with patch.dict(os.environ, {"GH_TOKEN": "PRIVATE_TOKEN", "NEXUS_SIGNING_KEY": "PRIVATE_KEY"}):
+            output = n.checked_run([sys.executable, "-I", "-c",
+                "import os; assert 'GH_TOKEN' not in os.environ; "
+                "assert 'NEXUS_SIGNING_KEY' not in os.environ; print('no credentials')"])
+            self.assertEqual(b"no credentials", output.strip())
+            with patch.object(n.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"", b"")) as run:
+                n.GitHub().upload("inert-tag", Path("inert.zip"))
+                self.assertEqual("PRIVATE_TOKEN", run.call_args.kwargs["env"]["GH_TOKEN"])
+                self.assertNotIn("NEXUS_SIGNING_KEY", run.call_args.kwargs["env"])
+
     def test_fixture_template_never_reprocesses_inserted_paths(self):
         value = "'C:\\Users\\RUNNER~1\\SOURCE ROOT PYTHON ECHO CHILD LOGS SHALLOW\\user''s\\@@B@@'"
         self.assertEqual(value + " literal", fixture_script("@@A@@ @@B@@", A=value, B="literal"))
@@ -193,8 +207,9 @@ class StageRunner(unittest.TestCase):
             self.execute(f"from pathlib import Path; Path({str(marker)!r}).touch()",
                          log=self.root / "absent" / "stage.log")
         self.assertFalse(marker.exists())
-        with patch.dict(os.environ, {"NEXUS_SIGNING_KEY": "PRIVATE_SENTINEL"}):
-            code, _, _ = self.execute("import os; assert 'NEXUS_SIGNING_KEY' not in os.environ; print('no key')")
+        with patch.dict(os.environ, {"NEXUS_SIGNING_KEY": "PRIVATE_SENTINEL", "GH_TOKEN": "PRIVATE_SENTINEL"}):
+            code, _, _ = self.execute("import os; assert 'NEXUS_SIGNING_KEY' not in os.environ; "
+                                      "assert 'GH_TOKEN' not in os.environ; print('no credentials')")
         self.assertEqual(0, code)
         self.assertNotIn("PRIVATE_SENTINEL", (self.root / "stage.log").read_text())
 
@@ -202,6 +217,23 @@ class StageRunner(unittest.TestCase):
         for budget in (0, -1, float("nan"), float("inf"), 3601):
             with self.subTest(budget=budget), self.assertRaises(ValueError):
                 self.execute("raise AssertionError('must not run')", timeout=budget)
+
+    def test_independent_assembly_gates_run_concurrently_and_all_must_pass(self):
+        plan = self.root / "plan.json"
+        n.write(plan, [{"name": name, "command": ["inert"], "log": str(self.root / name),
+                        "timeout": 300, "echo": False}
+                       for name in ("coverage", "license-lifecycle", "verify-original-zip")])
+        barrier = threading.Barrier(3)
+        def gate(*args, **kwargs):
+            barrier.wait(timeout=5)
+            return 0
+        with patch.object(nexus_process, "run_stage", side_effect=gate) as run:
+            assembly.run_gates(plan)
+            self.assertEqual(3, run.call_count)
+        with patch.object(nexus_process, "run_stage", side_effect=[0, 7, 0]) as run:
+            with self.assertRaisesRegex(ValueError, "assembly-gate-nonpass"):
+                assembly.run_gates(plan)
+            self.assertEqual(3, run.call_count)
 
     def test_real_history_helper_unshallows_exact_head_without_other_refs(self):
         source, shallow = self.root / "origin", self.root / "shallow"
@@ -246,6 +278,36 @@ Complete-CandidateHistory @@SHALLOW@@ 'fixture'
         self.assertEqual("", git(shallow, "tag", "--list"))
         self.assertNotIn("unrelated-branch", git(shallow, "branch", "-r"))
 
+class NativeArtifactWaiter(unittest.TestCase):
+    def test_api_request_uses_the_remaining_wait_budget(self):
+        github = n.GitHub(timeout=lambda: 0.25)
+        with patch.object(n.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"{}", b"")) as run:
+            github.api("inert-fixture")
+            self.assertEqual(0.25, run.call_args.kwargs["timeout"])
+
+    def test_current_attempt_artifact_success_failed_job_and_timeout(self):
+        ctx = {"runId": "12", "runAttempt": "2", "sha": "a" * 40}
+        artifact = {"name": "nexus-native-12-2", "expired": False,
+                    "workflow_run": {"id": 12, "head_sha": ctx["sha"]}}
+        github = unittest.mock.Mock()
+        github.pages.return_value = [artifact]
+        self.assertEqual("nexus-native-12-2", waiter.wait(github, ctx))
+        github.pages.side_effect = [[], [{"name": "Native build and offscreen regressions",
+                                         "status": "completed", "conclusion": "failure"}]]
+        with self.assertRaisesRegex(ValueError, "native-job-concluded-without-artifact"):
+            waiter.wait(github, ctx)
+        now, pauses = [0], []
+        def pause(seconds):
+            pauses.append(seconds)
+            now[0] += seconds
+        github.pages.side_effect = lambda path, field: (
+            [{"name": "nexus-native-12-1"}] if field == "artifacts" else
+            [{"name": "Native build and offscreen regressions", "status": "in_progress"}])
+        with self.assertRaisesRegex(ValueError, "native-artifact-timeout"):
+            waiter.wait(github, ctx, timeout=11, clock=lambda: now[0], pause=pause)
+        self.assertEqual([5, 5, 1], pauses)
+
+
 class Evidence(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="nexus-evidence-", dir=os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT"))
@@ -255,6 +317,229 @@ class Evidence(unittest.TestCase):
 
     def verify(self):
         return c.verify_live_evidence(self.shell, self.build, self.results, self.validator, self.ctx)
+
+    def unsealed(self):
+        directory = self.root / "unsealed"; directory.mkdir()
+        identity = assembly.assembly_identity(self.shell, self.build, self.ctx)
+        root = "caelestia-windows-" + identity + "-windows-x64"
+        for name in (n.EVIDENCE - assembly.PUBLIC_EVIDENCE) | {root + ".zip"}:
+            (directory / name).write_bytes(b"inert unsealed asset")
+        native = c.read(self.build / "logs/build.json")
+        release = {
+            "displayVersion": identity, "buildVersion": identity, "releaseId": identity, "tag": "v" + identity,
+            "sourceRevision": self.ctx["sha"], "backendRevision": native["backendRevision"],
+            "manifestSha256": "c" * 64, "profileSchema": 1, "minimumUpdaterSchema": 1,
+            "notesUrl": f"https://github.com/{n.REPO}/releases/tag/v{identity}",
+            "bundle": {"name": root + ".zip", "root": root,
+                       "url": f"https://github.com/{n.REPO}/releases/download/v{identity}/{root}.zip",
+                       "size": (directory / (root + ".zip")).stat().st_size,
+                       "sha256": c.digest(directory / (root + ".zip")), "entries": 1, "unpackedSize": 20},
+            "provenance": {"runId": self.ctx["runId"], "runAttempt": self.ctx["runAttempt"]}}
+        doc = {"schema": "caelestia-nexus-unsealed", "version": 1, **{
+            key: self.ctx[key] for key in ("repository", "event", "ref", "workflow", "runId", "runAttempt", "runNumber")},
+            "sourceRevision": self.ctx["sha"], "release": release, "gates": assembly.ASSEMBLY_GATES,
+            "qualification": "component-offscreen-and-data-only-not-windows11-acceptance",
+            "nativeInputs": native["nativeInputs"], "nativeToolchain": native["toolchain"],
+            "nativeSupervisor": native["supervisor"],
+            "assets": n.asset_rows(directory, [path.name for path in directory.iterdir()])}
+        n.write(directory / "unsealed.json", doc)
+        return directory, doc
+
+    def seal(self, directory):
+        return assembly.seal(self.shell, self.build, self.results, self.validator, directory, self.ctx)
+
+    def test_seal_preserves_today_candidate_schema_and_receipt_binding(self):
+        directory, unsealed = self.unsealed()
+        self.assertFalse((directory / "candidate.json").exists())
+        self.assertEqual("0.2.0-dev.1.8.2", self.seal(directory))
+        doc = n.verify_candidate_header(directory, self.ctx)
+        self.assertEqual(assembly.HEADER, set(doc))
+        self.assertEqual(n.GATES, doc["gates"])
+        self.assertEqual({row["name"] for row in unsealed["assets"]} | assembly.PUBLIC_EVIDENCE,
+                         {row["name"] for row in doc["assets"]})
+        self.assertFalse((directory / "unsealed.json").exists())
+        c.verify_receipt(self.shell, directory, self.validator, self.ctx)
+
+    def test_seal_powershell_entrypoint_has_no_credentials_and_validates_release_metadata(self):
+        directory, _ = self.unsealed()
+        trusted = self.root / "trusted/.github/scripts"
+        trusted.mkdir(parents=True)
+        shutil.copyfile(self.validator, trusted / "candidate_contract.py")
+        arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            str(ROOT / "windows/ci/Seal-NexusCandidate.ps1"), "-ShellRoot", str(self.shell),
+            "-BuildRoot", str(self.build), "-PairResults", str(self.results),
+            "-TrustedRoot", str(self.root / "trusted"), "-CandidateDirectory", str(directory),
+            "-Python", sys.executable]
+        environment = dict(os.environ, **env(self.ctx))
+        environment.pop("NEXUS_SIGNING_KEY", None)
+        environment["GH_TOKEN"] = "INERT_FORBIDDEN_CREDENTIAL"
+        refused = subprocess.run(arguments, capture_output=True, text=True, timeout=30, env=environment)
+        self.assertNotEqual(0, refused.returncode)
+        self.assertIn("Sealing must run without publication credentials", refused.stderr)
+        self.assertFalse((directory / "candidate.json").exists())
+        environment.pop("GH_TOKEN")
+        passed = subprocess.run(arguments, capture_output=True, text=True, timeout=30, env=environment)
+        self.assertEqual(0, passed.returncode, passed.stdout + passed.stderr)
+        self.assertIn("NEXUS_SEAL_PASS", passed.stdout)
+        n.verify_candidate_header(directory, self.ctx)
+
+    def test_unsealed_payload_validates_metadata_without_fabricating_public_provenance(self):
+        directory, doc = self.unsealed()
+        assets = self.root / "source-assets"; assets.mkdir()
+        original = (directory / "unsealed.json").read_bytes()
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            str(ROOT / "windows/ci/Test-NexusCandidatePayload.ps1"),
+            "-CandidateDirectory", str(directory), "-OutputDirectory", str(self.root / "payload"),
+            "-SourceDataRoot", str(self.shell), "-AssetsRoot", str(assets),
+            "-Unsealed", "-NativeBuildRoot", str(self.build)],
+            capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(0, result.returncode)
+        # The inert fixture is deliberately not a ZIP. Real metadata checks
+        # must pass before the unchanged extractor rejects its contents.
+        self.assertRegex(result.stderr, r"End of Central Directory|Central Directory corrupt")
+        self.assertFalse((self.root / "payload").exists())
+        self.assertEqual(original, (directory / "unsealed.json").read_bytes())
+        self.assertEqual({"runId", "runAttempt"}, set(doc["release"]["provenance"]))
+        self.assertFalse((directory / "candidate.json").exists())
+
+    def test_seal_refuses_changed_native_inventory_asset_and_nonpass_pair(self):
+        directory, doc = self.unsealed()
+        changed = copy.deepcopy(doc)
+        changed["nativeInputs"][0]["sha256"] = "0" * 64
+        n.write(directory / "unsealed.json", changed)
+        with self.assertRaisesRegex(ValueError, "tested-native-bytes-changed"):
+            self.seal(directory)
+        changed = copy.deepcopy(doc)
+        changed["nativeSupervisor"]["sourceSha256"] = "0" * 64
+        n.write(directory / "unsealed.json", changed)
+        with self.assertRaisesRegex(ValueError, "native-supervisor-metadata-mismatch"):
+            self.seal(directory)
+        n.write(directory / "unsealed.json", doc)
+        asset = directory / doc["assets"][0]["name"]
+        original = asset.read_bytes()
+        asset.write_bytes(original + b"changed")
+        with self.assertRaisesRegex(ValueError, "candidate-asset-hash-mismatch"):
+            self.seal(directory)
+        asset.write_bytes(original)
+        result = c.read(self.results / "pair-result.json")
+        result["result"] = "non-pass"
+        n.write(self.results / "pair-result.json", result)
+        with self.assertRaisesRegex(ValueError, "release-ineligible"):
+            self.seal(directory)
+        self.assertFalse((directory / "candidate.json").exists())
+
+    def test_development_does_not_rederive_sources_or_payload_but_promotion_does(self):
+        directory, _ = self.unsealed()
+        self.seal(directory)
+        work = self.root / "publication"; work.mkdir()
+        with patch.object(n, "checked_run", side_effect=AssertionError("development reran content checks")), \
+             patch.object(n, "extract_source", side_effect=AssertionError("development re-extracted sources")):
+            n.verify_payload(self.shell, directory, work, self.ctx, self.validator)
+        inventory = {"projects": [{"revision": self.ctx["sha"], "sha256": "a" * 64}]}
+        n.write(directory / "source-assets-inventory.json", inventory)
+        for name in ("project-source.zip", "supplier-source.zip"):
+            with zipfile.ZipFile(directory / name, "w") as archive:
+                archive.writestr("inert.txt", "fixture")
+        calls = []
+        def command(arguments, **kwargs):
+            arguments = list(map(str, arguments))
+            if arguments[0] == "git":
+                name = arguments[-1].split(":", 1)[1]
+                path = self.shell / name
+                return path.read_bytes() if path.exists() else b"{}"
+            calls.append(arguments)
+            if "-SourceRevision" in arguments:
+                output = Path(arguments[arguments.index("-OutputDirectory") + 1])
+                output.mkdir()
+                n.write(output / "component-inventory.json", inventory)
+            else:
+                self.assertIn("Test-NexusCandidatePayload.ps1", " ".join(arguments))
+            return b""
+        actual_git = p.git
+        def full_history(root, *args):
+            # The small evidence fixture has no M3Shapes checkout. History
+            # acquisition is mocked; ancestry, receipts and pins remain real.
+            return "false" if args == ("rev-parse", "--is-shallow-repository") else actual_git(root, *args)
+        with patch.object(n, "checked_run", side_effect=command), patch.object(p, "git", side_effect=full_history):
+            n.verify_payload(self.shell, directory, work, self.ctx, self.validator, historical=True)
+        self.assertEqual(2, len(calls))
+        self.assertEqual({"sources", "payload"}, {
+            row["phase"] for row in c.read(work / "publication-checks-timing.json")["phases"]})
+
+    def test_native_only_export_excludes_all_evidence_and_test_state(self):
+        transfer = self.root / "native-transfer"
+        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"), "-BuildRoot", str(self.build),
+            "-NativeOnly", "-OutputDirectory", str(transfer)], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual({"b-public"}, {path.name for path in transfer.iterdir()})
+        record = c.read(self.build / "logs/build.json")
+        self.assertEqual({"logs/build.json"} | {row["path"] for row in record["nativeInputs"]},
+                         {path.relative_to(transfer / "b-public").as_posix()
+                          for path in transfer.rglob("*") if path.is_file()})
+
+    def test_production_only_then_resume_keeps_six_row_journal_and_reports_only_at_end(self):
+        scripts = self.shell / "windows/scripts"; scripts.mkdir()
+        quote = lambda path: "'" + str(path).replace("'", "''") + "'"
+        (scripts / "Build-Prototype.ps1").write_text(
+            "param($BuildRoot, $QtPrefix, $LlvmBin, $Cli11Include, $ToolsBin, $Jobs, "
+            "[switch]$PublicRelease, [switch]$PluginTests)\n"
+            f"Copy-Item -LiteralPath {quote(self.build)} -Destination $BuildRoot -Recurse\n")
+        for name in ("Test-Validation", "New-CaelestiaRelease", "Test-Smoke"):
+            (scripts / (name + ".ps1")).write_text("exit 0\n")
+        sha = commit(self.shell)
+        record = c.read(self.build / "logs/build.json")
+        record["sourceRevision"] = sha
+        n.write(self.build / "logs/build.json", record)
+        tool = shutil.which("ctest")
+        self.assertIsNotNone(tool, "CTest must be on PATH, as in hosted Windows")
+        tool = Path(tool)
+        actual = tool.parent.parent / "Lib/site-packages/cmake/data/bin/ctest.exe"
+        if actual.exists():
+            tool = actual
+        tools = self.root / "tools/tools/Scripts"; tools.mkdir(parents=True)
+        shutil.copyfile(tool, tools / "ctest.exe")
+        (self.build / "caelestia").mkdir()
+        (self.build / "caelestia/CTestTestfile.cmake").write_text(
+            f'add_test(synthetic "{Path(sys.executable).as_posix()}" "-I" "-c" "pass")\n')
+        build, results = self.root / "production-build", self.root / "split-results"
+        arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            str(ROOT / "windows/ci/Invoke-PairIntegration.ps1"), "-ShellRoot", str(self.shell),
+            "-BackendRoot", str(self.shell / "windows/deps/quickshell"), "-Mode", "pinned",
+            "-BackendSha", record["backendRevision"], "-ToolRoot", str(self.root / "tools"),
+            "-BuildRoot", str(build), "-Results", str(results), "-JUnit", str(results / "raw.xml"),
+            "-Python", sys.executable]
+        result = subprocess.run(arguments + ["-ProductionOnly"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        journal = p.safe_journal(results)
+        self.assertEqual(["not_run", "success", "success", "not_run", "not_run", "not_run"],
+                         [row["outcome"] for row in journal])
+        self.assertFalse((results / "raw.xml").exists())
+        result = subprocess.run(arguments + ["-ResumeProduction"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        complete = p.safe_journal(results)
+        self.assertEqual(journal[1:3], complete[1:3])
+        self.assertTrue(all(row["outcome"] == "success" and row["exitCode"] == 0 for row in complete))
+        self.assertEqual(list(p.GATES), [row["name"] for row in complete])
+        self.assertTrue((results / "raw.xml").exists())
+
+    def test_resume_refuses_missing_failed_production_and_changed_native_bytes(self):
+        journal = p.safe_journal(self.results)
+        for row in journal:
+            if row["name"] not in ("production", "release-toolchain"):
+                row.update(outcome="not_run", exitCode=None, durationSeconds=None)
+        p.write(self.results / "integration-stages.json", journal[1:])
+        with self.assertRaisesRegex(ValueError, "integration-stage-set-mismatch"):
+            assembly.resume(self.shell, self.build, self.results)
+        failed = copy.deepcopy(journal); failed[1].update(outcome="failure", exitCode=7)
+        p.write(self.results / "integration-stages.json", failed)
+        with self.assertRaisesRegex(ValueError, "production-not-successful"):
+            assembly.resume(self.shell, self.build, self.results)
+        p.write(self.results / "integration-stages.json", journal)
+        assembly.resume(self.shell, self.build, self.results)
+        (self.build / "quickshell/qs.exe").write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "tested-native-bytes-changed"):
+            assembly.resume(self.shell, self.build, self.results)
 
     def test_real_pinned_validator_and_same_build_evidence_pass(self):
         self.assertEqual("0.2.0-dev.1.8.2", self.verify())
@@ -534,7 +819,7 @@ class FakeGitHub:
             return [{"name": name, "head_sha": self.ctx["sha"],
                      "conclusion": "failure" if name == self.bad_job else "success"} for name in n.REQUIRED_JOBS]
         if field == "artifacts":
-            return [{"name": f"nexus-candidate-{self.ctx['runId']}-{self.ctx['runAttempt']}",
+            return [{"name": f"nexus-unsealed-{self.ctx['runId']}-{self.ctx['runAttempt']}",
                      "expired": self.bad_artifact, "workflow_run": {
                          "id": int(self.ctx["runId"]), "head_sha": self.ctx["sha"], "repository_id": 7}}]
         raise AssertionError("Unexpected GitHub page")
@@ -911,7 +1196,7 @@ class Pipeline(unittest.TestCase):
         before, publish = text.split("\n  publish:\n")
         self.assertNotIn("secrets.", before)
         self.assertNotIn("contents: write", before)
-        self.assertIn("needs: [candidate, validation]", publish)
+        self.assertIn("needs: [candidate, pair, validation]", publish)
         scope = text.split("\n  scope:\n")[1].split("\n  checks:\n")[0]
         self.assertIn("runs-on: ubuntu-24.04", scope)
         self.assertIn("fetch-depth: 0", scope)
@@ -940,17 +1225,18 @@ class Pipeline(unittest.TestCase):
         self.assertNotIn("candidate", validation.lower())
         self.assertIn("needs.scope.outputs.native", validation)
         self.assertIn("-notin @('none', 'reuse', 'full')", validation)
-        self.assertIn("needs: [scope, pair, validation, sources]", candidate)
+        self.assertIn("needs: [scope, sources]", candidate)
         # The PR-only reuse job is a skipped ancestor on every main push; an
         # implicit success() would silently skip delivery (main run 42411463069).
         publish = text.split("\n  publish:\n")[1]
         for job in (candidate, publish):
             self.assertIn("if: >-\n      !cancelled() && github.event_name == 'push'", job)
-        # Eligibility rechecks backend-main ancestry; only pair resolution
-        # fetches that ref, so it must run before the trusted bootstrap.
-        self.assertLess(candidate.index("Resolve-PairRequest.ps1"), candidate.index("pair_result.py\" bootstrap"))
-        for condition in ("needs.validation.result == 'success'", "needs.pair.result == 'success'",
-                          "needs.scope.result == 'success'", "needs.scope.outputs.native == 'full'",
+        # Only seal requires the final pair and backend-main ancestry.
+        self.assertLess(publish.index("Resolve-PairRequest.ps1"), publish.index("pair_result.py\" bootstrap"))
+        for condition in ("needs.validation.result == 'success'", "needs.pair.result == 'success'"):
+            self.assertIn(condition, publish)
+            self.assertNotIn(condition, candidate)
+        for condition in ("needs.scope.result == 'success'", "needs.scope.outputs.native == 'full'",
                           "github.event_name == 'push'", "github.ref == 'refs/heads/main'"):
             self.assertIn(condition, candidate)
         self.assertIn("New-NexusCandidate.ps1", candidate)
@@ -962,7 +1248,16 @@ class Pipeline(unittest.TestCase):
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
         self.assertEqual(3, text.count("key: windows-x64-tools-contract-v1-py"))
-        self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
+        self.assertIn("name: nexus-native-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
+        self.assertIn("name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}", publish)
+        self.assertIn("name: nexus-unsealed-${{ github.run_id }}-${{ github.run_attempt }}", candidate)
+        self.assertIn("contents: read\n      actions: read", candidate)
+        self.assertIn("wait_native_artifact.py", candidate)
+        seal_step = publish.split("      - name: Seal exact-tested candidate\n")[1].split("      - name:")[0]
+        self.assertNotIn("GH_TOKEN", seal_step)
+        self.assertNotIn("NEXUS_SIGNING_KEY", seal_step)
+        self.assertNotIn("secrets.", seal_step)
+        self.assertNotIn("shadow", text)
         self.assertIn("path: C:/", candidate)
         build = text.split("\n  build:\n")[1].split("\n  pair:\n")[0]
         self.assertIn("retention-days: 1\n", build)

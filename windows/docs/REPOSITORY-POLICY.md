@@ -46,9 +46,11 @@ The shell workflow is `Windows build` and currently defines these job names:
 - `Windows validation` (the always-run aggregate)
 - `Prepare unsigned corresponding sources` (main-only, read-only preparation
   beside validation; candidate assembly requires it, native validation does not)
-- `Assemble exact-tested release candidate` (native main pushes, only after
-  aggregate validation succeeds; not a required validation prerequisite)
-- `Nexus development publication` (main-only, after validation, inert unless the
+- `Assemble exact-tested release candidate` (native main pushes, unsigned early
+  assembly after scope and sources; contents-read and actions-read permissions;
+  not a required validation prerequisite)
+- `Nexus development publication` (main-only, after assembly, pair and validation;
+  credential-free sealing precedes signing; inert unless the
   owner enables its variable and protected environment)
 
 Required shell gate: `Windows validation`.

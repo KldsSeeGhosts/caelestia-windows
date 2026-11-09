@@ -527,6 +527,7 @@ class PairTests(unittest.TestCase):
         blocks = []
         for name in ("First-party capture Rust regressions",
                      "Backend component build and portable tier",
+                     "Build production before offscreen tests",
                      "Exact-pair production integration"):
             found = re.search(
                 r"(?m)^      - name: " + re.escape(name) +
@@ -568,7 +569,7 @@ class PairTests(unittest.TestCase):
         p.write(results / "pair-local.json", {"backendRoot": str(self.backend)})
         p.write(results / "pair-request.json", {"mode": "pinned", "backend": self.backend_sha})
         found = re.search(
-            r"(?m)^      - name: Exact-pair production integration\r?\n"
+            r"(?m)^      - name: Build production before offscreen tests\r?\n"
             r"(?:        id: [^\r\n]+\r?\n)?"
             r"        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
         self.assertIsNotNone(found)
@@ -580,7 +581,7 @@ class PairTests(unittest.TestCase):
             " ConvertTo-Json -Compress | Add-Content -LiteralPath $env:WORKFLOW_CALLS\n"
             " $global:LASTEXITCODE = 0\n"
             "}\n"
-            "function python { Save-Call 'python' $args }\n" + found[1])
+            "function powershell.exe { Save-Call 'powershell' $args }\n" + found[1])
         launcher = str(self.root / "sccache.exe")
         rust_cache = str(self.root / "rust-cache")
         for case, launcher_value in (("set", launcher), ("unset", None), ("empty", "")):
@@ -999,7 +1000,7 @@ class PairTests(unittest.TestCase):
         self.assertNotIn("secrets.", readonly)
         self.assertNotIn("contents: write", readonly)
         self.assertEqual(1, publication.count("contents: write"))
-        self.assertIn("needs: [candidate, validation]", publication)
+        self.assertIn("needs: [candidate, pair, validation]", publication)
         self.assertIn("vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'", publication)
         self.assertNotIn("pull_request_target", workflow)
         reused = workflow.split("\n  reuse:\n")[1].split("\n  fixtures:\n")[0]
@@ -1036,10 +1037,13 @@ class PairTests(unittest.TestCase):
             self.assertIn("run --stage prepare --echo", job)
         for action in re.findall(r"uses: ([^\s]+)", workflow):
             self.assertRegex(action, r"^[\w/-]+@[a-f0-9]{40}$")
-        # Recorded Services still fails before compilation; no duplicate CI run.
+        # The default local path still runs Services first. Hosted execution
+        # builds once, then resumes all tests without changing the journal.
         self.assertNotIn("-ServicesPreflightRoot C:\\ci-preflight", workflow)
         self.assertLess(integration.index('Invoke-Gate 0 $ps (Get-ServicesArguments'),
                         integration.index('Invoke-Gate 1 $ps $buildArguments'))
+        self.assertIn("-ProductionOnly", build)
+        self.assertIn("-ResumeProduction", build)
         self.assertNotIn("--stage services", workflow)
         # Every cache writer, not just tooling, requires a trusted main push.
         saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", workflow)

@@ -214,7 +214,7 @@ class PreparedSourcesTests(unittest.TestCase):
         self.assertNotIn("contents: write", source_job)
         self.assertIn("retention-days: 1", source_job)
         self.assertIn("path: C:/nexus-source-prep/out/", source_job)
-        self.assertIn("needs: [scope, pair, validation, sources]", candidate)
+        self.assertIn("needs: [scope, sources]", candidate)
         self.assertIn("needs.sources.result == 'success'", candidate)
         self.assertIn("name: ${{ needs.sources.outputs.sources }}", candidate)
         self.assertIn("-PreparedSources C:\\nexus-source-transfer", candidate)

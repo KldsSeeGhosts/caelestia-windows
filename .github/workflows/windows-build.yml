@@ -518,8 +518,6 @@ jobs:
   build:
     name: Native build and offscreen regressions
     needs: [scope, reuse]
-    outputs:
-      shadow: ${{ steps.shadow-join.outputs.prepared || 'failed' }}
     if: >-
       always() && needs.scope.result == 'success' &&
       (needs.scope.outputs.native == 'full' ||
@@ -543,11 +541,6 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
 
     steps:
-      - name: Reserve native build budget from shadow waiting
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          # Stop shadow waiting by minute 110 of this 120-minute job.
-          "SHADOW_JOB_DEADLINE=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 6600)" >> $env:GITHUB_ENV
       - name: Checkout recursive sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -721,29 +714,7 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE\windows\ci\Get-BuildJobs.ps1"
 
-      # Shadow only. No token, new permission or receipt stage. The canonical
-      # candidate still executes every gate and is the only publication input.
-      - name: Opportunistically restore same-run sources for shadow assembly
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: shadow-sources
-        continue-on-error: true
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: nexus-sources-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/nexus-shadow-sources
-      - name: Start owned shadow assembly supervisor
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        continue-on-error: true
-        env:
-          SOURCES_READY: ${{ steps.shadow-sources.outcome == 'success' && 'true' || 'false' }}
-        run: |
-          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_shadow.py" start `
-            --shell $env:GITHUB_WORKSPACE --build $env:BUILD_ROOT --tools $env:TOOL_ROOT `
-            --results $env:PAIR_RESULTS --transfer C:\nexus-shadow-sources --work C:\nexus-shadow `
-            --source-ready $env:SOURCES_READY
-          if ($LASTEXITCODE -ne 0) { throw 'Shadow startup failed. Canonical acceptance is unchanged.' }
-      - name: Exact-pair production integration
-        id: integration
+      - name: Build production before offscreen tests
         run: |
           $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
           $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
@@ -754,49 +725,41 @@ jobs:
             $launcherArguments = @('-CompilerLauncher', $env:CI_COMPILER_LAUNCHER,
               '-RustCacheDirectory', $env:RUST_CACHE_DIR)
           }
-          # Isolated hosted fixtures only. Echo failures into the job log;
-          # retained receipt/artifact output remains allowlisted.
-          python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
-            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage integration --echo `
-            --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
-            -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" `
+          & powershell.exe -NoProfile -NonInteractive `
+            -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" -ProductionOnly `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
             -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT -Jobs $env:BUILD_JOBS `
             @launcherArguments `
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
+          if ($LASTEXITCODE -ne 0) { throw 'Production-only build failed.' }
+      - name: Stage early native assembly inputs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Export-NexusCandidateInputs.ps1" `
+            -BuildRoot $env:BUILD_ROOT -NativeOnly -OutputDirectory C:\nexus-native-transfer
+      - name: Transfer early native assembly inputs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-native-transfer/
+          retention-days: 1
+          if-no-files-found: error
+          include-hidden-files: true
+      - name: Exact-pair production integration
+        id: integration
+        run: |
+          $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
+          $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
+          python -I -B "$env:TRUSTED_ROOT\.github\scripts\candidate_contract.py" `
+            --receipt "$env:PAIR_RESULTS\candidate-result.json" run --stage integration --echo `
+            --junit "$env:PAIR_RESULTS\integration.raw.xml" -- powershell.exe -NoProfile -NonInteractive `
+            -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" -ResumeProduction `
+            -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
+            -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
             -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -QmlJobs 2 -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
-      - name: Join owned shadow assembly and recheck source cleanliness
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        id: shadow-join
-        continue-on-error: true
-        env:
-          INTEGRATION_RESULT: ${{ steps.integration.outcome }}
-        run: |
-          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_shadow.py" join `
-            --work C:\nexus-shadow --integration-result $env:INTEGRATION_RESULT
-          if ($LASTEXITCODE -ne 0) { throw 'Shadow join failed. Canonical acceptance is unchanged.' }
-      - name: Retain unsigned shadow comparison inputs only
-        if: success() && steps.integration.outcome == 'success' && steps.shadow-join.outputs.prepared == 'ready'
-        continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: nexus-shadow-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/nexus-shadow/out/
-          retention-days: 1
-          if-no-files-found: error
-          compression-level: 0
-      - name: Sanitized shadow assembly diagnostics
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: nexus-shadow-states-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            C:/nexus-shadow/join-result.json
-            C:/nexus-shadow/private/*.state.json
-          retention-days: 7
-          if-no-files-found: ignore
       - name: Production and offscreen fixture timings
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -895,8 +858,6 @@ jobs:
   pair:
     name: Exact-pair receipt
     needs: [scope, fixtures, build]
-    outputs:
-      shadow: ${{ needs.build.outputs.shadow }}
     if: >-
       always() && needs.scope.result == 'success' &&
       needs.scope.outputs.native != 'none' &&
@@ -1111,20 +1072,20 @@ jobs:
 
   candidate:
     name: Assemble exact-tested release candidate
-    needs: [scope, pair, validation, sources]
-    # !cancelled(): the PR-only reuse job is skipped on every main push and sits
-    # upstream via fixtures/build -> pair. The implicit success() treats that
-    # skip as failure and silently skipped delivery. A cancelled run still does
-    # not deliver; every required result is checked explicitly below.
+    needs: [scope, sources]
+    # Assembly is unsigned and overlaps tests. Publish still requires their
+    # explicit success and seals the exact tested native inventory.
     if: >-
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.scope.result == 'success' && needs.scope.outputs.native == 'full' &&
-      needs.pair.result == 'success' && needs.validation.result == 'success' &&
       needs.sources.result == 'success' && needs.sources.outputs.sources != ''
     runs-on: windows-2022
     timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
     outputs:
-      candidate: ${{ steps.candidate.outcome == 'success' && format('nexus-candidate-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+      candidate: ${{ steps.candidate.outcome == 'success' && format('nexus-unsealed-{0}-{1}', github.run_id, github.run_attempt) || '' }}
     defaults:
       run:
         shell: pwsh
@@ -1133,8 +1094,6 @@ jobs:
       BUILD_ROOT: C:\b-public
       TOOL_ROOT: C:\t-public
       PIP_CACHE_DIR: C:\t-public\pip
-      PAIR_RESULTS: C:\ci-pair
-      TRUSTED_ROOT: C:\pair-trusted
       PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - name: Checkout exact recursive sources
@@ -1150,17 +1109,6 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
-      - name: Resolve exact pinned pair and re-bootstrap trusted producer
-        # Resolution also fetches backend refs/remotes/origin/main, which the
-        # independent eligibility gate needs to recheck backend-main ancestry.
-        run: |
-          & "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1" `
-            -Mode pinned -ShellSha $env:GITHUB_SHA `
-            -ShellRoot $env:GITHUB_WORKSPACE -CandidateRoot C:\pair-backend -Results C:\candidate-request
-          $local = Get-Content C:\candidate-request\pair-local.json -Raw | ConvertFrom-Json
-          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" bootstrap `
-            --shell $env:GITHUB_WORKSPACE --backend $local.backendRoot --target $env:TRUSTED_ROOT
-          if ($LASTEXITCODE -ne 0) { throw 'Trusted producer extraction or digest check failed.' }
       - name: Restore verified deployment tooling (never save)
         id: deployment-tools
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -1198,59 +1146,37 @@ jobs:
             C:/t-public/logs/deployment-prepare-timing.json
           retention-days: 7
           if-no-files-found: ignore
-      - name: Restore exact build and evidence paths
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/
       - name: Restore same-run prepared source data
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: ${{ needs.sources.outputs.sources }}
           path: C:/nexus-source-transfer
+      - name: Wait for this attempt's early native artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\wait_native_artifact.py"
+          if ($LASTEXITCODE -ne 0) { throw 'Native artifact wait refused.' }
+      - name: Restore early native paths
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: nexus-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/
       - name: Assemble exact-tested release candidate
         id: candidate
         run: |
           & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\New-NexusCandidate.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BuildRoot $env:BUILD_ROOT -ToolRoot $env:TOOL_ROOT `
-            -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate `
+            -OutputDirectory C:\nexus-candidate `
             -PreparedSources C:\nexus-source-transfer -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Exact-tested candidate assembly failed.' }
-      - name: Restore shadow comparison inputs if prepared
-        if: steps.candidate.outcome == 'success' && needs.pair.outputs.shadow == 'ready'
-        id: shadow-download
-        continue-on-error: true
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: nexus-shadow-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/nexus-shadow-transfer
-      - name: Compare shadow bytes without changing release acceptance
-        if: steps.candidate.outcome == 'success'
-        continue-on-error: true
-        env:
-          SHADOW_STATUS: ${{ needs.pair.outputs.shadow || 'failed' }}
-        run: |
-          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_shadow.py" compare `
-            --status $env:SHADOW_STATUS --transfer C:\nexus-shadow-transfer `
-            --shell $env:GITHUB_WORKSPACE --build $env:BUILD_ROOT --canonical C:\nexus-candidate `
-            --report C:\nexus-shadow-comparison.json
-          if ($LASTEXITCODE -ne 0) { throw 'Shadow qualification failed. Consumption remains disabled.' }
-      - name: Sanitized canonical versus shadow comparison
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: nexus-shadow-comparison-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/nexus-shadow-comparison.json
-          retention-days: 7
-          if-no-files-found: ignore
-      - name: Retain exact-tested release candidate
+      - name: Retain unsealed assembly
         if: steps.candidate.outcome == 'success'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: nexus-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          name: nexus-unsealed-${{ github.run_id }}-${{ github.run_attempt }}
           path: C:/nexus-candidate/out/
-          retention-days: 7
+          retention-days: 1
           if-no-files-found: error
       - name: Sanitized candidate stage states
         if: always()
@@ -1265,12 +1191,12 @@ jobs:
 
   publish:
     name: Nexus development publication
-    needs: [candidate, validation]
+    needs: [candidate, pair, validation]
     # !cancelled() for the same skipped-ancestor reason as candidate; results
     # are checked explicitly.
     if: >-
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      needs.validation.result == 'success' && needs.candidate.result == 'success' &&
+      needs.validation.result == 'success' && needs.pair.result == 'success' && needs.candidate.result == 'success' &&
       needs.candidate.outputs.candidate != '' && vars.NEXUS_DEVELOPMENT_PUBLISH == 'enabled'
     runs-on: windows-2022
     timeout-minutes: 120
@@ -1299,6 +1225,25 @@ jobs:
         with:
           name: ${{ needs.candidate.outputs.candidate }}
           path: C:/nexus-input
+      - name: Download final tested native files and evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/
+      - name: Seal exact-tested candidate
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE\windows\ci\Resolve-PairRequest.ps1" `
+            -Mode pinned -ShellSha $env:GITHUB_SHA -ShellRoot $env:GITHUB_WORKSPACE `
+            -CandidateRoot C:\pair-backend -Results C:\seal-request
+          $local = Get-Content C:\seal-request\pair-local.json -Raw | ConvertFrom-Json
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\pair_result.py" bootstrap `
+            --shell $env:GITHUB_WORKSPACE --backend $local.backendRoot --target C:\pair-trusted
+          if ($LASTEXITCODE -ne 0) { throw 'Trusted producer extraction or digest check failed.' }
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Seal-NexusCandidate.ps1" `
+            -ShellRoot $env:GITHUB_WORKSPACE -BuildRoot C:\b-public -PairResults C:\ci-pair `
+            -TrustedRoot C:\pair-trusted -CandidateDirectory C:\nexus-input
+          if ($LASTEXITCODE -ne 0) { throw 'Exact-tested sealing failed.' }
       - name: Verify immutable release and advance development pointer
         shell: pwsh
         env:

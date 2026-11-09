@@ -4,8 +4,6 @@ param(
     [Parameter(Mandatory)][string]$ShellRoot,
     [Parameter(Mandatory)][string]$BuildRoot,
     [Parameter(Mandatory)][string]$ToolRoot,
-    [Parameter(Mandatory)][string]$PairResults,
-    [Parameter(Mandatory)][string]$TrustedRoot,
     [Parameter(Mandatory)][string]$OutputDirectory,
     # Optional same-run public data, prepared without release eligibility.
     # Context and source identity are checked; bytes must match the same-run index.
@@ -20,23 +18,20 @@ $ErrorActionPreference = 'Stop'
 Initialize-CaelestiaToolchainModules
 . "$PSScriptRoot\..\scripts\Caelestia-InstallCommon.ps1"
 . "$PSScriptRoot\..\scripts\Caelestia-Update.ps1"
-foreach ($name in @('ShellRoot', 'BuildRoot', 'ToolRoot', 'PairResults', 'TrustedRoot', 'OutputDirectory')) {
+foreach ($name in @('ShellRoot', 'BuildRoot', 'ToolRoot', 'OutputDirectory')) {
     Set-Variable -Name $name -Value (Resolve-CaelestiaDirectory (Get-Variable -Name $name -ValueOnly))
 }
 if ($PreparedSources) { $PreparedSources = Resolve-CaelestiaDirectory $PreparedSources }
 if ($ShellRoot -ne (Resolve-Path "$PSScriptRoot\..\..").Path) { throw 'Use the candidate checkout entrypoint.' }
-foreach ($root in @($ShellRoot, $BuildRoot, $ToolRoot, $PairResults, $TrustedRoot, $PreparedSources) | Where-Object { $_ }) {
+foreach ($root in @($ShellRoot, $BuildRoot, $ToolRoot, $PreparedSources) | Where-Object { $_ }) {
     if ($OutputDirectory -eq $root -or $OutputDirectory.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase) -or
         $root.StartsWith($OutputDirectory + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Candidate output overlaps an input.' }
 }
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Candidate assembly requires fresh output.' }
-$validator = Join-Path $TrustedRoot '.github\scripts\candidate_contract.py'
-$identity = & $Python -I -B "$PSScriptRoot\nexus_candidate.py" --shell $ShellRoot --build $BuildRoot `
-    --results $PairResults --validator $validator
-if ($LASTEXITCODE -ne 0 -or -not (Test-CaelestiaDevVersion "$identity")) { throw 'Independent candidate eligibility refused before assembly.' }
-# Only the independent exact-main gate above may consume prepared sources or
-# assemble a candidate. Unsigned source preparation may already have run in a
-# separate read-only job. This script never calls a compiler/build.
+$identity = & $Python -I -B "$PSScriptRoot\nexus_assembly.py" identity --shell $ShellRoot --build $BuildRoot
+if ($LASTEXITCODE -ne 0 -or -not (Test-CaelestiaDevVersion "$identity")) { throw 'Exact-main production identity refused before assembly.' }
+# Assembly does not claim test eligibility. Sealing verifies final evidence
+# and byte equality before it creates the unchanged candidate.json.
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $privateLogs = Join-Path $OutputDirectory 'private'
 [IO.Directory]::CreateDirectory($privateLogs) | Out-Null
@@ -107,11 +102,6 @@ $bundle = Join-Path $assembly $rootName
 $manifestHash = (Get-FileHash "$bundle\release.json").Hash.ToLowerInvariant()
 $inventoryHash = (Get-FileHash "$assets\component-inventory.json").Hash.ToLowerInvariant()
 $coverage = Join-Path $OutputDirectory 'coverage'
-Invoke-CandidateGate 'coverage' "$scripts\Prepare-CaelestiaSourceAssets.ps1" @(
-    '-AssetsRoot', $assets, '-BundleRoot', $bundle, '-ExpectedInventorySha256', $inventoryHash,
-    '-ExpectedManifestSha256', $manifestHash, '-CoverageOutputDirectory', $coverage) 300
-Invoke-CandidateGate 'license-lifecycle' "$scripts\Test-InstallLicenses.ps1" @(
-    '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-NoIntegration') 600
 $zip = Join-Path $assembly ($rootName + '.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($zip)
@@ -120,15 +110,28 @@ try {
     $unpacked = [long](($archive.Entries | Measure-Object Length -Sum).Sum)
 } finally { $archive.Dispose() }
 $extracted = Expand-CaelestiaUpdate $zip (Join-Path $OutputDirectory 'verify-extracted') $rootName $entries $unpacked
-Invoke-CandidateGate 'verify-original-zip' "$scripts\Install-CaelestiaRelease.ps1" @(
-    '-BundleRoot', $extracted, '-VerifyOnly', '-ExpectedManifestSha256', $manifestHash) 300
+$gateRows = @(
+    @{ name = 'coverage'; script = "$scripts\Prepare-CaelestiaSourceAssets.ps1"; timeout = 300; arguments = @(
+        '-AssetsRoot', $assets, '-BundleRoot', $bundle, '-ExpectedInventorySha256', $inventoryHash,
+        '-ExpectedManifestSha256', $manifestHash, '-CoverageOutputDirectory', $coverage) },
+    @{ name = 'license-lifecycle'; script = "$scripts\Test-InstallLicenses.ps1"; timeout = 600; arguments = @(
+        '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-NoIntegration') },
+    @{ name = 'verify-original-zip'; script = "$scripts\Install-CaelestiaRelease.ps1"; timeout = 300; arguments = @(
+        '-BundleRoot', $extracted, '-VerifyOnly', '-ExpectedManifestSha256', $manifestHash) }
+)
+$plan = @($gateRows | ForEach-Object { @{
+    name = $_.name; timeout = $_.timeout; echo = [bool]$EchoDiagnostics
+    log = (Join-Path $privateLogs ($_.name + '.log'))
+    command = @($ps, '-NoProfile', '-NonInteractive', '-File', $_.script) + $_.arguments
+} })
+$planPath = Join-Path $privateLogs 'parallel-gates.json'
+$plan | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $planPath -Encoding UTF8
+& $Python -I -B "$PSScriptRoot\nexus_assembly.py" gates --plan $planPath
+if ($LASTEXITCODE -ne 0) { throw 'Independent assembly gates failed.' }
 # VerifyOnly is data-only on Server 2022. No Windows 11 install/graphics or
 # hardware claim is made. No production OS guard bypass is present.
 $out = Join-Path $OutputDirectory 'out'
 [IO.Directory]::CreateDirectory($out) | Out-Null
-& $Python -I -B "$PSScriptRoot\nexus_candidate.py" --shell $ShellRoot --build $BuildRoot `
-    --results $PairResults --validator $validator --export-evidence $out
-if ($LASTEXITCODE -ne 0) { throw 'Final independent evidence or privacy check failed.' }
 Copy-Item -LiteralPath $zip -Destination $out
 Copy-Item -LiteralPath "$assets\project-source.zip", "$assets\supplier-source.zip" -Destination $out
 Copy-Item -LiteralPath "$coverage\component-inventory.json" -Destination $out
@@ -148,22 +151,22 @@ $release = [ordered]@{
     notesUrl = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/tag/v$identity"
     provenance = @{
         runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
-        pairResultSha256 = (Get-FileHash "$out\pair-result.json").Hash.ToLowerInvariant()
-        candidateReceiptSha256 = (Get-FileHash "$out\candidate-result.json").Hash.ToLowerInvariant()
     }
 }
 $files = @(Get-ChildItem -LiteralPath $out -File | Sort-Object Name | ForEach-Object {
     @{ name = $_.Name; size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant() }
 })
-Write-CaelestiaJsonAtomic "$out\candidate.json" @{
-    schema = 'caelestia-nexus-candidate'; version = 1; repository = 'KldsSeeGhosts/caelestia-windows'
+$native = Get-Content -LiteralPath "$BuildRoot\logs\build.json" -Raw | ConvertFrom-Json
+Write-CaelestiaJsonAtomic "$out\unsealed.json" @{
+    schema = 'caelestia-nexus-unsealed'; version = 1; repository = 'KldsSeeGhosts/caelestia-windows'
     event = 'push'; ref = 'refs/heads/main'; workflow = '.github/workflows/windows-build.yml'
     sourceRevision = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
     runNumber = $env:GITHUB_RUN_NUMBER; release = $release; assets = $files
-    gates = @('independent-pair', 'sources', 'assembly', 'coverage', 'license-lifecycle', 'verify-original-zip', 'independent-payload')
+    nativeInputs = $native.nativeInputs; nativeToolchain = $native.toolchain; nativeSupervisor = $native.supervisor
+    gates = @('sources', 'assembly', 'coverage', 'license-lifecycle', 'verify-original-zip', 'independent-payload')
     qualification = 'component-offscreen-and-data-only-not-windows11-acceptance'
 }
 Invoke-CandidateGate 'independent-payload' "$PSScriptRoot\Test-NexusCandidatePayload.ps1" @(
     '-CandidateDirectory', $out, '-OutputDirectory', (Join-Path $OutputDirectory 'independent-payload'),
-    '-SourceDataRoot', $ShellRoot, '-AssetsRoot', $assets) 600
-Write-Output "NEXUS_CANDIDATE_PASS $identity; same tested tree; no native recompilation."
+    '-SourceDataRoot', $ShellRoot, '-AssetsRoot', $assets, '-Unsealed', '-NativeBuildRoot', $BuildRoot) 600
+Write-Output "NEXUS_ASSEMBLY_PASS $identity; unsealed until exact-tested evidence passes; no native recompilation."

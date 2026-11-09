@@ -21,6 +21,8 @@ param(
     # Verified native reuse only. No compiler, smoke/release checks or pair
     # journal/report/receipt may run through this branch.
     [switch]$TestOnly,
+    [switch]$ProductionOnly,
+    [switch]$ResumeProduction,
     # Only opt in for disposable hosted fixtures, never retained artifacts.
     [switch]$EchoDiagnostics
 )
@@ -69,7 +71,11 @@ if ($ServicesPreflightRoot) {
     }
     if (Test-Path -LiteralPath $ServicesPreflightRoot) { throw 'The Services preflight requires a fresh output root.' }
 }
-if (-not $TestOnly -and (Test-Path -LiteralPath $BuildRoot)) { throw 'Pair production build requires a fresh build root.' }
+if (@($TestOnly, $ProductionOnly, $ResumeProduction | Where-Object { $_ }).Count -gt 1) {
+    throw 'Select only one integration mode.'
+}
+if (($ProductionOnly -or $ResumeProduction) -and $ServicesPreflightRoot) { throw 'Split production cannot run a preflight.' }
+if (-not $TestOnly -and -not $ResumeProduction -and (Test-Path -LiteralPath $BuildRoot)) { throw 'Pair production build requires a fresh build root.' }
 if ($TestOnly -and $ServicesPreflightRoot) { throw 'Test-only reuse cannot run a pair preflight.' }
 $spec = Get-Content -LiteralPath "$ShellRoot\windows\toolchain.json" -Raw | ConvertFrom-Json
 $qt = Join-Path $ToolRoot $spec.qtDirectory
@@ -160,6 +166,13 @@ New-Item -ItemType Directory -Force -Path $Results | Out-Null
 $journal = @('services', 'production', 'release-toolchain', 'plugins', 'shell', 'smoke') | ForEach-Object {
     [ordered]@{ name = $_; outcome = 'not_run'; exitCode = $null; durationSeconds = $null }
 }
+if ($ResumeProduction) {
+    & $Python -I -B "$PSScriptRoot\nexus_assembly.py" resume --shell $ShellRoot --build $BuildRoot --results $Results
+    if ($LASTEXITCODE -ne 0) { throw 'Production resume refused before tests.' }
+    $journal = Get-Content -LiteralPath "$Results\integration-stages.json" -Raw | ConvertFrom-Json
+} elseif ($ProductionOnly -and (Test-Path -LiteralPath "$Results\integration-stages.json")) {
+    throw 'Production-only requires a fresh journal.'
+}
 function Save-Journal {
     $temporary = Join-Path $Results 'integration-stages.tmp'
     $journal | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $temporary -Encoding UTF8
@@ -192,21 +205,25 @@ function Invoke-Gate([int]$Index, [string]$Executable, [string[]]$CommandArgumen
 $failed = $false
 Save-Journal
 try {
-    Invoke-Gate 0 $ps (Get-ServicesArguments "$Results\Services")
-    $buildArguments = $common + @("$scripts\Build-Prototype.ps1", '-BuildRoot', $BuildRoot,
-        '-QtPrefix', $qt, '-LlvmBin', $llvm, '-Cli11Include', (Join-Path $ToolRoot $spec.cli11Directory),
-        '-ToolsBin', $tools, '-Jobs', "$Jobs", '-PublicRelease', '-PluginTests')
-    if ($Mode -eq 'candidate') { $buildArguments += @('-BackendRoot', $BackendRoot, '-CandidateBackendRevision', $BackendSha) }
-    if ($CompilerLauncher) { $buildArguments += @('-CompilerLauncher', $CompilerLauncher) }
-    if ($RustCacheDirectory) { $buildArguments += @('-RustCacheDirectory', $RustCacheDirectory) }
-    Invoke-Gate 1 $ps $buildArguments
-    Invoke-Gate 2 $ps ($common + @("$scripts\New-CaelestiaRelease.ps1", '-BuildRoot', $BuildRoot, '-ValidateToolchainOnly'))
-    Invoke-Gate 3 "$tools\ctest.exe" (Get-PluginArguments)
-    Invoke-Gate 4 $ps (Get-ShellArguments)
-    $smokeArguments = $common + @("$scripts\Test-Smoke.ps1", '-BuildRoot', $BuildRoot,
-        '-QtPrefix', $qt, '-RunRoot', "$Results\smoke")
-    if ($Mode -eq 'candidate') { $smokeArguments += @('-CandidateBackendRevision', $BackendSha) }
-    Invoke-Gate 5 $ps $smokeArguments
+    if (-not $ProductionOnly) { Invoke-Gate 0 $ps (Get-ServicesArguments "$Results\Services") }
+    if (-not $ResumeProduction) {
+        $buildArguments = $common + @("$scripts\Build-Prototype.ps1", '-BuildRoot', $BuildRoot,
+            '-QtPrefix', $qt, '-LlvmBin', $llvm, '-Cli11Include', (Join-Path $ToolRoot $spec.cli11Directory),
+            '-ToolsBin', $tools, '-Jobs', "$Jobs", '-PublicRelease', '-PluginTests')
+        if ($Mode -eq 'candidate') { $buildArguments += @('-BackendRoot', $BackendRoot, '-CandidateBackendRevision', $BackendSha) }
+        if ($CompilerLauncher) { $buildArguments += @('-CompilerLauncher', $CompilerLauncher) }
+        if ($RustCacheDirectory) { $buildArguments += @('-RustCacheDirectory', $RustCacheDirectory) }
+        Invoke-Gate 1 $ps $buildArguments
+        Invoke-Gate 2 $ps ($common + @("$scripts\New-CaelestiaRelease.ps1", '-BuildRoot', $BuildRoot, '-ValidateToolchainOnly'))
+    }
+    if (-not $ProductionOnly) {
+        Invoke-Gate 3 "$tools\ctest.exe" (Get-PluginArguments)
+        Invoke-Gate 4 $ps (Get-ShellArguments)
+        $smokeArguments = $common + @("$scripts\Test-Smoke.ps1", '-BuildRoot', $BuildRoot,
+            '-QtPrefix', $qt, '-RunRoot', "$Results\smoke")
+        if ($Mode -eq 'candidate') { $smokeArguments += @('-CandidateBackendRevision', $BackendSha) }
+        Invoke-Gate 5 $ps $smokeArguments
+    }
 } catch {
     $failed = $true
     if ($EchoDiagnostics) {
@@ -220,10 +237,12 @@ try {
     }
     Write-Output 'First failed stage is preserved in integration-stages.json; later stages are not run.'
 } finally {
-    & $Python -I -B "$PSScriptRoot\pair_result.py" integration-report --results $Results --junit $JUnit
-    if ($LASTEXITCODE -ne 0) {
-        $failed = $true
-        Write-Output "Integration report generation also failed: exit=$LASTEXITCODE. Inspect the earlier stage failure first."
+    if (-not $ProductionOnly) {
+        & $Python -I -B "$PSScriptRoot\pair_result.py" integration-report --results $Results --junit $JUnit
+        if ($LASTEXITCODE -ne 0) {
+            $failed = $true
+            Write-Output "Integration report generation also failed: exit=$LASTEXITCODE. Inspect the earlier stage failure first."
+        }
     }
 }
 if ($failed) { exit 1 }
