@@ -415,7 +415,12 @@ private slots:
         dragfile::testing::setHook([&](Step step, const QString& dir) {
             if (step != Step::BeforeFileRemoval)
                 return;
-            unlinked = QFile::remove(dir + QStringLiteral("/") + shotName);
+            // Rename rather than delete: a scanner holding the new file open turns a
+            // delete into a pending delete that keeps the name taken, so the hard
+            // link could not be created on hosted runners. A rename frees the name.
+            const auto away = root + QStringLiteral("/moved-away.png");
+            unlinked = MoveFileExW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
+                QDir::toNativeSeparators(away).toStdWString().c_str(), 0);
             if (!unlinked)
                 return;
             linked = CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
@@ -426,7 +431,7 @@ private slots:
         const bool removed = dragfile::remove(root, path);
         dragfile::testing::setHook({});
 
-        QVERIFY2(unlinked, "the test could not delete the drag file to put a hard link in its place");
+        QVERIFY2(unlinked, "the test could not move the drag file away to put a hard link in its place");
         QVERIFY2(linked, qPrintable(QStringLiteral("the test could not make a hard link in the pinned directory, Win32 error %1").arg(linkError)));
         QVERIFY(!removed);
         QVERIFY(QFileInfo(path).isFile());
