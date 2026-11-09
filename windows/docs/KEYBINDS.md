@@ -186,7 +186,7 @@ copied and not saved), Show in folder and Close, and pauses the timeout. Clickin
 the card opens the image with the default application, because reopening it in
 the editor is not built yet. Press the card and move to drag the image into another app.
 A saved capture drags its saved file. A copied capture drags a temporary copy with a normal
-screenshot name, which is removed 5 minutes after its card closes. Dragging never saves to
+screenshot name, removed once its card has closed and 5 minutes have passed since the last drag. Dragging never saves to
 the screenshots folder.
 Two keys in `shell.json` control it:
 
