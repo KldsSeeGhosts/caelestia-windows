@@ -423,10 +423,18 @@ private slots:
                 QDir::toNativeSeparators(away).toStdWString().c_str(), 0);
             if (!unlinked)
                 return;
-            linked = CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
-                QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
-            if (!linked)
+            // A scanner on hosted runners can still hold the freshly written source
+            // open (ERROR_SHARING_VIOLATION), so retry briefly while it is busy.
+            for (int attempt = 0; attempt < 40; ++attempt) {
+                linked = CreateHardLinkW(QDir::toNativeSeparators(dir + QStringLiteral("/") + shotName).toStdWString().c_str(),
+                    QDir::toNativeSeparators(outside).toStdWString().c_str(), nullptr);
+                if (linked)
+                    break;
                 linkError = GetLastError();
+                if (linkError != ERROR_SHARING_VIOLATION)
+                    break;
+                Sleep(50);
+            }
         });
         const bool removed = dragfile::remove(root, path);
         dragfile::testing::setHook({});
