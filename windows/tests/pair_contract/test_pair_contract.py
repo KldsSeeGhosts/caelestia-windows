@@ -1041,8 +1041,8 @@ class PairTests(unittest.TestCase):
         self.assertNotIn("--stage services", workflow)
         # Every cache writer, not just tooling, requires a trusted main push.
         saves = re.findall(r"        if: ([^\n]+)\n        uses: actions/cache/save@", workflow)
-        self.assertEqual(6, workflow.count("uses: actions/cache/save@"))
-        self.assertEqual(6, len(saves))
+        self.assertEqual(7, workflow.count("uses: actions/cache/save@"))
+        self.assertEqual(7, len(saves))
         for condition in saves:
             self.assertIn("github.ref == 'refs/heads/main' && github.event_name == 'push'", condition)
             self.assertNotIn("||", condition)
