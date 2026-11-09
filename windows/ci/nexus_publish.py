@@ -26,7 +26,8 @@ REPO = candidate.REPOSITORY
 REMOTE = "https://github.com/" + REPO + ".git"
 BRANCH = "nexus-channels"
 GATES = ["independent-pair", "sources", "assembly", "coverage", "license-lifecycle", "verify-original-zip", "independent-payload"]
-REQUIRED_JOBS = {"Fast regressions", "Installer and colour regressions (1/2)",
+REQUIRED_JOBS = {"Fast regressions (1/3)", "Fast regressions (2/3)", "Fast regressions (3/3)",
+                 "Installer and colour regressions (1/2)",
                  "Installer and colour regressions (2/2)",
                  "Native build and offscreen regressions", "Windows validation"}
 EVIDENCE = {"pair-result.json", "candidate-result.json", "pair-request.json", "integration-stages.json",

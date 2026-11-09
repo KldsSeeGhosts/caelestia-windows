@@ -15,12 +15,17 @@ semantics and coordinated backend/shell changes.
 ## Gates and build scheduling
 
 Every push to `main`, pull request and manual dispatch starts `Change scope`
-on Ubuntu 24.04 alongside Fast regressions and two packaging shards on separate
-Windows runners. Each of these jobs refuses mutable dispatch inputs before
-checkout. Scope uses a full-history checkout; its `native=none|reuse|full`
-decision unlocks the applicable native gates:
+on Ubuntu 24.04 alongside three fast-regression shards and two packaging shards
+on separate Windows runners. Each of these jobs refuses mutable dispatch inputs
+before checkout. Scope uses a full-history checkout; its
+`native=none|reuse|full` decision unlocks the applicable native gates:
 
-- Fast source, documentation, PowerShell, JavaScript and quota-provider regressions.
+- Fast source, documentation, PowerShell, JavaScript and quota-provider
+  regressions run as three shards. The Unit inventory assigns
+  Test-CIAcceleration to `-Shard 1/3`, Test-PairContract and toolchain-modules
+  to `-Shard 2/3`, and the remaining checks to `-Shard 3/3`. Only shard 3
+  installs Node because only it runs the JavaScript checks. Omitting `-Shard`
+  still runs the complete inventory in its original order.
 - Installer/rollback tests and the real colour-worker tests use isolated,
   temporary profiles and pinned Python dependencies. The Packaging inventory in
   `Test-Validation.ps1` assigns VersionedInstall to `-Shard 1/2` and the remaining
@@ -51,7 +56,7 @@ actual-toolchain JSON records (all fields, independent of key order), merges the
 unfinalized receipts, finalizes with fresh source verification and independently
 computes the envelope. It does not compile or restore tools.
 
-Full-build graph: `{scope, checks, packaging[1/2], packaging[2/2]}` start together;
+Full-build graph: `{scope, checks[1/3..3/3], packaging[1/2], packaging[2/2]}` start together;
 `scope -> {fixtures, build}`;
 `{fixtures, build} -> pair`; `{scope, checks, packaging, fixtures, build, pair}
 -> validation`; `{scope, pair, validation} -> candidate -> publish`.

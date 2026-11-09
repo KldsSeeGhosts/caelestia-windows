@@ -46,6 +46,29 @@ class CiShardsAndTiming(unittest.TestCase):
                      ("-Suite", "Packaging", "-Shard", "3/2")):
             self.assertNotEqual(0, self.ps(script, *args).returncode)
 
+    def test_unit_shards_partition_the_authoritative_inventory_and_fail_closed(self):
+        script = ROOT / "windows/scripts/Test-Validation.ps1"
+        def names(*args):
+            result = self.ps(script, "-Suite", "Unit", "-ListTests", *args)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            return json.loads(result.stdout)
+        full, first, second, third = (names(), names("-Shard", "1/3"),
+                                      names("-Shard", "2/3"), names("-Shard", "3/3"))
+        self.assertEqual(17, len(full))
+        self.assertEqual(["Test-CIAcceleration"], first)
+        self.assertEqual(["Test-PairContract", "toolchain-modules"], second)
+        self.assertCountEqual(full, first + second + third)
+        self.assertEqual(len(full), len(set(first + second + third)))
+        source = script.read_text()
+        for row in ("@{ name = 'Test-NewUnitTest' }",
+                    "@{ name = 'Test-NewUnitTest'; shard = 4 }",
+                    "@{ name = 'Test-PublicDocs'; shard = 2 }"):
+            mutated = self.root / "mutated-unit.ps1"
+            mutated.write_text(source.replace("$unitTests = @(", "$unitTests = @(\n    " + row, 1))
+            result = self.ps(mutated, "-Suite", "Unit", "-ListTests")
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("exactly one valid shard assignment", result.stderr)
+
     def test_jobs_start_independently_with_byte_exact_first_step_guard(self):
         text = (ROOT / ".github/workflows/windows-build.yml").read_text()
         def job(name):
@@ -55,6 +78,14 @@ class CiShardsAndTiming(unittest.TestCase):
             block = job(name)
             self.assertNotIn("needs:", block)
             self.assertTrue(block.split("    steps:\n")[1].startswith(guard))
+        checks = job("checks")
+        self.assertIn("fail-fast: false", checks)
+        self.assertIn("shard: [1, 2, 3]", checks)
+        self.assertIn("-Shard '${{ matrix.shard }}/3'", checks)
+        self.assertIn("unit-summary-${{ matrix.shard }}-${{ github.run_id }}", checks)
+        node = checks.split("      - name: Node 24\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: matrix.shard == 3", node)
+        self.assertEqual(1, checks.count("if: matrix.shard == 3"))
         packaging = job("packaging")
         self.assertIn("fail-fast: false", packaging)
         self.assertIn("shard: [1, 2]", packaging)

@@ -36,7 +36,8 @@ selector when settings access is available; do not guess or rename a context.
 The shell workflow is `Windows build` and currently defines these job names:
 
 - `Change scope` (immutable dispatch guards and native-change classifier)
-- `Fast regressions`
+- `Fast regressions (${{ matrix.shard }}/3)` expands to
+  `Fast regressions (1/3)`, `Fast regressions (2/3)`, and `Fast regressions (3/3)`
 - `Installer and colour regressions (${{ matrix.shard }}/2)` expands to
   `Installer and colour regressions (1/2)` and `Installer and colour regressions (2/2)`
 - `Verified native reuse and offscreen regressions` (PR-only, verified native inputs from the newest validated main ancestor)
@@ -54,7 +55,7 @@ The shell workflow is `Windows build` and currently defines these job names:
 Required shell gate: `Windows validation`.
 
 For shell pull requests, the planned required gate is `Windows validation`.
-Scope, fast and both installer/colour shards start concurrently.
+Scope, the three fast shards and both installer/colour shards start concurrently.
 Scope unlocks the applicable native jobs.
 The fixtures job owns first-party capture Rust regressions and their separate
 `capture-rust-*` artifact. A capture failure fails fixtures and the required

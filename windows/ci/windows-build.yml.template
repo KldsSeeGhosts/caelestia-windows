@@ -62,7 +62,11 @@ jobs:
           & ./windows/ci/Get-NativeBuildRequired.ps1 -Base $env:CHANGE_BASE -Head $env:CHANGE_HEAD
 
   checks:
-    name: Fast regressions
+    name: Fast regressions (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
@@ -89,6 +93,7 @@ jobs:
           python-version: '3.12'
           architecture: x64
       - name: Node 24
+        if: matrix.shard == 3
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
@@ -96,14 +101,15 @@ jobs:
         shell: pwsh
         run: |
           & powershell.exe -NoProfile -NonInteractive -File windows/scripts/Test-Validation.ps1 `
-            -Suite Unit -Python python -OutputRoot "$env:RUNNER_TEMP\validation-unit"
-          if ($LASTEXITCODE -ne 0) { throw 'Fast regressions failed.' }
+            -Suite Unit -Shard '${{ matrix.shard }}/3' -Python python `
+            -OutputRoot ("$env:RUNNER_TEMP\validation-unit-" + '${{ matrix.shard }}')
+          if ($LASTEXITCODE -ne 0) { throw 'Fast regression shard failed.' }
       - name: Sanitized test summary
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: unit-summary-${{ github.run_id }}
-          path: ${{ runner.temp }}/validation-unit/summary.json
+          name: unit-summary-${{ matrix.shard }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/validation-unit-${{ matrix.shard }}/summary.json
           if-no-files-found: ignore
           retention-days: 3
 
