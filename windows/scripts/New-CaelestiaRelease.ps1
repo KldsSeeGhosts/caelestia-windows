@@ -216,16 +216,33 @@ function Get-ReleaseFilePrivacy([byte[]]$Bytes, [string]$Extension, [string[]]$P
     $keyWhitespace = '(?:\s|\\+[rn])*'
     $keyMaterial = '(?i)-----BEGIN (?:(?:RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----' +
         $keyWhitespace + '(?:(?:[A-Za-z0-9+/=]' + $keyWhitespace + '){32,}|Proc-Type:' + $keyWhitespace + '4,ENCRYPTED)'
+    $rootGroups = [Collections.Generic.Dictionary[string,Collections.Generic.List[string]]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($privateRoot in $PrivateRoots) {
+        foreach ($spelling in @($privateRoot, $privateRoot.Replace('\', '/'), $privateRoot.Replace('\', '\\'))) {
+            # A whole-root match requires its prefix to exist. Group common
+            # drive prefixes so absent roots do not rescan every large view.
+            # Keep the same ordinal comparison and never split a surrogate pair.
+            $length = [Math]::Min(3, $spelling.Length)
+            if ($length -gt 0 -and $length -lt $spelling.Length -and
+                [char]::IsHighSurrogate($spelling[$length - 1]) -and [char]::IsLowSurrogate($spelling[$length])) { $length-- }
+            $prefix = $spelling.Substring(0, $length)
+            if (-not $rootGroups.ContainsKey($prefix)) { $rootGroups.Add($prefix, [Collections.Generic.List[string]]::new()) }
+            $rootGroups[$prefix].Add($spelling)
+        }
+    }
     foreach ($text in $texts) {
         # PEM format labels occur in public TLS parsers. Require key material
         # (or an encrypted-key preamble), including JSON-escaped newlines.
         if ($text -match $keyMaterial -or $text -match '(?i)(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{20,}') {
             $sensitive = $true
         }
-        if ($text -match '(?i)[A-Z]:[\\/]+Users[\\/]|/(Users|home)/[^/\s]+/|[A-Z]:[\\/][^\x00\r\n]*\.pdb\b') {
+        if (-not $genericPath -and $text -match '(?i)[A-Z]:[\\/]+Users[\\/]|/(Users|home)/[^/\s]+/|[A-Z]:[\\/][^\x00\r\n]*\.pdb\b') {
             $genericPath = $true
         }
-        if ($Extension -in @('.dll', '.exe')) {
+        # A drive path requires a literal colon/separator pair. Checking that
+        # first avoids regex searches through unrelated binary UTF-16 views.
+        if (-not $genericPath -and $Extension -in @('.dll', '.exe') -and
+            ($text.IndexOf(':\', [StringComparison]::Ordinal) -ge 0 -or $text.IndexOf(':/', [StringComparison]::Ordinal) -ge 0)) {
             foreach ($candidate in [regex]::Matches($text, '(?i)(?<![A-Za-z0-9])[A-Z]:[\\/][^\x00\r\n]{2,}')) {
                 # Opaque instructions can decode to a drive prefix followed by
                 # replacement/control characters. Still flag readable strings
@@ -233,11 +250,13 @@ function Get-ReleaseFilePrivacy([byte[]]$Bytes, [string]$Extension, [string[]]$P
                 if ($candidate.Value -notmatch '[\p{C}\ufffd]' -or
                     $candidate.Value -match '^(?i)[A-Z]:[\\/](?:[\p{L}\p{N}_. -]+[\\/]|[^<>:"|?*\x00-\x1f]*\.[A-Za-z0-9]{1,8}(?:$|[^\w]))') {
                     $genericPath = $true
+                    break
                 }
             }
         }
-        foreach ($privateRoot in $PrivateRoots) {
-            foreach ($spelling in @($privateRoot, $privateRoot.Replace('\', '/'), $privateRoot.Replace('\', '\\'))) {
+        foreach ($group in $rootGroups.GetEnumerator()) {
+            if ($text.IndexOf($group.Key, [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+            foreach ($spelling in $group.Value) {
                 if ($text.IndexOf($spelling, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $sensitive = $true }
             }
         }

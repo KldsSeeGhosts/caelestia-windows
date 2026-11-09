@@ -271,6 +271,16 @@ phase timings for ZIP extraction, manifest/native checks, privacy scanning and
 source coverage. They never enter candidate assets, signed metadata or gate
 decisions. ZIP path checks still inspect every ancestor on every call. They use
 native filesystem metadata reads without caching earlier link-check results.
+Privacy scanning uses the same expressions and scans the same UTF-8 and two
+UTF-16 views. Sensitive-content and private-root checks still run
+for every view after a generic path is found. Differential tests compare the
+previous policy in fresh processes under invariant, English and Turkish cultures,
+including the existing current-culture case matching.
+Literal private-root searches share prefix probes with the same ordinal
+comparison. An absent prefix rules out a whole-root match; a present prefix
+still requires the complete root. Prefixes never split a UTF-16 surrogate pair.
+Binary drive-path searches first require a literal colon/separator pair;
+the unchanged regular expressions still decide every possible match.
 The pair recorder retains bounded diagnostic categories in the public receipt.
 On isolated hosted fixtures the workflow explicitly enables its `--echo` mode,
 so producer, preparation, compile and test failures remain visible in the job
