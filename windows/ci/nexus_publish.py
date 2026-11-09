@@ -1,6 +1,7 @@
 """Owner-gated immutable release/pointer transactions. No builds or login."""
 import argparse
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import datetime as dt
 import hashlib
 import json
@@ -432,29 +433,59 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
     for root in (shell, shell / "windows/deps/quickshell", shell / "windows/deps/m3shapes"):
         if pair.git(root, "rev-parse", "--is-shallow-repository") == "true":
             checked_run(["git", "-C", root, "-c", "credential.helper=", "fetch", "--unshallow", "origin"], timeout=600)
-    reprepared = work / "independent-source-assets"
-    checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
-                 shell / "windows/scripts/Prepare-CaelestiaSourceAssets.ps1",
-                 "-SourceRoot", shell, "-SourceRevision", ctx["sha"],
-                 "-OutputDirectory", reprepared, "-CacheDirectory", work / "supplier-cache"], timeout=3600,
-                diagnostic_log=work / "independent-sources.private.log")
-    original_inventory = read(directory / "source-assets-inventory.json")
-    fresh_inventory = read(reprepared / "component-inventory.json")
-    for inventory in (original_inventory, fresh_inventory):
-        # Git can legally repack a self-contained source bundle differently.
-        # Verify the supplied bundles' exact commits separately; every other
-        # recipe/supplier/notice/source-ownership field must reproduce exactly.
-        for project in inventory["projects"]:
-            project.pop("sha256")
-    require(original_inventory == fresh_inventory, "independent-source-notice-reproduction-mismatch")
-    assets_root = work / "source-assets"
-    assets_root.mkdir()
-    extract_source(directory / "project-source.zip", assets_root / "project-source")
-    extract_source(directory / "supplier-source.zip", assets_root / "supplier-source")
-    args = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", shell / "windows/ci/Test-NexusCandidatePayload.ps1",
-            "-CandidateDirectory", directory, "-OutputDirectory", work / "payload-check",
-            "-SourceDataRoot", source, "-AssetsRoot", assets_root]
-    checked_run(args, timeout=600, diagnostic_log=work / "independent-payload.private.log")
+    def check_sources():
+        reprepared = work / "independent-source-assets"
+        checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                     shell / "windows/scripts/Prepare-CaelestiaSourceAssets.ps1",
+                     "-SourceRoot", shell, "-SourceRevision", ctx["sha"],
+                     "-OutputDirectory", reprepared, "-CacheDirectory", work / "supplier-cache"], timeout=3600,
+                    diagnostic_log=work / "independent-sources.private.log")
+        original_inventory = read(directory / "source-assets-inventory.json")
+        fresh_inventory = read(reprepared / "component-inventory.json")
+        for inventory in (original_inventory, fresh_inventory):
+            # Git can legally repack a self-contained source bundle differently.
+            # Verify the supplied bundles' exact commits separately; every other
+            # recipe/supplier/notice/source-ownership field must reproduce exactly.
+            for project in inventory["projects"]:
+                project.pop("sha256")
+        require(original_inventory == fresh_inventory, "independent-source-notice-reproduction-mismatch")
+
+    def check_payload():
+        # This verifier consumes only the supplied source assets. It does not
+        # consume check_sources' separately reproduced inventory or files.
+        assets_root = work / "source-assets"
+        assets_root.mkdir()
+        extract_source(directory / "project-source.zip", assets_root / "project-source")
+        extract_source(directory / "supplier-source.zip", assets_root / "supplier-source")
+        args = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", shell / "windows/ci/Test-NexusCandidatePayload.ps1",
+                "-CandidateDirectory", directory, "-OutputDirectory", work / "payload-check",
+                "-SourceDataRoot", source, "-AssetsRoot", assets_root]
+        checked_run(args, timeout=600, diagnostic_log=work / "independent-payload.private.log")
+
+    phases, lock = {}, threading.Lock()
+
+    def measured(name, check):
+        started, outcome = time.monotonic(), "failure"
+        try:
+            check()
+            outcome = "success"
+        finally:
+            seconds = round(time.monotonic() - started, 6)
+            with lock:
+                phases[name] = {"phase": name, "outcome": outcome, "seconds": seconds}
+                print(f"NEXUS_PUBLICATION_TIMING {name} outcome={outcome} seconds={seconds:.6f}", flush=True)
+
+    try:
+        # Both gates must finish before any release or pointer write. The
+        # executor also waits for the other bounded check if either one fails.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            tasks = [pool.submit(measured, "sources", check_sources),
+                     pool.submit(measured, "payload", check_payload)]
+            for task in tasks:
+                task.result()
+    finally:
+        write(work / "publication-checks-timing.json",
+              {"schemaVersion": 1, "phases": [phases[name] for name in sorted(phases)]})
     return data
 
 

@@ -1144,6 +1144,8 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: nexus-publication-timings-${{ github.run_id }}-${{ github.run_attempt }}
-          path: C:/nexus-publish/payload-check/verification-timing.json
+          path: |
+            C:/nexus-publish/payload-check/verification-timing.json
+            C:/nexus-publish/publication-checks-timing.json
           retention-days: 7
           if-no-files-found: ignore
