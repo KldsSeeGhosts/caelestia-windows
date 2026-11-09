@@ -424,6 +424,47 @@ build evidence for the new attempt; after the one-day retention, a rebuild is
 also required. The hosted candidate path can only be exercised by a real main
 push, not a PR or workflow dispatch.
 
+### Hosted LLVM native profile
+
+The reuse, fixtures and build jobs share one exact tools-cache key containing
+`llvm-native-v1`. Both compiler jobs pass `-NativeRuntimeOnly` to canonical
+preparation. The reuse job consumes the same cache but never compiles.
+The only writer remains the successful main-push build job.
+
+The profile keeps `clang-cl.exe`, `clang-scan-deps.exe`, `lld-link.exe`,
+`llvm-ar.exe`, `llvm-lib.exe`, `llvm-ranlib.exe`, `llvm-nm.exe`, `llvm-rc.exe`,
+`llvm-mt.exe`, and the entire `lib/clang` resource tree. CMake records the
+scanner even when current build edges do not use module scanning. `llvm-nm`
+generates automatic exports, the archivers appear in CMake rules, and a pinned
+backend fixture directly invokes `lld-link`. These tools import Windows system
+DLLs, not the omitted LLVM bin DLLs. This is a pinned Windows native-build
+profile, not a general LLVM SDK.
+
+The original LLVM archive remains cached and SHA-256 verified on every prepare.
+Extraction rechecks that hash before writing files. The schema 2 marker binds
+the profile, archive and directory; readiness checks every retained executable
+and the compiler-resource sentinel. Readiness alone is not archive verification
+or a claim that every restored file was rehashed. Trusted-main cache writers
+and the existing measured compiler/toolchain identity checks remain required.
+Every required file must occur in the verified archive, even on a retry with
+stale files on disk.
+
+Default developer provisioning still extracts the full bin tree. It accepts
+legacy schema 1 full markers or schema 2 markers naming `full`. A native-profile
+request refuses an existing full or unrecognized marker, or unmarked files
+outside the profile. It never prunes an existing SDK. Use a fresh ToolRoot.
+An interrupted native extraction can retry within its allowed file set; a full
+request can expand a native tree from the same verified archive.
+
+Local extraction of the pinned archive produced 319 files and 360,935,562 bytes
+in 45.532 seconds. That is an extraction measurement, not a hosted cache or
+build-speed result. Archive decompression still reads all upstream bytes.
+The key change also invalidates object caches through the extractor hash and
+prepared Python through the preparation script hash. The change PR and first
+main run are cold until the trusted writer seeds the new caches. Compare a
+later warm main run's cache size, restore duration and tool-directory metrics;
+do not count the cold run toward warm shadow-assembly qualification.
+
 ### Unsigned assembly shadow experiment
 
 Main also attempts unsigned assembly beside the recorded plugin, Shell and

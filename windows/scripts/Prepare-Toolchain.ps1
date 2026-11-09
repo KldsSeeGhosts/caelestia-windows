@@ -7,7 +7,10 @@ param(
     [switch]$InstallRust,
     # Exact-key, trusted-main cache only. Verify all files with the uncached
     # setup-python interpreter before executing anything in the restored venv.
-    [switch]$ReusePreparedPython
+    [switch]$ReusePreparedPython,
+    # Hosted shared-cache profile only. Default developer provisioning keeps
+    # the complete bin tree; no existing SDK is pruned in either profile.
+    [switch]$NativeRuntimeOnly
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
@@ -128,28 +131,21 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $qtPrefix $file) -PathType Leaf)) { throw "Incomplete Qt prerequisite: $file. Reprovision a fresh ToolRoot." }
     }
     $llvm = Get-VerifiedToolchainArchive $spec.downloads.llvm
-    $llvmResources = "$($spec.llvmDirectory)/lib/clang/$($spec.clangVersion.Split('.')[0])/include/stddef.h"
-    $llvmMarkerPath = Join-Path $ToolRoot "$($spec.llvmDirectory)/.caelestia-extraction.json"
-    $llvmMarker = $null
-    if (Test-Path -LiteralPath $llvmMarkerPath -PathType Leaf) {
-        try { $llvmMarker = Get-Content -LiteralPath $llvmMarkerPath -Raw | ConvertFrom-Json } catch { $llvmMarker = $null }
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.llvmDirectory)/bin/clang-cl.exe")) -or
-        -not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources)) -or
-        $null -eq $llvmMarker -or $llvmMarker.schemaVersion -ne 1 -or
-        $llvmMarker.archiveSha256 -cne $spec.downloads.llvm.sha256 -or $llvmMarker.directory -cne $spec.llvmDirectory) {
-        # The project consumes the compiler/tools and its built-in headers and
-        # runtimes, not the LLVM development libraries or API headers. Avoid
-        # materializing that unused SDK from the same hash-verified archive.
+    $llvmProfile = if ($NativeRuntimeOnly) { 'windows-native-v1' } else { 'full' }
+    $llvmExtractor = Join-Path $PSScriptRoot '..\toolchain\extract_llvm.py'
+    & $venvPython -I -B $llvmExtractor --verify-tree --archive $llvm --destination $ToolRoot `
+        --directory $spec.llvmDirectory --sha256 $spec.downloads.llvm.sha256 `
+        --clang-major $spec.clangVersion.Split('.')[0] --profile $llvmProfile
+    $llvmReadiness = $LASTEXITCODE
+    if ($llvmReadiness -notin @(0, 2)) { throw 'LLVM profile refused. Use a fresh ToolRoot; existing SDKs are never pruned.' }
+    if ($llvmReadiness -eq 2) {
+        # Archive SHA was checked above. Readiness/marker data cannot replace
+        # it. Actual compiler identity assertions remain below, unchanged.
         Write-Host 'Extracting compiler binaries and resource headers from verified LLVM archive.'
-        $llvmExtractor = Join-Path $PSScriptRoot '..\toolchain\extract_llvm.py'
         & $venvPython -I -B $llvmExtractor --archive $llvm --destination $ToolRoot `
             --directory $spec.llvmDirectory --sha256 $spec.downloads.llvm.sha256 `
-            --clang-major $spec.clangVersion.Split('.')[0]
+            --clang-major $spec.clangVersion.Split('.')[0] --profile $llvmProfile
         if ($LASTEXITCODE -ne 0) { throw 'Verified LLVM extraction failed.' }
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot $llvmResources))) {
-        throw 'Incomplete LLVM compiler resource headers. Reprovision a fresh ToolRoot.'
     }
     $cli = Get-VerifiedToolchainArchive $spec.downloads.cli11
     if (-not (Test-Path -LiteralPath (Join-Path $ToolRoot "$($spec.cli11Directory)\CLI\CLI.hpp"))) {
