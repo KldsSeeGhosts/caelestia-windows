@@ -530,7 +530,8 @@ class PairTests(unittest.TestCase):
                      "Exact-pair production integration"):
             found = re.search(
                 r"(?m)^      - name: " + re.escape(name) +
-                r"\r?\n(?:        env:\r?\n(?:          [^\r\n]*\r?\n)+)?"
+                r"\r?\n(?:        id: [^\r\n]+\r?\n)?"
+                r"(?:        env:\r?\n(?:          [^\r\n]*\r?\n)+)?"
                 r"        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
             self.assertIsNotNone(found, name)
             blocks.append(found[1])
@@ -568,6 +569,7 @@ class PairTests(unittest.TestCase):
         p.write(results / "pair-request.json", {"mode": "pinned", "backend": self.backend_sha})
         found = re.search(
             r"(?m)^      - name: Exact-pair production integration\r?\n"
+            r"(?:        id: [^\r\n]+\r?\n)?"
             r"        run: \|\r?\n((?:          [^\r\n]*\r?\n|\r?\n)+)", workflow)
         self.assertIsNotNone(found)
         harness = self.root / "launcher.ps1"
