@@ -424,6 +424,69 @@ build evidence for the new attempt; after the one-day retention, a rebuild is
 also required. The hosted candidate path can only be exercised by a real main
 push, not a PR or workflow dispatch.
 
+### Unsigned assembly shadow experiment
+
+Main also attempts unsigned assembly beside the recorded plugin, Shell and
+smoke tests. This is diagnostic only. The isolated candidate still runs its
+complete canonical path, and the publisher and signed v1 formats are unchanged.
+No speculative ZIP is a publication input. PR and dispatch native execution
+does not start this experiment.
+
+One same-run source download immediately before integration either supplies
+verified sources or selects `fallback` before any assembly work starts. Invalid
+downloaded sources select `failed`, never fallback. No new token or permission
+is used. A separate supervisor waits for the existing `production` and
+`release-toolchain` journal entries. It does not change the pinned integration
+wrapper or write into the checkout, build tree or pair results.
+
+The supervisor owns a non-inherited Windows job handle with
+`KILL_ON_JOB_CLOSE` and BelowNormal priority for its process tree. Normal exit,
+abrupt termination and hosted runner cancellation close that handle. The
+always-run bounded join also terminates this locally named job. It never kills
+an artifact-supplied PID or processes found by name. The supervisor retains
+`RUNNER_TRACKING_ID`; it receives no signing key or Actions token.
+
+Assembly, source coverage, license lifecycle with `-NoIntegration`, and the
+original-ZIP verification use the same scripts, parameters and individual
+deadlines as the canonical candidate. The outer packaging deadline is 2400
+seconds. Production readiness allows 3600 seconds; the post-integration join
+allows at most 600 and aborts immediately when integration failed. Both waits
+also stop by minute 110 of the build job's 120-minute budget. No native test
+deadline changes. Polled JSON readers allow Windows delete sharing, so reading
+cannot block the canonical journal writer's file replacement. Source
+cleanliness and native hashes are checked again after
+both tests and assembly finish. Only successful integration and all four
+successful packaging gates can export the one-day `nexus-shadow-*` artifact.
+Private logs and the local supervisor configuration are excluded.
+
+The proof binds the exact run, attempt, source SHA, build receipt hash, native
+inventory, source inventory, ZIP, manifest and coverage inventory. It is
+consistency data, not authentication or release evidence. The candidate records
+exact byte equality for ZIP, manifest and final coverage in the seven-day
+`nexus-shadow-comparison-*` diagnostic artifact. `ready` without its artifact,
+changed bytes, failed work and wrong identities are diagnostic failures, not
+fallback. Shadow failures do not redefine the required Windows validation
+check or replace canonical release acceptance.
+
+Payload ownership remains split. Native bytes match the build inventory, Qt
+runtime bytes match reference hashes, support files match committed
+`sourceSha256`, ordinary staging entries match Git-derived hashes, and notices
+match their inventories. `shell.qml` and `Workspace.qml` undergo reviewed
+transformations; the staging record, supervisor executable and other generated
+files also need the fresh-checkout assembler and independent payload checks.
+They are not all covered by a direct source-byte hash. Exact shadow versus
+canonical manifest and coverage equality tests those cases against today's
+isolated packaging path. It does not prove a stronger provenance claim.
+
+Consumption stays disabled until a separate reviewed PR. Required controls are
+at least three warm first-attempt main runs with all three byte comparisons equal, zero
+timeouts or flakes, unchanged test deadlines, and a hosted mid-integration
+cancellation with no remaining supervisor or proof upload. Compare plugin,
+Shell and smoke durations against the preceding three warm runs. Any flake or
+suite slowdown over 15 percent blocks consumption pending investigation.
+Report source readiness and transfer overhead too. Shadow runs do duplicate
+work and can temporarily lengthen delivery; no speedup is claimed for them.
+
 Candidate children run through `nexus_process.py`: start/end labels,
 15-second heartbeats, private combined logs and explicit deadlines. Exact
 commit history fetches allow 300 seconds, source preparation 1800, assembly

@@ -518,6 +518,8 @@ jobs:
   build:
     name: Native build and offscreen regressions
     needs: [scope, reuse]
+    outputs:
+      shadow: ${{ steps.shadow-join.outputs.prepared || 'failed' }}
     if: >-
       always() && needs.scope.result == 'success' &&
       (needs.scope.outputs.native == 'full' ||
@@ -541,6 +543,11 @@ jobs:
       PYTHONDONTWRITEBYTECODE: '1'
 
     steps:
+      - name: Reserve native build budget from shadow waiting
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Stop shadow waiting by minute 110 of this 120-minute job.
+          "SHADOW_JOB_DEADLINE=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 6600)" >> $env:GITHUB_ENV
       - name: Checkout recursive sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -714,7 +721,29 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE\windows\ci\Get-BuildJobs.ps1"
 
+      # Shadow only. No token, new permission or receipt stage. The canonical
+      # candidate still executes every gate and is the only publication input.
+      - name: Opportunistically restore same-run sources for shadow assembly
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: shadow-sources
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: nexus-sources-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-shadow-sources
+      - name: Start owned shadow assembly supervisor
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          SOURCES_READY: ${{ steps.shadow-sources.outcome == 'success' && 'true' || 'false' }}
+        run: |
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_shadow.py" start `
+            --shell $env:GITHUB_WORKSPACE --build $env:BUILD_ROOT --tools $env:TOOL_ROOT `
+            --results $env:PAIR_RESULTS --transfer C:\nexus-shadow-sources --work C:\nexus-shadow `
+            --source-ready $env:SOURCES_READY
+          if ($LASTEXITCODE -ne 0) { throw 'Shadow startup failed. Canonical acceptance is unchanged.' }
       - name: Exact-pair production integration
+        id: integration
         run: |
           $local = Get-Content "$env:PAIR_RESULTS\pair-local.json" -Raw | ConvertFrom-Json
           $request = Get-Content "$env:PAIR_RESULTS\pair-request.json" -Raw | ConvertFrom-Json
@@ -737,6 +766,37 @@ jobs:
             -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -QmlJobs 2 -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
+      - name: Join owned shadow assembly and recheck source cleanliness
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: shadow-join
+        continue-on-error: true
+        env:
+          INTEGRATION_RESULT: ${{ steps.integration.outcome }}
+        run: |
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_shadow.py" join `
+            --work C:\nexus-shadow --integration-result $env:INTEGRATION_RESULT
+          if ($LASTEXITCODE -ne 0) { throw 'Shadow join failed. Canonical acceptance is unchanged.' }
+      - name: Retain unsigned shadow comparison inputs only
+        if: success() && steps.integration.outcome == 'success' && steps.shadow-join.outputs.prepared == 'ready'
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-shadow/out/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+      - name: Sanitized shadow assembly diagnostics
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-shadow-states-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            C:/nexus-shadow/join-result.json
+            C:/nexus-shadow/private/*.state.json
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Production and offscreen fixture timings
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -835,6 +895,8 @@ jobs:
   pair:
     name: Exact-pair receipt
     needs: [scope, fixtures, build]
+    outputs:
+      shadow: ${{ needs.build.outputs.shadow }}
     if: >-
       always() && needs.scope.result == 'success' &&
       needs.scope.outputs.native != 'none' &&
@@ -1154,6 +1216,34 @@ jobs:
             -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate `
             -PreparedSources C:\nexus-source-transfer -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Exact-tested candidate assembly failed.' }
+      - name: Restore shadow comparison inputs if prepared
+        if: steps.candidate.outcome == 'success' && needs.pair.outputs.shadow == 'ready'
+        id: shadow-download
+        continue-on-error: true
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: nexus-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-shadow-transfer
+      - name: Compare shadow bytes without changing release acceptance
+        if: steps.candidate.outcome == 'success'
+        continue-on-error: true
+        env:
+          SHADOW_STATUS: ${{ needs.pair.outputs.shadow || 'failed' }}
+        run: |
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_shadow.py" compare `
+            --status $env:SHADOW_STATUS --transfer C:\nexus-shadow-transfer `
+            --shell $env:GITHUB_WORKSPACE --build $env:BUILD_ROOT --canonical C:\nexus-candidate `
+            --report C:\nexus-shadow-comparison.json
+          if ($LASTEXITCODE -ne 0) { throw 'Shadow qualification failed. Consumption remains disabled.' }
+      - name: Sanitized canonical versus shadow comparison
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-shadow-comparison-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-shadow-comparison.json
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Retain exact-tested release candidate
         if: steps.candidate.outcome == 'success'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
