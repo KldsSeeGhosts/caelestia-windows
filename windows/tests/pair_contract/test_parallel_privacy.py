@@ -30,35 +30,46 @@ foreach ($name in @('first', 'second', 'third')) {
     [IO.File]::WriteAllText("$Work/$name.txt", $name)
 }
 $files = @('first', 'second', 'third') | ForEach-Object { Get-Item "$Work/$_.txt" }
+# DateTime.UtcNow can return identical ticks for different events on Windows.
+# Count active scanner calls under a lock; the barrier requires real overlap.
+Add-Type -TypeDefinition @'
+using System.Threading;
+public static class PrivacyOverlapProbe {
+    private static readonly object Gate = new object();
+    public static readonly Barrier Start = new Barrier(2);
+    public static int Active;
+    public static int Maximum;
+    public static int Completed;
+    public static void Enter() {
+        lock (Gate) {
+            Active++;
+            if (Active > Maximum) Maximum = Active;
+        }
+    }
+    public static void Leave() {
+        lock (Gate) { Active--; Completed++; }
+    }
+}
+'@
 $scanner = {
     param($Bytes, $Extension, $Roots)
     $name = [Text.Encoding]::UTF8.GetString($Bytes)
-    [IO.File]::WriteAllText("$($Roots[0])/$name.started", [string][DateTime]::UtcNow.Ticks)
-    if ($name -in @('first', 'second')) {
-        $other = if ($name -eq 'first') { 'second' } else { 'first' }
-        $deadline = [DateTime]::UtcNow.AddSeconds(10)
-        while (-not [IO.File]::Exists("$($Roots[0])/$other.started")) {
-            if ([DateTime]::UtcNow -ge $deadline) { throw 'Workers did not overlap.' }
-            Start-Sleep -Milliseconds 10
+    [PrivacyOverlapProbe]::Enter()
+    try {
+        if ($name -in @('first', 'second')) {
+            if (-not [PrivacyOverlapProbe]::Start.SignalAndWait(10000)) { throw 'Workers did not overlap.' }
         }
+        [pscustomobject]@{ Sensitive = ($name -eq 'second'); GenericPath = ($name -eq 'third') }
+    } finally {
+        [PrivacyOverlapProbe]::Leave()
     }
-    [IO.File]::WriteAllText("$($Roots[0])/$name.finished", [string][DateTime]::UtcNow.Ticks)
-    [pscustomobject]@{ Sensitive = ($name -eq 'second'); GenericPath = ($name -eq 'third') }
 }
 $rows = @(Invoke-CaelestiaReleasePrivacyScan -Files $files -PrivateRoots @($Work) -Jobs 2 `
     -ScannerDefinition $scanner.ToString())
 if ($rows.Count -ne 3) { throw 'Incomplete output.' }
 if ($rows[0].Sensitive -or -not $rows[1].Sensitive -or -not $rows[2].GenericPath) { throw 'Wrong verdicts.' }
-$events = foreach ($name in @('first', 'second', 'third')) {
-    [pscustomobject]@{ Ticks = [long][IO.File]::ReadAllText("$Work/$name.started"); Change = 1 }
-    [pscustomobject]@{ Ticks = [long][IO.File]::ReadAllText("$Work/$name.finished"); Change = -1 }
-}
-$active = 0; $maximum = 0
-foreach ($event in $events | Sort-Object Ticks, Change) {
-    $active += $event.Change
-    $maximum = [Math]::Max($maximum, $active)
-}
-if ($active -ne 0 -or $maximum -ne 2) { throw 'Worker bound or overlap was not preserved.' }
+if ([PrivacyOverlapProbe]::Active -ne 0 -or [PrivacyOverlapProbe]::Maximum -ne 2 -or
+    [PrivacyOverlapProbe]::Completed -ne 3) { throw 'Worker bound, overlap or completeness was not preserved.' }
 @($rows | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.FullName) }) | ConvertTo-Json -Compress
 ''')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
