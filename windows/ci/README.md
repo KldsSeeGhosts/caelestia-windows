@@ -35,8 +35,13 @@ decision unlocks the applicable native gates:
 - `build` prepares the Windows tools and runs recorded integration:
   Services, the production payload/plugin-test build, the read-only release
   toolchain preflight, plugin CTest, shell fixtures and production smoke.
-  Compile parallelism comes from the runner's processors and memory; test
-  execution stays serial.
+  Compile parallelism comes from the runner's processors and memory. Shell
+  fixtures use two independent PowerShell processes at a time, with separate
+  output roots and disposable profiles. Every fixture still checks its original
+  assertion floor and timeout; every selected script must finish. Failures do
+  not cancel the remaining fixtures. Services, CTest and integration stages
+  stay serial. Local validation defaults to serial; `-Suite Shell -QmlJobs 2`
+  opts into the same scheduling.
   Recorded Services runs before compilation. CI omits the duplicate unrecorded
   preflight; the local `-ServicesPreflightRoot` diagnostic remains available.
 

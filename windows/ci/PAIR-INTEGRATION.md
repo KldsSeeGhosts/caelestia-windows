@@ -91,7 +91,12 @@ Integration executes:
 count and `floor(physical memory / 3 GiB)`, clamped to 1-16. Invalid or nonfinite
 memory measurements fail closed. The same value drives the capture Rust build,
 the trusted fixture build and production. It changes compile scheduling only.
-CTest, QML suites and recorded stages stay serial.
+CTest, Services and recorded stages stay serial. Hosted integration and native
+reuse select `-QmlJobs 2` for Shell fixtures within the shell stage. Each script
+gets its own output root and disposable profiles; native build files are
+read-only. The suite still runs every script and checks the same exit codes,
+assertion floors and timeouts. It writes the same per-script logs and summary
+fields for receipt verification. Failure does not cancel the other fixtures.
 
 Recorded integration runs Services before production compilation. CI no longer
 repeats it in an unrecorded preflight, which added 29 seconds to the warm

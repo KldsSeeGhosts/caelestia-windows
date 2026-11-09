@@ -7,6 +7,7 @@ param(
     [string]$RuntimePrefix,
     [string]$Python = 'python',
     [string]$OutputRoot,
+    [ValidateRange(1, 4)][int]$QmlJobs = 1,
     [ValidateSet('1/2', '2/2')][string]$Shard,
     [switch]$ListTests
 )
@@ -26,6 +27,7 @@ $packagingTests = @(
     @{ name = 'Test-CaptureRelease'; shard = 2; outputParameter = '-OutputRoot'; directory = 'capture-release' }
 )
 if (($Shard -or $ListTests) -and $Suite -ne 'Packaging') { throw 'Shard and ListTests apply only to Packaging.' }
+if ($QmlJobs -ne 1 -and $Suite -ne 'Shell') { throw 'QmlJobs applies only to Shell.' }
 if (@($packagingTests | Where-Object { $_.shard -notin @(1, 2) }).Count -or
     @($packagingTests.name | Select-Object -Unique).Count -ne $packagingTests.Count) {
     throw 'Every packaging test requires exactly one valid shard assignment and a unique name.'
@@ -87,6 +89,82 @@ function Invoke-ScriptCheck([string]$Name, [string[]]$Extra = @()) {
     Invoke-ValidationStep $Name $powershell (@('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot "$Name.ps1")) + $Extra)
 }
 
+function ConvertTo-ValidationArgument([string]$Value) {
+    # ProcessStartInfo.Arguments uses Windows command-line quoting, not
+    # PowerShell source quoting. Preserve embedded quotes and trailing slashes.
+    $escaped = [regex]::Replace($Value, '(\\*)"', '$1$1\"')
+    return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
+}
+
+function Invoke-ParallelScriptChecks([string[]]$Names, [string[]]$Extra) {
+    if (-not $Names.Count -or @($Names | Select-Object -Unique).Count -ne $Names.Count) {
+        throw 'Parallel validation requires a nonempty, unique test inventory.'
+    }
+    $running = New-Object 'System.Collections.Generic.List[object]'
+    $initialCount = $results.Count
+    $next = 0
+    try {
+        while ($next -lt $Names.Count -or $running.Count) {
+            while ($next -lt $Names.Count -and $running.Count -lt $QmlJobs) {
+                $name = $Names[$next]
+                $fixtureRoot = Join-Path $OutputRoot "fixtures\$name"
+                New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+                $info = New-Object Diagnostics.ProcessStartInfo
+                $info.FileName = $powershell
+                $arguments = @('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot "$name.ps1")) + $Extra
+                $info.Arguments = ($arguments | ForEach-Object { ConvertTo-ValidationArgument $_ }) -join ' '
+                $info.WorkingDirectory = $repoRoot
+                $info.UseShellExecute = $false
+                $info.CreateNoWindow = $true
+                $info.RedirectStandardOutput = $true
+                $info.RedirectStandardError = $true
+                $info.EnvironmentVariables['CAELESTIA_TEST_OUTPUT_ROOT'] = $fixtureRoot
+                $info.EnvironmentVariables['QT_QPA_PLATFORM'] = 'offscreen'
+                $clock = [Diagnostics.Stopwatch]::StartNew()
+                $process = [Diagnostics.Process]::Start($info)
+                $running.Add([pscustomobject]@{
+                    name = $name; process = $process; clock = $clock
+                    stdout = $process.StandardOutput.ReadToEndAsync()
+                    stderr = $process.StandardError.ReadToEndAsync()
+                })
+                $next++
+            }
+            foreach ($item in @($running | Where-Object { $_.process.HasExited })) {
+                $item.process.WaitForExit()
+                $seconds = [Math]::Round($item.clock.Elapsed.TotalSeconds, 2)
+                $code = $item.process.ExitCode
+                $stdout = $item.stdout.GetAwaiter().GetResult()
+                $stderr = $item.stderr.GetAwaiter().GetResult()
+                $logPath = Join-Path $OutputRoot ($item.name + '.log')
+                "$stdout`n$stderr" | Set-Content -LiteralPath $logPath -Encoding UTF8
+                $results.Add([ordered]@{ name = $item.name; exitCode = $code; testCount = $null; seconds = $seconds })
+                Write-Output ("{0} {1} ({2:N2}s)" -f $(if ($code -eq 0) { 'PASS' } else { 'FAIL' }), $item.name, $seconds)
+                if ($code -ne 0) {
+                    Write-Output "--- last 80 lines of $($item.name) ---"
+                    Get-Content -LiteralPath $logPath -Tail 80 -Encoding UTF8
+                    Write-Output "--- end of $($item.name) ---"
+                }
+                $item.process.Dispose()
+                $null = $running.Remove($item)
+            }
+            if ($running.Count) { Start-Sleep -Milliseconds 50 }
+        }
+        if ($results.Count - $initialCount -ne $Names.Count) {
+            throw 'Parallel validation did not complete every test.'
+        }
+    } finally {
+        foreach ($item in $running) {
+            try {
+                if (-not $item.process.HasExited) {
+                    # Kill only this invocation's owned tree on a launcher or
+                    # logging error. Ordinary test failures still run all tests.
+                    & "$env:SystemRoot\System32\taskkill.exe" /PID $item.process.Id /T /F | Out-Null
+                }
+            } finally { $item.process.Dispose() }
+        }
+    }
+}
+
 Push-Location -LiteralPath $repoRoot
 try {
     if ($Suite -eq 'Unit') {
@@ -143,7 +221,11 @@ try {
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)
         if ($BuildRoot) { $fixtureArguments += @('-BuildRoot', $BuildRoot) }
-        foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }
+        if ($Suite -eq 'Shell' -and $QmlJobs -gt 1) {
+            Invoke-ParallelScriptChecks $scripts $fixtureArguments
+        } else {
+            foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }
+        }
         if ($Suite -eq 'Services') {
             # This check resolves pinned backend/capture source files. The
             # Services job checks out recursive sources; the fast Unit job does not.
