@@ -780,6 +780,7 @@ class FakeGitHub:
         self.fail_download_once = False
         self.bad_run = None
         self.bad_job = None
+        self.job_names = None
         self.bad_artifact = False
         self.hide_drafts_by_tag = False
         self.tag_override = None
@@ -817,7 +818,8 @@ class FakeGitHub:
     def pages(self, path, field):
         if field == "jobs":
             return [{"name": name, "head_sha": self.ctx["sha"],
-                     "conclusion": "failure" if name == self.bad_job else "success"} for name in n.REQUIRED_JOBS]
+                     "conclusion": "failure" if name == self.bad_job else "success"}
+                    for name in (self.job_names or n.REQUIRED_JOBS)]
         if field == "artifacts":
             return [{"name": f"nexus-unsealed-{self.ctx['runId']}-{self.ctx['runAttempt']}",
                      "expired": self.bad_artifact, "workflow_run": {
@@ -1222,6 +1224,21 @@ class Pipeline(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "required-job-nonpass"):
                 n.validate_run(self.github, self.ctx)
         self.github.bad_job = None
+        # Promotion accepts the single pre-split job in place of the three
+        # shards. A development publication, or a run with neither, is refused.
+        legacy = (n.REQUIRED_JOBS - n.FAST_SHARDS) | {"Fast regressions"}
+        self.github.job_names = legacy
+        n.validate_run(self.github, self.ctx)
+        with self.assertRaisesRegex(ValueError, "required-job-nonpass"):
+            n.validate_run(self.github, self.ctx, artifact=True)
+        self.github.bad_job = "Fast regressions"
+        with self.assertRaisesRegex(ValueError, "required-job-nonpass"):
+            n.validate_run(self.github, self.ctx)
+        self.github.bad_job = None
+        self.github.job_names = n.REQUIRED_JOBS - n.FAST_SHARDS
+        with self.assertRaisesRegex(ValueError, "required-job-nonpass"):
+            n.validate_run(self.github, self.ctx)
+        self.github.job_names = None
         self.assertNotIn("candidate", validation.lower())
         self.assertIn("needs.scope.outputs.native", validation)
         self.assertIn("-notin @('none', 'reuse', 'full')", validation)

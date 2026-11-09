@@ -26,7 +26,8 @@ REPO = candidate.REPOSITORY
 REMOTE = "https://github.com/" + REPO + ".git"
 BRANCH = "nexus-channels"
 GATES = ["independent-pair", "sources", "assembly", "coverage", "license-lifecycle", "verify-original-zip", "independent-payload"]
-REQUIRED_JOBS = {"Fast regressions (1/3)", "Fast regressions (2/3)", "Fast regressions (3/3)",
+FAST_SHARDS = {"Fast regressions (1/3)", "Fast regressions (2/3)", "Fast regressions (3/3)"}
+REQUIRED_JOBS = FAST_SHARDS | {
                  "Installer and colour regressions (1/2)",
                  "Installer and colour regressions (2/2)",
                  "Native build and offscreen regressions", "Windows validation",
@@ -191,7 +192,12 @@ def validate_run(github, ctx, artifact=False):
     # exact attempt's independent prerequisite jobs, not a fictitious completed
     # whole-workflow success.
     jobs = github.pages(f"repos/{REPO}/actions/runs/{ctx['runId']}/attempts/{ctx['runAttempt']}/jobs", "jobs")
-    for name in REQUIRED_JOBS:
+    required = set(REQUIRED_JOBS)
+    if not artifact and any(row["name"] == "Fast regressions" for row in jobs):
+        # Promotion of a run from before the three-way split: the same checks
+        # ran as one job. A development publication never takes this branch.
+        required = (required - FAST_SHARDS) | {"Fast regressions"}
+    for name in required:
         matching = [row for row in jobs if row["name"] == name]
         require(len(matching) == 1 and matching[0]["conclusion"] == "success"
                 and matching[0]["head_sha"] == ctx["sha"], "required-job-nonpass")
