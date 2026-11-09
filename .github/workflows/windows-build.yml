@@ -1001,9 +1001,55 @@ jobs:
             throw 'Unexpected native-gate result.'
           }
 
+  sources:
+    name: Prepare unsigned corresponding sources
+    needs: [scope]
+    if: >-
+      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.scope.result == 'success' && needs.scope.outputs.native == 'full'
+    runs-on: windows-2022
+    timeout-minutes: 60
+    outputs:
+      sources: ${{ steps.prepare.outcome == 'success' && format('nexus-sources-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+    steps:
+      - name: Checkout exact recursive public sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Prepare and verify unsigned source data
+        id: prepare
+        shell: pwsh
+        run: |
+          python -I -B "$env:GITHUB_WORKSPACE\windows\ci\nexus_sources.py" prepare `
+            --shell $env:GITHUB_WORKSPACE --output C:\nexus-source-prep
+          if ($LASTEXITCODE -ne 0) { throw 'Unsigned source preparation failed.' }
+      - name: Transfer same-run public source data only
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ steps.prepare.outcome == 'success' && format('nexus-sources-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+          path: C:/nexus-source-prep/out/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Sanitized source preparation timings
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nexus-source-timings-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/nexus-source-prep/private/*.state.json
+          retention-days: 7
+          if-no-files-found: ignore
+
   candidate:
     name: Assemble exact-tested release candidate
-    needs: [scope, pair, validation]
+    needs: [scope, pair, validation, sources]
     # !cancelled(): the PR-only reuse job is skipped on every main push and sits
     # upstream via fixtures/build -> pair. The implicit success() treats that
     # skip as failure and silently skipped delivery. A cancelled run still does
@@ -1011,7 +1057,8 @@ jobs:
     if: >-
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       needs.scope.result == 'success' && needs.scope.outputs.native == 'full' &&
-      needs.pair.result == 'success' && needs.validation.result == 'success'
+      needs.pair.result == 'success' && needs.validation.result == 'success' &&
+      needs.sources.result == 'success' && needs.sources.outputs.sources != ''
     runs-on: windows-2022
     timeout-minutes: 120
     outputs:
@@ -1094,12 +1141,18 @@ jobs:
         with:
           name: nexus-inputs-${{ github.run_id }}-${{ github.run_attempt }}
           path: C:/
+      - name: Restore same-run prepared source data
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: ${{ needs.sources.outputs.sources }}
+          path: C:/nexus-source-transfer
       - name: Assemble exact-tested release candidate
         id: candidate
         run: |
           & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\New-NexusCandidate.ps1" `
             -ShellRoot $env:GITHUB_WORKSPACE -BuildRoot $env:BUILD_ROOT -ToolRoot $env:TOOL_ROOT `
-            -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate -EchoDiagnostics
+            -PairResults $env:PAIR_RESULTS -TrustedRoot $env:TRUSTED_ROOT -OutputDirectory C:\nexus-candidate `
+            -PreparedSources C:\nexus-source-transfer -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Exact-tested candidate assembly failed.' }
       - name: Retain exact-tested release candidate
         if: steps.candidate.outcome == 'success'

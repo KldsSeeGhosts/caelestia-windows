@@ -390,7 +390,24 @@ tool preparation; an invalid hit fails without fallback. The native producer's
 complete measured toolchain, candidate provenance checks, and exact packaging
 CRT supplier checks remain unchanged. Deployment readiness is not a compiler
 receipt.
-`New-NexusCandidate.ps1` and its independent eligibility checks are unchanged.
+The independent eligibility checks still run before candidate assembly or
+consumption of prepared source data.
+
+On main, `Prepare unsigned corresponding sources` starts beside native
+validation. It runs the unchanged source recipe and standalone bundle
+verification without build inputs, signing secrets or write permission.
+Only its archives, notices and metadata enter the one-day exact-run/attempt
+`nexus-sources-*` transfer. Metadata and notices pass the same privacy scanner
+before upload; private logs, download caches and working trees never transfer.
+The candidate requires this job to succeed, verifies the run/attempt, every
+transferred byte, source/project revisions, recipe and toolchain, then safely
+extracts and checks the embedded inventories before its existing coverage and
+payload gates. A failed or missing transfer has no fallback to a different run.
+The transfer index is consistency data, not a signature or release receipt.
+The isolated publisher still independently reproduces all source and notice
+data and verifies the payload. Native validation, pair joining and signing
+authority are unchanged. Unsigned acquisition before eligibility is deliberate;
+it does not make an unvalidated output eligible for release.
 
 Assembly and both independent payload gates scan their complete file inventories
 with two bounded PowerShell runspace workers. Each worker runs the same reviewed
