@@ -154,3 +154,14 @@ paths the Windows branch does not carry.
 | `30a5d60a` | Trim lines in desktop entries when parsing |
 | `4befab5b` | Follow workspace id changes in the Hyprland IPC |
 | `d7ee6d12` | Emit row updates for rows changed only by identity in `ScriptModel` |
+
+## Batch adoption 2026-11-10
+
+Adopted in the #33 upstream batch pull request
+(`feat/33-upstream-batch-1`): `fd630ffe`, `72f60b1d`, `cb43fc71` and
+`80bd0021`.
+
+`6377e580` is not adopted here. Its screenshot removal-map change is in the
+pinned backend submodule, and the batch pull request does not move the backend
+pin; `screenshot_jobs.cpp` at the pinned revision still keys removals on the
+absolute path.
