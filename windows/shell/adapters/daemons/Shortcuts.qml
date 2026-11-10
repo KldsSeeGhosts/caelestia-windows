@@ -69,7 +69,7 @@ Scope {
             if (Recorder.running || Recorder.state === "selecting" || Recorder.state === "ready")
                 Recorder.stop();
             else
-                Glazier.record();
+                CaptureUi.record();
         }
     }
 

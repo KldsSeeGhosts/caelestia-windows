@@ -167,6 +167,7 @@ pub fn button_rect(button: Button, recording: bool, width: i32) -> Option<D2D_RE
 }
 
 struct Controls {
+    ui: bool,
     hwnd: HWND,
     border: HWND,
     gfx: Rc<Gfx>,
@@ -227,6 +228,27 @@ pub fn stop() {
     }
 }
 
+pub fn discard() {
+    if let Some(s) = ACTIVE.with_borrow(Clone::clone) {
+        if let Ok(mut s) = s.try_borrow_mut() {
+            s.stop(true);
+        }
+    }
+}
+
+pub fn audio(sound: Option<bool>, mic: Option<bool>) {
+    if let Some(s) = ACTIVE.with_borrow(Clone::clone) {
+        if let Ok(mut s) = s.try_borrow_mut() {
+            if sound.is_some_and(|v| v != s.audio.sound) {
+                s.toggle(false);
+            }
+            if mic.is_some_and(|v| v != s.audio.mic) {
+                s.toggle(true);
+            }
+        }
+    }
+}
+
 pub fn pause(paused: bool) {
     if let Some(s) = ACTIVE.with_borrow(Clone::clone) {
         if let Ok(mut s) = s.try_borrow_mut() {
@@ -245,11 +267,23 @@ pub fn update_status() {
     }
 }
 
-pub fn fullscreen(gfx: Rc<Gfx>, cfg: Rc<Config>, sound: Option<bool>, mic: Option<bool>) -> Result<()> {
+pub fn record_region(
+    gfx: Rc<Gfx>,
+    cfg: Rc<Config>,
+    requested: Option<IRect>,
+    sound: Option<bool>,
+    mic: Option<bool>,
+    ui: bool,
+) -> Result<()> {
     unsafe {
         let mut point = POINT::default();
-        GetCursorPos(&mut point)?;
-        let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+        if let Some(r) = requested {
+            point = POINT { x: r.x, y: r.y };
+        } else {
+            GetCursorPos(&mut point)?;
+        }
+        let monitor =
+            MonitorFromPoint(point, if requested.is_some() { MONITOR_DEFAULTTONULL } else { MONITOR_DEFAULTTONEAREST });
         let mut info = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
         if !GetMonitorInfoW(monitor, &mut info).as_bool() {
             return Err(Error::from_thread());
@@ -258,7 +292,8 @@ pub fn fullscreen(gfx: Rc<Gfx>, cfg: Rc<Config>, sound: Option<bool>, mic: Optio
         let w = info.rcWork;
         let monitor = IRect { x: r.left, y: r.top, w: r.right - r.left, h: r.bottom - r.top };
         let work = IRect { x: w.left, y: w.top, w: w.right - w.left, h: w.bottom - w.top };
-        let region = clamp_region(monitor, monitor).ok_or_else(|| Error::new(E_FAIL, "Monitor is too small"))?;
+        let region = clamp_region(requested.unwrap_or(monitor), monitor)
+            .ok_or_else(|| Error::new(E_FAIL, "Recording region is outside the monitor"))?;
         let mut x = 96;
         let mut y = 96;
         let _ = windows::Win32::UI::HiDpi::GetDpiForMonitor(
@@ -267,7 +302,7 @@ pub fn fullscreen(gfx: Rc<Gfx>, cfg: Rc<Config>, sound: Option<bool>, mic: Optio
             &mut x,
             &mut y,
         );
-        open(gfx, cfg, region, monitor, work, x as f32 / 96.0)?;
+        open_with_ui(gfx, cfg, region, monitor, work, x as f32 / 96.0, ui)?;
         configure(sound, mic, true);
         Ok(())
     }
@@ -299,7 +334,7 @@ pub fn hide(hidden: bool) {
             return;
         };
         unsafe {
-            let show = if hidden { SW_HIDE } else { SW_SHOWNOACTIVATE };
+            let show = if hidden || !s.ui { SW_HIDE } else { SW_SHOWNOACTIVATE };
             let _ = ShowWindow(s.hwnd, show);
             let _ = ShowWindow(s.border, show);
         }
@@ -432,6 +467,18 @@ fn bar_placement(work: IRect, region: IRect, recording: bool, k: f32) -> (i32, i
 }
 
 fn open(gfx: Rc<Gfx>, cfg: Rc<Config>, region: IRect, monitor: IRect, work: IRect, k: f32) -> Result<()> {
+    open_with_ui(gfx, cfg, region, monitor, work, k, true)
+}
+
+fn open_with_ui(
+    gfx: Rc<Gfx>,
+    cfg: Rc<Config>,
+    region: IRect,
+    monitor: IRect,
+    work: IRect,
+    k: f32,
+    ui: bool,
+) -> Result<()> {
     if exists() {
         return Ok(());
     }
@@ -509,6 +556,7 @@ fn open(gfx: Rc<Gfx>, cfg: Rc<Config>, region: IRect, monitor: IRect, work: IRec
         let themed = tokens.is_some();
         ACTIVE.with_borrow_mut(|s| {
             *s = Some(Rc::new(RefCell::new(Controls {
+                ui,
                 hwnd,
                 border,
                 gfx,
@@ -534,10 +582,15 @@ fn open(gfx: Rc<Gfx>, cfg: Rc<Config>, region: IRect, monitor: IRect, work: IRec
             })))
         });
         // A layered window shows nothing until its first frame is presented.
-        present_initial()?;
-        let _ = ShowWindow(border, SW_SHOWNOACTIVATE);
-        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        // With ui:false the hidden HWND still pumps worker events and timers.
+        // Neither presentation nor later hide(false) may expose its controls.
+        if ui {
+            present_initial()?;
+            let _ = ShowWindow(border, SW_SHOWNOACTIVATE);
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        }
         SetTimer(Some(hwnd), 1, 50, None);
+        control::recording_ui(region, ui);
         control::change(Phase::Ready, None, None, None);
         Ok(())
     }
@@ -629,7 +682,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             WM_DPICHANGED => {}
             _ => return DefWindowProcW(hwnd, msg, wp, lp),
         }
-        if matches!(msg, WM_TIMER | WM_MOUSEMOVE | WM_LBUTTONUP) {
+        if s.ui && matches!(msg, WM_TIMER | WM_MOUSEMOVE | WM_LBUTTONUP) {
             if let Err(e) = s.present() {
                 if !s.finishing {
                     control::error(e.message().to_string());
@@ -964,6 +1017,7 @@ mod tests {
             let (commands, receive) = mpsc::channel();
             let (events, results) = mpsc::channel();
             ACTIVE.with_borrow_mut(|s| *s = Some(Rc::new(RefCell::new(Controls {
+                ui: true,
                 hwnd: HWND::default(), border: HWND::default(),
                 icons: gfx.icon_format(17.0).unwrap(), gfx, cfg: Rc::new(Config::default()),
                 palette: Palette::default(), themed: false,
@@ -1012,6 +1066,7 @@ mod tests {
         {
             let gfx = Rc::new(Gfx::new().unwrap());
             let state = Rc::new(RefCell::new(Controls {
+                ui: true,
                 // UpdateLayeredWindow fails for a null HWND, exercising startup cleanup.
                 hwnd: HWND::default(),
                 border: HWND::default(),
@@ -1101,6 +1156,7 @@ mod tests {
             let (send, _receive) = mpsc::channel();
             let (_events, results) = mpsc::channel();
             let state = Rc::new(RefCell::new(Controls {
+                ui: true,
                 hwnd,
                 border: HWND::default(),
                 icons: gfx.icon_format(17.0).unwrap(),
@@ -1155,6 +1211,9 @@ mod tests {
         assert_eq!(clamp_region(IRect { x: -101, y: 3, w: 201, h: 2159 }, m), Some(IRect { x: -101, y: 3, w: 100, h: 2156 }));
         assert!(clamp_region(IRect { x: 0, y: 0, w: 10, h: 10 }, m).is_none());
         assert!(clamp_region(IRect { x: -1, y: 0, w: 1, h: 9 }, m).is_none());
+        let requested = control::Region { x: -3801, y: 3, w: 501, h: 301 }.checked().unwrap();
+        assert_eq!(clamp_region(requested, m), Some(IRect { x: -3801, y: 3, w: 500, h: 300 }));
+        assert!(clamp_region(control::Region { x: 100, y: 0, w: 100, h: 100 }.checked().unwrap(), m).is_none());
     }
 
     #[test]

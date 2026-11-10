@@ -57,6 +57,19 @@ can change either audio source. A selected region begins recording automatically
 Glazier's tray/hotkey review behavior is unchanged. Full current monitor means the
 monitor containing the pointer, with Glazier's existing even-pixel H.264 crop.
 
+With `windows.capture.ui: "shell"`, launcher Record and the record shortcut use
+the QML region picker. The default remains `"classic"`, and a legacy `glazier.exe`
+override always keeps the classic flow. The helper receives `--region x,y,w,h`
+and `--no-ui`, equivalent to protocol-v1 `record.region` and `record.ui: false`.
+The region uses physical virtual-desktop pixels. Only local monitor offsets
+scale by DPR, and the helper crops the region to even dimensions.
+
+The shell draws an excluded border and controls. Pause/resume, Stop, Mic,
+Sound and Discard use the helper's control protocol. Additive v1 `audio` and
+`discard` commands expose the existing worker actions. Neither command starts
+a host. Status includes `region` and `ui` so a reload can restore the controls.
+The helper still owns elapsed time, the journal, output files and recovery.
+
 Start delegates to the native identity registry. Cold launch retains the
 `CreateProcessW` handle without inherited handles or a console. A forwarding
 client never claims host ownership or launched-host journal freshness.

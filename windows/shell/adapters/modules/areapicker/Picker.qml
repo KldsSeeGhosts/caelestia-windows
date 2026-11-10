@@ -83,11 +83,14 @@ MouseArea {
     function hover(x: real, y: real): void {
         lastX = x;
         lastY = y;
-        select(Logic.targetAt(windows, x, y, geometry).rect);
+        if (owner.recordingMode)
+            clearSelection();
+        else
+            select(Logic.targetAt(windows, x, y, geometry).rect);
     }
 
     function targetForRelease(x: real, y: real): var {
-        if (dragging)
+        if (dragging || owner.recordingMode)
             return Logic.spanRect(startX, startY, x, y, geometry);
         return Logic.targetAt(windows, x, y, geometry).rect;
     }

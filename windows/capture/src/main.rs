@@ -37,7 +37,9 @@ fn main() {
         command @ (control::Command::Status
         | control::Command::Stop
         | control::Command::Pause
-        | control::Command::Resume),
+        | control::Command::Resume
+        | control::Command::Discard
+        | control::Command::Audio { .. }),
     ) = &options.command
     {
         std::process::exit(control::print(control::client(command)));

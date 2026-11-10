@@ -11,6 +11,7 @@ import qs.components.containers
 import qs.services
 import qs.utils
 import "CaptureLogic.js" as Logic
+import "RecordingLogic.js" as Recording
 
 // Windows adaptation of upstream modules/areapicker/AreaPicker.qml.
 //
@@ -41,6 +42,8 @@ Scope {
     property bool opened
     property bool closing
     property bool saving
+    property bool recordingMode
+    property var recorder: Recorder
     // Screen name to ScreencopyView.hasContent, and whether all of them have it.
     property var ready: ({})
     property bool allReady
@@ -84,7 +87,7 @@ Scope {
     readonly property var screenNames: screenList.map(screen => screen.name)
     readonly property var windows: loader.item ? loader.item.instances : []
 
-    function open(): bool {
+    function open(recording = false): bool {
         if (!interactionEnabled)
             return false;
         if (opened)
@@ -92,6 +95,7 @@ Scope {
         openedAt = Date.now();
         closing = false;
         saving = false;
+        recordingMode = recording;
         endEditing();
         ready = ({});
         allReady = false;
@@ -120,6 +124,16 @@ Scope {
     // A Picker calls this when the user releases a selection. The editor opens
     // over it and nothing is saved.
     function startEditing(picker: var, plan: var): void {
+        if (recordingMode) {
+            const region = Recording.region(plan.logical, picker.geometry, picker.dpr);
+            if (region && recorder.startRegion(region))
+                finishClose();
+            else if (region) {
+                Toaster.toast(Tr.tr("Recording failed"), recorder.status, "screen_record", Toast.Error);
+                cancel();
+            }
+            return;
+        }
         editor.reset();
         editor.scale = picker.dpr;
         editPlan = plan;
@@ -314,5 +328,10 @@ Scope {
                 }
             }
         }
+    }
+
+    RecordingOverlay {
+        interactionEnabled: root.interactionEnabled
+        recorder: root.recorder
     }
 }

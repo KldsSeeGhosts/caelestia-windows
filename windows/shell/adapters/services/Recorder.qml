@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Windows as Native
+import "../modules/areapicker/RecordingLogic.js" as Recording
 
 // Windows: Glazier owns capture, audio, timing and MP4 finalization. Never infer
 // a successful recording from the lifetime of the short-lived command client.
@@ -18,6 +19,9 @@ Singleton {
     property bool available: false
     property string state: "idle"
     property real elapsed: 0
+    property bool mic: false
+    property bool sound: false
+    property var shellRegion: null
     property string outputDir: ""
     // Exclude Glazier's unpublished .glazier-*.mp4 files, including on Windows.
     readonly property var nameFilters: ["[!.]*.mp4"]
@@ -168,6 +172,9 @@ Singleton {
         connectionFailed = false;
         state = data.state;
         elapsed = data.elapsed_ms / 1000;
+        mic = data.mic === true;
+        sound = data.system_sound === true;
+        shellRegion = data.ui === false && data.region ? data.region : null;
         outputDir = data.output_directory.replace(/\\/g, "/");
         // A confirmed recording also recovers a failed Start if its started
         // event has already rolled out of Glazier's bounded journal.
@@ -243,10 +250,41 @@ Singleton {
         return true;
     }
 
+    function startRegion(region): bool {
+        const options = Recording.startArgs(region);
+        if (!canStart || !options)
+            return false;
+        const args = Glazier.hostOptions().concat(options);
+        if (!Glazier.sendHostCommand(args, executable))
+            return false;
+        shellRegion = region;
+        lastError = "";
+        connectionError = "";
+        lastFile = "";
+        pendingStart = true;
+        startTimeout.restart();
+        return true;
+    }
+
+    function discard(): void {
+        if (running && !stopping)
+            send("--discard");
+    }
+
+    function toggleMic(): void {
+        if (running && !stopping)
+            send(["--audio", "--mic", mic ? "off" : "on"]);
+    }
+
+    function toggleSound(): void {
+        if (running && !stopping)
+            send(["--audio", "--system-sound", sound ? "off" : "on"]);
+    }
+
     function send(command): void {
         if (!permitted || !available || commandProcess.running)
             return;
-        commandProcess.command = [executable, command];
+        commandProcess.command = [executable].concat(Array.isArray(command) ? command : [command]);
         commandProcess.running = true;
     }
 

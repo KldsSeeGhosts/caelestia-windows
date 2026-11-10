@@ -8,6 +8,7 @@
     "config::tests::template_matches_defaults",
     "config::tests::legacy_settings_copy_only_if_missing_and_never_rewrite_user_files",
     "control::tests::parses_commands_and_audio",
+    "control::tests::shell_record_region_and_ui_decode_without_changing_v1",
     "control::tests::parses_launch_options_before_or_after_the_command",
     "control::tests::status_and_launch_use_the_same_managed_pipe",
     "control::tests::transitions_and_finished_path_only_after_finalizing",

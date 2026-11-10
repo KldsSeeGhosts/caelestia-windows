@@ -376,17 +376,24 @@ pub fn control(command: Command) -> std::result::Result<(), String> {
         }
         Command::Pause => crate::recording::pause(true),
         Command::Resume => crate::recording::pause(false),
-        Command::Record { fullscreen, system_sound, mic } => {
+        Command::Discard => crate::recording::discard(),
+        Command::Audio { system_sound, mic } => crate::recording::audio(system_sound, mic),
+        Command::Record { fullscreen, system_sound, mic, region, ui } => {
+            if fullscreen && region.is_some() || !ui && !fullscreen && region.is_none() {
+                return Err("A headless recording requires a region or fullscreen".into());
+            }
+            let region = region.map(|r| r.checked()).transpose()?;
             let ready = APP.with_borrow(|a| a.as_ref().is_some_and(|a| !a.opening && a.overlay.is_none()));
             if !ready || crate::recording::exists() {
                 return Err("Caelestia capture is busy".into());
             }
-            if fullscreen {
+            if fullscreen || region.is_some() {
                 let (gfx, cfg) = APP.with_borrow(|a| a.as_ref().map(|a| (a.gfx.clone(), a.cfg.clone()))).unwrap();
                 gfx.reload_theme(&cfg.theme_file);
                 crate::recording::reload_theme(&gfx);
                 crate::thumbnail::reload_theme(&gfx);
-                crate::recording::fullscreen(gfx, cfg, system_sound, mic).map_err(|e| e.message().to_string())?;
+                crate::recording::record_region(gfx, cfg, region, system_sound, mic, ui)
+                    .map_err(|e| e.message().to_string())?;
             } else {
                 APP.with_borrow_mut(|a| a.as_mut().unwrap().recording_audio = Some((system_sound, mic)));
                 start_picker(true);

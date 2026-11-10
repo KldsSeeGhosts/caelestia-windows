@@ -7,17 +7,17 @@ import Caelestia.Config
 import qs.services
 import "../modules/areapicker/CaptureLogic.js" as Logic
 
-// Windows: the one place that decides which screenshot UI runs.
+// Windows: the one place that decides which capture UI runs.
 //
 // `windows.capture.ui` in shell.json is "classic" (default), which starts the
 // bundled Rust capture tool through Glazier.qml exactly as before, or "shell",
 // which opens the QML picker in modules/areapicker. A legacy glazier.exe
-// override has no shell integration, so it always stays classic. Recording is
-// not routed here and stays classic.
+// override has no shell integration, so it always stays classic.
 //
 // Every entry point calls screenshot(): PrintScreen and Win+Shift+S
 // (daemons/Shortcuts.qml), the launcher Screenshot action, IPC
 // `screenshot capture` and the `picker` IPC functions (services/Glazier.qml).
+// Launcher Record and the record shortcut call record() through the same route.
 Singleton {
     id: root
 
@@ -46,9 +46,18 @@ Singleton {
     // picker: a selection opens the editor, whose Copy and Save decide the
     // output. The return value means accepted, as Glazier.capture() does.
     function screenshot(name = "open"): bool {
+        return request(name);
+    }
+
+    function record(): bool {
+        return request("record");
+    }
+
+    // Screenshot and recording entry points share the same routing decision.
+    function request(name): bool {
         if (route !== "shell")
-            return glazierProvider.capture();
-        const options = Logic.pickerOptions(name);
+            return name === "record" ? glazierProvider.record() : glazierProvider.capture();
+        const options = name === "record" ? { recording: true } : Logic.pickerOptions(name);
         if (!options)
             return false;
         if (!picker) {
@@ -79,7 +88,7 @@ Singleton {
             pending = null;
             wait.stop();
             if (picker)
-                picker.open();
+                picker.open(options.recording === true);
         } else if (Date.now() - pendingSince > glazierProvider.hiddenTimeout) {
             pending = null;
             wait.stop();
