@@ -6,12 +6,10 @@ import qs.services
 import qs.modules.background
 
 // Presentation placement for a running Wallpaper Engine that this profile has
-// not opted into. The adapter shows the bundled source, but the pinned
-// backend places every marked background below a visible foreign child and
-// refuses an above-icons embed while one exists. The fallback therefore stays
-// mounted in the underlay position and presents there; it cannot cover the
-// engine's window without a backend change. Replace is the strongest case
-// because that mode otherwise embeds above the icons.
+// not opted into. A fresh profile keeps every background above foreign
+// wallpaper children inside the desktop host. Existing profiles retain the
+// released underlay policy. Replace must still avoid an above-icons embed
+// while the engine runs.
 Item {
     id: root
 
@@ -59,6 +57,7 @@ Item {
         try {
             Quickshell.environment = environmentValues;
             WallpaperEngine.options = {enabled: false};
+            Wallpapers.sourceFresh = true;
             WallpaperEngine.detected = true;
             WallpaperEngine.running = true;
             WallpaperEngine.snapshotReady = true;
@@ -77,12 +76,51 @@ Item {
                 "the disabled engine supplied the palette source");
             check(nativeLayer.aboveIcons.length === 0,
                 "a running disabled engine was covered from an above-icons embed");
-            check(subject.underlayActive,
-                "the fallback was not left in the underlay position");
+            check(!nativeLayer.externalWallpaperEnabled,
+                "a fresh disabled profile still yields to foreign wallpaper");
+            check(!subject.underlayActive,
+                "disabled integration still reports an underlay");
             check(subject.enabled && subject.screens.length === 1,
-                "the fallback was unmounted instead of presented beneath the engine");
+                "the own background was unmounted with integration disabled");
             check(subject.checkReady(screen),
-                "the fallback did not present beneath the running disabled engine");
+                "the own background did not present with integration disabled");
+
+            // These transitions must reconcile through the expression's
+            // changed handler, without an explicit reconcileDesktop call.
+            Wallpapers.sourceFresh = false;
+            check(nativeLayer.externalWallpaperEnabled,
+                "an existing disabled profile lost the released policy");
+            check(subject.underlayActive, "an existing profile no longer yields to foreign wallpaper");
+            Wallpapers.sourceFresh = true;
+            check(!nativeLayer.externalWallpaperEnabled,
+                "returning to a fresh disabled profile did not reconcile");
+            WallpaperEngine.options = {enabled: true};
+            check(nativeLayer.externalWallpaperEnabled,
+                "enabled integration did not restore the released policy");
+            check(subject.underlayActive, "enabled integration no longer yields to foreign wallpaper");
+            WallpaperEngine.options = {enabled: false};
+            check(!nativeLayer.externalWallpaperEnabled,
+                "disabling integration did not restore the own background policy");
+            wallpaperEngine.running = false;
+            check(!nativeLayer.externalWallpaperEnabled,
+                "process liveness changed the integration policy");
+            // With no process, externalActive stays false. Only the policy
+            // changed handler can reconcile these setting/profile changes.
+            WallpaperEngine.options = {enabled: true};
+            check(nativeLayer.externalWallpaperEnabled,
+                "enabling integration without a process did not reconcile");
+            WallpaperEngine.options = {enabled: false};
+            check(!nativeLayer.externalWallpaperEnabled,
+                "disabling integration without a process did not reconcile");
+            Wallpapers.sourceFresh = false;
+            check(nativeLayer.externalWallpaperEnabled,
+                "an existing profile without a process did not reconcile");
+            Wallpapers.sourceFresh = true;
+            check(!nativeLayer.externalWallpaperEnabled,
+                "a fresh disabled profile without a process did not reconcile");
+            wallpaperEngine.running = true;
+            check(!nativeLayer.externalWallpaperEnabled,
+                "a running process overrode disabled integration");
 
             // The above-icons placement is safe again only once no foreign
             // wallpaper window can be covered.

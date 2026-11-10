@@ -13,7 +13,7 @@ Background {
     id: root
 
     // the shell desktop is the fallback layer, not an alternative to an
-    // external wallpaper. A Background panel is a sibling of the external
+    // enabled external wallpaper. A Background panel is a sibling of the external
     // wallpaper window inside the desktop host, and the backend pins every
     // marked Background below the bottom-most visible foreign child before the
     // panel presents (placeDesktopBackgrounds). That layering is what decides
@@ -24,8 +24,10 @@ Background {
     // has presented its first frame and while it replaces that frame. This
     // only fills uncovered regions: an opaque external HWND can still paint
     // a placeholder over us. Window presence is not frame readiness.
+    // A fresh profile with integration disabled instead keeps the background
+    // group above foreign wallpaper children, still below desktop icons.
     // Process liveness, a saved selection, Explorer's host and a successful
-    // CLI request never decide that here.
+    // CLI request never decide that policy here.
     //
     // Only the two states the backend cannot place safely unmount the
     // fallback. A refused SetParent leaves the panel top level, above the
@@ -34,6 +36,7 @@ Background {
     // Both fail closed until the host or the backend changes.
     readonly property bool backgroundRequested: Quickshell.env("CAELESTIA_WINDOWS_BACKGROUND") === "1"
     readonly property bool underlaySupported: "underlayActive" in Native.DesktopLayer
+    readonly property bool externalWallpaperEnabled: !Wallpapers.sourceFresh || WallpaperEngine.enabled
     readonly property bool underlayActive: underlaySupported && Native.DesktopLayer.underlayActive
     readonly property bool embedRefused: "embedRefused" in Native.DesktopLayer
         && Native.DesktopLayer.embedRefused
@@ -66,6 +69,8 @@ Background {
         : []
 
     function reconcileDesktop(): void {
+        if ("externalWallpaperEnabled" in Native.DesktopLayer)
+            Native.DesktopLayer.externalWallpaperEnabled = externalWallpaperEnabled;
         // Keep the host enabled while the backend can still discover WorkerW,
         // even before it reports the underlay. That is what lets the fallback
         // mount beneath the engine from the first claim instead of leaving a
@@ -85,6 +90,7 @@ Background {
         }
     }
     onBackgroundRequestedChanged: reconcileDesktop()
+    onExternalWallpaperEnabledChanged: reconcileDesktop()
     onExternalActiveChanged: reconcileDesktop()
     onDesktopIconsChanged: reconcileDesktop()
     onEngineRunningChanged: reconcileDesktop()
