@@ -4,7 +4,6 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Windows as Native
-import "../modules/areapicker/RecordingLogic.js" as Recording
 
 // Windows: Glazier owns capture, audio, timing and MP4 finalization. Never infer
 // a successful recording from the lifetime of the short-lived command client.
@@ -250,8 +249,10 @@ Singleton {
         return true;
     }
 
-    function startRegion(region): bool {
-        const options = Recording.startArgs(region);
+    // The picker builds the helper arguments (RecordingLogic.startArgs). This
+    // singleton stays free of relative imports so it loads as a standalone
+    // qs.services module, as the capture-host fixture stages it.
+    function startRegion(region, options): bool {
         if (!canStart || !options)
             return false;
         const args = Glazier.hostOptions().concat(options);

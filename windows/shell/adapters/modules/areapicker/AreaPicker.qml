@@ -126,7 +126,7 @@ Scope {
     function startEditing(picker: var, plan: var): void {
         if (recordingMode) {
             const region = Recording.region(plan.logical, picker.geometry, picker.dpr);
-            if (region && recorder.startRegion(region))
+            if (region && recorder.startRegion(region, Recording.startArgs(region)))
                 finishClose();
             else if (region) {
                 Toaster.toast(Tr.tr("Recording failed"), recorder.status, "screen_record", Toast.Error);
