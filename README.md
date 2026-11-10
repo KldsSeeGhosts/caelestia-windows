@@ -22,7 +22,7 @@ Autostart is off by default. Pass `-Autostart` to the installer to turn it on. T
 
 ## Code signing policy
 
-Stable signing is planned through [SignPath.io](https://about.signpath.io) and [SignPath Foundation](https://signpath.org), subject to acceptance and a working pipeline. No signing service is connected today.
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
 Development (`v*-dev.*`) and preview (`v*-preview.*`, `v*-rc.*`) releases are unsigned. The owner's decision is that stable releases (`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation once a signing pipeline exists. No release is signed today and no stable release exists. The intended signed set is only the files this project builds: Qt DLLs keep Qt's signature, M3Shapes stays third-party, `qs.exe` remains an unsigned upstream build, and `Install.cmd` and the ZIP are not signed. [CODE-SIGNING-POLICY.md](windows/docs/CODE-SIGNING-POLICY.md) lists the intended artifacts, team roles and privacy statement; [SIGNING-ROADMAP.md](windows/docs/SIGNING-ROADMAP.md) lists the pipeline work that must land first.
 
