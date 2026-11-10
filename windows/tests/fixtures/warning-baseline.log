@@ -1,0 +1,14 @@
+[0/3] Synthetic clang-cl fixture, never compiled
+{repo}\plugin\src\Caelestia\cutils.cpp(178,31): warning: 'match' is deprecated: Use matchView instead. [-Wdeprecated-declarations]
+{repo}\plugin\src\Caelestia\cutils.cpp(178,31): warning: 'match' is deprecated: Use matchView instead. [-Wdeprecated-declarations]
+{repo}\plugin\3rdparty\rgbcx\rgbcx.cpp(10,5): warning: ignored parameter [-Wunused-parameter]
+{repo}\windows\deps\m3shapes\src\core\Point.hpp(11,13): warning: default member initializer for non-static data members is incompatible with C++98 [-Wc++98-compat]
+{repo}\windows\deps\m3shapes\src\core\Point.hpp(11,13): warning: default member initializer for non-static data members is incompatible with C++98 [-Wc++98-compat]
+{repo}\windows\deps\m3shapes\src\qml\..\core\Point.hpp(11,13): warning: default member initializer for non-static data members is incompatible with C++98 [-Wc++98-compat]
+{repo}\windows\deps\quickshell\src\windows\screen_identity.cpp(356,43): warning: missing field 'stableId' initializer [-Wmissing-field-initializers]
+C:/repo/windows/deps/quickshell/src/windows\screen_identity.cpp(356,43): warning: missing field 'stableId' initializer [-Wmissing-field-initializers]
+{qt}\include\QtCore\qstring.h(100,5): warning: Qt fixture warning [-Wdeprecated-declarations]
+C:\Tools\deps\CLI11-2.5.0\include\CLI\CLI.hpp(1,2): warning: CLI11 fixture warning [-Wunused-parameter]
+{repo}\windows\deps\m3shapes\src\core\Point.hpp:11:13: warning: GCC-style location [-Wdocumentation]
+{build}\caelestia\generated.cpp(5,1): warning: generated warning [-Wunused-parameter]
+not a diagnostic: warning: this is only prose

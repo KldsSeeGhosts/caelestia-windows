@@ -28,6 +28,7 @@ $unitTests = @(
     @{ name = 'Test-CaptureIntegration'; shard = 3; kind = 'script' }
     @{ name = 'llvm-extraction'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/LlvmExtract.test.py'); outputDirectory = 'llvm-extraction' }
     @{ name = 'toolchain-modules'; shard = 2; kind = 'python'; arguments = @('-B', 'windows/tests/ToolchainModules.test.py'); outputDirectory = 'toolchain-modules' }
+    @{ name = 'warning-baseline'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/WarningBaseline.test.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
     @{ name = 'Test-CIChanges'; shard = 3; kind = 'script' }
     @{ name = 'Test-CIAcceleration'; shard = 1; kind = 'script' }
     @{ name = 'Test-SchemeProbeGuard'; shard = 3; kind = 'script' }

@@ -145,6 +145,62 @@ The script:
    version/hash receipt; `logs/build.json` additionally contains private local
    deployment paths and must not be uploaded.
 
+## Compiler warning baseline
+
+`windows/ci/warning-baseline.json` records the reviewed clang-cl diagnostics
+from a full native build. Each location is stored relative to this repository
+or to a named dependency root, never as a build-directory or profile path.
+The counts keep raw warning lines separate from unique `(file, line, flag)`
+diagnostics. The component groups are `shell-plugin`, `m3shapes`, `backend`,
+`qt-headers` and `other-third-party`. Only `plugin/` source outside
+`plugin/3rdparty/` is owned; generated plugin build files are counted but are
+not added to the owned diagnostic list.
+
+Regenerate after a clean build using the command in [Build](#build) with a
+disposable `-BuildRoot`. `-SkipCapture` is sufficient because Cargo output is
+not a clang-cl diagnostic. Combine the compiler logs under
+`<BuildRoot>\logs` into one file outside the checkout:
+
+```powershell
+$buildRoot = 'C:\b-caelestia'
+$warningLog = Join-Path $env:TEMP 'caelestia-warning-build.log'
+$components = @('configure-m3shapes', 'build-m3shapes', 'install-m3shapes',
+    'configure-plugins', 'build-plugins', 'install-plugins',
+    'configure-backend', 'build-backend', 'build-brightness-probe')
+$parts = foreach ($name in $components) {
+    $path = Join-Path $buildRoot "logs\$name.log"
+    if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path -Raw }
+}
+[IO.File]::WriteAllText($warningLog, ($parts -join "`n"), [Text.UTF8Encoding]::new($false))
+
+python windows/tools/warning_baseline.py --log $warningLog --build-root $buildRoot
+python windows/tools/warning_baseline.py --check $warningLog --build-root $buildRoot
+```
+
+The tool also accepts the `<BuildRoot>\logs` directory directly. Both modes
+read UTF-8 and Windows PowerShell's UTF-16 component logs. The baseline records
+the compiler and Qt identity from `windows/toolchain.json`. `--check` exits 2
+when that identity no longer matches, so a toolchain upgrade requires a
+reviewed baseline refresh. It exits 1 and prints each new owned diagnostic.
+The check is not yet a CI gate.
+
+The first full build recorded 2,799 raw warning lines and 747 unique
+diagnostics. The imported sources below are candidates for a later targeted
+dependency-boundary fix, not for global suppression:
+
+| Source | Flag | Raw lines | Unique |
+| --- | --- | ---: | ---: |
+| M3Shapes | `-Wc++98-compat` | 2,518 | 614 |
+| M3Shapes | `-Wunsafe-buffer-usage` | 60 | 28 |
+| M3Shapes | `-Wpre-c++17-compat` | 55 | 29 |
+| M3Shapes | `-Wpre-c++14-compat` | 50 | 25 |
+| Backend | `-Wmissing-designated-field-initializers` | 49 | 3 |
+| M3Shapes | `-Wdocumentation` | 18 | 2 |
+
+The owned set is one deprecation warning in `plugin/src/Caelestia/cutils.cpp`.
+Do not silence warnings globally or promote the imported set to errors; fix a
+dependency target or reviewed source patch on its own.
+
 ## Toolchain and runtime receipts
 
 Before compilation, `Build-Prototype.ps1` and `Test-Environment.ps1` use the
