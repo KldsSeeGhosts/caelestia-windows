@@ -296,18 +296,18 @@ $pluginConfigure = @('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
     "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })")
-# One -Jobs budget covers every chain that runs at the same time. Hosted CI
-# sizes -Jobs from the processor count and the memory one compile needs, so
-# three chains that each used the whole budget would triple peak memory on a
-# cold build. The backend keeps the largest share. When the budget is smaller
-# than the number of chains, the chains run one after another, each with the
-# whole budget, as the serial build did.
+# Chains that run at the same time must not each take the whole -Jobs budget:
+# hosted CI sizes it from the processor count and the memory one compile needs.
+# The backend keeps the whole budget and each side chain gets half. Hosted run
+# 42731987877 showed that a strict split (2/1/1 of 4) removes the whole gain,
+# because the side chains finish early and leave the backend throttled. When
+# the budget is smaller than the number of chains, they run one after another.
 $chainCount = if ($SkipCapture) { 2 } else { 3 }
 $overlapChains = $Jobs -ge $chainCount
 if ($overlapChains) {
-    $moduleJobs = [Math]::Max(1, [int][Math]::Floor($Jobs / 4))
+    $moduleJobs = [Math]::Max(1, [int][Math]::Floor($Jobs / 2))
     $captureJobs = if ($SkipCapture) { 0 } else { $moduleJobs }
-    $backendJobs = $Jobs - $moduleJobs - $captureJobs
+    $backendJobs = $Jobs
 } else {
     $moduleJobs = $captureJobs = $backendJobs = $Jobs
 }
