@@ -109,7 +109,7 @@ template <ConfigKind Kind> void Handler<Kind>::saveFailed(const QString& error, 
 
 } // namespace detail
 
-SETTINGS_SINGLETON_DECL(ConfigSingleton, ConfigRoot, GlobalConfig, CAELESTIA_CONFIG_API)
-SETTINGS_SINGLETON_DECL(TokensSingleton, TokensRoot, TokenConfig, CAELESTIA_CONFIG_API)
+SETTINGS_SINGLETON_DECL(ConfigSingleton, caelestia::shell::config::ConfigRoot, GlobalConfig, CAELESTIA_CONFIG_API)
+SETTINGS_SINGLETON_DECL(TokensSingleton, caelestia::shell::config::TokensRoot, TokenConfig, CAELESTIA_CONFIG_API)
 
 } // namespace caelestia::shell::config
