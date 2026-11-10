@@ -170,6 +170,35 @@ function Assert-SourceToolchain($Toolchain, $Reference) {
     }
 }
 
+function Set-SourceQtReview($Reference, $Application, $Review, $Servicing, $Toolchain) {
+    if ($Review.schema -cne 'caelestia-qt-source-review' -or $Review.version -ne 1 -or
+        $Review.qtVersion -cne $Servicing.version -or $Review.qtVersion -cne $Toolchain.qtVersion -or
+        $Reference.toolchain.qt -cne $Servicing.referenceVersion) { throw 'Qt servicing review identity differs.' }
+    if (@($Review.archives).Count -ne 6 -or @($Servicing.archives).Count -ne 6) { throw 'Qt servicing requires six source archives.' }
+    foreach ($archive in $Review.archives) {
+        $pin = @($Servicing.archives | Where-Object path -CEQ $archive.path)
+        if ($pin.Count -ne 1 -or $pin[0].sha256 -cne $archive.sha256 -or $pin[0].url -cne $archive.url) {
+            throw 'Qt servicing source pins differ.'
+        }
+    }
+    $oldOwners = Get-SourceReferenceOwners $Application.files
+    $expectedPaths = @($Application.files | Where-Object {
+        $oldOwners[$_.path] -ceq 'qt' -and $_.path -cne 'payload/qt.conf'
+    } | ForEach-Object { $_.path.Replace($Servicing.referenceVersion, $Review.qtVersion) } | Sort-Object)
+    $actualPaths = @($Review.payloadFiles.path | Sort-Object -Unique)
+    if ($actualPaths.Count -ne @($Review.payloadFiles).Count -or
+        ($expectedPaths -join "`n") -cne ($actualPaths -join "`n")) { throw 'Qt servicing payload allowlist differs.' }
+    # The replacement is a bounded reviewed data set. Other supplier inputs,
+    # toolchain identities and payload ownership rules remain unchanged.
+    $Reference.archives = @($Reference.archives | Where-Object path -CNotLike 'sources/qt/*') + @($Review.archives)
+    $Reference.noticeProvenance = @($Reference.noticeProvenance | Where-Object originalNotice -CNotLike 'notices/Qt-*') + @($Review.noticeProvenance)
+    $Reference.toolchain.qt = $Review.qtVersion
+    $Application.supplementalNotices = @($Application.supplementalNotices | Where-Object {
+        $_.path -cnotlike 'Qt-*' -and $_.path -cnotin @('README.txt', 'NOTICE-PROVENANCE.md')
+    }) + @($Review.supplementalNotices)
+    $Application.files = @($Application.files | Where-Object { $oldOwners[$_.path] -cne 'qt' -or $_.path -ceq 'payload/qt.conf' }) + @($Review.payloadFiles)
+}
+
 function Test-SourceXzArchive([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     try {

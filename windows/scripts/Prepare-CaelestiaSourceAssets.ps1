@@ -154,6 +154,15 @@ try {
     $referenceApp = Read-SourceZipJson $appZip 'release.json'
     if ($reference.schema -cne 'caelestia-supplier-corresponding-source' -or $reference.version -ne 1 -or
         $referenceApp.schema -cne 'caelestia-windows-release' -or $referenceApp.version -ne 1) { throw 'Unexpected public reference schema.' }
+    if ($recipe.PSObject.Properties['qtServicing']) {
+        Assert-SourceRelativePath $recipe.qtServicing.reviewPath
+        $reviewRoot = Join-Path $scratch 'qt-review'
+        Export-SourceGitMembers $SourceRoot $SourceRevision @($recipe.qtServicing.reviewPath) $reviewRoot $scratch
+        $reviewPath = Join-Path $reviewRoot $recipe.qtServicing.reviewPath
+        if ((Get-SourceRecipeHash $reviewPath) -cne $recipe.qtServicing.reviewSha256) { throw 'Qt review data checksum differs.' }
+        $qtReview = Get-Content -LiteralPath $reviewPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Set-SourceQtReview $reference $referenceApp $qtReview $recipe.qtServicing $toolchain
+    }
     Assert-SourceToolchain $toolchain $reference.toolchain
     Assert-SourceCargoCoverage $cargo $reference.archives
     $supplierRoot = Join-Path $OutputDirectory 'supplier-source'
@@ -167,7 +176,9 @@ try {
         Assert-SourceRelativePath $archive.path
         if ($archiveLookup.ContainsKey($archive.path)) { throw 'Duplicate supplier archive rule.' }
         $cacheFile = Join-Path $CacheDirectory $archive.sha256
-        if (-not (Test-Path -LiteralPath $cacheFile) -and -not $FetchSuppliersFromOrigin -and
+        $reviewedQtArchive = $recipe.PSObject.Properties['qtServicing'] -and $archive.path -clike 'sources/qt/*'
+        if (-not $reviewedQtArchive -and
+            -not (Test-Path -LiteralPath $cacheFile) -and -not $FetchSuppliersFromOrigin -and
             @($reference.archives | Where-Object path -CEQ $archive.path).Count) {
             Copy-SourceZipEntry $supplierZip $archive.path $cacheFile $archive.sha256
         }
@@ -191,7 +202,9 @@ try {
     # archive. Derived notices remain exact public reviewed data, not a new
     # HTML/legal interpretation. Their original provenance is retained below.
     $rawRoots = @{}
-    foreach ($group in @($reference.noticeProvenance | Where-Object derivation -CEQ 'verbatim bytes from supplier archive' | Group-Object sourceArchive)) {
+    foreach ($group in @($reference.noticeProvenance | Where-Object {
+        $_.derivation -ceq 'verbatim bytes from supplier archive' -or $_.PSObject.Properties['sourceMemberSha256']
+    } | Group-Object sourceArchive)) {
         Write-Host "SOURCE_NOTICES $($group.Name)"
         if (-not $archiveLookup.ContainsKey($group.Name)) { throw "Notice has no recorded source archive: $($group.Name)" }
         $raw = Join-Path $scratch ('raw-' + $rawRoots.Count)
@@ -211,13 +224,19 @@ try {
         Assert-SourceRelativePath $notice.path
         $entry = $null
         $lookupPath = $notice.path
-        if ($lookupPath -match 'sqlite3\.[ch]\.LICENSE\.txt$') { $lookupPath = $lookupPath -replace '\.LICENSE\.txt$', '' }
+        if (-not $provenanceByPath.ContainsKey($lookupPath) -and $lookupPath -match 'sqlite3\.[ch]\.LICENSE\.txt$') {
+            $lookupPath = $lookupPath -replace '\.LICENSE\.txt$', ''
+        }
         if ($provenanceByPath.ContainsKey($lookupPath)) { $entry = $provenanceByPath[$lookupPath] }
         if (-not $entry -and $notice.path -notin @('NOTICE-PROVENANCE.md', 'README.txt')) { throw "Notice lacks source provenance: $($notice.path)" }
         $target = Join-Path $noticeRoot $notice.path
         $verbatim = $entry -and $entry.derivation -ceq 'verbatim bytes from supplier archive' -and
             $entry.sha256 -ceq $notice.sha256 -and $lookupPath -ceq $notice.path
-        if ($verbatim) {
+        $reviewedText = $notice.PSObject.Properties['text']
+        if ($reviewedText) {
+            [IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
+            [IO.File]::WriteAllText($target, [string]$notice.text, [Text.UTF8Encoding]::new($false))
+        } elseif ($verbatim) {
             $source = Join-Path $rawRoots[$entry.sourceArchive] $entry.sourceMember
             Assert-SourceHash $source $notice.sha256
             [IO.Directory]::CreateDirectory((Split-Path -Parent $target)) | Out-Null
@@ -228,7 +247,7 @@ try {
         Assert-SourceHash $target $notice.sha256
         $notices += [ordered]@{
             path = $notice.path; sha256 = $notice.sha256; component = (Get-SourceSupplierId $notice.path)
-            materialization = $(if ($verbatim) { 'extracted-verbatim' } else { 'preserved-public-derived-notice' })
+            materialization = $(if ($reviewedText) { 'reviewed-derived-notice' } elseif ($verbatim) { 'extracted-verbatim' } else { 'preserved-public-derived-notice' })
             provenance = $entry
         }
     }
@@ -238,6 +257,9 @@ try {
         if (-not $archiveLookup.ContainsKey($entry.sourceArchive)) { throw 'Unrecorded notice source archive.' }
         if ($entry.derivation -ceq 'verbatim bytes from supplier archive') {
             Assert-SourceHash (Join-Path $rawRoots[$entry.sourceArchive] $entry.sourceMember) $entry.sha256
+        }
+        if ($entry.PSObject.Properties['sourceMemberSha256']) {
+            Assert-SourceHash (Join-Path $rawRoots[$entry.sourceArchive] $entry.sourceMember) $entry.sourceMemberSha256
         }
     }
     $projectRecords = @()

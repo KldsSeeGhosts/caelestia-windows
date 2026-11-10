@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$BuildRoot,
-    [string]$QtPrefix = "$env:LOCALAPPDATA/caelestia-dev/Qt/6.11.2/msvc2022_64",
+    [string]$QtPrefix = "$env:LOCALAPPDATA/caelestia-dev/Qt/6.11.3/msvc2022_64",
     [string]$LlvmBin = "$env:LOCALAPPDATA/caelestia-dev/clang+llvm-20.1.8-x86_64-pc-windows-msvc/bin",
     [string]$ToolsBin = "$env:LOCALAPPDATA/caelestia-dev/tools/Scripts",
     [string]$VsRoot = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/2022/BuildTools"

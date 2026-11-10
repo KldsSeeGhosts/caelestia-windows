@@ -80,7 +80,7 @@ function fixture() {
     const release = {
         schema: 'caelestia-windows-release', version: 1, platform: 'windows-x64',
         releaseId: record.releaseId, sourceRevision: sha, nativeSourceRevision: 'b'.repeat(40),
-        backendRevision: backend, qtVersion: '6.11.2',
+        backendRevision: backend, qtVersion: '6.11.3',
         dependencies: {
             quickshell: { revision: backend }, glazier: { revision: glazier },
             m3shapes: { revision: m3shapes },
@@ -144,7 +144,7 @@ test('installed-layout metadata projection excludes profile/log/content canaries
     assert.equal(b.identity.sourceRevision, sha);
     assert.equal(b.identity.nativeSourceRevision, 'b'.repeat(40));
     assert.equal(b.identity.m3shapesRevision, m3shapes);
-    assert.equal(b.modules.qt, '6.11.2');
+    assert.equal(b.modules.qt, '6.11.3');
     assert.equal(b.environment.displayDriver.version, '32.0.15.0001');
     assert.equal(b.providers[0].ready, true);
     assert.equal(b.providers[1].counters.failures, 5);
@@ -294,7 +294,7 @@ test('manifest IDs and module versions reject content, paths, banners and wrong 
     const b = run(f);
     assert.ok(Object.entries(b.identity).filter(([key]) => key !== 'trust').every(([, value]) => value === null));
     const g = fixture();
-    g.release.qtVersion = '6.11.2 ' + secret;
+    g.release.qtVersion = '6.11.3 ' + secret;
     g.release.releaseId = secret;
     g.release.dependencies.schemeCli.pythonPackages.pillow = personal;
     writeJson(path.join(g.prefix, 'release-manifest.json'), g.release);
@@ -478,7 +478,7 @@ test('schema rejects additions at every nested boundary and invalid values', () 
     clone.providers[0].category = secret;
     assert.throws(() => validate(clone, schema), /enum/);
     const newline = structuredClone(b);
-    newline.modules.qt = '6.11.2\n';
+    newline.modules.qt = '6.11.3\n';
     assert.throws(() => validate(newline, schema), /pattern/);
     newline.modules.qt = null;
     newline.identity.releaseId = 'v0.1.0\n';

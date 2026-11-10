@@ -10,3 +10,4 @@ windows/scripts/Caelestia-SemVer.ps1 text eol=lf
 windows/scripts/Caelestia-Update*.ps1 text eol=lf
 windows/scripts/Caelestia-UpdateSecurity.cs text eol=lf
 windows/tests/nexus_pipeline/pinned_candidate_contract.py -text
+windows/release/qt-source-notices.json text eol=lf

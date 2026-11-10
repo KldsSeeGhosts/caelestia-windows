@@ -13,13 +13,13 @@ From a public checkout with Node.js 22 or newer:
 .\windows\scripts\Test-StagedServiceModels.ps1 -PureOnly
 ```
 
-For the QML lane, also provide a developer Qt 6.11.2 MSVC x64 prefix containing
+For the QML lane, also provide a developer Qt 6.11.3 MSVC x64 prefix containing
 `bin\qml.exe`, `bin\qtpaths.exe`, the QtQuick QML modules and
 `plugins\platforms\qoffscreen.dll`:
 
 ```powershell
 .\windows\scripts\Test-StagedServiceModels.ps1 `
-    -QtPrefix C:\Qt\6.11.2\msvc2022_64 `
+    -QtPrefix C:\Qt\6.11.3\msvc2022_64 `
     -OutputRoot C:\validation\staged-service-models `
     -MutationControls
 ```

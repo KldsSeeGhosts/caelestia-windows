@@ -10,7 +10,7 @@
 # Qt 6.11 Windows binaries are signed by The Qt Company. All 90 Qt DLLs in the
 # reviewed supplier list (windows/release/vendor-privacy-review.json) carry this
 # exact subject, read with Get-AuthenticodeSignature from the pinned
-# Qt 6.11.2 msvc2022_64 toolchain:
+# Qt 6.11.3 msvc2022_64 toolchain:
 #   CN=The QT Company Oy, O=The QT Company Oy, L=Espoo, S=Uusimaa, C=FI,
 #   SERIALNUMBER=2637805-2, OID.2.5.4.15=Private Organization,
 #   OID.1.3.6.1.4.1.311.60.2.1.3=FI

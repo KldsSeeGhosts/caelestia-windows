@@ -140,7 +140,7 @@ The authoritative [toolchain specification](../toolchain.json) selects
 A hosted label is not a version pin: every build asserts the actual tool versions
 before compiling. The toolchain includes Python 3.12, CMake 4.4.4, Ninja 1.13.2,
 aqtinstall revision `076e1659807d0b362a3ed684d54c2e9c775eb9c7`,
-Qt 6.11.2 `win64_msvc2022_64`, LLVM 20.1.8 and CLI11 2.5.0.
+Qt 6.11.3 `win64_msvc2022_64`, LLVM 20.1.8 and CLI11 2.5.0.
 Qt includes `qtshadertools qtimageformats` and archives
 `qtbase qtdeclarative qtsvg qttools`, not `qttranslations`.
 Rust/Cargo 1.99.1 and explicit `x86_64-pc-windows-msvc` target build Glazier's
