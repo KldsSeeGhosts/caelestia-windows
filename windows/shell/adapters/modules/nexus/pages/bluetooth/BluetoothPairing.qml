@@ -23,7 +23,7 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    readonly property var newDevices: [...WindowsBluetooth.devices].filter(device => device && device.bonded !== true).sort((a, b) => (b.pairing - a.pairing) || (a.name ?? "").localeCompare(b.name ?? ""))
+    readonly property var newDevices: [...WindowsBluetooth.devices].filter(device => device && device.bonded !== true).sort((a, b) => (b.pairing - a.pairing) || (!a.deviceName - !b.deviceName) || (a.name ?? "").localeCompare(b.name ?? ""))
 
     // Caller-scoped discovery: the Bluetooth page can stay registered beneath
     // this sub-page, and another Nexus window may also be scanning.
