@@ -1176,6 +1176,21 @@ jobs:
             -OutputDirectory C:\nexus-candidate `
             -PreparedSources C:\nexus-source-transfer -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Exact-tested candidate assembly failed.' }
+      - name: Test assembled ZIP lifecycle transactions
+        run: |
+          $packages = @(Get-ChildItem C:\nexus-candidate\out\caelestia-windows-*-windows-x64.zip -File)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one assembled release ZIP.' }
+          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-PackageLifecycle.ps1" `
+            -Package $packages[0].FullName -OutputRoot C:\package-lifecycle-results -ServerTransactionFixture
+          if ($LASTEXITCODE -ne 0) { throw 'Package lifecycle transactions failed.' }
+      - name: Retain package lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: package-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:/package-lifecycle-results/
+          retention-days: 3
+          if-no-files-found: error
       - name: Retain unsealed assembly
         if: steps.candidate.outcome == 'success'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
