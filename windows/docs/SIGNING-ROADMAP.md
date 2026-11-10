@@ -1,5 +1,10 @@
 # Signing roadmap
 
+The [verified public release table](../release/PUBLIC-RELEASE.md) records the
+recommended release's actual unsigned status. Neither this roadmap nor an
+authenticated development-channel pointer gives its application files an
+Authenticode publisher signature.
+
 Design note for a signing pipeline that can produce a signed stable release.
 Nothing in this document is implemented. The development channel stays unsigned;
 only stable releases will be signed, and only after this work lands and the

@@ -1,5 +1,10 @@
 # Source and notice preparation
 
+The [verified public release table](../release/PUBLIC-RELEASE.md) identifies
+the recommended application and complete source assets. This recipe does not
+change that recommendation. Only update the reviewed metadata after release
+qualification and verification against the published manifest and sidecars.
+
 This recipe prepares source assets and supplemental notices. It does not build,
 install, sign or publish the application. Package lifecycle, installed-library
 replacement, privacy review, signing and Windows qualification are separate

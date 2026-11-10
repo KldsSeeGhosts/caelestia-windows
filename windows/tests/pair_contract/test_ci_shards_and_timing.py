@@ -54,7 +54,8 @@ class CiShardsAndTiming(unittest.TestCase):
             return json.loads(result.stdout)
         full, first, second, third = (names(), names("-Shard", "1/3"),
                                       names("-Shard", "2/3"), names("-Shard", "3/3"))
-        self.assertEqual(17, len(full))
+        self.assertEqual(18, len(full))
+        self.assertIn("public-release-metadata", third)
         self.assertEqual(["Test-CIAcceleration"], first)
         self.assertEqual(["Test-PairContract", "toolchain-modules"], second)
         self.assertCountEqual(full, first + second + third)

@@ -1,5 +1,11 @@
 # Install a Windows release
 
+Use the [verified public release table](../release/PUBLIC-RELEASE.md) for the
+recommended version, exact Windows x64 download, SHA256 checksums and manifest
+digest. Source ZIPs are not installable application bundles. Preview 2 has no
+automatic updater. The guide below also describes current source installer
+capabilities; it does not add those capabilities to an older downloaded ZIP.
+
 This is the prebuilt Windows 11 x64 product, not a source archive. The bundle
 includes the native shell, Qt DLLs/plugins/QML, M3Shapes, Glazier, fonts,
 production shell/services, supervisor and maintenance/recovery scripts, and
@@ -186,10 +192,13 @@ Other optional integrations retain their own availability requirements.
 
 ## Update and rollback
 
-Settings > Updates links to the project's [manual downloads](https://github.com/KldsSeeGhosts/caelestia-windows/releases),
-including public previews. It reads installed and retained versions, not the
-latest online release, so the latest public version is shown as unknown.
-Automatic downloading and updating are not implemented. A manual download link
+The recommended Preview 2's Settings > Updates links to manual downloads.
+Use the [verified public release table](../release/PUBLIC-RELEASE.md) to select
+the intended public preview. Preview 2 reads installed and retained versions,
+not the latest online release, so the latest public version is shown as unknown.
+Preview 2 has no automatic updater. Current-source authenticated development
+publication is separate, as described in [UPDATES.md](../../UPDATES.md).
+Preview/stable promotion stays inactive. A manual download link
 does not mean a newer version is available for your installation.
 
 Download and verify the new release, extract into a **different** directory,
