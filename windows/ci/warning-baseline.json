@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "toolchain": {
+    "id": "windows-x64-v1",
+    "compiler": "clang-cl 20.1.8 (x86_64-pc-windows-msvc)",
+    "qtVersion": "6.11.3",
+    "windowsSdkVersion": "10.0.26100.0",
+    "vcToolsVersion": "14.44.35207"
+  },
+  "counts": {
+    "rawWarningLines": 2799,
+    "uniqueDiagnostics": 747,
+    "ownedUniqueDiagnostics": 1,
+    "components": {
+      "shell-plugin": {
+        "rawWarningLines": 1,
+        "uniqueDiagnostics": 1
+      },
+      "m3shapes": {
+        "rawWarningLines": 2740,
+        "uniqueDiagnostics": 736
+      },
+      "backend": {
+        "rawWarningLines": 58,
+        "uniqueDiagnostics": 10
+      },
+      "qt-headers": {
+        "rawWarningLines": 0,
+        "uniqueDiagnostics": 0
+      },
+      "other-third-party": {
+        "rawWarningLines": 0,
+        "uniqueDiagnostics": 0
+      }
+    },
+    "flags": {
+      "-Wc++98-compat": {
+        "rawWarningLines": 2518,
+        "uniqueDiagnostics": 614
+      },
+      "-Wunsafe-buffer-usage": {
+        "rawWarningLines": 60,
+        "uniqueDiagnostics": 28
+      },
+      "-Wpre-c++17-compat": {
+        "rawWarningLines": 55,
+        "uniqueDiagnostics": 29
+      },
+      "-Wpre-c++14-compat": {
+        "rawWarningLines": 50,
+        "uniqueDiagnostics": 25
+      },
+      "-Wmissing-designated-field-initializers": {
+        "rawWarningLines": 49,
+        "uniqueDiagnostics": 3
+      },
+      "-Wdocumentation": {
+        "rawWarningLines": 18,
+        "uniqueDiagnostics": 2
+      },
+      "-Wctad-maybe-unsupported": {
+        "rawWarningLines": 16,
+        "uniqueDiagnostics": 16
+      },
+      "-Wdeprecated-declarations": {
+        "rawWarningLines": 7,
+        "uniqueDiagnostics": 6
+      },
+      "-Wunsafe-buffer-usage-in-libc-call": {
+        "rawWarningLines": 7,
+        "uniqueDiagnostics": 7
+      },
+      "-Wexit-time-destructors": {
+        "rawWarningLines": 4,
+        "uniqueDiagnostics": 4
+      },
+      "-Wglobal-constructors": {
+        "rawWarningLines": 4,
+        "uniqueDiagnostics": 4
+      },
+      "-Wc++20-compat": {
+        "rawWarningLines": 3,
+        "uniqueDiagnostics": 3
+      },
+      "-Wmissing-prototypes": {
+        "rawWarningLines": 3,
+        "uniqueDiagnostics": 2
+      },
+      "-Wmissing-field-initializers": {
+        "rawWarningLines": 2,
+        "uniqueDiagnostics": 1
+      },
+      "-Wc++98-compat-local-type-template-args": {
+        "rawWarningLines": 1,
+        "uniqueDiagnostics": 1
+      },
+      "-Wcovered-switch-default": {
+        "rawWarningLines": 1,
+        "uniqueDiagnostics": 1
+      },
+      "-Wunused-parameter": {
+        "rawWarningLines": 1,
+        "uniqueDiagnostics": 1
+      }
+    }
+  },
+  "ownedDiagnostics": [
+    {
+      "file": "plugin/src/Caelestia/cutils.cpp",
+      "line": 178,
+      "column": 31,
+      "flag": "-Wdeprecated-declarations",
+      "message": "'match' is deprecated: Use matchView instead."
+    }
+  ]
+}
