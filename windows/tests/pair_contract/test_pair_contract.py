@@ -645,7 +645,7 @@ class PairTests(unittest.TestCase):
                                for key in p.REPOS},
                    "toolchain": {"specSha256": request["specSha256"],
                                  "contractSha256": request["contractSha256"],
-                                 "actual": {"contractSha256": request["contractSha256"], "qtVersion": "6.11.2"}},
+                                 "actual": {"contractSha256": request["contractSha256"], "qtVersion": "6.11.3"}},
                    "tests": {"integration": {"total": 7, "executed": 7, "failed": 0,
                                              "skipped": 0, "skips": []}},
                    "stages": {name: {"outcome": "success", "exitCode": 0, "durationSeconds": 0.01}

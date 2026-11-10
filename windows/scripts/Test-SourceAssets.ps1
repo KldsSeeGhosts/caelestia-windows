@@ -39,6 +39,37 @@ foreach ($path in @('a/LICENSE', 'rust-src-1.0/library/vendor/a+b/LICENSE-MIT', 
 }
 $script:cases++
 
+$qtPins = @(1..6 | ForEach-Object {
+    [pscustomobject]@{ path = "sources/qt/qtfixture$_.tar.xz"; url = "https://download.qt.io/qtfixture$_"; sha256 = 'a' * 64 }
+})
+$servicing = [pscustomobject]@{ referenceVersion = '1'; version = '2'; archives = $qtPins }
+$qtReview = [pscustomobject]@{
+    schema = 'caelestia-qt-source-review'; version = 1; qtVersion = '2'; archives = $qtPins
+    noticeProvenance = @([pscustomobject]@{ originalNotice = 'notices/Qt-2/LICENSE' })
+    supplementalNotices = @([pscustomobject]@{ path = 'Qt-2/LICENSE' })
+    payloadFiles = @([pscustomobject]@{ path = 'payload/Qt6Core.dll'; sha256 = 'b' * 64 })
+}
+$qtReference = [pscustomobject]@{
+    toolchain = [pscustomobject]@{ qt = '1' }
+    archives = @([pscustomobject]@{ path = 'sources/qt/old.tar.xz' }, [pscustomobject]@{ path = 'sources/rust/unchanged.tar.xz' })
+    noticeProvenance = @([pscustomobject]@{ originalNotice = 'notices/Qt-1/LICENSE' }, [pscustomobject]@{ originalNotice = 'notices/Rust/LICENSE' })
+}
+$qtApp = [pscustomobject]@{
+    supplementalNotices = @([pscustomobject]@{ path = 'Qt-1/LICENSE' }, [pscustomobject]@{ path = 'Rust/LICENSE' })
+    files = @([pscustomobject]@{ path = 'payload/Qt6Core.dll'; sha256 = 'a' * 64 },
+        [pscustomobject]@{ path = 'payload/qs.exe'; sha256 = 'c' * 64 })
+}
+Assert-RecipeRefused { Set-SourceQtReview $qtReference $qtApp $qtReview $servicing ([pscustomobject]@{ qtVersion = 'wrong' }) } 'identity'
+$qtReview.payloadFiles += [pscustomobject]@{ path = 'payload/extra.dll'; sha256 = 'd' * 64 }
+Assert-RecipeRefused { Set-SourceQtReview $qtReference $qtApp $qtReview $servicing ([pscustomobject]@{ qtVersion = '2' }) } 'allowlist'
+$qtReview.payloadFiles = @($qtReview.payloadFiles[0])
+Set-SourceQtReview $qtReference $qtApp $qtReview $servicing ([pscustomobject]@{ qtVersion = '2' })
+Assert-Recipe ($qtReference.toolchain.qt -ceq '2' -and $qtReference.archives.Count -eq 7 -and
+    $qtReference.noticeProvenance.Count -eq 2 -and $qtApp.supplementalNotices.Count -eq 2 -and
+    $qtApp.files.Count -eq 2 -and @($qtApp.files | Where-Object sha256 -CEQ ('b' * 64)).Count -eq 1 -and
+    @($qtApp.files | Where-Object sha256 -CEQ ('c' * 64)).Count -eq 1) 'Qt review changed unrelated supplier or project rules'
+$script:cases++
+
 $file = Join-Path $OutputDirectory 'fixture.txt'
 [IO.File]::WriteAllText($file, 'fixture', [Text.UTF8Encoding]::new($false))
 $hash = Get-SourceHash $file

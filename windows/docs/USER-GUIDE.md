@@ -54,7 +54,7 @@ their native Windows behavior.
 - **Permissions:** Standard user account (**no administrator privileges required**). Everything installs per-user under `%LOCALAPPDATA%`. Caelestia does not patch system files, inject DLLs into `explorer.exe`, or require UAC elevation.
 - **Single active tiler:** If you enable Caelestia's window tiler, you must stop other tiling window managers (Komorebi, GlazeWM, FancyZones, `ksg-shell`, etc.) first.
 - **Optional `ffmpeg` for screen recording:** The utilities screen-recorder card uses `ffmpeg.exe` (`gdigrab`) if `ffmpeg` is available on your `PATH`. Without `ffmpeg`, the rest of the shell works normally and the recorder card reports `Unavailable`.
-- **Building from source (optional):** If you are compiling from a Git checkout instead of using a prebuilt package, see [NATIVE-BUILD.md](../NATIVE-BUILD.md) for the Visual Studio 2022 Build Tools, Qt 6.11.2 (`msvc2022_64`), and `clang-cl` 20.1.8 setup.
+- **Building from source (optional):** If you are compiling from a Git checkout instead of using a prebuilt package, see [NATIVE-BUILD.md](../NATIVE-BUILD.md) for the Visual Studio 2022 Build Tools, Qt 6.11.3 (`msvc2022_64`), and `clang-cl` 20.1.8 setup.
 
 ---
 
@@ -83,7 +83,7 @@ logical pixels. It defaults to 12, accepts 0 to disable it, and is capped at
 
 What the installer does:
 
-1. Copies the packaged runtime (`qs.exe`, Qt 6.11.2 runtime DLLs, Caelestia and `M3Shapes` QML plugins, staged QML tree, bundled Rubik / Material Symbols Rounded / Google Sans Flex fonts, and license notices) into `%LOCALAPPDATA%\Programs\caelestia-windows`.
+1. Copies the packaged runtime (`qs.exe`, Qt 6.11.3 runtime DLLs, Caelestia and `M3Shapes` QML plugins, staged QML tree, bundled Rubik / Material Symbols Rounded / Google Sans Flex fonts, and license notices) into `%LOCALAPPDATA%\Programs\caelestia-windows`.
 2. Records the profile path, defaulting to `%LOCALAPPDATA%\caelestia-windows`. First launch creates its directories and seeds `config/shell.json`, `config/keybinds.json`, and `config/windows.json` without overwriting existing files. Start-menu launch and switch-back entries and a Settings > Apps uninstall entry are registered; `-DesktopShortcut` adds a desktop shortcut. None of them opens a terminal window.
 3. Leaves Windows autostart **off by default** unless you opt in.
 

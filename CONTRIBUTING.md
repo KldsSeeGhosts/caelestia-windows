@@ -44,7 +44,7 @@ native plugin regression targets as CI does; run those with CTest as described
 in the coverage guide below.
 
 ```powershell
-$qt = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.2\msvc2022_64"
+$qt = "$env:LOCALAPPDATA\caelestia-dev\Qt\6.11.3\msvc2022_64"
 powershell -NoProfile -File windows/scripts/Test-Validation.ps1 `
     -Suite Services -BuildRoot <build> -QtPrefix $qt
 powershell -NoProfile -File windows/scripts/Test-Validation.ps1 `

@@ -13,9 +13,23 @@
     }
   },
   "shellRepository": "https://github.com/KldsSeeGhosts/caelestia-windows.git",
+  "qtServicing": {
+    "referenceVersion": "6.11.2",
+    "version": "6.11.3",
+    "reviewPath": "windows/release/qt-source-notices.json",
+    "reviewSha256": "d8984d3933f119c601c94abf2c07c6322fe44df857e1777e00b0df5020300dd3",
+    "archives": [
+      {"path":"sources/qt/qtbase-everywhere-src-6.11.3.tar.xz","url":"https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtbase-everywhere-src-6.11.3.tar.xz","sha256":"46de0710b594945a5d446ae44354daa386141c6903c53781b2ca547bc62f8f8f"},
+      {"path":"sources/qt/qtdeclarative-everywhere-src-6.11.3.tar.xz","url":"https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtdeclarative-everywhere-src-6.11.3.tar.xz","sha256":"6d6db328a02ae3bb0b1e6944aeef8dfe44cd6b55ab59b1708bbf0400f5759cb5"},
+      {"path":"sources/qt/qtimageformats-everywhere-src-6.11.3.tar.xz","url":"https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtimageformats-everywhere-src-6.11.3.tar.xz","sha256":"2759929c7abbc5376120394d1ccac1abbb816bc2791b34ece6c1412d323e6213"},
+      {"path":"sources/qt/qtshadertools-everywhere-src-6.11.3.tar.xz","url":"https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtshadertools-everywhere-src-6.11.3.tar.xz","sha256":"d86079425ec71eecbb05f4d20623b0a403a7d21a5cfa7efb9734ea3d538d801b"},
+      {"path":"sources/qt/qtsvg-everywhere-src-6.11.3.tar.xz","url":"https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtsvg-everywhere-src-6.11.3.tar.xz","sha256":"9bdf6fa4b5a2d91c3eaa2edd12263fdff0ae19d0ac25d3c99946cd4189a07123"},
+      {"path":"sources/qt/qttools-everywhere-src-6.11.3.tar.xz","url":"https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qttools-everywhere-src-6.11.3.tar.xz","sha256":"524ca79ee653fa36d4644ce66a5c0825930ee2550ff1d0987e703a66fd6c61ec"}
+    ]
+  },
   "rules": [
     "Reuse the hash-identified public supplier manifest as acquisition and notice provenance data, not as the identity of a new candidate.",
-    "Require exact toolchain versions and every registry package/checksum in the candidate capture Cargo.lock to match the recorded supplier data.",
+    "Require exact toolchain versions and every registry package/checksum in the candidate capture Cargo.lock to match the recorded supplier data, with Qt replaced only by the hash-pinned reviewed Qt servicing data.",
     "Extract verbatim notices from their exact supplier members. Preserve previously published hash-verified derived notice bytes and their recorded derivations.",
     "Keep all six recorded Qt source modules and all locked Cargo sources conservatively; source inclusion alone does not mean runtime deployment.",
     "Require explicit review when inputs or payload suppliers change. This recipe does not decide legal applicability."

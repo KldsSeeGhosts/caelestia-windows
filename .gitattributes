@@ -5,6 +5,7 @@ assets/google-sans-flex/* -text
 # Signed/version source inputs have canonical bytes on Windows checkouts too.
 windows/release/version.json text eol=lf
 windows/release/update-trust.json text eol=lf
+windows/release/qt-source-notices.json text eol=lf
 windows/scripts/Caelestia-SemVer.ps1 text eol=lf
 windows/scripts/Caelestia-Update*.ps1 text eol=lf
 windows/scripts/Caelestia-UpdateSecurity.cs text eol=lf

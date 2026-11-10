@@ -1,7 +1,7 @@
 # Native Windows build and validation
 
 The supported x64 build is defined by [toolchain.json](toolchain.json):
-Qt 6.11.2 `msvc2022_64`, clang-cl 20.1.8, selected VC tools 14.44.35207,
+Qt 6.11.3 `msvc2022_64`, clang-cl 20.1.8, selected VC tools 14.44.35207,
 Windows SDK 10.0.26100.0, Rust/Cargo 1.99.1 with target
 `x86_64-pc-windows-msvc`, CMake 4.4.4, Ninja package 1.13.2
 (actual banner `1.13.2.git.kitware.jobserver-pipe-1`), and CLI11 2.5.0.
@@ -77,7 +77,7 @@ From the repository root:
 ```powershell
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
 powershell -NoProfile -File windows/scripts/Build-Prototype.ps1 `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64" `
+    -QtPrefix "$devRoot\Qt\6.11.3\msvc2022_64" `
     -LlvmBin "$devRoot\clang+llvm-20.1.8-x86_64-pc-windows-msvc\bin" `
     -Cli11Include "$devRoot\deps\CLI11-2.5.0\include" `
     -ToolsBin "$devRoot\tools\Scripts" `
@@ -107,7 +107,7 @@ brightness controller without starting the shell. Set Qt's bin directory in
 the current PowerShell process before using it:
 
 ```powershell
-$env:PATH = "$devRoot\Qt\6.11.2\msvc2022_64\bin;$env:PATH"
+$env:PATH = "$devRoot\Qt\6.11.3\msvc2022_64\bin;$env:PATH"
 $probe = 'C:\b-caelestia\quickshell\brightness-probe.exe'
 & $probe
 & $probe -Display '<display name from the read-only output>' -Set 40
@@ -173,11 +173,11 @@ The assembler re-resolves that same marker and checks the actual DLL versions
 against the receipt. It never selects the newest redist directory. An explicit
 `-VCRuntimeRoot` must retain the matching VS marker layout.
 
-For Qt, all six hash-pinned package SBOMs (`sbom/*-6.11.2.cdx.json`) record
+For Qt, all six hash-pinned package SBOMs (`sbom/*-6.11.3.cdx.json`) record
 compiler 19.44.35227.0 and linker 14.44.35227.0; these actual supplier metadata
 values are checked before compilation and deployment. The SBOMs and
 `config_qtbase.summary` do **not** declare a minimum CRT version. Qt's generic
-online `tools_vcredist` package is not an exact Qt 6.11.2 minimum-runtime
+online `tools_vcredist` package is not an exact Qt 6.11.3 minimum-runtime
 declaration either. Build metadata, import/export inspection and local smoke
 are bounded evidence, not a clean-machine compatibility guarantee. A clean
 Windows environment with the exact floor runtime must still qualify every
@@ -198,7 +198,7 @@ The public smoke command is:
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
 powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
     -BuildRoot C:\b-smoke `
-    -QtPrefix "$devRoot\Qt\6.11.2\msvc2022_64"
+    -QtPrefix "$devRoot\Qt\6.11.3\msvc2022_64"
 ```
 
 It stages the production map in `windows/shell/sources.json` exactly as the

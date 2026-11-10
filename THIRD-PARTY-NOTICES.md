@@ -74,6 +74,13 @@ license identifiers; they are not a substitute for applicable license texts.
 Before distributing a release, audit deployed Qt modules and their embedded
 third parties against those records and include any additional required texts.
 
+The Windows toolchain pins Qt 6.11.3. The six corresponding source archives,
+refreshed supplier notice derivations and exact SDK payload hashes are recorded
+in `windows/release/qt-source-notices.json`, checksum-bound by
+`windows/release/source-assets.json`. The source preparation recipe verifies
+the source members used for those notices. It does not reuse the prior Qt
+release's notices or treat optional source modules as deployed code.
+
 [ii-windows](https://github.com/nunreasonable/ii-windows), copyright
 nunreasonable and contributors, is GPL-3.0. It was a packaging reference only:
 no code was copied into this port, and it is not installed. Its license is in

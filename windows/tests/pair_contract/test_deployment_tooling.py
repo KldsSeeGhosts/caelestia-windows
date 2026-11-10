@@ -70,7 +70,7 @@ class DeploymentPreparationTests(unittest.TestCase):
         self.archive = self.tools / "downloads/qt/qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z"
         self.archive.parent.mkdir(parents=True)
         self.archive.write_bytes(b"synthetic archive, never extracted")
-        self.qt = self.tools / "Qt/6.11.2/msvc2022_64"
+        self.qt = self.tools / "Qt/6.11.3/msvc2022_64"
         self.required = ("bin/qtpaths.exe", "bin/windeployqt.exe", "bin/Qt6Quick.dll", "bin/Qt6Svg.dll",
                          "bin/Qt6ShaderTools.dll", "plugins/imageformats/qjpeg.dll")
         for name in self.required:
@@ -115,7 +115,7 @@ class DeploymentPreparationTests(unittest.TestCase):
 
     def test_missing_or_incompatible_supplier_metadata_is_fatal(self):
         self.check_failed_without_fallback("Missing Qt supplier build metadata")
-        path = self.qt / "sbom/qtbase-6.11.2.cdx.json"
+        path = self.qt / "sbom/qtbase-6.11.3.cdx.json"
         path.parent.mkdir()
         path.write_text(json.dumps({"components": [{"name": "Compiler MSVC", "version": "wrong"}]}))
         self.check_failed_without_fallback("Unsupported Qt qtbase supplier Compiler MSVC")
