@@ -64,7 +64,7 @@ Searcher {
             } else if (command[0] === "screenshot") {
                 CaptureUi.screenshot("open");
             } else if (command[0] === "record") {
-                Glazier.record();
+                CaptureUi.record();
             } else if ((command[0] === "setMode" || command[0] === "generateMode") && command.length > 1) {
                 list.screenState.launcher = false;
                 Colours.setMode(command[1]);

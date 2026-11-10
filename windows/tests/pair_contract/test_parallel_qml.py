@@ -38,7 +38,7 @@ class ParallelQmlTests(unittest.TestCase):
         self.output = self.root / "output"
 
     def populate(self, failure=False):
-        self.assertEqual(24, len(INVENTORY))
+        self.assertEqual(25, len(INVENTORY))
         for index, name in enumerate(INVENTORY):
             # First pair rendezvous proves actual overlap without a speed
             # threshold. All other fixtures finish after a short bounded wait.

@@ -29,11 +29,41 @@ pub enum Command {
         fullscreen: bool,
         system_sound: Option<bool>,
         mic: Option<bool>,
+        region: Option<Region>,
+        #[serde(default = "default_ui")]
+        ui: bool,
     },
+    Audio {
+        system_sound: Option<bool>,
+        mic: Option<bool>,
+    },
+    Discard,
     Stop,
     Pause,
     Resume,
     Status,
+}
+
+fn default_ui() -> bool {
+    true
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Region {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+impl Region {
+    pub fn checked(self) -> std::result::Result<crate::capture::IRect, String> {
+        if self.w < 2 || self.h < 2 || self.x.checked_add(self.w).is_none() || self.y.checked_add(self.h).is_none() {
+            return Err("Invalid recording region".into());
+        }
+        Ok(crate::capture::IRect { x: self.x, y: self.y, w: self.w, h: self.h })
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -49,9 +79,11 @@ fn decode(bytes: &[u8]) -> std::result::Result<Request, String> {
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     let fields = value.as_object().ok_or("Request must be an object")?;
     let recording = fields.get("command").and_then(|v| v.as_str()) == Some("record");
+    let audio = fields.get("command").and_then(|v| v.as_str()) == Some("audio");
     if fields.keys().any(|key| {
         !matches!(key.as_str(), "version" | "command")
-            && !(recording && matches!(key.as_str(), "fullscreen" | "system_sound" | "mic"))
+            && !(recording && matches!(key.as_str(), "fullscreen" | "system_sound" | "mic" | "region" | "ui"))
+            && !(audio && matches!(key.as_str(), "system_sound" | "mic"))
     }) {
         return Err("Unknown or inapplicable command option".into());
     }
@@ -74,6 +106,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Opti
     let mut fullscreen = false;
     let mut sound = None;
     let mut mic = None;
+    let mut region = None;
+    let mut ui = true;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         let next = match arg.as_str() {
@@ -90,7 +124,30 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Opti
                 None
             }
             "--capture" => Some(Command::Capture),
-            "--record" => Some(Command::Record { fullscreen: false, system_sound: None, mic: None }),
+            "--record" => {
+                Some(Command::Record { fullscreen: false, system_sound: None, mic: None, region: None, ui: true })
+            }
+            "--audio" => Some(Command::Audio { system_sound: None, mic: None }),
+            "--discard" => Some(Command::Discard),
+            "--no-ui" => {
+                ui = false;
+                None
+            }
+            "--region" => {
+                let value = args.next().ok_or("--region requires x,y,w,h")?;
+                let values = value
+                    .split(',')
+                    .map(str::parse::<i32>)
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                    .map_err(|_| "Invalid --region")?;
+                if values.len() != 4 {
+                    return Err("--region requires x,y,w,h".into());
+                }
+                let r = Region { x: values[0], y: values[1], w: values[2], h: values[3] };
+                r.checked()?;
+                region = Some(r);
+                None
+            }
             "--stop" => Some(Command::Stop),
             "--pause" => Some(Command::Pause),
             "--resume" => Some(Command::Resume),
@@ -121,8 +178,16 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Opti
         }
     }
     if matches!(options.command, Some(Command::Record { .. })) {
-        options.command = Some(Command::Record { fullscreen, system_sound: sound, mic });
-    } else if fullscreen || sound.is_some() || mic.is_some() {
+        if fullscreen && region.is_some() {
+            return Err("Use region or fullscreen, not both".into());
+        }
+        if !ui && region.is_none() && !fullscreen {
+            return Err("--no-ui requires a region or fullscreen".into());
+        }
+        options.command = Some(Command::Record { fullscreen, system_sound: sound, mic, region, ui });
+    } else if matches!(options.command, Some(Command::Audio { .. })) && !fullscreen && region.is_none() && ui {
+        options.command = Some(Command::Audio { system_sound: sound, mic });
+    } else if fullscreen || sound.is_some() || mic.is_some() || region.is_some() || !ui {
         return Err("Recording options require --record".into());
     }
     Ok(options)
@@ -152,6 +217,8 @@ pub struct Event {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct State {
+    pub region: Option<Region>,
+    pub ui: bool,
     pub state: Phase,
     pub elapsed_ms: u64,
     pub system_sound: bool,
@@ -164,6 +231,8 @@ pub struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            region: None,
+            ui: true,
             state: Phase::Idle,
             elapsed_ms: 0,
             system_sound: true,
@@ -213,6 +282,8 @@ pub fn accepts(phase: Phase, command: &Command) -> bool {
         Command::Record { .. } => phase == Phase::Idle,
         Command::Pause => phase == Phase::Recording,
         Command::Resume => phase == Phase::Paused,
+        Command::Audio { .. } => matches!(phase, Phase::Ready | Phase::Recording | Phase::Paused),
+        Command::Discard => matches!(phase, Phase::Ready | Phase::Recording | Phase::Paused),
         // Stop is always safe and idempotent. In idle it does absolutely nothing.
         Command::Stop | Command::Status | Command::Capture => true,
     }
@@ -254,6 +325,13 @@ pub fn directory(cfg: &crate::config::Config) {
     if let Ok(path) = crate::recording_media::directory(cfg) {
         STATE.with_borrow_mut(|s| s.output_directory = path.to_string_lossy().into_owned());
     }
+}
+
+pub fn recording_ui(region: crate::capture::IRect, ui: bool) {
+    STATE.with_borrow_mut(|s| {
+        s.region = Some(Region { x: region.x, y: region.y, w: region.w, h: region.h });
+        s.ui = ui;
+    });
 }
 
 type Envelope = (Command, mpsc::Sender<Response>);
@@ -459,7 +537,9 @@ fn exchange(request: &Request) -> std::result::Result<serde_json::Value, String>
             Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY.0 as i32) && Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(10))
             }
-            Err(_) => return Err("Caelestia capture control v1 is not available (not running, old version, or busy)".into()),
+            Err(_) => {
+                return Err("Caelestia capture control v1 is not available (not running, old version, or busy)".into());
+            }
         }
     };
     let mut bytes = serde_json::to_vec(request).map_err(|e| e.to_string())?;
@@ -530,7 +610,13 @@ mod tests {
         }
         assert_eq!(
             command("--record --fullscreen --system-sound off --mic on").unwrap(),
-            Some(Command::Record { fullscreen: true, system_sound: Some(false), mic: Some(true) })
+            Some(Command::Record {
+                fullscreen: true,
+                system_sound: Some(false),
+                mic: Some(true),
+                region: None,
+                ui: true
+            })
         );
         for bad in ["--stop --record", "--status --mic on", "--record --mic", "--record --mic yes", "--unknown"] {
             assert!(args(bad).is_err(), "{bad}");
@@ -540,6 +626,39 @@ mod tests {
         assert!(matches!(serde_json::from_slice::<Request>(&json).unwrap().command, Command::Record { .. }));
         assert!(decode(br#"{"version":1,"command":"record","unexpected":true}"#).is_err());
         assert!(decode(br#"{"version":1,"command":"stop","mic":true}"#).is_err());
+    }
+
+    // Pure decoding and geometry only. These tests never create a native window.
+    #[test]
+    fn shell_record_region_and_ui_decode_without_changing_v1() {
+        let request =
+            decode(br#"{"version":1,"command":"record","region":{"x":-1920,"y":40,"w":501,"h":301},"ui":false}"#)
+                .unwrap();
+        assert_eq!(request.version, 1);
+        assert_eq!(
+            request.command,
+            Command::Record {
+                fullscreen: false,
+                system_sound: None,
+                mic: None,
+                region: Some(Region { x: -1920, y: 40, w: 501, h: 301 }),
+                ui: false
+            }
+        );
+        assert!(matches!(
+            decode(br#"{"version":1,"command":"record"}"#).unwrap().command,
+            Command::Record { ui: true, region: None, .. }
+        ));
+        assert!(decode(br#"{"version":1,"command":"stop","ui":false}"#).is_err());
+        assert!(decode(br#"{"version":1,"command":"record","ui":"false"}"#).is_err());
+        assert_eq!(command("--record --region -1920,40,501,301 --no-ui").unwrap(), Some(request.command));
+        assert!(args("--record --no-ui").is_err());
+        assert!(args("--stop --no-ui").is_err());
+        assert_eq!(command("--audio --mic on --system-sound off").unwrap(),
+            Some(Command::Audio { mic: Some(true), system_sound: Some(false) }));
+        assert_eq!(command("--discard").unwrap(), Some(Command::Discard));
+        assert!(args("--record --region 2147483647,0,10,10").is_err());
+        assert!(args("--record --region 0,0,-10,10").is_err());
     }
 
     #[test]
