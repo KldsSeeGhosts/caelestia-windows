@@ -110,17 +110,14 @@ configured.
 ## Team roles
 
 SignPath Foundation requires the project team to name the people behind three
-roles. The project has a single maintainer today; the owner fills in the real
-handles before applying and keeps this list current. Every entry below is a
-deliberate placeholder, not a real identity: replace `<author-github-handle>`,
-`<reviewer-github-handle>` and `<approver-github-handle>` with GitHub handles or
-team links before the application is submitted.
+roles. The project has a single maintainer today, who holds all three. The
+owner keeps this list current as contributors join.
 
 | Role | Who | Responsibility |
 | --- | --- | --- |
-| Authors | PLACEHOLDER `<author-github-handle>`; repository [CODEOWNERS](../../.github/CODEOWNERS) | May change source and build scripts without an additional review. |
-| Reviewers | PLACEHOLDER `<reviewer-github-handle>` | Reviews every proposed change from someone who is not a committer. |
-| Approvers | PLACEHOLDER `<approver-github-handle>` | Decides whether a specific release may be signed. The owner is the single approver. |
+| Authors | [KldsSeeGhosts](https://github.com/KldsSeeGhosts); repository [CODEOWNERS](../../.github/CODEOWNERS) | May change source and build scripts without an additional review. |
+| Reviewers | [KldsSeeGhosts](https://github.com/KldsSeeGhosts) | Reviews every proposed change from someone who is not a committer. |
+| Approvers | [KldsSeeGhosts](https://github.com/KldsSeeGhosts) | Decides whether a specific release may be signed. The owner is the single approver. |
 
 Every signing request would need a manual approval. The approver would confirm
 that the request belongs to the exact tested stable release, that the workflow
