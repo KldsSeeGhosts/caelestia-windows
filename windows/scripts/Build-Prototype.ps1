@@ -134,13 +134,17 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     if ($commandExit -ne 0) { throw "$Name failed. See $logRoot\$Name.log." }
 }
 
+# A background job starts in the user's Documents folder. Each chain returns
+# to the caller's directory, where Cargo and CMake ran in the serial build.
+$callerDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
 # Components consume each other's outputs in chains. Chains share no build
 # directory, so they can run at the same time; each chain still runs its own
 # components strictly in order. A chain runs in a job because one PowerShell
 # pipeline can only wait on one native command at a time.
 $buildStreamScript = {
-    param([string]$Definition, [object[]]$Components, [string]$logRoot)
+    param([string]$Definition, [object[]]$Components, [string]$logRoot, [string]$WorkingDirectory)
     $ErrorActionPreference = 'Stop'
+    Set-Location -LiteralPath $WorkingDirectory
     # Reuse the foreground runner verbatim, so the command record, log, timing
     # file and failure message cannot drift between a foreground and a
     # background chain.
@@ -161,7 +165,8 @@ function Start-BuildStream([string]$Name, [object[]]$Components) {
     $definition = "function Invoke-BuildCommand { $((Get-Command -Name Invoke-BuildCommand).Definition) }"
     return [pscustomobject]@{
         name = $Name
-        job = Start-Job -Name $Name -ScriptBlock $buildStreamScript -ArgumentList $definition, $Components, $logRoot
+        joined = $false
+        job = Start-Job -Name $Name -ScriptBlock $buildStreamScript -ArgumentList $definition, $Components, $logRoot, $callerDirectory
     }
 }
 
@@ -180,8 +185,9 @@ function Wait-BuildStream($Stream) {
 
 # Cargo writes progress to stderr; the native exit code is the failure criterion.
 $captureScript = {
-    param([string]$CargoPath, [string[]]$Arguments, [string]$logRoot)
+    param([string]$CargoPath, [string[]]$Arguments, [string]$logRoot, [string]$WorkingDirectory)
     $ErrorActionPreference = 'Stop'
+    Set-Location -LiteralPath $WorkingDirectory
     $captureClock = [Diagnostics.Stopwatch]::StartNew()
     $cargoExit = $null
     try {
@@ -290,94 +296,146 @@ $pluginConfigure = @('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
     "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })")
-$moduleStream = Start-BuildStream 'module-chains' @(
-    [pscustomobject]@{ name = 'configure-m3shapes'; arguments = $m3shapesConfigure }
-    [pscustomobject]@{ name = 'build-m3shapes'; arguments = @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs") }
-    [pscustomobject]@{ name = 'install-m3shapes'; arguments = @('--install', "$BuildRoot\m3shapes") }
-    [pscustomobject]@{ name = 'configure-plugins'; arguments = $pluginConfigure }
-    [pscustomobject]@{ name = 'build-plugins'; arguments = @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs") }
-    [pscustomobject]@{ name = 'install-plugins'; arguments = @('--install', "$BuildRoot\caelestia") }
-)
+# One -Jobs budget covers every chain that runs at the same time. Hosted CI
+# sizes -Jobs from the processor count and the memory one compile needs, so
+# three chains that each used the whole budget would triple peak memory on a
+# cold build. The backend keeps the largest share. When the budget is smaller
+# than the number of chains, the chains run one after another, each with the
+# whole budget, as the serial build did.
+$chainCount = if ($SkipCapture) { 2 } else { 3 }
+$overlapChains = $Jobs -ge $chainCount
+if ($overlapChains) {
+    $moduleJobs = [Math]::Max(1, [int][Math]::Floor($Jobs / 4))
+    $captureJobs = if ($SkipCapture) { 0 } else { $moduleJobs }
+    $backendJobs = $Jobs - $moduleJobs - $captureJobs
+} else {
+    $moduleJobs = $captureJobs = $backendJobs = $Jobs
+}
 # A stream that would have failed earlier in the serial build reports first.
 $serialComponentOrder = @('configure-m3shapes', 'build-m3shapes', 'install-m3shapes',
     'build-capture', 'configure-plugins', 'build-plugins', 'install-plugins')
 
-$captureStream = $null
-if ($SkipCapture) {
-    # Never leave a previous run's tool in a payload that claims to omit it.
-    Remove-Item -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Force -ErrorAction SilentlyContinue
-    Write-Warning 'Skipping Caelestia capture (-SkipCapture); the staged payload is not installable.'
-} else {
-    Write-Host '== build-capture =='
-    New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
-    # Keep Cargo's whole target tree inside the disposable build root, never in
-    # the source or the user's profile. --locked refuses an unpinned update.
-    $cargoArguments = @('build', '--release', '--locked', '--jobs', "$Jobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $captureSource.path 'Cargo.toml'),
-        '--target-dir', (Join-Path $BuildRoot 'capture-target'))
-    $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-command.json') -Encoding UTF8
-    $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
-    $rustCacheEnvironment = @{}
-    if ($RustCacheDirectory) {
-        foreach ($name in @('RUSTC_WRAPPER', 'CARGO_INCREMENTAL', 'SCCACHE_DIR', 'SCCACHE_SERVER_PORT')) {
-            $rustCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
-        }
-        $env:RUSTC_WRAPPER = $CompilerLauncher
-        $env:CARGO_INCREMENTAL = '0'
-        $env:SCCACHE_DIR = $RustCacheDirectory
-        # Separate server: a running sccache server keeps its original cache dir.
-        $env:SCCACHE_SERVER_PORT = '4227'
+# Every started job is registered here at once, so the cleanup below also
+# covers a failure between two launches.
+$streams = [Collections.Generic.List[object]]::new()
+$failures = @()
+function Complete-BuildStream($Stream) {
+    if ($Stream.joined) { return }
+    $Stream.joined = $true
+    if ($Stream.name -cne 'build-capture') {
+        $failure = Wait-BuildStream $Stream
+        if ($failure) { $script:failures += $failure }
+        return
     }
-    if ($PublicRelease) {
-        # Rust panic/file! strings can retain Cargo's personal registry path.
-        # Encoded arguments preserve paths containing spaces. Caller-supplied
-        # environment flags retain Cargo's encoded-over-plain precedence.
-        $separator = [string][char]0x1f
-        $publicRustFlags = @()
-        if ($null -ne $previousEncodedRustFlags) {
-            if ($previousEncodedRustFlags.Length) { $publicRustFlags = @($previousEncodedRustFlags.Split([char]0x1f)) }
-        } elseif ($env:RUSTFLAGS) {
-            $publicRustFlags = @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ })
-        }
-        foreach ($mapping in $publicPathMappings) {
-            if (-not $mapping.path) { continue }
-            $prefix = [IO.Path]::GetFullPath($mapping.path).TrimEnd('\', '/')
-            $spellings = @($prefix, $prefix.Replace('\', '/')) | Select-Object -Unique
-            foreach ($spelling in $spellings) {
-                $publicRustFlags += "--remap-path-prefix=$spelling=$($mapping.public)"
-            }
-        }
-        [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', ($publicRustFlags -join $separator), 'Process')
+    [void]@(Receive-Job -Job $Stream.job -Wait -AutoRemoveJob)
+    # Read the exit status back from the artifact, exactly as the serial build
+    # recorded it.
+    $captureExit = $null
+    $captureTimingPath = Join-Path $logRoot 'build-capture-timing.json'
+    if (Test-Path -LiteralPath $captureTimingPath -PathType Leaf) {
+        $captureExit = (Get-Content -LiteralPath $captureTimingPath -Raw | ConvertFrom-Json).exitCode
     }
-    try {
-        # The job starts with this process's environment, so the selected Rust
-        # toolchain, the remapped flags and the sccache wrapper reach Cargo
-        # unchanged. Restore this process immediately after the launch; no
-        # other child inherits the Rust cache settings.
-        $captureStream = [pscustomobject]@{
-            name = 'build-capture'
-            job = Start-Job -Name 'build-capture' -ScriptBlock $captureScript -ArgumentList $cargoPath, $cargoArguments, $logRoot
-        }
-    } finally {
-        foreach ($name in $rustCacheEnvironment.Keys) {
-            [Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')
-        }
-        if ($PublicRelease) {
-            [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', $previousEncodedRustFlags, 'Process')
-        }
+    if ($captureExit -ne 0) {
+        $script:failures += [pscustomobject]@{ name = 'build-capture'
+            message = "build-capture failed. See $logRoot\build-capture.log." }
     }
 }
-
-$failures = @()
-$streams = @($moduleStream)
-if ($captureStream) { $streams += $captureStream }
+function Assert-NoBuildStreamFailure {
+    $firstFailure = $null
+    foreach ($failure in $script:failures) {
+        if ($null -eq $firstFailure -or
+            [array]::IndexOf($serialComponentOrder, $failure.name) -lt
+            [array]::IndexOf($serialComponentOrder, $firstFailure.name)) { $firstFailure = $failure }
+    }
+    if ($firstFailure) { throw $firstFailure.message }
+}
 try {
+    $moduleStream = Start-BuildStream 'module-chains' @(
+        [pscustomobject]@{ name = 'configure-m3shapes'; arguments = $m3shapesConfigure }
+        [pscustomobject]@{ name = 'build-m3shapes'; arguments = @('--build', "$BuildRoot\m3shapes", '--parallel', "$moduleJobs") }
+        [pscustomobject]@{ name = 'install-m3shapes'; arguments = @('--install', "$BuildRoot\m3shapes") }
+        [pscustomobject]@{ name = 'configure-plugins'; arguments = $pluginConfigure }
+        [pscustomobject]@{ name = 'build-plugins'; arguments = @('--build', "$BuildRoot\caelestia", '--parallel', "$moduleJobs") }
+        [pscustomobject]@{ name = 'install-plugins'; arguments = @('--install', "$BuildRoot\caelestia") }
+    )
+    $streams.Add($moduleStream)
+    if (-not $overlapChains) { Complete-BuildStream $moduleStream; Assert-NoBuildStreamFailure }
+
+    $captureStream = $null
+    if ($SkipCapture) {
+        # Never leave a previous run's tool in a payload that claims to omit it.
+        Remove-Item -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Force -ErrorAction SilentlyContinue
+        Write-Warning 'Skipping Caelestia capture (-SkipCapture); the staged payload is not installable.'
+    } else {
+        Write-Host '== build-capture =='
+        New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+        # Keep Cargo's whole target tree inside the disposable build root, never in
+        # the source or the user's profile. --locked refuses an unpinned update.
+        $cargoArguments = @('build', '--release', '--locked', '--jobs', "$captureJobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $captureSource.path 'Cargo.toml'),
+            '--target-dir', (Join-Path $BuildRoot 'capture-target'))
+        $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-command.json') -Encoding UTF8
+        $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
+        $rustCacheEnvironment = @{}
+        if ($RustCacheDirectory) {
+            foreach ($name in @('RUSTC_WRAPPER', 'CARGO_INCREMENTAL', 'SCCACHE_DIR', 'SCCACHE_SERVER_PORT')) {
+                $rustCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            }
+            $env:RUSTC_WRAPPER = $CompilerLauncher
+            $env:CARGO_INCREMENTAL = '0'
+            $env:SCCACHE_DIR = $RustCacheDirectory
+            # Separate server: a running sccache server keeps its original cache dir.
+            $env:SCCACHE_SERVER_PORT = '4227'
+        }
+        if ($PublicRelease) {
+            # Rust panic/file! strings can retain Cargo's personal registry path.
+            # Encoded arguments preserve paths containing spaces. Caller-supplied
+            # environment flags retain Cargo's encoded-over-plain precedence.
+            $separator = [string][char]0x1f
+            $publicRustFlags = @()
+            if ($null -ne $previousEncodedRustFlags) {
+                if ($previousEncodedRustFlags.Length) { $publicRustFlags = @($previousEncodedRustFlags.Split([char]0x1f)) }
+            } elseif ($env:RUSTFLAGS) {
+                $publicRustFlags = @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ })
+            }
+            foreach ($mapping in $publicPathMappings) {
+                if (-not $mapping.path) { continue }
+                $prefix = [IO.Path]::GetFullPath($mapping.path).TrimEnd('\', '/')
+                $spellings = @($prefix, $prefix.Replace('\', '/')) | Select-Object -Unique
+                foreach ($spelling in $spellings) {
+                    $publicRustFlags += "--remap-path-prefix=$spelling=$($mapping.public)"
+                }
+            }
+            [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', ($publicRustFlags -join $separator), 'Process')
+        }
+        try {
+            # The job starts with this process's environment, so the selected Rust
+            # toolchain, the remapped flags and the sccache wrapper reach Cargo
+            # unchanged. Restore this process immediately after the launch; no
+            # other child inherits the Rust cache settings.
+            $captureStream = [pscustomobject]@{
+                name = 'build-capture'
+                joined = $false
+                job = Start-Job -Name 'build-capture' -ScriptBlock $captureScript -ArgumentList $cargoPath, $cargoArguments, $logRoot, $callerDirectory
+            }
+            $streams.Add($captureStream)
+        } finally {
+            foreach ($name in $rustCacheEnvironment.Keys) {
+                [Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')
+            }
+            if ($PublicRelease) {
+                [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', $previousEncodedRustFlags, 'Process')
+            }
+        }
+    }
+    if ($captureStream -and -not $overlapChains) { Complete-BuildStream $captureStream; Assert-NoBuildStreamFailure }
+
     Invoke-BuildCommand 'configure-backend' (@('-S', $backendPath,
         '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
         "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
         '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
         '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
-    Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$Jobs")
-    Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe', '--parallel', "$Jobs")
+    Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$backendJobs")
+    Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe', '--parallel', "$backendJobs")
     if ($Tests) {
         # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
         # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
@@ -386,34 +444,13 @@ try {
             throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
         }
         Invoke-BuildCommand 'configure-backend-tests' (@('-S', $fixtureSource, '-B', "$BuildRoot\quickshell-tests") + $common)
-        Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs")
+        Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$backendJobs")
     }
 
-    # Join both background chains before touching the payload. A component that
-    # would have run earlier in the serial build reports its failure first.
-    $failure = Wait-BuildStream $moduleStream
-    if ($failure) { $failures += $failure }
-    if ($captureStream) {
-        [void]@(Receive-Job -Job $captureStream.job -Wait -AutoRemoveJob)
-        # Read the exit status back from the artifact, exactly as the serial
-        # build recorded it.
-        $captureExit = $null
-        $captureTimingPath = Join-Path $logRoot 'build-capture-timing.json'
-        if (Test-Path -LiteralPath $captureTimingPath -PathType Leaf) {
-            $captureExit = (Get-Content -LiteralPath $captureTimingPath -Raw | ConvertFrom-Json).exitCode
-        }
-        if ($captureExit -ne 0) {
-            $failures += [pscustomobject]@{ name = 'build-capture'
-                message = "build-capture failed. See $logRoot\build-capture.log." }
-        }
-    }
-    $firstFailure = $null
-    foreach ($failure in $failures) {
-        if ($null -eq $firstFailure -or
-            [array]::IndexOf($serialComponentOrder, $failure.name) -lt
-            [array]::IndexOf($serialComponentOrder, $firstFailure.name)) { $firstFailure = $failure }
-    }
-    if ($firstFailure) { throw $firstFailure.message }
+    # Join every chain before touching the payload. A component that would
+    # have run earlier in the serial build reports its failure first.
+    foreach ($stream in $streams) { Complete-BuildStream $stream }
+    Assert-NoBuildStreamFailure
     if ($captureStream) {
         $captureExe = Join-Path $BuildRoot "capture-target\$($toolchainSpec.rustTarget)\release\caelestia-capture.exe"
         if (-not (Test-Path -LiteralPath $captureExe -PathType Leaf)) {
