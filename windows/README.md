@@ -56,6 +56,7 @@ the revisions and scenarios it was recorded against, not a release guarantee.
 - [Signing roadmap](docs/SIGNING-ROADMAP.md)
 - [Release checklist](docs/RELEASE-CHECKLIST.md)
 - [Upstream sync and review cadence](docs/UPSTREAM-SYNC.md)
+- [Idle work inventory](docs/perf/IDLE-WORK-INVENTORY.md)
 - [Roadmap and acceptance gates](ROADMAP.md)
 - [Third-party notices](../THIRD-PARTY-NOTICES.md)
 
