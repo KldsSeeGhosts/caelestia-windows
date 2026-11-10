@@ -105,8 +105,12 @@ if (& git -C $m3shapesPath status --porcelain) {
 # First-party source is part of this shell revision, not a separate checkout.
 $captureSource = Get-CaelestiaCaptureSource $repoRoot
 $captureSha256 = ''
+$cargoPath = ''
 if (-not $SkipCapture) {
-    if (-not (Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue)) {
+    # Resolve once: the background Cargo job must start the same executable.
+    $cargoPath = (Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1).Source
+    if (-not $cargoPath) {
         throw 'Rust Cargo is required to bundle Caelestia capture. Use -SkipCapture for offscreen tests only.'
     }
 }
@@ -128,6 +132,75 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
         exitCode = $commandExit
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot "$Name-timing.json") -Encoding UTF8
     if ($commandExit -ne 0) { throw "$Name failed. See $logRoot\$Name.log." }
+}
+
+# A background job starts in the user's Documents folder. Each chain returns
+# to the caller's directory, where Cargo and CMake ran in the serial build.
+$callerDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
+# Components consume each other's outputs in chains. Chains share no build
+# directory, so they can run at the same time; each chain still runs its own
+# components strictly in order. A chain runs in a job because one PowerShell
+# pipeline can only wait on one native command at a time.
+$buildStreamScript = {
+    param([string]$Definition, [object[]]$Components, [string]$logRoot, [string]$WorkingDirectory)
+    $ErrorActionPreference = 'Stop'
+    Set-Location -LiteralPath $WorkingDirectory
+    # Reuse the foreground runner verbatim, so the command record, log, timing
+    # file and failure message cannot drift between a foreground and a
+    # background chain.
+    . ([scriptblock]::Create($Definition))
+    foreach ($component in $Components) {
+        try {
+            Invoke-BuildCommand ([string]$component.name) ([string[]]@($component.arguments)) | Out-Null
+        } catch {
+            # The runner already wrote the component's artifacts; report only
+            # its message to the calling stream.
+            return ([pscustomobject][ordered]@{ name = [string]$component.name; message = "$_" })
+        }
+    }
+    return
+}
+
+function Start-BuildStream([string]$Name, [object[]]$Components) {
+    $definition = "function Invoke-BuildCommand { $((Get-Command -Name Invoke-BuildCommand).Definition) }"
+    return [pscustomobject]@{
+        name = $Name
+        joined = $false
+        job = Start-Job -Name $Name -ScriptBlock $buildStreamScript -ArgumentList $definition, $Components, $logRoot, $callerDirectory
+    }
+}
+
+function Wait-BuildStream($Stream) {
+    # The stream replays its component labels into this console and returns its
+    # first failed component. Component output stays in its own log file.
+    $received = @(Receive-Job -Job $Stream.job -Wait -AutoRemoveJob)
+    if ($Stream.job.State -ne 'Completed') {
+        throw "Build stream $($Stream.name) did not complete ($($Stream.job.State)). See $logRoot."
+    }
+    foreach ($item in $received) {
+        if ($null -ne $item -and $null -ne $item.PSObject.Properties['message']) { return $item }
+    }
+    return $null
+}
+
+# Cargo writes progress to stderr; the native exit code is the failure criterion.
+$captureScript = {
+    param([string]$CargoPath, [string[]]$Arguments, [string]$logRoot, [string]$WorkingDirectory)
+    $ErrorActionPreference = 'Stop'
+    Set-Location -LiteralPath $WorkingDirectory
+    $captureClock = [Diagnostics.Stopwatch]::StartNew()
+    $cargoExit = $null
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $CargoPath @Arguments 2>&1 | ForEach-Object { "$_" } |
+            Tee-Object -FilePath (Join-Path $logRoot 'build-capture.log') | Out-Null
+        $cargoExit = $LASTEXITCODE
+    } finally {
+        [ordered]@{
+            durationSeconds = [Math]::Round($captureClock.Elapsed.TotalSeconds, 6)
+            exitCode = $cargoExit
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-timing.json') -Encoding UTF8
+    }
 }
 
 if ($CompilerLauncher -and (-not [IO.Path]::IsPathRooted($CompilerLauncher) -or
@@ -190,103 +263,9 @@ if ($PublicRelease) {
         Set-Content -LiteralPath $publicCache -Encoding UTF8
     $common += @('-C', $publicCache)
 }
-Invoke-BuildCommand 'configure-backend' (@('-S', $backendPath,
-    '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
-    "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
-    '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
-    '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
-Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$Jobs")
-Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe', '--parallel', "$Jobs")
-if ($Tests) {
-    # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
-    # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
-    $fixtureSource = Join-Path $backendPath 'src\windows\test'
-    if (-not (Test-Path -LiteralPath "$fixtureSource\CMakeLists.txt")) {
-        throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
-    }
-    Invoke-BuildCommand 'configure-backend-tests' (@('-S', $fixtureSource, '-B', "$BuildRoot\quickshell-tests") + $common)
-    Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$Jobs")
-}
-Invoke-BuildCommand 'configure-m3shapes' (@('-S', $m3shapesPath, '-B', "$BuildRoot\m3shapes") + $common +
-    @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF'))
-Invoke-BuildCommand 'build-m3shapes' @('--build', "$BuildRoot\m3shapes", '--parallel', "$Jobs")
-Invoke-BuildCommand 'install-m3shapes' @('--install', "$BuildRoot\m3shapes")
-if ($SkipCapture) {
-    # Never leave a previous run's tool in a payload that claims to omit it.
-    Remove-Item -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Force -ErrorAction SilentlyContinue
-    Write-Warning 'Skipping Caelestia capture (-SkipCapture); the staged payload is not installable.'
-} else {
-    Write-Host '== build-capture =='
-    New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
-    # Keep Cargo's whole target tree inside the disposable build root, never in
-    # the source or the user's profile. --locked refuses an unpinned update.
-    $cargoArguments = @('build', '--release', '--locked', '--jobs', "$Jobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $captureSource.path 'Cargo.toml'),
-        '--target-dir', (Join-Path $BuildRoot 'capture-target'))
-    $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-command.json') -Encoding UTF8
-    $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
-    $rustCacheEnvironment = @{}
-    if ($RustCacheDirectory) {
-        foreach ($name in @('RUSTC_WRAPPER', 'CARGO_INCREMENTAL', 'SCCACHE_DIR', 'SCCACHE_SERVER_PORT')) {
-            $rustCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
-        }
-        $env:RUSTC_WRAPPER = $CompilerLauncher
-        $env:CARGO_INCREMENTAL = '0'
-        $env:SCCACHE_DIR = $RustCacheDirectory
-        # Separate server: a running sccache server keeps its original cache dir.
-        $env:SCCACHE_SERVER_PORT = '4227'
-    }
-    if ($PublicRelease) {
-        # Rust panic/file! strings can retain Cargo's personal registry path.
-        # Encoded arguments preserve paths containing spaces. Caller-supplied
-        # environment flags retain Cargo's encoded-over-plain precedence.
-        $separator = [string][char]0x1f
-        $publicRustFlags = @()
-        if ($null -ne $previousEncodedRustFlags) {
-            if ($previousEncodedRustFlags.Length) { $publicRustFlags = @($previousEncodedRustFlags.Split([char]0x1f)) }
-        } elseif ($env:RUSTFLAGS) {
-            $publicRustFlags = @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ })
-        }
-        foreach ($mapping in $publicPathMappings) {
-            if (-not $mapping.path) { continue }
-            $prefix = [IO.Path]::GetFullPath($mapping.path).TrimEnd('\', '/')
-            $spellings = @($prefix, $prefix.Replace('\', '/')) | Select-Object -Unique
-            foreach ($spelling in $spellings) {
-                $publicRustFlags += "--remap-path-prefix=$spelling=$($mapping.public)"
-            }
-        }
-        [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', ($publicRustFlags -join $separator), 'Process')
-    }
-    try {
-        $captureClock = [Diagnostics.Stopwatch]::StartNew()
-        # Cargo writes progress to stderr; the native exit code is the failure criterion.
-        $ErrorActionPreference = 'Continue'
-        & cargo @cargoArguments 2>&1 | ForEach-Object { "$_" } |
-            Tee-Object -FilePath (Join-Path $logRoot 'build-capture.log')
-        $cargoExit = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = 'Stop'
-        [ordered]@{
-            durationSeconds = [Math]::Round($captureClock.Elapsed.TotalSeconds, 6)
-            exitCode = $cargoExit
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-timing.json') -Encoding UTF8
-        foreach ($name in $rustCacheEnvironment.Keys) {
-            [Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')
-        }
-        if ($PublicRelease) {
-            [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', $previousEncodedRustFlags, 'Process')
-        }
-    }
-    if ($cargoExit -ne 0) { throw "build-capture failed. See $logRoot\build-capture.log." }
-    $captureExe = Join-Path $BuildRoot "capture-target\$($toolchainSpec.rustTarget)\release\caelestia-capture.exe"
-    if (-not (Test-Path -LiteralPath $captureExe -PathType Leaf)) {
-        throw "Capture built without producing $captureExe."
-    }
-    Copy-Item -LiteralPath $captureExe -Destination (Join-Path $installRoot 'caelestia-capture.exe') -Force
-    $captureSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
-}
-# Old payload names must never survive a rebuild in this owned output.
-Remove-Item -LiteralPath (Join-Path $installRoot 'glazier.exe') -Force -ErrorAction SilentlyContinue
-# Version is authoritative even in shallow clones. Git is provenance only.
+# Version and revision are read before compiling because the plugin
+# configuration records them. The dirty flag is still read after the build, so
+# build.json keeps describing the state the build ended in.
 . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
 $versionPath = Join-Path $repoRoot 'windows\release\version.json'
 $sourceVersion = (Read-CaelestiaVersion $versionPath).version
@@ -296,18 +275,206 @@ $rawShortRevision = & git -C $repoRoot rev-parse --short HEAD 2>$null
 $shortRevExit = $LASTEXITCODE
 $rawFullRevision = & git -C $repoRoot rev-parse HEAD 2>$null
 $fullRevExit = $LASTEXITCODE
-$rawDirty = & git -C $repoRoot status --porcelain 2>$null
 $ErrorActionPreference = 'Stop'
 $sourceRevision = if ($shortRevExit -eq 0 -and $rawShortRevision) { "$rawShortRevision".Trim() } else { 'unknown' }
 if (-not $sourceRevision) { $sourceRevision = 'unknown' }
 $fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullRevision".Trim() } else { $sourceRevision }
 
-Invoke-BuildCommand 'configure-plugins' (@('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
+# Dependency order, unchanged from the serial build:
+#   configure-backend -> build-backend -> build-brightness-probe [-> backend fixtures]
+#       (these share the quickshell Ninja tree, so they stay one serial chain)
+#   configure-m3shapes -> build-m3shapes -> install-m3shapes
+#   build-capture (Cargo; consumes only windows/capture and the toolchain)
+#   configure-plugins -> build-plugins -> install-plugins
+#   supervisor compilation -> native inventory (needs qs.exe and each install)
+# No chain consumes another chain's output and each writes its own build
+# directory, so the three chains run at the same time. Components inside a
+# chain keep their order.
+$m3shapesConfigure = @('-S', $m3shapesPath, '-B', "$BuildRoot\m3shapes") + $common +
+    @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF')
+$pluginConfigure = @('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
-    "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })"))
-Invoke-BuildCommand 'build-plugins' @('--build', "$BuildRoot\caelestia", '--parallel', "$Jobs")
-Invoke-BuildCommand 'install-plugins' @('--install', "$BuildRoot\caelestia")
+    "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })")
+# One -Jobs budget covers every chain that runs at the same time. Hosted CI
+# sizes -Jobs from the processor count and the memory one compile needs, so
+# three chains that each used the whole budget would triple peak memory on a
+# cold build. The backend keeps the largest share. When the budget is smaller
+# than the number of chains, the chains run one after another, each with the
+# whole budget, as the serial build did.
+$chainCount = if ($SkipCapture) { 2 } else { 3 }
+$overlapChains = $Jobs -ge $chainCount
+if ($overlapChains) {
+    $moduleJobs = [Math]::Max(1, [int][Math]::Floor($Jobs / 4))
+    $captureJobs = if ($SkipCapture) { 0 } else { $moduleJobs }
+    $backendJobs = $Jobs - $moduleJobs - $captureJobs
+} else {
+    $moduleJobs = $captureJobs = $backendJobs = $Jobs
+}
+# A stream that would have failed earlier in the serial build reports first.
+$serialComponentOrder = @('configure-m3shapes', 'build-m3shapes', 'install-m3shapes',
+    'build-capture', 'configure-plugins', 'build-plugins', 'install-plugins')
+
+# Every started job is registered here at once, so the cleanup below also
+# covers a failure between two launches.
+$streams = [Collections.Generic.List[object]]::new()
+$failures = @()
+function Complete-BuildStream($Stream) {
+    if ($Stream.joined) { return }
+    $Stream.joined = $true
+    if ($Stream.name -cne 'build-capture') {
+        $failure = Wait-BuildStream $Stream
+        if ($failure) { $script:failures += $failure }
+        return
+    }
+    [void]@(Receive-Job -Job $Stream.job -Wait -AutoRemoveJob)
+    # Read the exit status back from the artifact, exactly as the serial build
+    # recorded it.
+    $captureExit = $null
+    $captureTimingPath = Join-Path $logRoot 'build-capture-timing.json'
+    if (Test-Path -LiteralPath $captureTimingPath -PathType Leaf) {
+        $captureExit = (Get-Content -LiteralPath $captureTimingPath -Raw | ConvertFrom-Json).exitCode
+    }
+    if ($captureExit -ne 0) {
+        $script:failures += [pscustomobject]@{ name = 'build-capture'
+            message = "build-capture failed. See $logRoot\build-capture.log." }
+    }
+}
+function Assert-NoBuildStreamFailure {
+    $firstFailure = $null
+    foreach ($failure in $script:failures) {
+        if ($null -eq $firstFailure -or
+            [array]::IndexOf($serialComponentOrder, $failure.name) -lt
+            [array]::IndexOf($serialComponentOrder, $firstFailure.name)) { $firstFailure = $failure }
+    }
+    if ($firstFailure) { throw $firstFailure.message }
+}
+try {
+    $moduleStream = Start-BuildStream 'module-chains' @(
+        [pscustomobject]@{ name = 'configure-m3shapes'; arguments = $m3shapesConfigure }
+        [pscustomobject]@{ name = 'build-m3shapes'; arguments = @('--build', "$BuildRoot\m3shapes", '--parallel', "$moduleJobs") }
+        [pscustomobject]@{ name = 'install-m3shapes'; arguments = @('--install', "$BuildRoot\m3shapes") }
+        [pscustomobject]@{ name = 'configure-plugins'; arguments = $pluginConfigure }
+        [pscustomobject]@{ name = 'build-plugins'; arguments = @('--build', "$BuildRoot\caelestia", '--parallel', "$moduleJobs") }
+        [pscustomobject]@{ name = 'install-plugins'; arguments = @('--install', "$BuildRoot\caelestia") }
+    )
+    $streams.Add($moduleStream)
+    if (-not $overlapChains) { Complete-BuildStream $moduleStream; Assert-NoBuildStreamFailure }
+
+    $captureStream = $null
+    if ($SkipCapture) {
+        # Never leave a previous run's tool in a payload that claims to omit it.
+        Remove-Item -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Force -ErrorAction SilentlyContinue
+        Write-Warning 'Skipping Caelestia capture (-SkipCapture); the staged payload is not installable.'
+    } else {
+        Write-Host '== build-capture =='
+        New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+        # Keep Cargo's whole target tree inside the disposable build root, never in
+        # the source or the user's profile. --locked refuses an unpinned update.
+        $cargoArguments = @('build', '--release', '--locked', '--jobs', "$captureJobs", '--target', $toolchainSpec.rustTarget, '--manifest-path', (Join-Path $captureSource.path 'Cargo.toml'),
+            '--target-dir', (Join-Path $BuildRoot 'capture-target'))
+        $cargoArguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $logRoot 'build-capture-command.json') -Encoding UTF8
+        $previousEncodedRustFlags = [Environment]::GetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', 'Process')
+        $rustCacheEnvironment = @{}
+        if ($RustCacheDirectory) {
+            foreach ($name in @('RUSTC_WRAPPER', 'CARGO_INCREMENTAL', 'SCCACHE_DIR', 'SCCACHE_SERVER_PORT')) {
+                $rustCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            }
+            $env:RUSTC_WRAPPER = $CompilerLauncher
+            $env:CARGO_INCREMENTAL = '0'
+            $env:SCCACHE_DIR = $RustCacheDirectory
+            # Separate server: a running sccache server keeps its original cache dir.
+            $env:SCCACHE_SERVER_PORT = '4227'
+        }
+        if ($PublicRelease) {
+            # Rust panic/file! strings can retain Cargo's personal registry path.
+            # Encoded arguments preserve paths containing spaces. Caller-supplied
+            # environment flags retain Cargo's encoded-over-plain precedence.
+            $separator = [string][char]0x1f
+            $publicRustFlags = @()
+            if ($null -ne $previousEncodedRustFlags) {
+                if ($previousEncodedRustFlags.Length) { $publicRustFlags = @($previousEncodedRustFlags.Split([char]0x1f)) }
+            } elseif ($env:RUSTFLAGS) {
+                $publicRustFlags = @($env:RUSTFLAGS -split '\s+' | Where-Object { $_ })
+            }
+            foreach ($mapping in $publicPathMappings) {
+                if (-not $mapping.path) { continue }
+                $prefix = [IO.Path]::GetFullPath($mapping.path).TrimEnd('\', '/')
+                $spellings = @($prefix, $prefix.Replace('\', '/')) | Select-Object -Unique
+                foreach ($spelling in $spellings) {
+                    $publicRustFlags += "--remap-path-prefix=$spelling=$($mapping.public)"
+                }
+            }
+            [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', ($publicRustFlags -join $separator), 'Process')
+        }
+        try {
+            # The job starts with this process's environment, so the selected Rust
+            # toolchain, the remapped flags and the sccache wrapper reach Cargo
+            # unchanged. Restore this process immediately after the launch; no
+            # other child inherits the Rust cache settings.
+            $captureStream = [pscustomobject]@{
+                name = 'build-capture'
+                joined = $false
+                job = Start-Job -Name 'build-capture' -ScriptBlock $captureScript -ArgumentList $cargoPath, $cargoArguments, $logRoot, $callerDirectory
+            }
+            $streams.Add($captureStream)
+        } finally {
+            foreach ($name in $rustCacheEnvironment.Keys) {
+                [Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')
+            }
+            if ($PublicRelease) {
+                [Environment]::SetEnvironmentVariable('CARGO_ENCODED_RUSTFLAGS', $previousEncodedRustFlags, 'Process')
+            }
+        }
+    }
+    if ($captureStream -and -not $overlapChains) { Complete-BuildStream $captureStream; Assert-NoBuildStreamFailure }
+
+    Invoke-BuildCommand 'configure-backend' (@('-S', $backendPath,
+        '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
+        "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
+        '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
+        '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
+    Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$backendJobs")
+    Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe', '--parallel', "$backendJobs")
+    if ($Tests) {
+        # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
+        # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
+        $fixtureSource = Join-Path $backendPath 'src\windows\test'
+        if (-not (Test-Path -LiteralPath "$fixtureSource\CMakeLists.txt")) {
+            throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
+        }
+        Invoke-BuildCommand 'configure-backend-tests' (@('-S', $fixtureSource, '-B', "$BuildRoot\quickshell-tests") + $common)
+        Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$backendJobs")
+    }
+
+    # Join every chain before touching the payload. A component that would
+    # have run earlier in the serial build reports its failure first.
+    foreach ($stream in $streams) { Complete-BuildStream $stream }
+    Assert-NoBuildStreamFailure
+    if ($captureStream) {
+        $captureExe = Join-Path $BuildRoot "capture-target\$($toolchainSpec.rustTarget)\release\caelestia-capture.exe"
+        if (-not (Test-Path -LiteralPath $captureExe -PathType Leaf)) {
+            throw "Capture built without producing $captureExe."
+        }
+        Copy-Item -LiteralPath $captureExe -Destination (Join-Path $installRoot 'caelestia-capture.exe') -Force
+        $captureSha256 = (Get-FileHash -LiteralPath (Join-Path $installRoot 'caelestia-capture.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+} finally {
+    # A failed stream must never leave a compiler, Cargo or sccache client
+    # running behind this script.
+    foreach ($stream in $streams) {
+        Stop-Job -Job $stream.job -ErrorAction SilentlyContinue
+        Remove-Job -Job $stream.job -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Old payload names must never survive a rebuild in this owned output.
+Remove-Item -LiteralPath (Join-Path $installRoot 'glazier.exe') -Force -ErrorAction SilentlyContinue
+# Git is provenance only, and the dirty flag still describes the state the
+# build ended in, as it did when every component ran serially.
+$ErrorActionPreference = 'Continue'
+$rawDirty = & git -C $repoRoot status --porcelain 2>$null
+$ErrorActionPreference = 'Stop'
 
 # Build the managed supervisor once, before the production gates. Release
 # assembly must copy these tested bytes, not compile another payload.
