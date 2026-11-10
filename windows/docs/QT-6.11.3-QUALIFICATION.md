@@ -62,6 +62,10 @@ LicenseId and Copyright fields. SQLite notices retain its verbatim blessing
 instead of copying the implementation as a notice. Other supplier notices
 remain tied to the existing public reference. Updated Qt source members include
 PCRE2, SQLite, FreeType, HarfBuzz, libpng, md4c and libwebp attribution metadata.
+Comparing every module's attribution inventory found no changed license IDs
+or license-file references and no new runtime supplier IDs. QtBase adds two
+SBOM test-fixture IDs, `sbom-test-parent` and `sbom-test-child`. Those fixtures
+remain source-only and are present in the complete corresponding source archive.
 
 The source preparation script verifies the committed review checksum, six
 source archive pins, source-member hashes and final notice hashes. It replaces
@@ -100,3 +104,14 @@ final package. Passing a smoke test alone does not establish compatibility.
 
 The retained-version install/rollback workflow is unchanged. Do not promote
 the new dependency pair until the required gates and owner checks pass.
+
+Local results include 15 Services checks, 23 Shell checks, all 46 portable
+backend CTest entries, all 12 plugin CTest entries, 45 capture lifecycle cases
+and 51 recorder assertions. Unit passed all 17 checks after correcting the
+local tools PATH. Both Packaging shards passed, 8 checks total. This includes
+the required CI changes, repository policy and Nexus checks. The separate
+pair-contract unittest invocation passed all 43 tests.
+Source preparation passed with 3 standalone Git bundles, 41 supplier source
+archives and 705 notices. The source recipe fixtures passed 16 cases with
+191 assertions. Generated texts and source members passed their checksum
+checks. Packaging fixtures use disposable prefixes, not the installed shell.

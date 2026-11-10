@@ -176,7 +176,8 @@ try {
         Assert-SourceRelativePath $archive.path
         if ($archiveLookup.ContainsKey($archive.path)) { throw 'Duplicate supplier archive rule.' }
         $cacheFile = Join-Path $CacheDirectory $archive.sha256
-        if ($archive.path -cnotlike 'sources/qt/*' -and
+        $reviewedQtArchive = $recipe.PSObject.Properties['qtServicing'] -and $archive.path -clike 'sources/qt/*'
+        if (-not $reviewedQtArchive -and
             -not (Test-Path -LiteralPath $cacheFile) -and -not $FetchSuppliersFromOrigin -and
             @($reference.archives | Where-Object path -CEQ $archive.path).Count) {
             Copy-SourceZipEntry $supplierZip $archive.path $cacheFile $archive.sha256
