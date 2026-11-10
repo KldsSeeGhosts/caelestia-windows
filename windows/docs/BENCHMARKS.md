@@ -26,6 +26,11 @@ Nothing enables it in production.
 Run pure regression tests with `python -B windows/bench/test_method.py -v`.
 They run in the Unit suite. No benchmark acquisition runs in CI.
 The first diagnostic report is [the 2026-11-10 baseline](BASELINE-2026-11-10.md).
+The companion [idle work inventory](perf/IDLE-WORK-INVENTORY.md) lists source-only
+hypotheses. This short disabled-provider host cannot measure 15/60-second helper
+polls or qualify idle wakeups. Do not use its CPU-through-exit metric to accept
+clock, recorder or quota polling changes. Those need the owner's longer idle
+window, process-lifecycle evidence and relevant providers enabled explicitly.
 
 ## Workflow 1. Explore and profile
 
