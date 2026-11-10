@@ -1,5 +1,10 @@
 # Preview limitations
 
+The [verified public release table](../release/PUBLIC-RELEASE.md) links the
+recommended preview's version-pinned limitations and qualification scope.
+This main-branch document describes current source and is not evidence that
+an older public package passed newer checks.
+
 This is a Windows 11 x64 preview, not a certification for every Windows build,
 display, device, assistive technology or security-policy configuration.
 Release-specific build and package results belong to the matching GitHub

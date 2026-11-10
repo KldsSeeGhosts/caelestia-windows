@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 # 139s. Keep this order for unsharded runs.
 $unitTests = @(
     @{ name = 'Test-PublicDocs'; shard = 3; kind = 'script' }
+    @{ name = 'public-release-metadata'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/TestPublicReleaseMetadata.py') }
     @{ name = 'Test-Toolchain'; shard = 3; kind = 'script' }
     @{ name = 'Test-Versioning'; shard = 3; kind = 'script' }
     @{ name = 'Test-PairContract'; shard = 2; kind = 'script' }

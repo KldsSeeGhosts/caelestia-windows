@@ -8,7 +8,7 @@ The port keeps Caelestia's QtQuick/QML interface, Material 3 Expressive shapes (
 
 You need Windows 11 64-bit, a Direct3D 11 GPU and a standard user account. The shell installs per user under `%LOCALAPPDATA%` and does not need administrator rights.
 
-1. Download the Windows x64 ZIP and its checksum from [Releases](https://github.com/KldsSeeGhosts/caelestia-windows/releases).
+1. Download the recommended Windows x64 ZIP and its checksum from the [verified public release table](windows/release/PUBLIC-RELEASE.md). It pins the exact preview rather than GitHub's generic latest release.
 2. Check the published SHA-256, extract the whole ZIP and run `Install.cmd`. The prebuilt package needs no Git, Qt SDK, compiler or Python for basic use. It does need Microsoft's free x64 C++ Redistributable, version 14.44.35211.0 or newer. If it is missing, the installer links to Microsoft's official download but does not install it for you.
 3. Start the shell from the Start menu. To start it without optional Python provisioning, run:
 
@@ -37,7 +37,9 @@ The shell adds a vertical bar on the left, a launcher, a dashboard, notification
 
 ## Updating
 
-There is no remote update feed yet. To update, run the installer from a newer build. If the shell is running, add `-Restart`. The installer then stages the new version, swaps it in, restarts the shell and rolls back if the new version fails to start. Without `-Restart`, quit the shell first.
+The recommended Preview 2 has no automatic updater. Public preview/stable downloads require manual installation. Authenticated development-channel publication is separate and does not activate preview/stable promotion. See [UPDATES.md](UPDATES.md) for current source capabilities and remaining acceptance gates.
+
+To update manually, run the installer from a newer verified build. If the shell is running, add `-Restart`. The installer then stages the new version, swaps it in, restarts the shell and rolls back if the new version fails to start. Without `-Restart`, quit the shell first.
 
 The installer keeps the previous version. Settings > Updates can roll back to it. Updates keep your configuration, state and user data. See the [release checklist](windows/docs/RELEASE-CHECKLIST.md) and the [user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart).
 

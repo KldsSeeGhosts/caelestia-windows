@@ -1,5 +1,9 @@
 # Windows port
 
+For prebuilt installation, use the [verified public release table](release/PUBLIC-RELEASE.md).
+It records the recommended version, assets, hashes, prerequisite and unsigned
+status. Current source capabilities below do not certify that older package.
+
 Caelestia for Windows runs Caelestia's original shell experience on Windows 11,
 retaining its QML components and motion while adapting platform services. It
 uses the Windows Quickshell backend developed for ii-windows. Hyprland remains a

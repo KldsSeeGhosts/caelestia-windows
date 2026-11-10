@@ -11,8 +11,9 @@ The first independent hosted exact-main candidate run and disposable Windows 11
 acceptance remain release gates.
 A source merge never changes an installed shell.
 
-Public previews remain manual downloads at
-https://github.com/KldsSeeGhosts/caelestia-windows/releases.
+Public previews remain manual downloads. The [verified public release table](windows/release/PUBLIC-RELEASE.md)
+pins the recommended preview, exact assets, hashes and unsigned status.
+This recommendation is not an authenticated preview/stable update channel.
 
 ## After owner activation
 

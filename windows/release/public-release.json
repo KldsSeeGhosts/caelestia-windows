@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0-preview.2",
+  "channel": "preview",
+  "tag": "v0.1.0-preview.2",
+  "releaseUrl": "https://github.com/KldsSeeGhosts/caelestia-windows/releases/tag/v0.1.0-preview.2",
+  "signatureStatus": "unsigned",
+  "runtime": {
+    "name": "Microsoft Visual C++ x64 Redistributable",
+    "architecture": "x64",
+    "minimumVersion": "14.44.35211.0",
+    "downloadUrl": "https://aka.ms/vc14/vc_redist.x64.exe"
+  },
+  "supportedScope": "Windows 11 x64 preview. Direct3D 11 GPU required. Not certified for all hardware, accessibility, visual appearance, long-running stability or performance targets.",
+  "limitationsUrl": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/v0.1.0-preview.2/windows/docs/KNOWN-LIMITATIONS.md",
+  "installationUrl": "https://github.com/KldsSeeGhosts/caelestia-windows/blob/v0.1.0-preview.2/windows/docs/INSTALL-RELEASE.md",
+  "updateCapability": "Manual installation only. Preview 2 has no automatic updater. Preview/stable authenticated promotion is inactive; development publication is separate.",
+  "manifest": {
+    "path": "release.json",
+    "sha256": "51fd3508d9d38ce9b7e367a7ad1567f6abec76418e68e0dc39c5c6a6a3635b1d",
+    "sourceRevision": "699746045da7426c9df3e7baa85dc2d8d90b4f19",
+    "signing": "unsigned-preview"
+  },
+  "assets": [
+    {
+      "kind": "application",
+      "architecture": "x64",
+      "name": "caelestia-windows-0.1.0-preview.2-windows-x64.zip",
+      "sha256": "b74649cbebd7d3e4d188f9882db8921cda9dd792344a80698969b16d53f91715"
+    },
+    {
+      "kind": "project-source",
+      "architecture": "source",
+      "name": "caelestia-windows-0.1.0-preview.2-project-source.zip",
+      "sha256": "6461ea8974f503787a6fcf4701bf06473ed6f81eab04f7a39e6b158b2bea59eb"
+    },
+    {
+      "kind": "supplier-source",
+      "architecture": "source",
+      "name": "caelestia-windows-0.1.0-preview.2-supplier-source.zip",
+      "sha256": "9214f9c74be0f0283e3d6d5e9554ab523b81114c526a71e52cacbeb2b00d7f78"
+    },
+    {
+      "kind": "manifest-digest",
+      "architecture": "metadata",
+      "name": "caelestia-windows-0.1.0-preview.2.manifest.sha256",
+      "sha256": "82ddbce81f34b65eb4a213af4364094c136f486972ea3648b67e11857efd9f78"
+    },
+    {
+      "kind": "checksums",
+      "architecture": "metadata",
+      "name": "SHA256SUMS.txt",
+      "sha256": "89c792d7865159149b955c636d50e8bf3cc7a1cc5741a23bb1e33d48b7d41ed2"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+diff --git a/index.html b/index.html
+--- a/index.html
++++ b/index.html
+@@ -1292,3 +1292,3 @@
+     const ext = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}<span class="sr"> (opens in a new tab)</span></a>`;
+-    const download = RELEASED ? `<a class="btn pri" href="${REPO}/releases">Download Windows preview</a>` : `<span class="btn pri off">First release coming soon</span>`;
++    const download = `<a class="btn pri" href="https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v0.1.0-preview.2/caelestia-windows-0.1.0-preview.2-windows-x64.zip">Download Windows x64 0.1.0-preview.2</a><p data-public-release="0.1.0-preview.2" style="overflow-wrap:anywhere">Channel: preview. Signature status: unsigned. Windows 11 x64 preview. Direct3D 11 GPU required. Not certified for all hardware, accessibility, visual appearance, long-running stability or performance targets. Runtime: <a href="https://aka.ms/vc14/vc_redist.x64.exe">Microsoft Visual C++ x64 Redistributable</a>, 14.44.35211.0 or newer. Install separately if needed. <a href="https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v0.1.0-preview.2/SHA256SUMS.txt">SHA256SUMS.txt</a>. ZIP SHA256: <code>b74649cbebd7d3e4d188f9882db8921cda9dd792344a80698969b16d53f91715</code>. Manifest SHA256: <code>51fd3508d9d38ce9b7e367a7ad1567f6abec76418e68e0dc39c5c6a6a3635b1d</code>. <a href="https://github.com/KldsSeeGhosts/caelestia-windows/blob/v0.1.0-preview.2/windows/docs/KNOWN-LIMITATIONS.md">Known limitations</a>. <a href="https://github.com/KldsSeeGhosts/caelestia-windows/blob/v0.1.0-preview.2/windows/docs/INSTALL-RELEASE.md">Installation guide</a>. Manual installation only. Preview 2 has no automatic updater. Preview/stable authenticated promotion is inactive; development publication is separate.</p>`;
+     const edge = (k, cls) => { const [, , name, text] = EDGES[k]; return `<button class="el el-${cls}" data-k="${k}" aria-pressed="false"><b>${name}</b><span>${text}</span></button>`; };
+@@ -1352,5 +1352,5 @@
+           <li class="step"><div class="sn" data-in="350" style="--i:0;--rot:140s">${shapeSvg("cookie9")}<span aria-hidden="true">1</span></div>
+-            <h3><span class="sr">Step 1: </span>Download</h3><p>Get the latest release from GitHub and unzip it.</p>${download}</li>
++            <h3><span class="sr">Step 1: </span>Download</h3><p>Download the recommended x64 preview, check its SHA256, then extract the whole ZIP.</p>${download}</li>
+           <li class="step"><div class="sn" data-in="500" style="--i:1;--rot:120s">${shapeSvg("flower")}<span aria-hidden="true">2</span></div>
+-            <h3><span class="sr">Step 2: </span>Run the installer</h3><p>Open PowerShell in that folder and run:</p>
++            <h3><span class="sr">Step 2: </span>Run the installer</h3><p>Install the Microsoft runtime prerequisite if needed. Then open PowerShell in the extracted folder and run:</p>
+             <div class="cmd"><code>${INSTALL_CMD.split(" ").map(w => `<span>${esc(w)}</span>`).join(" ")}</code><button class="cpy" aria-live="polite">Copy</button></div></li>
