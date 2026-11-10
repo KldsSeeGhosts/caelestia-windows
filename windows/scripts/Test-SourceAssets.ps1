@@ -46,7 +46,7 @@ $servicing = [pscustomobject]@{ referenceVersion = '1'; version = '2'; archives 
 $qtReview = [pscustomobject]@{
     schema = 'caelestia-qt-source-review'; version = 1; qtVersion = '2'; archives = $qtPins
     noticeProvenance = @([pscustomobject]@{ originalNotice = 'notices/Qt-2/LICENSE' })
-    supplementalNotices = @([pscustomobject]@{ path = 'Qt-2/LICENSE' })
+    supplementalNotices = @([pscustomobject]@{ path = 'Qt-2/LICENSE'; sha256 = 'e' * 64 })
     payloadFiles = @([pscustomobject]@{ path = 'payload/Qt6Core.dll'; sha256 = 'b' * 64 })
 }
 $qtReference = [pscustomobject]@{
@@ -57,7 +57,8 @@ $qtReference = [pscustomobject]@{
 $qtApp = [pscustomobject]@{
     supplementalNotices = @([pscustomobject]@{ path = 'Qt-1/LICENSE' }, [pscustomobject]@{ path = 'Rust/LICENSE' })
     files = @([pscustomobject]@{ path = 'payload/Qt6Core.dll'; sha256 = 'a' * 64 },
-        [pscustomobject]@{ path = 'payload/qs.exe'; sha256 = 'c' * 64 })
+        [pscustomobject]@{ path = 'payload/qs.exe'; sha256 = 'c' * 64 },
+        [pscustomobject]@{ path = 'payload/licenses/supplemental/Qt-1/LICENSE'; sha256 = 'f' * 64 })
 }
 Assert-RecipeRefused { Set-SourceQtReview $qtReference $qtApp $qtReview $servicing ([pscustomobject]@{ qtVersion = 'wrong' }) } 'identity'
 $qtReview.payloadFiles += [pscustomobject]@{ path = 'payload/extra.dll'; sha256 = 'd' * 64 }
@@ -66,7 +67,9 @@ $qtReview.payloadFiles = @($qtReview.payloadFiles[0])
 Set-SourceQtReview $qtReference $qtApp $qtReview $servicing ([pscustomobject]@{ qtVersion = '2' })
 Assert-Recipe ($qtReference.toolchain.qt -ceq '2' -and $qtReference.archives.Count -eq 7 -and
     $qtReference.noticeProvenance.Count -eq 2 -and $qtApp.supplementalNotices.Count -eq 2 -and
-    $qtApp.files.Count -eq 2 -and @($qtApp.files | Where-Object sha256 -CEQ ('b' * 64)).Count -eq 1 -and
+    $qtApp.files.Count -eq 3 -and @($qtApp.files | Where-Object sha256 -CEQ ('b' * 64)).Count -eq 1 -and
+    @($qtApp.files | Where-Object path -CEQ 'payload/licenses/supplemental/Qt-2/LICENSE').Count -eq 1 -and
+    @($qtApp.files | Where-Object path -CLike 'payload/licenses/supplemental/Qt-1/*').Count -eq 0 -and
     @($qtApp.files | Where-Object sha256 -CEQ ('c' * 64)).Count -eq 1) 'Qt review changed unrelated supplier or project rules'
 $script:cases++
 

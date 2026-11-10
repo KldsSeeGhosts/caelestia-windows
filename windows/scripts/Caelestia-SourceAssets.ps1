@@ -196,7 +196,17 @@ function Set-SourceQtReview($Reference, $Application, $Review, $Servicing, $Tool
     $Application.supplementalNotices = @($Application.supplementalNotices | Where-Object {
         $_.path -cnotlike 'Qt-*' -and $_.path -cnotin @('README.txt', 'NOTICE-PROVENANCE.md')
     }) + @($Review.supplementalNotices)
-    $Application.files = @($Application.files | Where-Object { $oldOwners[$_.path] -cne 'qt' -or $_.path -ceq 'payload/qt.conf' }) + @($Review.payloadFiles)
+    # Supplemental notices are packaged under payload/licenses/supplemental and
+    # owned per Qt module, so they need their own replacement; otherwise the
+    # payload coverage gate sees the new version's notice paths as unknown.
+    $supplementalPrefix = 'payload/licenses/supplemental/'
+    $replacedNotices = @($Review.supplementalNotices | ForEach-Object { $supplementalPrefix + $_.path })
+    $Application.files = @($Application.files | Where-Object {
+        ($oldOwners[$_.path] -cne 'qt' -or $_.path -ceq 'payload/qt.conf') -and
+        $_.path -cnotlike ($supplementalPrefix + 'Qt-*') -and $_.path -cnotin $replacedNotices
+    }) + @($Review.payloadFiles) + @($Review.supplementalNotices | ForEach-Object {
+        [pscustomobject]@{ path = $supplementalPrefix + $_.path; sha256 = $_.sha256 }
+    })
 }
 
 function Test-SourceXzArchive([string]$Path) {
