@@ -346,6 +346,17 @@ Windows wallpaper, but the shell's source of truth is the recorded pick, not
 the Windows setting. On a fresh install, change the wallpaper in Caelestia, not
 in Windows Settings.
 
+The `wallpaper` IPC target is available on Windows with upstream's functions:
+`get` returns the current path, `list` returns the scanned paths separated by
+newlines, and `set <path>` applies a pick through the launcher and Nexus path,
+including the fresh-profile pick record. The target is gated like those
+pickers, so it refuses while `CAELESTIA_COMBINED_LIVE` is not `1` or smoke mode
+is on.
+
+```powershell
+qs ipc call wallpaper set "D:\Wallpapers\space.jpg"
+```
+
 A profile upgrading from an older build behaves exactly as before this change.
 The shell follows the Windows wallpaper, including per-display images and
 changes made in Windows Settings. It does not consult or write the pick record.

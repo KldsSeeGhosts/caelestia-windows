@@ -259,7 +259,7 @@ try {
               'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
               'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
-              'Test-WallpaperPreview', 'Test-WindowsBackground',
+              'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowsBackground',
               'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }

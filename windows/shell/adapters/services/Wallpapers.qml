@@ -517,6 +517,28 @@ Singleton {
         return own && usableFile(own) ? own : externalWallpaperActive ? handbackWallpaper : visibleOwnSource();
     }
 
+    // Upstream services/Wallpapers.qml registers this target; the Windows
+    // adapter replaces that file, so it must keep the same IPC contract.
+    // set(path) goes through setWallpaper, the same path a launcher or Nexus
+    // pick uses, including the fresh-profile pick record and the control gate.
+    IpcHandler {
+        function get(): string {
+            return root.actualCurrent;
+        }
+
+        function set(path: string): void {
+            root.setWallpaper(path);
+        }
+
+        function list(): string {
+            // `files` is the adapter's scan, the counterpart of upstream's
+            // scanned `list`; the picker list also carries engine projects.
+            return root.files.map(w => w.path).join("\n");
+        }
+
+        target: "wallpaper"
+    }
+
     Connections {
         target: Quickshell
         function onScreensChanged(): void { root.refreshScreenFiles(); }
