@@ -63,6 +63,8 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
         '/windows/sources.lock.json'
     )
     $scopeName = 'shell'
+    $mainRulesetId = '26789538'
+    $tagRulesetId = '26790836'
 } elseif (Test-Path -LiteralPath $backendWorkflow -PathType Leaf) {
     $workflowPath = $backendWorkflow
     $policyPath = Join-Path $root 'REPOSITORY-POLICY.md'
@@ -81,6 +83,8 @@ if (Test-Path -LiteralPath $shellWorkflow -PathType Leaf) {
         '/shell.nix'
     )
     $scopeName = 'backend'
+    $mainRulesetId = '26789537'
+    $tagRulesetId = '26790837'
 } else {
     throw 'Policy check must run from a shell or backend repository root.'
 }
@@ -113,8 +117,11 @@ foreach ($jobName in $expectedJobs) {
     }
     Assert-Contains $policy ('`' + $jobName + '`') "policy doc omits workflow job label '$jobName'"
 }
-Assert-Contains $policy ('Required ' + $scopeName + ' gate: `' + $requiredGate + '`') 'the proposed required gate is missing'
-Assert-Contains $policyNormalized 'not claimed as active or verified' 'policy doc must not claim settings were applied'
+Assert-Contains $policy ('Required ' + $scopeName + ' gate: `' + $requiredGate + '`') 'the active required gate is missing'
+Assert-Contains $policyNormalized 'checked these settings against the GitHub API on 2026-11-08' 'the active-settings verification date is missing'
+Assert-Contains $policy $mainRulesetId "policy doc omits the main ruleset id $mainRulesetId"
+Assert-Contains $policy $tagRulesetId "policy doc omits the tag ruleset id $tagRulesetId"
+Assert-Contains $policyNormalized 'no creation rule' 'policy doc must record the missing tag-creation rule'
 if ($scopeName -eq 'shell') {
     Assert-Contains $policy 'documentation-only' 'the documentation-only classification path is not documented'
     Assert-Contains $workflow 'needs: [scope, sources]' 'unsigned assembly must start independently of validation'
@@ -171,4 +178,4 @@ if ($publicPolicyText -match '(?i)\bERM-[0-9]+\b|\bt3/|\b[A-Z]:[\\/]Users[\\/]')
 }
 
 Write-Output "PASS: $scopeName repository policy files match the checked-in workflow labels and safety requirements."
-Write-Output "PASS: required gate is '$requiredGate'; settings are documented as unverified."
+Write-Output "PASS: required gate is '$requiredGate'; active rulesets $mainRulesetId and $tagRulesetId are documented and verified."

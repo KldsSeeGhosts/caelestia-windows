@@ -7,7 +7,7 @@ body:
       value: |
         Do not report a security vulnerability here. See [SECURITY.md](https://github.com/KldsSeeGhosts/caelestia-windows/blob/main/SECURITY.md).
         A planned opt-in support bundle is [not available yet](https://github.com/KldsSeeGhosts/caelestia-windows/issues/8).
-        Do not attach a raw user profile or an unreviewed archive. Screenshots are not required.
+        Do not attach a raw user profile, an unreviewed archive, credentials, private notification or clipboard content, or unredacted personal paths. Screenshots are not required.
   - type: textarea
     id: release_build
     attributes:
@@ -50,5 +50,5 @@ body:
   - type: textarea
     id: diagnostics
     attributes:
-      label: Sanitized support data
-      description: Optional. Attach only selected, reviewed diagnostics with secrets, personal paths, account names, clipboard/notification content, and unrelated user data removed. A support bundle is not currently available; do not substitute a raw profile or full log archive.
+      label: Sanitized diagnostics
+      description: Attach only selected, reviewed diagnostics when available, with secrets, personal paths, account names, clipboard/notification content, and unrelated user data removed. A support bundle is not currently available; do not substitute a raw profile or full log archive.

@@ -97,11 +97,15 @@ links that do not resolve inside the repository or to a public URL.
 ## Branches, commits and the two repositories
 
 Branch topic work from `main`, the default branch, and open pull requests
-against it. Release tags identify the exact verified package source.
+against it. `main` requires a pull request and the `Windows validation` check,
+and it rejects force pushes and deletion. Release tags matching `v*` identify
+the exact verified package source and are immutable once created.
+[REPOSITORY-POLICY.md](windows/docs/REPOSITORY-POLICY.md) records the active
+rulesets, the required backend check and the admin recovery bypass.
 Use `windows: <description>` commit subjects for this port.
 Keep changes focused, follow nearby QML/C++/PowerShell style, and include
 behavior, validation, side effects and known gaps in the pull request.
-Do not force-push `main` or publish packages as part of routine development.
+Do not publish packages as part of routine development.
 The upstream Linux workflows were removed; add Windows CI rather than
 restoring them.
 
