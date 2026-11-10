@@ -158,6 +158,13 @@ class Analysis(unittest.TestCase):
         with self.assertRaises(ValueError):
             m.export_public(r)
 
+    def test_public_export_rejects_free_text_in_numeric_plant_field(self):
+        for value in ("secretmarker", True, -1, 101):
+            r = receipt()
+            r["spinMs"] = value
+            with self.assertRaises(ValueError):
+                m.export_public(r)
+
     def test_private_bytes_add_but_shared_working_set_does_not(self):
         rows = [dict(cpuMs=1, privateBytes=12, handles=2, gdi=3, user=4, workingSet=900)] * 2
         self.assertEqual(24, m.totals(rows)["privateBytes"])

@@ -150,6 +150,8 @@ def summarize(record):
 
 def export_public(record):
     """Build an allowlist. Never redact/copy arbitrary metadata or error text."""
+    if type(record.get("spinMs")) is not int or not 0 <= record["spinMs"] <= 100:
+        raise ValueError("Invalid plant size.")
     result = {"protocol": PROTOCOL, "scenario": record["scenario"],
               "cache": record["cache"], "presentation": "offscreen-software",
               "purpose": record["purpose"], "spinMsB": record["spinMs"],
@@ -554,7 +556,7 @@ def profile_events(path):
     for event in doc.findall(".//range"):
         index = event.get("eventIndex")
         duration = int(event.get("duration", "0"))
-        if duration > 0 and index in definitions:
+        if duration > 0 and event.get("startTime") is not None and index in definitions:
             item = costs.setdefault(index, {"count": 0, "durationNs": 0, "definition": definitions[index]})
             item["count"] += 1
             item["durationNs"] += duration
