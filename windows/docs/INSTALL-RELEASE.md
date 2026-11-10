@@ -322,6 +322,83 @@ artifact configuration are not a signing pipeline;
 [SIGNING-ROADMAP.md](SIGNING-ROADMAP.md) lists the pipeline work that must land
 before any signed stable release.
 
+## Package lifecycle regressions
+
+Run the ZIP test with 64-bit Windows PowerShell. It needs no developer build
+or Qt SDK. Use a reviewed release ZIP, not an arbitrary untrusted download.
+
+```powershell
+.\windows\scripts\Test-PackageLifecycle.ps1 `
+    -Package C:\downloads\caelestia-windows-VERSION-windows-x64.zip `
+    -OutputRoot "$env:TEMP\package-lifecycle-results"
+```
+
+The results directory must not exist. `results.json` records each case's
+outcome, exact ZIP SHA-256, manifest SHA-256 and bundled toolchain receipt.
+The test validates archive paths before extraction, then uses the checkout's
+data-only manifest verifier before executing any package script. Manifest
+integrity is not publisher authentication. Obtain the ZIP digest through
+trusted release metadata when qualifying a release.
+
+The test uses a unique disposable TEMP root for the extracted ZIP, installation
+prefix and profile. It redirects shortcuts and registry entries through
+`CAELESTIA_TEST_INTEGRATION_ROOT`, then removes only those test locations.
+It does not request autostart, start the shell, download optional Python
+dependencies, or stop a user's shell. Rollback calls the packaged
+`Switch-CaelestiaVersion` under the lifecycle lock without `-Restart`.
+The manager's `Rollback -Wait` command requests a restart and is unsuitable
+for this stopped test.
+
+Covered cases include complete manifest verification, unsafe paths, reparse
+points, changed/missing/extra files, missing/outdated runtime probe fixtures,
+clean install, profile pragma relocation, update, configuration preservation,
+stopped rollback, denied selector writes, failed process-stop injection,
+concurrent lifecycle locking, failed shortcut writes with prior selector and
+integration recovery, uninstall that preserves configuration, foreign-owner
+purge refusal, and exclusive-owner purge.
+
+Pass `-PreviousPackage <zip>` to use a separately verified historical ZIP.
+Both packages must support disposable integration redirection. Without it,
+the test installs the exact current payload and changes only its installed
+version metadata to `0.0.0` before updating. Every result identifies this
+synthesized older baseline. It is not historical binary compatibility evidence.
+`previous-package.txt` also describes the baseline.
+
+Failure injection lives only in the test's in-memory script blocks. The
+missing/outdated probes feed deterministic registration and DLL versions into
+the packaged runtime predicate. The denied-write case holds the selector open
+for reading without write/delete sharing. Process-stop failure replaces the
+packaged stop function with a throwing test function. It neither starts nor
+kills a real process, so actual Windows process termination remains separate
+acceptance. A second runspace holds the real lifecycle lock for contention.
+No production installer bypass or test switch is added.
+
+CI runs the test after ZIP assembly in the candidate job and retains
+`package-lifecycle-*` evidence. It adds no work to the required "Windows
+validation" job. Windows Server 2022 uses `-ServerTransactionFixture`, which
+removes only the Windows 11 build-floor check in memory and labels every
+result as a fixture. The real system runtime probe still runs for successful
+installs. This does not qualify Server as a supported installation platform.
+
+### Separate clean-environment acceptance
+
+Issue #16 remains subject to a real clean Windows 11 x64 VM or hosted-runner
+check. Start with a snapshot without Git, a compiler, Qt SDK, or VC++ x64
+runtime. Record OS version, PATH, ZIP digest, manifest digest and toolchain
+receipt. Use disposable prefix/profile paths and the test integration
+redirection. Run the unmodified packaged bootstrap and confirm that its real
+runtime probe refuses installation before creating either directory.
+Repeat from an image with a genuinely outdated VC++ runtime. Do not uninstall
+or downgrade the runtime on a contributor's workstation to manufacture this
+state.
+
+Install the supported Microsoft runtime in the disposable VM, then run this
+test without `-ServerTransactionFixture`. A release owner must separately
+verify actual shell launch/readiness and scoped process termination there.
+Record those results against the same ZIP digest. The offscreen transaction
+suite does not replace that check, live-desktop acceptance, or physical
+graphics and hardware qualification.
+
 ## Nexus bootstrap status
 
 Preview 2 has no updater. Source merges do not update it. The new client
