@@ -129,6 +129,12 @@ The M3Shapes gitlink and its manifest entry must likewise agree. Do not
 silently edit dependency checkouts or advance pins to uncommitted code.
 Keep upstream changes localized and explain why they are needed.
 
+Record each upstream review in
+[windows/docs/UPSTREAM-SYNC.md](windows/docs/UPSTREAM-SYNC.md). It lists the
+exact compared revisions and the classification of every commit since the last
+adopted baseline. Append a dated section for a new comparison instead of editing
+an earlier one.
+
 Before merging coordinated backend changes, test both immutable commits with
 [exact-pair integration](windows/ci/PAIR-INTEGRATION.md). Candidate mode uses a
 separate backend clone and records integration-only provenance, never a
