@@ -184,6 +184,9 @@ see [the shell entry](shell/README.md).
 
 ## Dependency maintenance
 
+See [Dependency inventory and advisories](docs/DEPENDENCIES.md) for inventory
+refresh, receipt-bound release SBOMs, advisory findings and expiring reviews.
+
 The current backend pin is recorded in [`sources.lock.json`](sources.lock.json) in
 the [Caelestia backend fork](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows).
 Blank weather location uses HTTPS IP geolocation (`ipapi.co`); set

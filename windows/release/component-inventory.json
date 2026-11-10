@@ -1,0 +1,1528 @@
+{
+  "schema": "caelestia-dependency-inventory",
+  "version": 1,
+  "inputs": {
+    "windows/capture/Cargo.lock": "bfaec55217a0bd82b5842d5243362da5cf4c4ea70b81a659161b93cf9cc5ea49",
+    "windows/capture/Cargo.toml": "bf530f11a081880ab01f5939545a3305b80b3262fb8600b0735e6f53dc1c06a1",
+    "windows/toolchain.json": "1b3e4e2d0210b8c92011d35156b54605a8514ea512f8726977e087c63becf0aa",
+    "windows/sources.lock.json": "a352dff3aea929be7dfa59aa32ccdb8ea6728027b8261b67b24eb3d5b252c3a9",
+    "windows/release/source-assets.json": "a12df42cbc44ab3959ddc7d571cae3a1f74ae401175495030c7f8ba54921787d",
+    "windows/release/qt-source-notices.json": "d8984d3933f119c601c94abf2c07c6322fe44df857e1777e00b0df5020300dd3",
+    "windows/release/vendor-privacy-review.json": "ef19c7759bb6a22816cdca88108e9af41ce5b31619a992061593e67f09036170",
+    "windows/release/version.json": "209d3b9a6845222b503a40097e995559e851408c8e6b2bcc22c40d519c655946",
+    "windows/ci/Prepare-Sccache.ps1": "93d8c1d4dc611d71ec57a0bdb663f6ad2818b6ce282b0a1d802702a7d9cad74e"
+  },
+  "limitations": "Cargo graph and conservative source modules are not proof of binary linkage. Optional components and external prerequisites are not installed payload.",
+  "components": [
+    {
+      "id": "action:actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25",
+      "version": "caa296126883cff596d87d8935842f9db880ef25",
+      "source": "https://github.com/actions/cache",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "action:actions/cache/save@caa296126883cff596d87d8935842f9db880ef25",
+      "version": "caa296126883cff596d87d8935842f9db880ef25",
+      "source": "https://github.com/actions/cache",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "action:actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10",
+      "version": "df4cb1c069e1874edd31b4311f1884172cec0e10",
+      "source": "https://github.com/actions/checkout",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "action:actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131",
+      "version": "37930b1c2abaa49bbe596cd826c3c89aef350131",
+      "source": "https://github.com/actions/download-artifact",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "action:actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+      "version": "249970729cb0ef3589644e2896645e5dc5ba9c38",
+      "source": "https://github.com/actions/setup-node",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "action:actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "version": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+      "source": "https://github.com/actions/setup-python",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "action:actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "version": "b7c566a772e6b6bfb58ed0dc250532a479d7789f",
+      "source": "https://github.com/actions/upload-artifact",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "aqt",
+      "version": "aqtinstall-076e1659807d0b362a3ed684d54c2e9c775eb9c7.zip",
+      "source": "https://github.com/miurahr/aqtinstall/archive/076e1659807d0b362a3ed684d54c2e9c775eb9c7.zip",
+      "license": "MIT",
+      "classification": "build-only",
+      "sourceSha256": "baf8dd80bf687d90c67022dd75646760b462198c1f7d6bcf289f231d2547829e"
+    },
+    {
+      "id": "backend",
+      "version": "53717a1dd8a458deb635f5f3b2f87b37e9cb87cd",
+      "source": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "capture",
+      "version": "0.1.0",
+      "source": "https://github.com/KldsSeeGhosts/caelestia-windows.git",
+      "license": "MIT",
+      "classification": "runtime payload",
+      "origin": "https://github.com/KldsSeeGhosts/glazier.git",
+      "originRevision": "37f795041cbbb32ed46cba103f3f000a3a99ac13"
+    },
+    {
+      "id": "cargo",
+      "version": "1.99.1",
+      "source": "https://www.rust-lang.org/",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only"
+    },
+    {
+      "id": "cargo-audit",
+      "version": "0.22.2",
+      "source": "https://crates.io/crates/cargo-audit/0.22.2",
+      "license": "Apache-2.0 OR MIT",
+      "classification": "build-only",
+      "sourceSha256": "700c2b240f7fd330c24b675fe429f73a5b676531fcc6300400b2b67f155ba12a"
+    },
+    {
+      "id": "cli11",
+      "version": "2.5.0",
+      "source": "https://github.com/CLIUtils/CLI11/archive/refs/tags/v2.5.0.zip",
+      "license": "BSD-3-Clause",
+      "classification": "runtime payload",
+      "sourceSha256": "887270cae374a0b9e22b39647f9fc4bc742587fb26d6a221da2d2bbcf3109b0b"
+    },
+    {
+      "id": "cmake",
+      "version": "4.4.4",
+      "source": "https://cmake.org/",
+      "license": "BSD-3-Clause",
+      "classification": "build-only"
+    },
+    {
+      "id": "crate-equivalent-1.0.3",
+      "version": "1.0.3",
+      "source": "https://static.crates.io/crates/equivalent/equivalent-1.0.3.crate",
+      "license": "Apache-2.0 OR MIT",
+      "classification": "runtime payload",
+      "sourceSha256": "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-hashbrown-0.17.1",
+      "version": "0.17.1",
+      "source": "https://static.crates.io/crates/hashbrown/hashbrown-0.17.1.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-indexmap-2.14.2",
+      "version": "2.14.2",
+      "source": "https://static.crates.io/crates/indexmap/indexmap-2.14.2.crate",
+      "license": "Apache-2.0 OR MIT",
+      "classification": "runtime payload",
+      "sourceSha256": "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855",
+      "dependencies": [
+        "equivalent",
+        "hashbrown"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-itoa-1.0.18",
+      "version": "1.0.18",
+      "source": "https://static.crates.io/crates/itoa/itoa-1.0.18.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-memchr-2.8.3",
+      "version": "2.8.3",
+      "source": "https://static.crates.io/crates/memchr/memchr-2.8.3.crate",
+      "license": "Unlicense OR MIT",
+      "classification": "runtime payload",
+      "sourceSha256": "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-proc-macro2-1.0.107",
+      "version": "1.0.107",
+      "source": "https://static.crates.io/crates/proc-macro2/proc-macro2-1.0.107.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+      "dependencies": [
+        "unicode-ident"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-quote-1.0.47",
+      "version": "1.0.47",
+      "source": "https://static.crates.io/crates/quote/quote-1.0.47.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+      "dependencies": [
+        "proc-macro2"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-serde-1.0.229",
+      "version": "1.0.229",
+      "source": "https://static.crates.io/crates/serde/serde-1.0.229.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+      "dependencies": [
+        "serde_core",
+        "serde_derive"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-serde_core-1.0.229",
+      "version": "1.0.229",
+      "source": "https://static.crates.io/crates/serde_core/serde_core-1.0.229.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+      "dependencies": [
+        "serde_derive"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-serde_derive-1.0.229",
+      "version": "1.0.229",
+      "source": "https://static.crates.io/crates/serde_derive/serde_derive-1.0.229.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn 3.0.9"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-serde_json-1.0.154",
+      "version": "1.0.154",
+      "source": "https://static.crates.io/crates/serde_json/serde_json-1.0.154.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6",
+      "dependencies": [
+        "itoa",
+        "memchr",
+        "serde",
+        "serde_core",
+        "zmij"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-serde_spanned-1.1.2",
+      "version": "1.1.2",
+      "source": "https://static.crates.io/crates/serde_spanned/serde_spanned-1.1.2.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c",
+      "dependencies": [
+        "serde_core"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-syn-2.0.119",
+      "version": "2.0.119",
+      "source": "https://static.crates.io/crates/syn/syn-2.0.119.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "unicode-ident"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-syn-3.0.9",
+      "version": "3.0.9",
+      "source": "https://static.crates.io/crates/syn/syn-3.0.9.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "unicode-ident"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-toml-1.1.8+spec-1.1.0",
+      "version": "1.1.8+spec-1.1.0",
+      "source": "https://static.crates.io/crates/toml/toml-1.1.8+spec-1.1.0.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d",
+      "dependencies": [
+        "indexmap",
+        "serde_core",
+        "serde_spanned",
+        "toml_datetime",
+        "toml_parser",
+        "toml_writer",
+        "winnow"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-toml_datetime-1.1.2+spec-1.1.0",
+      "version": "1.1.2+spec-1.1.0",
+      "source": "https://static.crates.io/crates/toml_datetime/toml_datetime-1.1.2+spec-1.1.0.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "2b86d767906c6c42421dcba507eb9d203e779497710a47782a224bb871653053",
+      "dependencies": [
+        "serde_core"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-toml_parser-1.1.5+spec-1.1.0",
+      "version": "1.1.5+spec-1.1.0",
+      "source": "https://static.crates.io/crates/toml_parser/toml_parser-1.1.5+spec-1.1.0.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c",
+      "dependencies": [
+        "winnow"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-toml_writer-1.1.3+spec-1.1.0",
+      "version": "1.1.3+spec-1.1.0",
+      "source": "https://static.crates.io/crates/toml_writer/toml_writer-1.1.3+spec-1.1.0.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-unicode-ident-1.0.27",
+      "version": "1.0.27",
+      "source": "https://static.crates.io/crates/unicode-ident/unicode-ident-1.0.27.crate",
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "classification": "build-only",
+      "sourceSha256": "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-0.62.2",
+      "version": "0.62.2",
+      "source": "https://static.crates.io/crates/windows/windows-0.62.2.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580",
+      "dependencies": [
+        "windows-collections",
+        "windows-core",
+        "windows-future",
+        "windows-numerics"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-collections-0.3.2",
+      "version": "0.3.2",
+      "source": "https://static.crates.io/crates/windows-collections/windows-collections-0.3.2.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610",
+      "dependencies": [
+        "windows-core"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-core-0.62.2",
+      "version": "0.62.2",
+      "source": "https://static.crates.io/crates/windows-core/windows-core-0.62.2.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "b8e83a14d34d0623b51dce9581199302a221863196a1dde71a7663a4c2be9deb",
+      "dependencies": [
+        "windows-implement",
+        "windows-interface",
+        "windows-link",
+        "windows-result",
+        "windows-strings"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-future-0.3.2",
+      "version": "0.3.2",
+      "source": "https://static.crates.io/crates/windows-future/windows-future-0.3.2.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb",
+      "dependencies": [
+        "windows-core",
+        "windows-link",
+        "windows-threading"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-implement-0.60.2",
+      "version": "0.60.2",
+      "source": "https://static.crates.io/crates/windows-implement/windows-implement-0.60.2.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn 2.0.119"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-interface-0.59.3",
+      "version": "0.59.3",
+      "source": "https://static.crates.io/crates/windows-interface/windows-interface-0.59.3.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358",
+      "dependencies": [
+        "proc-macro2",
+        "quote",
+        "syn 2.0.119"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-link-0.2.1",
+      "version": "0.2.1",
+      "source": "https://static.crates.io/crates/windows-link/windows-link-0.2.1.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-numerics-0.3.1",
+      "version": "0.3.1",
+      "source": "https://static.crates.io/crates/windows-numerics/windows-numerics-0.3.1.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26",
+      "dependencies": [
+        "windows-core",
+        "windows-link"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-result-0.4.1",
+      "version": "0.4.1",
+      "source": "https://static.crates.io/crates/windows-result/windows-result-0.4.1.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "7781fa89eaf60850ac3d2da7af8e5242a5ea78d1a11c49bf2910bb5a73853eb5",
+      "dependencies": [
+        "windows-link"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-strings-0.5.1",
+      "version": "0.5.1",
+      "source": "https://static.crates.io/crates/windows-strings/windows-strings-0.5.1.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091",
+      "dependencies": [
+        "windows-link"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-windows-threading-0.2.1",
+      "version": "0.2.1",
+      "source": "https://static.crates.io/crates/windows-threading/windows-threading-0.2.1.crate",
+      "license": "MIT OR Apache-2.0",
+      "classification": "runtime payload",
+      "sourceSha256": "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37",
+      "dependencies": [
+        "windows-link"
+      ],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-winnow-1.0.4",
+      "version": "1.0.4",
+      "source": "https://static.crates.io/crates/winnow/winnow-1.0.4.crate",
+      "license": "MIT",
+      "classification": "runtime payload",
+      "sourceSha256": "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "crate-zmij-1.0.23",
+      "version": "1.0.23",
+      "source": "https://static.crates.io/crates/zmij/zmij-1.0.23.crate",
+      "license": "MIT",
+      "classification": "runtime payload",
+      "sourceSha256": "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b",
+      "dependencies": [],
+      "applicability": "resolved Cargo graph, static binary linkage not inferred"
+    },
+    {
+      "id": "font-caskaydia-cove",
+      "version": "v3.4.0",
+      "source": "https://github.com/ryanoasis/nerd-fonts",
+      "license": "OFL-1.1",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "font-google-sans-flex",
+      "version": "4b1dae84b1b3b28bf486776ba30c1c1ec74fb64d",
+      "source": "https://github.com/caelestia-dots/shell",
+      "license": "OFL-1.1",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "font-material-symbols-rounded",
+      "version": "10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7",
+      "source": "https://github.com/google/material-design-icons",
+      "license": "Apache-2.0",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "font-nerd-font-symbols",
+      "version": "v3.4.0",
+      "source": "https://github.com/ryanoasis/nerd-fonts",
+      "license": "MIT",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "font-rubik",
+      "version": "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0",
+      "source": "https://github.com/google/fonts",
+      "license": "OFL-1.1",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "llvm",
+      "version": "20.1.8",
+      "source": "https://github.com/llvm/llvm-project/releases/download/llvmorg-20.1.8/clang+llvm-20.1.8-x86_64-pc-windows-msvc.tar.xz",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "classification": "build-only",
+      "sourceSha256": "f229769f11d6a6edc8ada599c0cda964b7dee6ab1a08c6cf9dd7f513e85b107f"
+    },
+    {
+      "id": "m3shapes",
+      "version": "32ad9ce328bb77ed349b40a3be10ee9ea610b8ab",
+      "source": "https://github.com/soramanew/m3shapes.git",
+      "license": "Apache-2.0",
+      "classification": "runtime payload"
+    },
+    {
+      "id": "materialyoucolor",
+      "version": "3.0.4",
+      "source": "https://github.com/T-Dynamos/materialyoucolor-python",
+      "license": "MIT",
+      "classification": "optional"
+    },
+    {
+      "id": "microsoft-vc-runtime",
+      "version": "14.44.35211.0",
+      "source": "https://aka.ms/vc14/vc_redist.x64.exe",
+      "license": "LicenseRef-Microsoft-Visual-Studio",
+      "classification": "optional"
+    },
+    {
+      "id": "msvc",
+      "version": "14.44.35207",
+      "source": "https://visualstudio.microsoft.com/",
+      "license": "LicenseRef-Microsoft-Visual-Studio",
+      "classification": "build-only"
+    },
+    {
+      "id": "ninja",
+      "version": "1.13.2.git.kitware.jobserver-pipe-1",
+      "source": "https://ninja-build.org/",
+      "license": "Apache-2.0",
+      "classification": "build-only"
+    },
+    {
+      "id": "node",
+      "version": "24",
+      "source": "https://nodejs.org/",
+      "license": "MIT",
+      "classification": "build-only"
+    },
+    {
+      "id": "pillow",
+      "version": "13.0.0",
+      "source": "https://github.com/python-pillow/Pillow",
+      "license": "HPND",
+      "classification": "optional"
+    },
+    {
+      "id": "python",
+      "version": "3.12",
+      "source": "https://www.python.org/",
+      "license": "PSF-2.0",
+      "classification": "optional"
+    },
+    {
+      "id": "qt",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "noticeReview": "windows/release/qt-source-notices.json"
+    },
+    {
+      "id": "qt-file:payload/Qt6Core.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Core.dll",
+      "payloadSha256": "3b088187284c91250fbb696b1779459ca1ab1ad14295e71ee9b12d71767c9501"
+    },
+    {
+      "id": "qt-file:payload/Qt6Gui.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Gui.dll",
+      "payloadSha256": "794f2cdf57333c0d44257ad383742b2d67ba9e986874d3ed8b12d04c543f96cf"
+    },
+    {
+      "id": "qt-file:payload/Qt6LabsFolderListModel.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6LabsFolderListModel.dll",
+      "payloadSha256": "c8e541e8ca49c7b2660c0efa4ce9302e7ccc8cd7e5dc8f2d6f5d2bd9f82941b7"
+    },
+    {
+      "id": "qt-file:payload/Qt6Network.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Network.dll",
+      "payloadSha256": "f56b7e4d228f937397ed0a3c19ed987dcdcc43398140c71a4f405d16f84d79c8"
+    },
+    {
+      "id": "qt-file:payload/Qt6OpenGL.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6OpenGL.dll",
+      "payloadSha256": "294020655e666791168672563f6c3e1012bbf42c9dcc7166ac96d53d5c8c10e3"
+    },
+    {
+      "id": "qt-file:payload/Qt6Qml.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Qml.dll",
+      "payloadSha256": "941ce91fcc85fd9de543b58b2988a414debcff22e83911f69c4edb26d1ece997"
+    },
+    {
+      "id": "qt-file:payload/Qt6QmlMeta.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QmlMeta.dll",
+      "payloadSha256": "ae52010d2b30bb35ef85a98ce6893c1d033c6ab70622b8252652bb8fccda5c93"
+    },
+    {
+      "id": "qt-file:payload/Qt6QmlModels.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QmlModels.dll",
+      "payloadSha256": "250b97b78cc25e00a4f48aa4545f07650d95c797f070b62d9e5144d608044699"
+    },
+    {
+      "id": "qt-file:payload/Qt6QmlWorkerScript.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QmlWorkerScript.dll",
+      "payloadSha256": "1360eb351da937a527d964907a06f293b56a254071d6fa94550ffff21f70d362"
+    },
+    {
+      "id": "qt-file:payload/Qt6Quick.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Quick.dll",
+      "payloadSha256": "df7d3e5cc18ee66e226955c4b1d2786046f23491683788c609d5b840f8a43d07"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2.dll",
+      "payloadSha256": "a1a83b9091bfb68557a48adee10588c61262cab307f8e409c7c346e8809bd9e6"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2Basic.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2Basic.dll",
+      "payloadSha256": "b7980a5752cb337f7b43d593b8d75008e6a81a7ba0f0d0a39666a08e793658eb"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2BasicStyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2BasicStyleImpl.dll",
+      "payloadSha256": "433088e4edbb49b1a28171208c4e47ab7efa07d5aadec37fc5e4a951e78600d6"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2FluentWinUI3StyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2FluentWinUI3StyleImpl.dll",
+      "payloadSha256": "57ce41e428e86fda22cf712184face83553a7248146e49e06ae81c48a426933d"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2Fusion.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2Fusion.dll",
+      "payloadSha256": "65a7bb26944ddf87cf6d2cf8265954732e21a1c01c6b0ce74f6f77a32daaf8bb"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2FusionStyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2FusionStyleImpl.dll",
+      "payloadSha256": "37deed2f30a8a27dc393207b7d11fcdabc456c32e7ee04dcd0df38337f90ad5e"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2Imagine.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2Imagine.dll",
+      "payloadSha256": "6fbf04a500c2638a3b9d26f87e05d36d4e233d4ae706ca4ad01865388cb199c0"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2ImagineStyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2ImagineStyleImpl.dll",
+      "payloadSha256": "8332505d7b740516a82fa2fe5b7289268cbfe802fb3c32e4dd4a4884ed79e4ed"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2Impl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2Impl.dll",
+      "payloadSha256": "35875c7ab561d9273e876bcf9869686ada7104ea5723ce07a5e0be8fed386fff"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2Material.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2Material.dll",
+      "payloadSha256": "b30b69932510f67fb2279eed01d88733db6806cd74f5954621cb990d63389387"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2MaterialStyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2MaterialStyleImpl.dll",
+      "payloadSha256": "67f945bf76703cf1791c2c9b7e4dff05abf465a247f916b78a0a86235dfc18bd"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2Universal.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2Universal.dll",
+      "payloadSha256": "3f31a00047becc573ddc6ab9f65c1771137e3d204d93653b12e0955d4cc293b2"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2UniversalStyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2UniversalStyleImpl.dll",
+      "payloadSha256": "2a8c1c2be066fddb7af73c7c119f9ca65cf1f35a3344a7f079bfa2e3b94f7a26"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickControls2WindowsStyleImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickControls2WindowsStyleImpl.dll",
+      "payloadSha256": "0ffb13c0800c817990bda3e36b1881a0ea908f29228bdee339da2ad07ee4d689"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickDialogs2.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickDialogs2.dll",
+      "payloadSha256": "a0b9b7eb55d364857bede19156570081844d330fa763b8c815ee41a1f2efbeeb"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickDialogs2QuickImpl.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickDialogs2QuickImpl.dll",
+      "payloadSha256": "e052cd8f7bd934a4cc535fcfa914e5523e4f0b60a1e714546f337cf376b6ea57"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickDialogs2Utils.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickDialogs2Utils.dll",
+      "payloadSha256": "718408c947fdf879912840dcd0c003a3b982a13838edb037141bfcb749c1a36f"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickEffects.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickEffects.dll",
+      "payloadSha256": "a76285e830a33ad4c46db964b1d9f30d3e0f6b42f2a75489c713dae1a1596291"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickLayouts.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickLayouts.dll",
+      "payloadSha256": "624991493d6f8642bdd9bcea486e2b47d87dfac96fc35880435068f4a3ddfa6c"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickShapes.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickShapes.dll",
+      "payloadSha256": "3f76673ab32390660b2cd9d014631a0bad6e3cda4e658d37b741143d94737c10"
+    },
+    {
+      "id": "qt-file:payload/Qt6QuickTemplates2.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6QuickTemplates2.dll",
+      "payloadSha256": "7fe6898aee4e44e749ef69bf3db253ce9f3d8dc0d91798cd41845382a2752693"
+    },
+    {
+      "id": "qt-file:payload/Qt6Svg.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Svg.dll",
+      "payloadSha256": "a52de2726685a955d70a07e865afa217fbea256fb815009102d0de04c40d5ec8"
+    },
+    {
+      "id": "qt-file:payload/Qt6Widgets.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/Qt6Widgets.dll",
+      "payloadSha256": "82a31d8770391bdef7ddb71e374d6ca3dfce4584c7b453595150ec0730c529ae"
+    },
+    {
+      "id": "qt-file:payload/plugins/generic/qtuiotouchplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/generic/qtuiotouchplugin.dll",
+      "payloadSha256": "0dccccd1dda8135d1ac1d7d9fcc5237565b4425e54f60b7653a36c3fbc882c6a"
+    },
+    {
+      "id": "qt-file:payload/plugins/iconengines/qsvgicon.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/iconengines/qsvgicon.dll",
+      "payloadSha256": "e9ee3a6308bb583bb2505762dda4c00dee8df736a83b0f53c03c6cd389148bad"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qgif.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qgif.dll",
+      "payloadSha256": "6241f2a17754a76ce01a4c22bb6a49e6d5f6d18c91e44fff6be8162524909756"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qicns.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qicns.dll",
+      "payloadSha256": "64e94c83adc14e744f91b3953ce6efe81747e0a46f5cb87df528df76db1b8814"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qico.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qico.dll",
+      "payloadSha256": "ef01b0150a5353c221c3e34a9d7265ca5c95ce18c28b2eace7a2506c96137d71"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qjpeg.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qjpeg.dll",
+      "payloadSha256": "7a5dadcdaa5770bce0a4d1670af67431df1a442c86df1a6555cadc5693a9212b"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qsvg.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qsvg.dll",
+      "payloadSha256": "0300c690d02874e4fe50e9d69b0114767434005ec0414cf98537c44b46c5d093"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qtga.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qtga.dll",
+      "payloadSha256": "6ec593cf60277aec8f2a239a105fd044da9c451e8a47fbf040f2f4124a5f8909"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qtiff.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qtiff.dll",
+      "payloadSha256": "1da94ba3740ef906557057cbdb7cd55dbb5cf50903ecc3bb6dea744efec4a985"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qwbmp.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qwbmp.dll",
+      "payloadSha256": "91d1e3248dbd57e483172d8363810cd054429b1cdba117323a7e9830578dd6b7"
+    },
+    {
+      "id": "qt-file:payload/plugins/imageformats/qwebp.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/imageformats/qwebp.dll",
+      "payloadSha256": "e474baa919a1c0d8e16128cc205034d673fa09b8e7fbc62b7de77980937772ec"
+    },
+    {
+      "id": "qt-file:payload/plugins/networkinformation/qnetworklistmanager.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/networkinformation/qnetworklistmanager.dll",
+      "payloadSha256": "52991edcea633cac7ff6baf2b19c9cd56972f5bba4bb5cfdcbf97951e619c383"
+    },
+    {
+      "id": "qt-file:payload/plugins/platforms/qwindows.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/platforms/qwindows.dll",
+      "payloadSha256": "d38af0768b261f5b7a64ff2e344ab7fb52409efb1f0044749d33303c52e84f9c"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_debugger.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_debugger.dll",
+      "payloadSha256": "fa7867b688b0af0b8433dd73af8791aba1f3d3672e9aa014d3f934056b31f435"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_inspector.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_inspector.dll",
+      "payloadSha256": "fd0501239d5e797afee917935f62fbbf5c991836a1a09fba9e6ecfd6c9d638dd"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_local.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_local.dll",
+      "payloadSha256": "c768563bfbe7208a07e1b4e4ee4a97e96ef8ffedf0dfe09c6c66f0eeec4da250"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_messages.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_messages.dll",
+      "payloadSha256": "ab03a81835e6c5771d786d98fd19636da8cb1d4c049f824af551e90bdb222518"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_native.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_native.dll",
+      "payloadSha256": "e223e032f3eb5e076d72a766dbfd4788c5e0b1a80357c90a58580e296dd904a4"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_nativedebugger.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_nativedebugger.dll",
+      "payloadSha256": "2043f68dd2f2ba2de11fd3e48d3fa46a2ca744f98642040f833080114e70c0af"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_preview.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_preview.dll",
+      "payloadSha256": "e2eb3bf9ea8b364ac7fea6bf2348dde74159b41893839a526e9260af9c494559"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_profiler.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_profiler.dll",
+      "payloadSha256": "3ac4d8bb0d9e481ea17c98514508051c5469a27529771898bb1ed8dffe93f4c8"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_quickeventreplay.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_quickeventreplay.dll",
+      "payloadSha256": "b510f0ee076735395d55e434c3c26e6c9b2586c38949797cdbda56b19a47bde1"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_quickprofiler.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_quickprofiler.dll",
+      "payloadSha256": "dd03c4dac401ee9767afeeb933fa74518549ef115854e62d07584b419924252c"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_server.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_server.dll",
+      "payloadSha256": "f9e14017c1af4496f1ff06a192ebc2801cb22870a31964015c6f8d31a8733fb8"
+    },
+    {
+      "id": "qt-file:payload/plugins/qmltooling/qmldbg_tcp.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/qmltooling/qmldbg_tcp.dll",
+      "payloadSha256": "0fa5fa3ec79b127d100ad55ce71d3598bf217a0e9abd87254f9ce17462cfcbed"
+    },
+    {
+      "id": "qt-file:payload/plugins/styles/qmodernwindowsstyle.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/styles/qmodernwindowsstyle.dll",
+      "payloadSha256": "1f10b9e2dd5ec9f71ad5fb9a1f9281d18f44d68a657229666221ec397b2b6f0a"
+    },
+    {
+      "id": "qt-file:payload/plugins/tls/qcertonlybackend.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/tls/qcertonlybackend.dll",
+      "payloadSha256": "a8cd98ee83364dddafb6abe45e2c8360660648cf9529446fe159627ce1603574"
+    },
+    {
+      "id": "qt-file:payload/plugins/tls/qschannelbackend.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/plugins/tls/qschannelbackend.dll",
+      "payloadSha256": "3c5dd934fbb5b3c02701c2df31119a69485c2552aadd6f0ddd64bb0193cb8d7c"
+    },
+    {
+      "id": "qt-file:payload/qml/Qt/labs/folderlistmodel/qmlfolderlistmodelplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/Qt/labs/folderlistmodel/qmlfolderlistmodelplugin.dll",
+      "payloadSha256": "009a57ddeb85b969194de9d1ebafa1ee230b7c97d1368b512f1b88a5ad24a486"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQml/Models/modelsplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQml/Models/modelsplugin.dll",
+      "payloadSha256": "e232a46e9a99f132649cb646f99a7a339cc36d39f1338f0523f09ffe15dfd486"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQml/WorkerScript/workerscriptplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQml/WorkerScript/workerscriptplugin.dll",
+      "payloadSha256": "d0aa7dbc5c9a92acbbd0520f430934c9396a7eb8950ab62c136f6d673adcfa96"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQml/qmlplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQml/qmlplugin.dll",
+      "payloadSha256": "7b1d191a5062da8e79d62d69499b749dc017b59b7904e8251ae99c1c60ac21f5"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll",
+      "payloadSha256": "9c27683489340ceb5d38d8fc9aac18155191eff30f27e2f77d16cff6c949e67f"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll",
+      "payloadSha256": "a564ecbb3b93328d2faab788bd2e0f3638584d43b86aa1feb9f8aeef7ec76e6d"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll",
+      "payloadSha256": "5ea29d53fe88f5ff131893d67660bf0822c0ce01f6e0d0e843194589820a74dd"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll",
+      "payloadSha256": "3e8ceab59260e55cfa10b5a15708f4e4724d0d25dd760742be3c00f5dee362d6"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll",
+      "payloadSha256": "4850085c72ddd478a988fbbdb589286a9958deb7d8183f2729f70b828de98e1f"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll",
+      "payloadSha256": "935473728ae8e62fca39f5f24a4262318dd587d905ba23abac24af067448ed6b"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll",
+      "payloadSha256": "1af62213c5fc4139a130b4f2e446db41c8fd1738681c7c686c1db3b0326f3500"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll",
+      "payloadSha256": "5e490ce41094961464ed0e9b89108182ce690442f6af4aa1ebe489ea321aebf5"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll",
+      "payloadSha256": "a996a6ad2d7b261b82a6506f5f26ddc8dbb2af4db7ae6dff403a4a3c6325641d"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll",
+      "payloadSha256": "59890d21a7e1d2b0455285aa54e698a6c6dd8e6a0316daf17e5fce897d1ad227"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll",
+      "payloadSha256": "0260fca63a846795e7ce614e69709f048fa13af8ca31d823472314f66b6604f4"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll",
+      "payloadSha256": "4298a5adc070773f854b37fc8e5af2de5658d7a79821d5f5b358ca95ff8834f2"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll",
+      "payloadSha256": "7743bfa08de1dda33a290f7f7022814e388e4f64a7bfba5e81b7e4aacc361cdb"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll",
+      "payloadSha256": "8418447ddfc48a77c427ba620db682900287cf9421212f969a1d40861c42fb89"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll",
+      "payloadSha256": "09c165dfb91328352307d06b8f9da1dcae9bdc3e66a07e8c238fb71bd56bda4a"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Controls/qtquickcontrols2plugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Controls/qtquickcontrols2plugin.dll",
+      "payloadSha256": "9e441f2677829036fc942465deb57fbeb63e85a0f49d1894e72f0cfb13f7530e"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Dialogs/qtquickdialogsplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Dialogs/qtquickdialogsplugin.dll",
+      "payloadSha256": "47d753b2ef4141b108cdab00e8a0b0f80e4a97df72a72896e9669f6b313d2780"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Dialogs/quickimpl/qtquickdialogs2quickimplplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Dialogs/quickimpl/qtquickdialogs2quickimplplugin.dll",
+      "payloadSha256": "62c924018ec7fa6086d2c39ce753bb6d00a823a799976049fb0ff30af5615173"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Effects/effectsplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Effects/effectsplugin.dll",
+      "payloadSha256": "75c8299b0f7af1c47601f90969b6eba1c09d98340361109798f49c9e3c5e2231"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Layouts/qquicklayoutsplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Layouts/qquicklayoutsplugin.dll",
+      "payloadSha256": "e0f8cf398eddb47f24cd7837ee704a4b68b2398cf35b169c855d534e1d8ff25b"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll",
+      "payloadSha256": "234bd99ea95f95238267c94178f2520954c5942249cc46336f768b681aa81dde"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Shapes/qmlshapesplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Shapes/qmlshapesplugin.dll",
+      "payloadSha256": "039672634ea872282849f5db3020f99bd2a2aa96b582412a2fe51ca767257b88"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Templates/qtquicktemplates2plugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Templates/qtquicktemplates2plugin.dll",
+      "payloadSha256": "f66ecddfa6b819930811f482bb08ee8dccbf8c8d791674cabec45b3ca07ed16e"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/Window/quickwindowplugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/Window/quickwindowplugin.dll",
+      "payloadSha256": "f89d4c86471b52fbc31b06dbef10639ddd6e92c1361e90f89d7155ac49b85b04"
+    },
+    {
+      "id": "qt-file:payload/qml/QtQuick/qtquick2plugin.dll",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/",
+      "license": "LGPL-3.0-only",
+      "classification": "runtime payload",
+      "payloadPath": "payload/qml/QtQuick/qtquick2plugin.dll",
+      "payloadSha256": "f68b7b353a812340fa530945cfc74757c177cd02e774f5b4e57d1985a3542726"
+    },
+    {
+      "id": "qt-qtbase",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtbase-everywhere-src-6.11.3.tar.xz",
+      "license": "(AFL-2.1 OR GPL-2.0-or-later) AND (Apache-2.0) AND (Apache-2.0 OR MIT) AND (BSD-2-Clause) AND (BSD-2-Clause AND Imlib2) AND (BSD-3-Clause) AND (BSD-4-Clause) AND (BSL-1.0) AND (Bitstream-Vera) AND (CC0-1.0) AND (CC0-1.0 OR Apache-2.0) AND (FTL OR GPL-2.0-only) AND (GPL-2.0-only) AND (GPL-2.0-only WITH Linux-syscall-note) AND (GPL-3.0-only) AND (HPND) AND (IJG AND BSD-3-Clause) AND (LGPL-2.1-or-later) AND (LGPL-3.0-only) AND (Libpng AND libpng-2.0) AND (LicenseRef-BSD-3-Clause-with-PCRE2-Binary-Like-Packages-Exception) AND (LicenseRef-ICC-License) AND (LicenseRef-Lcs-Telegraphics) AND (LicenseRef-SHA1-Public-Domain) AND (MIT) AND (MIT AND MIT-open-group) AND (MPL-2.0) AND (Unicode-3.0) AND (X11 AND HPND) AND (Zlib) AND (blessing)",
+      "classification": "runtime payload",
+      "sourceSha256": "46de0710b594945a5d446ae44354daa386141c6903c53781b2ca547bc62f8f8f",
+      "applicability": "conservative source module, not linkage evidence"
+    },
+    {
+      "id": "qt-qtdeclarative",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtdeclarative-everywhere-src-6.11.3.tar.xz",
+      "license": "(Apache-2.0) AND (BSD-2-Clause) AND (CC-BY-3.0) AND (GPL-2.0-only) AND (GPL-3.0-only) AND (LGPL-3.0-only) AND (MIT) AND (OFL-1.1)",
+      "classification": "runtime payload",
+      "sourceSha256": "6d6db328a02ae3bb0b1e6944aeef8dfe44cd6b55ab59b1708bbf0400f5759cb5",
+      "applicability": "conservative source module, not linkage evidence"
+    },
+    {
+      "id": "qt-qtimageformats",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtimageformats-everywhere-src-6.11.3.tar.xz",
+      "license": "(BSD-3-Clause) AND (GPL-2.0-only) AND (GPL-3.0-only) AND (LGPL-3.0-only) AND (libtiff)",
+      "classification": "runtime payload",
+      "sourceSha256": "2759929c7abbc5376120394d1ccac1abbb816bc2791b34ece6c1412d323e6213",
+      "applicability": "conservative source module, not linkage evidence"
+    },
+    {
+      "id": "qt-qtshadertools",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtshadertools-everywhere-src-6.11.3.tar.xz",
+      "license": "(Apache-2.0 AND LicenseRef-MIT-Khronos-old) AND (BSD-3-Clause AND LicenseRef-MIT-Khronos-old AND Apache-2.0 AND GPL-3.0-or-later WITH Bison-exception-2.2 AND AML-glslang) AND (GPL-2.0-only) AND (GPL-3.0-only) AND (LGPL-3.0-only)",
+      "classification": "build-only",
+      "sourceSha256": "d86079425ec71eecbb05f4d20623b0a403a7d21a5cfa7efb9734ea3d538d801b",
+      "applicability": "conservative source module, not linkage evidence"
+    },
+    {
+      "id": "qt-qtsvg",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtsvg-everywhere-src-6.11.3.tar.xz",
+      "license": "(GPL-2.0-only) AND (GPL-3.0-only) AND (HPND-sell-variant) AND (LGPL-3.0-only)",
+      "classification": "runtime payload",
+      "sourceSha256": "9bdf6fa4b5a2d91c3eaa2edd12263fdff0ae19d0ac25d3c99946cd4189a07123",
+      "applicability": "conservative source module, not linkage evidence"
+    },
+    {
+      "id": "qt-qttools",
+      "version": "6.11.3",
+      "source": "https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qttools-everywhere-src-6.11.3.tar.xz",
+      "license": "(Apache-2.0 AND MIT) AND (Apache-2.0 WITH LLVM-exception) AND (BSD-3-Clause) AND (BSL-1.0) AND (GPL-2.0-only) AND (GPL-3.0-only) AND (LGPL-3.0-only)",
+      "classification": "build-only",
+      "sourceSha256": "524ca79ee653fa36d4644ce66a5c0825930ee2550ff1d0987e703a66fd6c61ec",
+      "applicability": "conservative source module, not linkage evidence"
+    },
+    {
+      "id": "rust",
+      "version": "1.99.1",
+      "source": "https://www.rust-lang.org/",
+      "license": "MIT OR Apache-2.0",
+      "classification": "build-only"
+    },
+    {
+      "id": "sccache",
+      "version": "0.15.0",
+      "source": "https://github.com/mozilla/sccache/releases/tag/v0.15.0",
+      "license": "Apache-2.0",
+      "classification": "build-only",
+      "sourceSha256": "b0b257a164bf438b2dea134ca7ded41c100f59a64b3bf275a202f1e8102ab217"
+    },
+    {
+      "id": "schemeCli",
+      "version": "5e804b10c146c9f3278b2da37c8e4b5d8e9708d9",
+      "source": "https://github.com/caelestia-dots/cli.git",
+      "license": "GPL-3.0-only",
+      "classification": "optional"
+    },
+    {
+      "id": "shell",
+      "version": "0.2.0",
+      "source": "https://github.com/KldsSeeGhosts/caelestia-windows.git",
+      "license": "GPL-3.0-only",
+      "classification": "runtime payload",
+      "upstreamSource": "https://github.com/caelestia-dots/shell.git",
+      "upstreamRevision": "4b1dae84b1b3b28bf486776ba30c1c1ec74fb64d"
+    },
+    {
+      "id": "windows-sdk",
+      "version": "10.0.26100.0",
+      "source": "https://developer.microsoft.com/windows/downloads/windows-sdk/",
+      "license": "LicenseRef-Microsoft-Windows-SDK",
+      "classification": "build-only"
+    }
+  ]
+}

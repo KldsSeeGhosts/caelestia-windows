@@ -1,0 +1,10 @@
+# Controlled scanner fixture only, never a product dependency.
+# RUSTSEC-2022-0008 affects windows >=0.1.2,<0.32.0.
+# https://rustsec.org/advisories/RUSTSEC-2022-0008.html
+version = 4
+
+[[package]]
+name = "windows"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65e79514e0b0b1881e4b5261bc3a7c2dbfb9bbae3b3a93f261e82c96746859f5"
