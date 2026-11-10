@@ -38,6 +38,7 @@ $unitTests = @(
     @{ name = 'Test-RepositoryPolicy'; shard = 3; kind = 'script' }
     @{ name = 'javascript'; shard = 3; kind = 'node'; testCountPattern = '(?m)^# tests ([0-9]+)\s*$' }
     @{ name = 'quota-providers'; shard = 3; kind = 'python'; arguments = @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
+    @{ name = 'performance-method'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/bench/test_method.py', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
 )
 # One inventory for both the unsharded suite and hosted shards. Warm hosted
 # 42421527915/2 measured VersionedInstall at 139.45s and the remainder at
