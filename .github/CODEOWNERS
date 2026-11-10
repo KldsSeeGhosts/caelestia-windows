@@ -1,5 +1,5 @@
 # Current repository owner and maintainer account: @KldsSeeGhosts.
-# These entries route review; they do not activate branch protection.
+# These entries route review; the active ruleset requires no code-owner approval.
 
 /.github/CODEOWNERS @KldsSeeGhosts
 /.github/workflows/ @KldsSeeGhosts

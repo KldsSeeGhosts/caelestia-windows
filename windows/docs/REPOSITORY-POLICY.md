@@ -1,18 +1,17 @@
-# Repository ownership and protection plan
+# Repository ownership and protection
 
-This document records intended review and merge policy. It is not evidence that
-GitHub branch protection, repository rulesets, or tag protection have been
-configured. Branch protection and tag settings are not claimed as active or
-verified by this document.
+This document records ownership and the active branch and tag protection
+settings for both repositories. The maintainer checked these settings against
+the GitHub API on 2026-11-08. The ruleset IDs below are the evidence.
 
 ## Ownership
 
 The current maintainer account is
 [@KldsSeeGhosts](https://github.com/KldsSeeGhosts), the account used by this
-public repository. The repository currently has one named maintainer; no team
-or alternate owner is inferred. [`.github/CODEOWNERS`](../../.github/CODEOWNERS)
-routes review for these sensitive areas. A CODEOWNERS match does not itself
-require an approval.
+public repository. The repository has one named maintainer; no team or alternate
+owner is inferred. [`.github/CODEOWNERS`](../../.github/CODEOWNERS) routes
+review for these sensitive areas. A CODEOWNERS match does not itself require an
+approval.
 
 | Area | Paths | Owner |
 | --- | --- | --- |
@@ -26,14 +25,25 @@ The owner patterns are intentionally explicit for the sensitive paths above.
 Update them when an owned path moves. Do not add a fictional team or email
 alias.
 
-## Required-check plan
+## Active rulesets
 
-The following are the exact workflow and job labels in the checked-in source.
-They are source facts, not a readout of GitHub's current required-check
-settings. Use the exact contexts shown by the repository's required-check
-selector when settings access is available; do not guess or rename a context.
+| Repository | Ruleset | ID | Rules |
+| --- | --- | --- | --- |
+| `caelestia-windows` | `main: pull request and Windows validation` | 26789538 | Pull request with zero approvals, required check `Windows validation`, no force pushes, no deletion |
+| `caelestia-quickshell-windows` | `main: pull request and backend Windows gate` | 26789537 | Pull request with zero approvals, required check `Build all fixtures, run portable tier`, no force pushes, no deletion |
+| `caelestia-windows` | `release tags v*: immutable once created` | 26790836 | No update, no deletion, no non-fast-forward push |
+| `caelestia-quickshell-windows` | `release tags v*: immutable once created` | 26790837 | No update, no deletion, no non-fast-forward push |
 
-The shell workflow is `Windows build` and currently defines these job names:
+Both tag rulesets match `v*` tags. They have no creation rule. GitHub rejects an
+Actions bypass on personal-account repositories, and the development publisher
+must create tags. Tag creation therefore stays open to the maintainer release
+process.
+
+Secret scanning and push protection are on in both repositories.
+
+## Required checks
+
+The shell workflow is `Windows build` and defines these job names:
 
 - `Change scope` (immutable dispatch guards and native-change classifier)
 - `Fast regressions (${{ matrix.shard }}/3)` expands to
@@ -56,8 +66,8 @@ The shell workflow is `Windows build` and currently defines these job names:
 
 Required shell gate: `Windows validation`.
 
-For shell pull requests, the planned required gate is `Windows validation`.
-Scope, the three fast shards and both installer/colour shards start concurrently.
+For shell pull requests, the required gate is `Windows validation`. Scope, the
+three fast shards and both installer/colour shards start concurrently.
 Scope unlocks the applicable native jobs.
 The fixtures job owns first-party capture Rust regressions and their separate
 `capture-rust-*` artifact. A capture failure fails fixtures and the required
@@ -70,8 +80,8 @@ expects all three native jobs and reuse to be skipped. For eligible QML/JS/asset
 PRs, the aggregate requires successful verified reuse and all three native jobs
 skipped, or explicit fallback with successful full fixtures/build/pair gates.
 Reuse does not claim pair or release eligibility. All non-PR events build fully.
-Do not require a conditional native job
-by itself, because that would leave documentation-only changes pending.
+The ruleset requires only `Windows validation`, not a conditional native job,
+because that would leave documentation-only changes pending.
 
 The pinned backend workflow is `Windows fixtures`; its current job name is
 `Build all fixtures, run portable tier`.
@@ -85,28 +95,30 @@ The exact-SHA shell integration gate is separate work. Do not invent a check
 name for it or treat either repository's producer check as proof that an
 arbitrary shell/backend candidate pair was qualified.
 
-## Branch, tag, and recovery plan
+## Branch, tag, and recovery
 
-For each repository, the intended integration policy is:
+The active integration policy for each repository is:
 
-1. Merge ordinary changes through pull requests to `main`, with the repository's
-   required check passing. A failed, cancelled, or missing required check must
-   block an ordinary merge.
-2. Prevent force pushes to and deletion of `main`.
-3. Protect release tags matching `v*` from update and deletion; limit tag
-   creation to the maintainer/release process.
+1. Merge ordinary changes through a pull request to `main`. The required check
+   must pass. A failed, cancelled, or missing required check must block an
+   ordinary merge. The ruleset requires zero approvals.
+2. Do not force-push `main` or delete it. The ruleset refuses both.
+3. Do not update or delete a release tag matching `v*`. The ruleset refuses
+   update, deletion and non-fast-forward. Tag creation has no rule, as
+   described above.
 4. Do not require two reviewers for a solo-maintainer repository. The named
    owner remains responsible for review and merge.
 
-The only planned bypass actor is `@KldsSeeGhosts`, for a genuine recovery from a
-broken rule or an urgent incident. Do not grant bypass to a team, application,
-or general contributor set. Record the reason in a pull request or issue and
-run the normal checks afterward where possible. Bypass is an exception path,
-not the routine merge route.
+The repository admin role is the only bypass actor. On `main`, the bypass works
+only through a pull request. On tags, the bypass is always available. Use it
+only for a genuine recovery from a broken rule or an urgent incident. Do not
+grant bypass to a team, application, or general contributor set. Record the
+reason in a pull request or issue and run the normal checks afterward where
+possible. Bypass is an exception path, not the routine merge route. The
+administrator is [@KldsSeeGhosts](https://github.com/KldsSeeGhosts).
 
-These settings must be checked against current repository state before
-configuration. This document does not claim that any rule or bypass has been
-applied.
+Recheck these settings against current repository state before changing any rule
+or bypass. Record the new evidence here.
 
 ## Reporting and bug reports
 
