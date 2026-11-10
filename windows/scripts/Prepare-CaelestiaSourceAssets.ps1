@@ -160,7 +160,7 @@ try {
         Export-SourceGitMembers $SourceRoot $SourceRevision @($recipe.qtServicing.reviewPath) $reviewRoot $scratch
         $reviewPath = Join-Path $reviewRoot $recipe.qtServicing.reviewPath
         if ((Get-SourceRecipeHash $reviewPath) -cne $recipe.qtServicing.reviewSha256) { throw 'Qt review data checksum differs.' }
-        $qtReview = Get-Content -LiteralPath $reviewPath -Raw | ConvertFrom-Json
+        $qtReview = Get-Content -LiteralPath $reviewPath -Raw -Encoding UTF8 | ConvertFrom-Json
         Set-SourceQtReview $reference $referenceApp $qtReview $recipe.qtServicing $toolchain
     }
     Assert-SourceToolchain $toolchain $reference.toolchain
@@ -223,7 +223,9 @@ try {
         Assert-SourceRelativePath $notice.path
         $entry = $null
         $lookupPath = $notice.path
-        if ($lookupPath -match 'sqlite3\.[ch]\.LICENSE\.txt$') { $lookupPath = $lookupPath -replace '\.LICENSE\.txt$', '' }
+        if (-not $provenanceByPath.ContainsKey($lookupPath) -and $lookupPath -match 'sqlite3\.[ch]\.LICENSE\.txt$') {
+            $lookupPath = $lookupPath -replace '\.LICENSE\.txt$', ''
+        }
         if ($provenanceByPath.ContainsKey($lookupPath)) { $entry = $provenanceByPath[$lookupPath] }
         if (-not $entry -and $notice.path -notin @('NOTICE-PROVENANCE.md', 'README.txt')) { throw "Notice lacks source provenance: $($notice.path)" }
         $target = Join-Path $noticeRoot $notice.path

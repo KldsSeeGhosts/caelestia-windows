@@ -71,6 +71,19 @@ Assert-Recipe ($qtReference.toolchain.qt -ceq '2' -and $qtReference.archives.Cou
 $script:cases++
 
 $file = Join-Path $OutputDirectory 'fixture.txt'
+$recipeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$currentRecipe = Get-Content -LiteralPath (Join-Path $recipeRoot 'windows/release/source-assets.json') -Raw | ConvertFrom-Json
+$reviewPath = Join-Path $recipeRoot $currentRecipe.qtServicing.reviewPath
+Assert-Recipe ((Get-SourceRecipeHash $reviewPath) -ceq $currentRecipe.qtServicing.reviewSha256) 'Qt review checksum differs'
+$reviewData = Get-Content -LiteralPath $reviewPath -Raw -Encoding UTF8 | ConvertFrom-Json
+Assert-Recipe ($reviewData.qtVersion -ceq $currentRecipe.qtServicing.version -and
+    @($reviewData.archives).Count -eq 6 -and @($reviewData.noticeProvenance).Count -eq 508) 'Incomplete Qt source review'
+foreach ($notice in $reviewData.supplementalNotices | Where-Object { $_.PSObject.Properties['text'] }) {
+    [IO.File]::WriteAllText($file, [string]$notice.text, [Text.UTF8Encoding]::new($false))
+    Assert-SourceHash $file $notice.sha256
+    $script:assertions++
+}
+$script:cases++
 [IO.File]::WriteAllText($file, 'fixture', [Text.UTF8Encoding]::new($false))
 $hash = Get-SourceHash $file
 Assert-SourceHash $file $hash
