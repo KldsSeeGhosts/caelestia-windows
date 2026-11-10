@@ -18,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 # toolchain-modules at 91s and 34s, and all remaining checks together at about
 # 139s. Keep this order for unsharded runs.
 $unitTests = @(
+    @{ name = 'dependencies'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/TestDependencies.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
     @{ name = 'Test-PublicDocs'; shard = 3; kind = 'script' }
     @{ name = 'public-release-metadata'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/TestPublicReleaseMetadata.py') }
     @{ name = 'Test-Toolchain'; shard = 3; kind = 'script' }

@@ -1,0 +1,28 @@
+{
+  "schema": "caelestia-advisory-exceptions",
+  "version": 1,
+  "exceptions": [
+    {
+      "id": "CVE-2026-95620",
+      "component": "qt",
+      "reviewedVersion": "6.11.3",
+      "applicability": "patched",
+      "patchedVersions": ["6.11.3"],
+      "owner": "KldsSeeGhosts",
+      "revisitDate": "2027-02-10",
+      "source": "https://www.qt.io/blog/security-advisory-cve-2026-95620",
+      "reason": "Reviewed in windows/docs/QT-6.11.3-QUALIFICATION.md. Qt Network ships and Requests uses QNetworkAccessManager. The advisory identifies 6.11.3 as fixed. HTTP/2 negotiation and exploit reachability were not established."
+    },
+    {
+      "id": "CVE-2026-96432",
+      "component": "qt",
+      "reviewedVersion": "6.11.3",
+      "applicability": "patched",
+      "patchedVersions": ["6.11.3"],
+      "owner": "KldsSeeGhosts",
+      "revisitDate": "2027-02-10",
+      "source": "https://www.qt.io/blog/security-advisory-cve-2026-96432",
+      "reason": "Reviewed in windows/docs/QT-6.11.3-QUALIFICATION.md. Qt Network ships, including the networking used by QML XMLHttpRequest. The advisory identifies 6.11.3 as fixed. This is a servicing review, not proof of application exploitability."
+    }
+  ]
+}

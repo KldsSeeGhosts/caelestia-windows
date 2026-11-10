@@ -1,0 +1,65 @@
+name: Dependency advisories
+
+on:
+  schedule:
+    - cron: '23 9 * * 1'
+  pull_request:
+    paths:
+      - 'windows/capture/Cargo.*'
+      - 'windows/release/**'
+      - 'windows/toolchain.json'
+      - 'windows/sources.lock.json'
+      - 'windows/tests/fixtures/dependencies/**'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'windows/capture/Cargo.*'
+      - 'windows/release/**'
+      - 'windows/toolchain.json'
+      - 'windows/sources.lock.json'
+      - 'windows/tests/fixtures/dependencies/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      # No cache saves, secrets or write token. The crate and its Cargo.lock
+      # pin the scanner source and dependencies, independently of the target lock.
+      - name: Install checksum-verified cargo-audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 https://static.crates.io/crates/cargo-audit/cargo-audit-0.22.2.crate -o "$RUNNER_TEMP/cargo-audit.crate"
+          echo "700c2b240f7fd330c24b675fe429f73a5b676531fcc6300400b2b67f155ba12a  $RUNNER_TEMP/cargo-audit.crate" | sha256sum --check --strict
+          mkdir "$RUNNER_TEMP/cargo-audit-source"
+          tar -xzf "$RUNNER_TEMP/cargo-audit.crate" -C "$RUNNER_TEMP/cargo-audit-source"
+          cargo install --locked --path "$RUNNER_TEMP/cargo-audit-source/cargo-audit-0.22.2" --root "$RUNNER_TEMP/audit"
+      - name: Check inventory and reviewed Qt applicability
+        run: python -I -B windows/release/dependencies.py inventory --check
+      - name: Prove scanner detects the controlled vulnerable lock
+        run: python -I -B windows/release/dependencies.py scanner-fixture --cargo-audit "$RUNNER_TEMP/audit/bin/cargo-audit" --output "$RUNNER_TEMP/scanner-fixture.json"
+      - name: Audit capture resolved graph and apply expiring reviews
+        run: python -I -B windows/release/dependencies.py audit --cargo-audit "$RUNNER_TEMP/audit/bin/cargo-audit" --output "$RUNNER_TEMP/cargo-audit.json"
+      - name: Retain advisory results
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: dependency-advisories-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cargo-audit.json
+            ${{ runner.temp }}/scanner-fixture.json
+          if-no-files-found: warn
+          retention-days: 14
