@@ -394,6 +394,7 @@
   "windows/shell/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
   "windows/shell/adapters/utils/Paths.qml": "utils/Paths.qml",
   "windows/shell/adapters/utils/FileUrls.js": "utils/FileUrls.js",
+  "windows/shell/adapters/utils/RecordingDate.js": "utils/RecordingDate.js",
   "windows/shell/adapters/utils/SysInfo.qml": "utils/SysInfo.qml",
   "windows/shell/Screens.qml": "services/Screens.qml",
   "windows/shell/shell.qml": "shell.qml",

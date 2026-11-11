@@ -295,10 +295,14 @@ Singleton {
     }
 
     function send(command): void {
-        if (!permitted || !available || commandProcess.running)
+        if (!permitted || !available)
             return;
-        commandProcess.command = [executable].concat(Array.isArray(command) ? command : [command]);
-        commandProcess.running = true;
+        // Every control command uses the same shell-owned host path as Start:
+        // after the user quits the tray host, Stop/Pause/Resume can cold-start
+        // it, and that host must keep --no-hotkeys and the theme options.
+        const args = Glazier.hostOptions().concat(Array.isArray(command) ? command : [command]);
+        if (!Glazier.sendHostCommand(args, executable))
+            lastError = "Capture host is not ready. Try again.";
     }
 
     function stop(): void {
@@ -341,18 +345,13 @@ Singleton {
     Component.onCompleted: probe()
 
     function poll(): void {
-        if (permitted && executable && !statusProcess.running && !commandProcess.running)
+        if (permitted && executable && !statusProcess.running)
             statusProcess.running = true;
     }
 
     Process {
         id: statusProcess
         command: [root.executable, "--status"]
-        stdout: StdioCollector { onStreamFinished: root.applyResponse(text) }
-    }
-
-    Process {
-        id: commandProcess
         stdout: StdioCollector { onStreamFinished: root.applyResponse(text) }
     }
 
@@ -378,10 +377,9 @@ Singleton {
 
     Timer {
         interval: 16000
-        running: statusProcess.running || commandProcess.running
+        running: statusProcess.running
         onTriggered: {
             statusProcess.running = false;
-            commandProcess.running = false;
             root.disconnected("Caelestia capture control timed out.");
         }
     }

@@ -27,8 +27,8 @@ $qtVersion = $null
 $qmlRunnerHash = $null
 $dependencies = @{}
 $expectedCases = @('apps-same-id-refresh', 'app-file-adapter-write-failure-recovery',
-    'notification-facade-read-failure-races', 'notification-wrapper-ownership-revocation',
-    'clipboard-loader-delayed-results')
+    'notification-dnd-persistence', 'notification-facade-read-failure-races',
+    'notification-wrapper-ownership-revocation', 'clipboard-loader-delayed-results')
 $nativeOnly = @(
     @{ name = 'Windows-app-catalog-and-launch'; reason = 'Synthetic catalog only; no AppsFolder, COM, process launch or observed window outcome.' },
     @{ name = 'Windows-notification-consent-and-bus'; reason = 'Synthetic NotificationServer only; no WinRT prompt, real mutex, system toast or banner helper.' },
@@ -149,7 +149,7 @@ function Invoke-StagedQml([hashtable]$Mutation) {
                 -and $actual.text.Contains("CAELESTIA_STAGED_MODELS_FAIL Error: $($Mutation.failure)") -and -not $match.Success
         } else {
             $passed = -not $actual.timedOut -and $actual.exitCode -eq 0 -and $diagnostics.Count -eq 0 -and $null -ne $payload `
-                -and $payload.assertions -eq 36 -and $payload.cases.Count -eq $expectedCases.Count `
+                -and $payload.assertions -eq 39 -and $payload.cases.Count -eq $expectedCases.Count `
                 -and @(Compare-Object $expectedCases $payload.cases).Count -eq 0 `
                 -and $actual.text -notmatch 'CAELESTIA_STAGED_MODELS_FAIL'
         }
