@@ -35,6 +35,7 @@ foreach ($var in @('ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ASAR')) {
 }
 $arguments = '-NoProfile -Sta -File "' + $watcher + '" -LaunchSpec "' + $specPath + '"'
 $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+    -WorkingDirectory $StartInfo.WorkingDirectory `
     -RedirectStandardOutput (Join-Path $StateDirectory 'watchdog.stdout.log') `
     -RedirectStandardError (Join-Path $StateDirectory 'watchdog.stderr.log')
 $null = $process.Handle

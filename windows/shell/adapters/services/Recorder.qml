@@ -256,7 +256,7 @@ Singleton {
         lastFile = "";
         pendingStart = true;
         // Native launch inherits no shell handles or console, and uses the
-        // executable's folder rather than holding the install prefix as cwd.
+        // user's profile directory rather than an updatable payload as cwd.
         startTimeout.restart();
         return true;
     }

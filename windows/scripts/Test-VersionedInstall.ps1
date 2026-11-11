@@ -165,7 +165,8 @@ using System.IO;
 public static class SchemeProvisioningFixture {
     public static int Main(string[] args) {
         string command = args.Length > 0 ? args[args.Length - 1] : "";
-        string ready = Path.Combine(Environment.CurrentDirectory, "shell-ready.txt");
+        string payload = Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+        string ready = Path.Combine(payload, "shell-ready.txt");
         if (command == "state") {
             // A real shell answers only after it has rendered. The provisioner
             // must delay this marker, not the IPC probe itself.
@@ -180,8 +181,9 @@ public static class SchemeProvisioningFixture {
             return 0;
         }
         if (command == "restart" || command == "settings") return 0;
-        File.AppendAllText(Path.Combine(Environment.CurrentDirectory, "shell-started.txt"), "started\n");
-        File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "shell-scheme.txt"),
+        File.WriteAllText(Path.Combine(payload, "shell-cwd.txt"), Environment.CurrentDirectory);
+        File.AppendAllText(Path.Combine(payload, "shell-started.txt"), "started\n");
+        File.WriteAllText(Path.Combine(payload, "shell-scheme.txt"),
             (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_PYTHON") ?? "") + "\n" +
             (Environment.GetEnvironmentVariable("CAELESTIA_SCHEME_HELPER") ?? "") + "\n" +
             (Environment.GetEnvironmentVariable("CAELESTIA_WE_PYTHON") ?? ""));
@@ -383,10 +385,19 @@ if (-not $SkipSchemeRuntime) {
     }
     @'
 param($StartInfo, $StateDirectory, $ConfigPath, $StdoutPath, $StderrPath)
-$process = [Diagnostics.Process]::Start($StartInfo)
-$null = $process.WaitForExit(5000)
-[pscustomobject]@{ Watchdog = $process; StatusPath = (Join-Path $StateDirectory 'watchdog.json') }
+# Exercise the production launch.json writer without a desktop supervisor.
+# Only the process boundary is replaced, and only the disposable qs runs.
+function Start-Process {
+    param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru, $WorkingDirectory, $RedirectStandardOutput, $RedirectStandardError)
+    if ($WorkingDirectory -ne $StartInfo.WorkingDirectory) { throw 'Watchdog cwd differs from the shell cwd.' }
+    '{"phase":"running"}' | Set-Content -LiteralPath (Join-Path $StateDirectory 'watchdog.json') -Encoding UTF8
+    $process = [Diagnostics.Process]::Start($StartInfo)
+    $null = $process.WaitForExit(5000)
+    return $process
+}
+& (Join-Path $PSScriptRoot 'Fixture-StartDesktopShell.ps1') @PSBoundParameters
 '@ | Set-Content -LiteralPath (Join-Path $path 'Start-DesktopShell.ps1') -Encoding UTF8
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -Destination (Join-Path $path 'Fixture-StartDesktopShell.ps1')
     @'
 [CmdletBinding()]
 param([string]$ProfileRoot, [int]$LockWaitSeconds = 0)
@@ -562,6 +573,33 @@ try {
     Assert ((Get-ChildItem (Join-Path $prefix 'versions') -Directory).Count -eq 2) 'Retention did not keep exactly current and previous.'
     Assert (Test-Path -LiteralPath $a) 'Retention removed the active payload.'
     Assert (Test-Path -LiteralPath $b) 'Retention removed the previous payload.'
+    $emptyRetired = Join-Path $prefix 'versions\empty-retired'
+    $unownedRetired = Join-Path $prefix 'versions\unowned-retired'
+    $heldRetired = Join-Path $prefix 'versions\held-retired'
+    foreach ($path in @($emptyRetired, $unownedRetired, $heldRetired)) {
+        [IO.Directory]::CreateDirectory($path) | Out-Null
+    }
+    $unownedFile = Join-Path $unownedRetired 'user.txt'
+    [IO.File]::WriteAllText($unownedFile, 'unowned data')
+    $holder = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+        -WorkingDirectory $heldRetired -WindowStyle Hidden -PassThru
+    try {
+        $retiredWarnings = @(Remove-CaelestiaRetiredVersions $prefix 3>&1)
+        Assert (-not (Test-Path -LiteralPath $emptyRetired)) 'An empty, unowned valid-id retired directory was not removed.'
+        Assert ((Get-Content -LiteralPath $unownedFile -Raw) -ceq 'unowned data') 'Cleanup changed an unowned non-empty directory.'
+        Assert ((Test-Path -LiteralPath $heldRetired) -and @(Get-ChildItem -LiteralPath $heldRetired -Force).Count -eq 0) 'Cleanup did not retain the empty directory held as a process cwd.'
+        Assert (@($retiredWarnings | Where-Object { "$_" -ceq 'Kept a retired version; cleanup could not safely complete.' }).Count -eq 2) 'Cleanup did not warn for both the unowned payload and held cwd.'
+    } finally {
+        if (-not $holder.HasExited) { $holder.Kill() }
+        $holder.WaitForExit()
+        $holder.Dispose()
+    }
+    $null = @(Remove-CaelestiaRetiredVersions $prefix 3>&1)
+    Assert (-not (Test-Path -LiteralPath $heldRetired)) 'Cleanup did not retry the empty retired directory after its cwd was released.'
+    Assert (Test-Path -LiteralPath $unownedFile) 'A later cleanup removed unowned data.'
+    # Only these fixture paths are removed. Restore the two-version baseline.
+    Remove-Item -LiteralPath $unownedRetired -Recurse -Force
+    Write-Output 'PASS retired cleanup: empty valid-id directories retry after cwd release; non-empty unowned directories remain untouched.'
     $linkedRoot = Join-Path $root 'linked-app'
     $outside = Join-Path $root 'link-target'
     [IO.Directory]::CreateDirectory($linkedRoot) | Out-Null
@@ -1541,6 +1579,14 @@ if ('__BEHAVIOUR__' -eq 'throw') { throw 'Injected quit or desktop restore failu
         Assert ($record.current -eq (Split-Path -Leaf $bRuntime)) 'A cold slow provisioner rolled back the activation.'
         Assert ($elapsed -lt 15) "Activation waited $([Math]::Round($elapsed, 1)) s for the provisioner."
         Assert (Test-Path -LiteralPath (Join-Path $bRuntime 'shell-started.txt') -PathType Leaf) 'The shell did not start on the fixed palette.'
+        $specs = @(Get-ChildItem -LiteralPath (Join-Path $schemeProfile 'runtime') -Filter launch.json -Recurse |
+            ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } |
+            Where-Object { Test-CaelestiaSamePath $_.Executable (Join-Path $bRuntime 'qs.exe') })
+        Assert ($specs.Count -eq 1) 'Activation did not generate exactly one launch spec for the new payload.'
+        Assert (Test-CaelestiaSamePath $specs[0].WorkingDirectory $env:USERPROFILE) 'The generated launch spec does not use USERPROFILE as cwd.'
+        Assert (-not $specs[0].WorkingDirectory.StartsWith((Join-Path $schemePrefix 'versions') + '\', [StringComparison]::OrdinalIgnoreCase)) 'The launch spec pins a version directory.'
+        Assert (Test-CaelestiaSamePath (Get-Content -LiteralPath (Join-Path $bRuntime 'shell-cwd.txt') -Raw) $env:USERPROFILE) 'The shell did not actually inherit USERPROFILE as cwd.'
+        Write-Output 'PASS launch cwd: generated launch.json, watchdog and shell use USERPROFILE outside the version tree.'
         Assert (-not (Test-Path -LiteralPath (Join-Path $bRuntime 'scheme-provision-called.txt'))) 'Activation ran the slow provisioner.'
         $applied = Get-Content -LiteralPath (Join-Path $bRuntime 'shell-scheme.txt') -Raw
         Assert (-not $applied.Trim()) 'A cold profile passed scheme runtime paths to the shell.'

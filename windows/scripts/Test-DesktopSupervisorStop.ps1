@@ -100,21 +100,22 @@ public static class SupervisorStopFixture {
             }
             return 0;
         }
-        string mode = File.ReadAllText("mode.txt");
+        string prefix = Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+        string mode = File.ReadAllText(Path.Combine(prefix, "mode.txt"));
         if (args[0] == "--child") {
-            File.AppendAllText("child-starts.txt", "start\n");
+            File.AppendAllText(Path.Combine(prefix, "child-starts.txt"), "start\n");
             if (mode == "crash") return 7;
             while (true) {
-                if (mode == "normal" && File.Exists("quit-called.txt")) {
+                if (mode == "normal" && File.Exists(Path.Combine(prefix, "quit-called.txt"))) {
                     Thread.Sleep(700);
-                    File.WriteAllText("normal-exit.txt", "clean");
+                    File.WriteAllText(Path.Combine(prefix, "normal-exit.txt"), "clean");
                     return 0;
                 }
                 Thread.Sleep(25);
             }
         }
         if (args[args.Length - 1] != "quit") return 9;
-        File.WriteAllText("quit-called.txt", "accepted");
+        File.WriteAllText(Path.Combine(prefix, "quit-called.txt"), "accepted");
         return mode == "ipc-failure" ? 3 : 0;
     }
 }
@@ -128,6 +129,13 @@ public static class SupervisorStopFixture {
         [IO.Directory]::CreateDirectory($state) | Out-Null
         Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
         [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
+        # A disposable recovery helper proves lookup follows the executable,
+        # not cwd. It does not load the real banner or desktop implementation.
+        @'
+param($StateDirectory, $Command)
+[IO.File]::WriteAllText((Join-Path $StateDirectory 'banner-recovered.txt'), [Environment]::CurrentDirectory)
+'@ | Set-Content -LiteralPath (Join-Path $prefix 'Banner-Suppression.ps1') -Encoding UTF8
+        '{}' | Set-Content -LiteralPath (Join-Path $state 'banner-suppression.json') -Encoding UTF8
         @{ product = 'caelestia-windows'; version = 1; prefix = $prefix; profile = $profile } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $prefix 'install.json') -Encoding UTF8
         $bystander = Start-FixtureProcess $fake '--bystander' $case (Join-Path $case 'bystander')
@@ -135,8 +143,8 @@ public static class SupervisorStopFixture {
         Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-ready') } 'Hidden restore witness did not start.'
         $spec = Join-Path $state 'launch.json'
         @{
-            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $prefix
-            StateDirectory = $state; Environment = @{}; TestWindowOwners = @($witness.Id)
+            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
+            StateDirectory = $state; Environment = @{ CAELESTIA_STATE_DIR = $state }; TestWindowOwners = @($witness.Id)
             StdoutPath = (Join-Path $state 'shell.out'); StderrPath = (Join-Path $state 'shell.err')
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
         $statusPath = Join-Path $state 'watchdog.json'
@@ -184,6 +192,8 @@ public static class SupervisorStopFixture {
         Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-restored') } 'Supervisor did not restore its hidden parked-window fixture.'
         Assert (-not $bystander.HasExited -and -not $witness.HasExited) 'Supervisor terminated an unowned same-name process.'
         Assert (Test-Path -LiteralPath (Join-Path $state 'desktop-before.json')) 'Supervisor did not persist its restore snapshot.'
+        Assert (Test-CaelestiaSamePath (Get-Content -LiteralPath (Join-Path $state 'banner-recovered.txt') -Raw) $case) 'Banner recovery did not find the helper beside qs.exe or use the launch cwd.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $state 'banner-recovery.log'))) 'Banner recovery failed with cwd outside the payload.'
         Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Exited supervisor still owns the disposable profile.'
         $mutex = [Threading.Mutex]::new($false, $mutexName)
         try {
