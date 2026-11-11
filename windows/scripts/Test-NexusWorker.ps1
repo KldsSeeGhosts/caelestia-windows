@@ -174,6 +174,16 @@ try {
         Assert ((Get-FileHash "$case\profile\config\$name").Hash -ceq $configHashes[$name]) 'Existing JSON settings/unknown fields changed.'
     }
     Assert ((Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).phase -ceq 'complete') 'Worker did not complete journal.'
+    $history = @(Get-ChildItem "$case\control-*\progress.jsonl" | Get-Content | ForEach-Object { $_ | ConvertFrom-Json })
+    $downloads = @($history | Where-Object { $_.step -eq 'downloading' -and $_.progress.total -gt 0 })
+    Assert ($downloads.Count -ge 2) 'Worker did not journal measured download progress.'
+    Assert ($downloads[0].progress.completed -eq 0 -and $downloads[0].progress.unit -eq 'bytes') 'Worker download initial totals missing.'
+    Assert ($downloads[-1].progress.completed -eq (Get-Item "$case\download.zip").Length -and
+        $downloads[-1].progress.total -eq $downloads[-1].progress.completed) 'Worker download did not report signed byte total.'
+    $extraction = @($history | Where-Object { $_.step -eq 'verifying' -and $_.progress.unit -eq 'entries' })
+    Assert ($extraction.Count -ge 2 -and $extraction[0].progress.completed -eq 0 -and
+        $extraction[-1].progress.completed -eq $extraction[-1].progress.total) 'Worker extraction entry progress missing.'
+    Assert (@($history | Where-Object { $_.step -eq 'installing' -and $_.progress.total -eq 0 }).Count -gt 0) 'Installer fabricated a measured fraction.'
     Assert (@(Get-ChildItem "$case\cache" -File -Recurse -ErrorAction SilentlyContinue).Count -eq 0) 'Worker left successful download bytes.'
     $highwaterHash = (Get-FileHash "$case\trust\highwater.json").Hash
     $null = Finish (Start-Worker $case (Args $case ('-Command Rollback -Wait -ExpectedCurrent ' + $record.current)))
@@ -279,7 +289,7 @@ try {
     $null = Finish (Start-Worker $case (Args $case '-Command Rollback -ExpectedCurrent v2'))
     $null = Finish (Start-Worker $case $arguments) $false
     Assert ((Read-CaelestiaInstall "$case\prefix").current -eq 'v2') 'Expired worker bypassed replacement fence.'
-    if ($count -lt 76) { throw 'Authenticated worker assertion inventory unexpectedly reduced.' }
+    if ($count -lt 81) { throw 'Authenticated worker assertion inventory unexpectedly reduced.' }
     Write-Output "PASS authenticated worker: $count assertions; actual queued args, crypto, installer and rollback; recording external boundaries only."
 } finally {
     foreach ($child in $children) {

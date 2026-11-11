@@ -53,7 +53,8 @@ function New-CaelestiaUpdateArchive([string]$Directory, [string]$Zip) {
     }
 }
 
-function Expand-CaelestiaUpdate([string]$Zip, [string]$Destination, [string]$Root, [long]$Entries, [long]$UnpackedSize) {
+function Expand-CaelestiaUpdate([string]$Zip, [string]$Destination, [string]$Root, [long]$Entries, [long]$UnpackedSize,
+    [scriptblock]$Progress) {
     Assert-CaelestiaZipComponent $Root
     Assert-CaelestiaUpdatePath $Zip
     Assert-CaelestiaUpdatePath $Destination
@@ -101,10 +102,17 @@ function Expand-CaelestiaUpdate([string]$Zip, [string]$Destination, [string]$Roo
         Assert-CaelestiaUpdatePath $Destination
         [IO.Directory]::CreateDirectory($Destination) | Out-Null
         $created = $true
+        $completed = 0L
+        $progressClock = [Diagnostics.Stopwatch]::StartNew()
+        if ($Progress) { & $Progress 'verifying' 0L $Entries 'entries' }
         foreach ($entry in $archive.Entries) {
             $target = Join-Path $Destination $entry.FullName.Replace('/', '\')
             Assert-CaelestiaUpdatePath $target.TrimEnd('\')
-            if ($entry.FullName.EndsWith('/')) { [IO.Directory]::CreateDirectory($target) | Out-Null; continue }
+            if ($entry.FullName.EndsWith('/')) {
+                [IO.Directory]::CreateDirectory($target) | Out-Null
+                $completed++
+                continue
+            }
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
             Assert-CaelestiaUpdatePath $target
             $inputStream = $entry.Open()
@@ -117,7 +125,13 @@ function Expand-CaelestiaUpdate([string]$Zip, [string]$Destination, [string]$Roo
                 if ($outputStream) { $outputStream.Dispose() }
                 $inputStream.Dispose()
             }
+            $completed++
+            if ($Progress -and $progressClock.ElapsedMilliseconds -ge 250) {
+                & $Progress 'verifying' $completed $Entries 'entries'
+                $progressClock.Restart()
+            }
         }
+        if ($Progress) { & $Progress 'verifying' $completed $Entries 'entries' }
         return Join-Path $Destination $Root
     } catch {
         if ($created) {
@@ -216,9 +230,10 @@ function Invoke-CaelestiaUpdateCheck($Trust, [string]$Channel, [string]$CurrentV
 }
 
 function Save-CaelestiaUpdateBundle($Release, $Trust, [string]$Directory, [scriptblock]$Fetch = {
-    param($Address, $Hosts, $Redirects, $Cap, $Size, $Hash, $Destination, $Milliseconds)
-    [Caelestia.Update.Transport]::Fetch($Address, $Hosts, $Redirects, $Cap, $Size, $Hash, $Destination, $Milliseconds)
-}) {
+    param($Address, $Hosts, $Redirects, $Cap, $Size, $Hash, $Destination, $Milliseconds, $Report)
+    [Caelestia.Update.Transport]::Fetch($Address, $Hosts, $Redirects, $Cap, $Size, $Hash, $Destination, $Milliseconds,
+        [Action[long,long]]$Report)
+}, [scriptblock]$Progress) {
     Assert-CaelestiaUpdatePath $Directory
     [IO.Directory]::CreateDirectory($Directory) | Out-Null
     $bundle = $Release.bundle
@@ -228,8 +243,12 @@ function Save-CaelestiaUpdateBundle($Release, $Trust, [string]$Directory, [scrip
     $zip = $partial + '.zip'
     try {
         Assert-CaelestiaUpdatePath $partial
+        $report = {
+            param([long]$Completed, [long]$Total)
+            if ($Progress) { & $Progress 'downloading' $Completed $Total 'bytes' }
+        }
         $null = & $Fetch $bundle.url (@('github.com') + @($Trust.redirectHosts)) `
-            3 $bundle.size $bundle.size $bundle.sha256 $partial 1200000
+            3 $bundle.size $bundle.size $bundle.sha256 $partial 1200000 $report
         Assert-CaelestiaUpdatePath $partial
         [IO.File]::Move($partial, $zip)
         return $zip
@@ -267,12 +286,13 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
     $zip = ''
     try {
         & $Progress 'downloading'
-        $zip = Save-CaelestiaUpdateBundle $release $Trust (Join-Path $base 'downloads')
+        $zip = Save-CaelestiaUpdateBundle $release $Trust (Join-Path $base 'downloads') -Progress $Progress
         if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne $release.bundle.sha256) {
             throw 'Authenticated bundle mismatch.'
         }
         & $Progress 'verifying'
-        $bundle = Expand-CaelestiaUpdate $zip $stage $release.bundle.root $release.bundle.entries $release.bundle.unpackedSize
+        $bundle = Expand-CaelestiaUpdate $zip $stage $release.bundle.root $release.bundle.entries $release.bundle.unpackedSize -Progress $Progress
+        & $Progress 'verifying'
         # No supplied code before BOTH signed bundle and manifest digests match.
         $manifest = Join-Path $bundle 'release.json'
         if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $release.manifestSha256) {
@@ -306,6 +326,7 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
         $installed | Add-Member -NotePropertyName displayVersion -NotePropertyValue $release.displayVersion -Force
         $installed | Add-Member -NotePropertyName installedChannel -NotePropertyValue $Channel -Force
         Write-CaelestiaJsonAtomic (Join-Path $runtime 'install.json') $installed
+        & $Progress 'restarting'
     } finally {
         if ($zip -and [IO.File]::Exists($zip)) {
             Assert-CaelestiaUpdatePath $zip

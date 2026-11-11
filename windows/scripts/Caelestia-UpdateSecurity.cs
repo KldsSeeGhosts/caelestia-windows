@@ -21,6 +21,11 @@ namespace Caelestia.Update {
         // No global TLS, certificate validation or OS security settings changed.
         public static byte[] Fetch(string address, string[] hosts, int redirects, long cap,
                                   long expectedSize, string hash, string destination, int milliseconds) {
+            return Fetch(address, hosts, redirects, cap, expectedSize, hash, destination, milliseconds, null);
+        }
+        public static byte[] Fetch(string address, string[] hosts, int redirects, long cap,
+                                  long expectedSize, string hash, string destination, int milliseconds,
+                                  Action<long, long> progress) {
             if (cap < 1 || cap > 1073741824 || milliseconds < 1 || milliseconds > 1800000)
                 throw new FormatException("Invalid transport bounds.");
             using (var cancel = new CancellationTokenSource(milliseconds))
@@ -44,7 +49,7 @@ namespace Caelestia.Update {
                         using (var input = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
                         using (Stream output = string.IsNullOrEmpty(destination) ? (Stream)new MemoryStream() :
                             new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
-                            CopyBounded(input, output, cap, expectedSize, hash, cancel.Token);
+                            CopyBounded(input, output, cap, expectedSize, hash, cancel.Token, progress);
                             if (string.IsNullOrEmpty(destination)) return ((MemoryStream)output).ToArray();
                             return null;
                         }
@@ -54,8 +59,14 @@ namespace Caelestia.Update {
         }
         public static void CopyBounded(Stream input, Stream output, long cap, long expectedSize,
                                        string expectedHash, CancellationToken token) {
+            CopyBounded(input, output, cap, expectedSize, expectedHash, token, null);
+        }
+        public static void CopyBounded(Stream input, Stream output, long cap, long expectedSize,
+                                       string expectedHash, CancellationToken token, Action<long, long> progress) {
             using (var sha = SHA256.Create()) {
                 byte[] buffer = new byte[65536]; long total = 0;
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                if (progress != null) progress(0, expectedSize);
                 while (true) {
                     int count = input.ReadAsync(buffer, 0, buffer.Length, token).GetAwaiter().GetResult();
                     if (count == 0) break;
@@ -63,12 +74,18 @@ namespace Caelestia.Update {
                     if (total > cap) throw new IOException("Update body exceeds bound.");
                     sha.TransformBlock(buffer, 0, count, null, 0);
                     output.Write(buffer, 0, count);
+                    // Report on the caller's thread, at most four times per
+                    // second. The final size/hash/cancellation gates stay below.
+                    if (progress != null && clock.ElapsedMilliseconds >= 250) {
+                        progress(total, expectedSize); clock.Restart();
+                    }
                 }
                 token.ThrowIfCancellationRequested();
                 sha.TransformFinalBlock(new byte[0], 0, 0);
                 if (expectedSize >= 0 && total != expectedSize) throw new IOException("Update body size mismatch.");
                 string hash = BitConverter.ToString(sha.Hash).Replace("-", "").ToLowerInvariant();
                 if (!string.IsNullOrEmpty(expectedHash) && hash != expectedHash) throw new IOException("Update body hash mismatch.");
+                if (progress != null) progress(total, expectedSize);
             }
         }
     }
