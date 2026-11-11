@@ -60,14 +60,14 @@ test(">settings resolves through the original searcher with both search modes an
     }
 });
 
-test("Settings closes the launcher before calling the existing Nexus route, without executing a process", () => {
+test("Settings transfers foreground to Nexus before closing the launcher, without executing a process", () => {
     const list = { screenState: { launcher: true }, search: { text: ">settings" } };
     let opens = 0;
     const context = {
         command: model.find(action => action.name === "Settings").command,
         WindowFactory: {
             create() {
-                assert.equal(list.screenState.launcher, false);
+                assert.equal(list.screenState.launcher, true);
                 opens++;
             }
         },
@@ -79,6 +79,7 @@ test("Settings closes the launcher before calling the existing Nexus route, with
     vm.runInContext(qmlFunction(source, "onClicked"), context);
     context.onClicked(list);
     assert.equal(opens, 1);
+    assert.equal(list.screenState.launcher, false);
     assert.equal(list.search.text, ">settings");
     // Reopening uses the same route, whose factory owns window reuse/activation.
     list.screenState.launcher = true;

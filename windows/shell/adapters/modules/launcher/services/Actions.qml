@@ -57,8 +57,10 @@ Searcher {
             if (command[0] === "autocomplete" && command.length > 1) {
                 list.search.text = `${GlobalConfig.launcher.actionPrefix}${command[1]} `;
             } else if (command[0] === "settings") {
-                list.screenState.launcher = false;
                 WindowFactory.create();
+                // Transfer foreground before closing the launcher can return
+                // it to the previously focused application.
+                list.screenState.launcher = false;
             } else if (command[0] === "chooseWallpaper") {
                 Wallpapers.choose(list.QsWindow.window?.screen);
             } else if (command[0] === "screenshot") {
