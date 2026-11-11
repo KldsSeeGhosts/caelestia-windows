@@ -38,3 +38,63 @@ test("the helper receives physical region and no UI, with explicit audio default
     assert.equal(logic.startArgs({ x: 0, y: 0, w: 0, h: 10 }), null);
     assert.equal(logic.startArgs({ x: NaN, y: 0, w: 10, h: 10 }), null);
 });
+
+test("reload retains overlay windows before status without changing the physical region", () => {
+    const source = fs.readFileSync(path.join(__dirname,
+        "../shell/adapters/modules/areapicker/RecordingOverlay.qml"), "utf8");
+    const regionExpression = source.match(/readonly property var region: ([\s\S]*?)\n    readonly property bool active:/)[1];
+    const activeExpression = source.match(/readonly property bool active: (.*)/)[1];
+    const remember = source.match(/function remember\(\): void \{([\s\S]*?)^    }/m)[1];
+    assert.ok(source.indexOf("PersistentProperties {") < source.indexOf("LazyLoader {"),
+        "region restores in the root graph before the window loader adopts its old windows");
+    assert.match(source, /reloadableId: "recording-overlay-region"/);
+    assert.match(source, /Logic\.localRegion\(root\.region,/);
+    for (const dpr of [1, 1.25, 1.5, 1.75, 2]) {
+        for (const state of ["recording", "paused", "finalizing"]) {
+            const screen = { x: -3840, y: -200, width: 1920, height: 1080 };
+            const region = plain(logic.region({ x: 10, y: 12, width: 501, height: 301 }, screen, dpr));
+            const context = {
+                interactionEnabled: true, observation: { region: null },
+                recorder: { baselinePending: false, running: true, state, shellRegion: region },
+            };
+            vm.createContext(context);
+            vm.runInContext(`function remember() {${remember}}
+                function currentRegion() { return ${regionExpression}; }
+                function activeValue() { const region = currentRegion(); return ${activeExpression}; }`, context);
+            context.recorder = { baselinePending: true, running: false, shellRegion: null };
+            context.remember();
+            assert.equal(context.activeValue(), false, "cold start has no retained recording");
+            context.recorder = { baselinePending: false, running: true, state, shellRegion: region };
+            context.remember();
+            const retained = context.observation.region;
+            // A new service has no observation yet. Root PersistentProperties
+            // restores the previous region before LazyLoader.onReload runs.
+            context.recorder = { baselinePending: true, running: false, shellRegion: null };
+            context.remember();
+            assert.equal(context.activeValue(), true);
+            assert.equal(context.currentRegion(), retained);
+            assert.deepEqual(plain(context.currentRegion()), region);
+            const selection = logic.localRegion(context.currentRegion(), screen, dpr);
+            assert.deepEqual(plain(logic.region(selection, screen, dpr)), region);
+            // The first fresh status replaces the retained presentation.
+            Object.assign(context.recorder, { baselinePending: false, running: true, shellRegion: region });
+            context.remember();
+            assert.equal(context.activeValue(), true);
+            assert.deepEqual(plain(context.currentRegion()), region);
+            context.recorder.running = false;
+            context.recorder.shellRegion = null;
+            context.remember();
+            assert.equal(context.activeValue(), false);
+            assert.equal(context.observation.region, null);
+            context.observation.region = retained;
+            Object.assign(context.recorder, { baselinePending: true, connectionFailed: true });
+            context.remember();
+            assert.equal(context.activeValue(), false);
+            assert.equal(context.observation.region, null);
+            Object.assign(context.recorder, { connectionFailed: false, baselinePending: false,
+                running: true, shellRegion: null });
+            context.remember();
+            assert.equal(context.activeValue(), false, "classic recording has no shell overlay");
+        }
+    }
+});
