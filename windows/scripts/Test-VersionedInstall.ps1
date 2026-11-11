@@ -2782,6 +2782,28 @@ public static class LegacyInstallLockFixture {
     # half-deleted. The same test then uninstalls cleanly and leaves no tombstone.
     $lockedApp = Join-Path $root 'locked-app'
     $null = Install-CaelestiaVersion $lockedApp (New-Payload $lockedApp 'locked')
+    $selected = (Read-CaelestiaInstall $lockedApp).current
+    $payloadDirectory = Join-Path $lockedApp ('versions\' + $selected)
+    $selectorHash = (Get-FileHash -LiteralPath (Join-Path $lockedApp 'install.json')).Hash
+    $payloadHash = (Get-FileHash -LiteralPath (Join-Path $payloadDirectory 'install.json')).Hash
+    foreach ($explicitPrefix in @($false, $true)) {
+        $refused = $false
+        try {
+            if ($explicitPrefix) {
+                & (Join-Path $payloadDirectory 'Uninstall-Caelestia.ps1') -Prefix $payloadDirectory -NoDialogs
+            } else {
+                & (Join-Path $payloadDirectory 'Uninstall-Caelestia.ps1') -NoDialogs
+            }
+        } catch {
+            $refused = $_.Exception.Message -like "*Run the stable-root copy: $lockedApp\Uninstall-Caelestia.ps1"
+        }
+        Assert $refused 'Payload uninstall did not refuse with the stable-root command.'
+        Assert ((Get-FileHash -LiteralPath (Join-Path $payloadDirectory 'install.json')).Hash -eq $payloadHash) 'Payload uninstall damaged the payload.'
+        Assert ((Get-FileHash -LiteralPath (Join-Path $lockedApp 'install.json')).Hash -eq $selectorHash) 'Payload uninstall changed the stable selector.'
+        Assert (Test-Path -LiteralPath (Join-Path $payloadDirectory 'qs.exe')) 'Payload uninstall removed the selected executable.'
+        Assert ((Read-CaelestiaInstall $lockedApp).current -eq $selected) 'Payload uninstall changed the selected version.'
+    }
+    Write-Output 'PASS payload uninstall: implicit and explicit payload prefixes refuse without changing the payload or selector.'
     $held = Join-Path $lockedApp 'held.bin'
     [IO.File]::WriteAllText($held, 'held')
     $heldStream = [IO.File]::Open($held, 'Open', 'Read', 'None')

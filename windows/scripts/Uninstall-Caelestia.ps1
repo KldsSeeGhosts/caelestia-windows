@@ -21,6 +21,9 @@ try {
 $installLock = Enter-CaelestiaInstallLock $Prefix
 if (-not $installLock) { throw 'An installation, rollback or uninstall is already in progress.' }
 $record = Read-CaelestiaInstall $Prefix
+if ($record.installRoot -and -not (Test-CaelestiaSamePath $record.installRoot $Prefix)) {
+    throw "Do not uninstall an immutable version directory. Run the stable-root copy: $($record.installRoot)\Uninstall-Caelestia.ps1"
+}
 $profile = Resolve-CaelestiaDirectory $record.profile
 if ($profile -eq $Prefix -or $Prefix.StartsWith($profile + '\', [StringComparison]::OrdinalIgnoreCase) -or $profile.StartsWith($Prefix + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Installation and profile must be separate directories.'
