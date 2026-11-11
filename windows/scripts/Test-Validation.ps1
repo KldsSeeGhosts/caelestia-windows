@@ -162,7 +162,10 @@ function ConvertTo-ValidationArgument([string]$Value) {
 }
 
 function Get-QmlSchedule([string[]]$Names) {
-    $hints = Import-PowerShellDataFile -LiteralPath "$PSScriptRoot\Qml-DurationHints.psd1"
+    # JSON, not .psd1: Import-PowerShellDataFile is unavailable in the CI shell stage.
+    $hints = @{}
+    (Get-Content -LiteralPath "$PSScriptRoot\Qml-DurationHints.json" -Raw | ConvertFrom-Json).seconds.PSObject.Properties |
+        ForEach-Object { $hints[$_.Name] = [double]$_.Value }
     # An explicit inventory index breaks ties on Windows PowerShell 5.1,
     # whose Sort-Object has no -Stable option. Unknown tests follow known ones.
     $ranked = for ($index = 0; $index -lt $Names.Count; $index++) {

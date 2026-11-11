@@ -48,7 +48,7 @@ before checkout. Scope uses a full-history checkout; its
   not cancel the remaining fixtures. Services, CTest and integration stages
   stay serial. Local validation defaults to serial; `-Suite Shell -QmlJobs 3`
   opts into the same scheduling. Parallel Shell runs start longest-first using
-  `windows/scripts/Qml-DurationHints.psd1`. Equal hints and unknown tests keep
+  `windows/scripts/Qml-DurationHints.json`. Equal hints and unknown tests keep
   their inventory order, with unknown tests last. Logs, summary results and
   JUnit stay in inventory order. Hints do not change the inventory or timeouts.
   Resume checks successful production rows, the clean checkout HEAD and every

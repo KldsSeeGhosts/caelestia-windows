@@ -12,7 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 VALIDATION = ROOT / "windows/scripts/Test-Validation.ps1"
-HINTS = VALIDATION.with_name("Qml-DurationHints.psd1")
+HINTS = VALIDATION.with_name("Qml-DurationHints.json")
 SOURCE = VALIDATION.read_text()
 INVENTORY = re.findall(r"'(Test-[A-Za-z0-9]+)'", SOURCE.split(
     "@('Test-AccessibilityLauncher'", 1)[1].split("\n        }", 1)[0])
@@ -130,7 +130,7 @@ class ParallelQmlTests(unittest.TestCase):
         # Extract the real function without running the suite. Deliberately
         # scramble names, tie durations and leave two tests without hints.
         (self.scripts / HINTS.name).write_text(
-            "@{'short'=1; 'tie-z'=5; 'long'=20; 'tie-a'=5}\n")
+            '{"seconds": {"short": 1, "tie-z": 5, "long": 20, "tie-a": 5}}\n')
         probe = self.scripts / "schedule.ps1"
         function = "function Get-QmlSchedule" + SOURCE.split(
             "function Get-QmlSchedule", 1)[1].split(

@@ -95,7 +95,7 @@ the trusted fixture build and production. It changes compile scheduling only.
 CTest, Services and recorded stages stay serial. Hosted integration and native
 reuse select `-QmlJobs 3` for Shell fixtures within the shell stage. Parallel
 Shell validation starts the longest fixtures first using the approximate seconds
-in `windows/scripts/Qml-DurationHints.psd1`, taken from green hosted run summaries.
+in `windows/scripts/Qml-DurationHints.json`, taken from green hosted run summaries.
 Equal hints keep inventory order; unknown tests follow known tests in inventory
 order. Logs, summary results and JUnit retain inventory order regardless of
 completion order. Hints never select tests or alter timeout limits. Each script
