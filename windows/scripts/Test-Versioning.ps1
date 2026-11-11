@@ -45,6 +45,14 @@ foreach ($tag in @(& git -C $repo tag --merged HEAD --list 'v*')) {
     try { $tagVersion = ConvertTo-CaelestiaSemVer $tag.Substring(1) } catch { continue }
     Assert ((Compare-CaelestiaSemVer $computedVersion $tagVersion.Core) -ge 0) 'Computed version predates reachable public history.'
 }
+# Every client entry point that accepts a target build must take both the
+# legacy dev grammar and plain SemVer; the bridge once missed the update queue.
+$manage = Get-Content "$repo\windows\scripts\Manage-Caelestia.ps1" -Raw
+Assert ($manage -notmatch 'Test-CaelestiaDevVersion') 'Manage-Caelestia still validates targets with the legacy-only grammar.'
+Assert ($manage -match 'Test-CaelestiaPublishedVersion \$ExpectedBuild') 'Manage-Caelestia must accept any published build format.'
+foreach ($build in @('0.2.0-dev.1.292.1', '0.3.0', '0.3.1')) {
+    Assert (Test-CaelestiaPublishedVersion $build) "Published build $build is not queueable."
+}
 Assert ((Get-Content "$repo\CHANGELOG.md" -Raw) -match '(?m)^## \[Unreleased\]') 'Missing Unreleased changelog.'
 & cmake -P "$repo\cmake\CaelestiaVersion.cmake"
 Assert ($LASTEXITCODE -eq 0) 'CMake authoritative reader failed.'
