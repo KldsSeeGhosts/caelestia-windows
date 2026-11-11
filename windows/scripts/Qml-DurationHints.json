@@ -23,6 +23,7 @@
         "Test-WallpaperIpc": 2,
         "Test-WallpaperPreview": 2,
         "Test-WindowsBackground": 5,
+        "Test-WindowsHoverRegions": 2,
         "Test-UpdateManager": 1,
         "Test-UpdatesPage": 5,
         "Test-FileUrls": 3,

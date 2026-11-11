@@ -31,7 +31,14 @@ QtObject {
     property bool evicted: false
     property var locks: new Set()
     property date time: new Date()
-    property int ageMins: 0
+    // One shared clock in the service drives every record's age label. The
+    // binding reads its tick so a tick recomputes the label, and it reads
+    // `time` so a restored or corrected arrival time is reflected immediately.
+    // No record owns a timer of its own.
+    readonly property int ageMins: {
+        record.service?.ageClock;
+        return Math.floor((Date.now() - record.time.getTime()) / 60000);
+    }
 
     property var notification: null
     property string notificationId: ""
@@ -79,15 +86,6 @@ QtObject {
 
     function translateCtx(text, context): string {
         return record.service?.translator?.trCtx(text, context) ?? text;
-    }
-
-    readonly property Timer timeStrTimer: Timer {
-        running: !record.closed && (record.popup || (record.service?.centerVisible ?? false))
-        // Refresh immediately when history opens, even after hours hidden.
-        triggeredOnStart: true
-        repeat: true
-        interval: 5000
-        onTriggered: record.updateTimeStr()
     }
 
     readonly property Timer timer: Timer {
@@ -214,26 +212,6 @@ QtObject {
             disabled: false,
             invoke: () => record.service?.invokeHistoricalAction(record, action.identifier)
         }));
-    }
-
-    function updateTimeStr(): void {
-        const diff = Date.now() - record.time.getTime();
-        const minutes = Math.floor(diff / 60000);
-        record.ageMins = minutes;
-
-        if (minutes < 1) {
-            record.timeStrTimer.interval = 5000;
-        } else {
-            const hours = Math.floor(minutes / 60);
-            const days = Math.floor(hours / 24);
-
-            if (days > 0)
-                record.timeStrTimer.interval = 3600000;
-            else if (hours > 0)
-                record.timeStrTimer.interval = 300000;
-            else
-                record.timeStrTimer.interval = minutes < 10 ? 30000 : 60000;
-        }
     }
 
     function lock(item): void {
