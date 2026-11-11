@@ -106,7 +106,9 @@ class Transport(unittest.TestCase):
             server.server_close()
         self.assertEqual(self.proxy.requests, 0)
         self.assertEqual(stats.snapshot()["calls"].get("auth-files"), 1)
-        self.assertTrue(lines[-1]["ok"], lines[-1])
+        self.assertFalse(lines[-1]["ok"], lines[-1])
+        self.assertEqual(lines[-1]["succeeded"], 0)
+        self.assertGreater(lines[-1]["fallback"], 0)
 
     def test_plain_http_needs_a_checked_address(self):
         # A public address (TEST-NET-3, never routed): refused before anything is sent.
@@ -151,6 +153,61 @@ class Refusal(unittest.TestCase):
 
     def test_a_ban_stops_keepalive(self):
         self.check("ban", "banned", 1)
+
+
+class Outcomes(unittest.TestCase):
+    def run_targets(self, targets, inference, fallback):
+        client = mock.Mock(refusal=False)
+        client.management.return_value.json.return_value = {"files": targets}
+        with tempfile.TemporaryDirectory(prefix="keepalive-outcomes-") as folder:
+            output = io.StringIO()
+            with mock.patch.object(hubmod, "Hub", return_value=client), \
+                    mock.patch.object(cpa_keepalive, "_inference_key", return_value=""), \
+                    mock.patch.object(cpa_keepalive, "_chat_completion", side_effect=inference), \
+                    mock.patch.object(cpa_keepalive, "api_call", side_effect=fallback), \
+                    mock.patch.object(sys, "argv", ["keepalive", "--cpa-config", write_config(folder, "http://127.0.0.1:8317")]), \
+                    contextlib.redirect_stdout(output):
+                cpa_keepalive.main()
+        return [json.loads(line) for line in output.getvalue().splitlines()]
+
+    @staticmethod
+    def target(provider):
+        return {"provider": provider, "auth_index": provider}
+
+    def test_successful_quota_reads_are_not_inference(self):
+        lines = self.run_targets([self.target("codex"), self.target("antigravity")],
+                                 [(False, "inference failed")] * 2,
+                                 [(200, {"usage": 1}), (200, {"groups": [1]})])
+        summary = lines[-1]
+        self.assertFalse(summary["ok"])
+        self.assertEqual((summary["succeeded"], summary["fallback"], summary["failed"]), (0, 2, 0))
+        self.assertEqual([line["outcome"] for line in lines[:-1]], ["quota_read", "quota_read"])
+        self.assertTrue(all(not result["ok"] for result in summary["results"]))
+
+    def test_one_inference_success_cannot_hide_a_failure(self):
+        lines = self.run_targets([self.target("codex"), self.target("zai")],
+                                 [(True, ""), (False, "inference failed")], [(500, {})])
+        summary = lines[-1]
+        self.assertFalse(summary["ok"])
+        self.assertEqual((summary["succeeded"], summary["fallback"], summary["failed"]), (1, 0, 1))
+        self.assertEqual([line["outcome"] for line in lines[:-1]], ["inference", "failed"])
+
+    def test_zai_messages_fallback_is_real_inference(self):
+        lines = self.run_targets([self.target("zai")], [(False, "proxy unavailable")], [(200, {})])
+        self.assertTrue(lines[-1]["ok"])
+        self.assertEqual((lines[-1]["succeeded"], lines[-1]["fallback"], lines[-1]["failed"]), (1, 0, 0))
+
+    def test_missing_auth_index_is_a_failure(self):
+        lines = self.run_targets([{"provider": "codex"}], [], [])
+        self.assertEqual(lines[-1]["failed"], 1)
+        self.assertEqual(lines[0]["outcome"], "failed")
+
+    def test_all_inference_success_and_no_targets(self):
+        for targets, inference in [([self.target("codex")], [(True, "")]), ([], [])]:
+            lines = self.run_targets(targets, inference, [])
+            self.assertTrue(lines[-1]["ok"])
+            self.assertEqual(lines[-1]["succeeded"], len(targets))
+            self.assertEqual((lines[-1]["fallback"], lines[-1]["failed"]), (0, 0))
 
 
 if __name__ == "__main__":

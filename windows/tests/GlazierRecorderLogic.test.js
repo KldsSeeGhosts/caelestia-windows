@@ -58,6 +58,8 @@ function recorder() {
     Object.defineProperties(context, {
         running: { get() { return this.runningValue(); } },
         canStart: { get() { return this.canStartValue(); } },
+        paused: { get() { return this.state === "paused"; } },
+        stopping: { get() { return this.state === "finalizing"; } },
     });
     return context;
 }
@@ -123,6 +125,29 @@ check(!r.applyResponse('{"version":2,"ok":true}') && r.incompatible, "explicit m
 check(!r.applyResponse(offline) && !r.incompatible && r.canStart, "offline v1 recovers compatibility");
 check(!r.applyResponse("{") && !r.incompatible, "malformed response stays transient");
 check(r.applyResponse(reply("idle-host")) && r.connectionError === "", "valid reply clears transient failure");
+// Control commands are forwarding clients too: a host quit from its tray can be
+// cold-started by Stop/Pause/Resume, so each one carries the same shell-owned
+// options as Start.
+r = recorder();
+r.applyResponse(reply("idle-host"));
+r.applyResponse(reply("idle-host", [], "recording"));
+const checkHostCommand = (command, message) => check(
+    r.launched.command.slice(1, 4).join(" ") === "--no-hotkeys --theme-file C:/synthetic/theme-tokens.json"
+    && r.launched.command.includes(command), message);
+r.stop();
+checkHostCommand("--stop", "Stop uses shell-owned host options");
+r.togglePause();
+checkHostCommand("--pause", "Pause uses shell-owned host options");
+r.state = "paused";
+r.togglePause();
+checkHostCommand("--resume", "Resume uses shell-owned host options");
+r.discard();
+checkHostCommand("--discard", "Discard uses shell-owned host options");
+r.toggleMic();
+checkHostCommand("--mic", "Microphone control uses shell-owned host options");
+r.toggleSound();
+checkHostCommand("--system-sound", "Sound control uses shell-owned host options");
+
 r = recorder();
 r.applyResponse(reply("idle-host"));
 r.start();
