@@ -18,6 +18,38 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-owner-test-' + [guid]::
 [IO.Directory]::CreateDirectory($root) | Out-Null
 $a = New-Key; $b = New-Key; $dev = New-Key; $promotion = New-Key
 try {
+    # A shared parent must not grant other users access to generated test keys.
+    $shared = Join-Path $root 'shared'
+    [IO.Directory]::CreateDirectory($shared) | Out-Null
+    $sharedAcl = Get-Acl -LiteralPath $shared
+    $sharedAcl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        [Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'ReadAndExecute',
+        'ContainerInherit, ObjectInherit', 'None', 'Allow'))
+    Set-Acl -LiteralPath $shared -AclObject $sharedAcl
+    $generated = Join-Path $shared 'generated'
+    $generationText = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusSigningKey.ps1" -OutputDirectory $generated
+    Assert ($LASTEXITCODE -eq 0 -and "$generationText" -match 'Public key fingerprint:') 'Signing-key generation failed.'
+    $allowedSids = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
+    foreach ($path in @($generated, (Join-Path $generated 'private.pkcs8'))) {
+        $acl = Get-Acl -LiteralPath $path
+        $rules = @($acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))
+        Assert ($rules.Count -eq 3) 'Generated key ACL must contain only the three permitted principals.'
+        foreach ($sid in $allowedSids) {
+            $matches = @($rules | Where-Object { $_.IdentityReference.Value -eq $sid })
+            Assert ($matches.Count -eq 1 -and $matches[0].AccessControlType -eq 'Allow' -and
+                $matches[0].FileSystemRights -eq 'FullControl') "Generated key ACL lacks exclusive full control for $sid."
+        }
+        if ($path -eq $generated) {
+            Assert $acl.AreAccessRulesProtected 'Key directory inherits its parent DACL.'
+            Assert (@($rules | Where-Object { $_.IsInherited -or $_.InheritanceFlags -ne 'ContainerInherit, ObjectInherit' }).Count -eq 0) 'Key directory rules do not protect child files and directories.'
+        }
+    }
+    $generatedPrivate = [IO.File]::ReadAllBytes((Join-Path $generated 'private.pkcs8'))
+    try {
+        $public = Read-CaelestiaStrictJsonFile (Join-Path $generated 'public.json')
+        $null = New-CaelestiaDsse (JsonBytes @{ test = 'generated key' }) 'test' $public.keyid $generatedPrivate
+        Assert ("$generationText" -notlike ('*' + [Convert]::ToBase64String($generatedPrivate) + '*')) 'Generated private bytes appeared in CLI output.'
+    } finally { [Array]::Clear($generatedPrivate, 0, $generatedPrivate.Length) }
     # Ephemeral test-only binary fixtures, deleted below. No real owner keys.
     [IO.File]::WriteAllBytes("$root\root a.pkcs8", $a.Private)
     [IO.File]::WriteAllBytes("$root\root b.pkcs8", $b.Private)

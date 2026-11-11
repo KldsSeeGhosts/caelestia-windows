@@ -21,8 +21,22 @@ try {
     $blob = $ecdsa.Key.Export([Security.Cryptography.CngKeyBlobFormat]::EccPublicBlob)
     $x = [byte[]]$blob[8..39]; $y = [byte[]]$blob[40..71]
     $id = [Caelestia.Update.Security]::KeyId($x, $y)
+    # Supply the protected DACL at creation, before any private bytes reach disk.
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @(
+        [Security.Principal.WindowsIdentity]::GetCurrent().User,
+        [Security.Principal.SecurityIdentifier]::new('S-1-5-18'),
+        [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    )) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+            $sid, [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow))
+    }
+    [IO.Directory]::CreateDirectory($OutputDirectory, $security) | Out-Null
     $private = $ecdsa.Key.Export([Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
-    [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
     # Private output is binary PKCS8, never stdout or a source-controlled file.
     [IO.File]::WriteAllBytes((Join-Path $OutputDirectory 'private.pkcs8'), $private)
     Write-CaelestiaJsonAtomic (Join-Path $OutputDirectory 'public.json') @{
