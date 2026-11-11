@@ -22,7 +22,8 @@ import qs.modules.nexus
 //     another copy behind the focused application. It restores the window if
 //     it is minimized, applies the requested page and calls
 //     FloatingWindow.requestActivate(), which raises and focuses the existing
-//     native window.
+//     native window. New windows also request activation before create()
+//     returns, while the caller's source panel still owns foreground rights.
 //   * nothing else differs. Callers that use upstream `create()` still get the
 //     default page.
 //
@@ -67,8 +68,12 @@ Singleton {
         }
 
         const win = nexusComp.createObject(parent ?? dummy, props);
-        if (win)
+        if (win) {
             root.windows = [...root.windows, win];
+            // Complete the deferred first show through the backend's existing
+            // source-aware activation path before the caller closes its panel.
+            win.requestActivate();
+        }
         return win;
     }
 

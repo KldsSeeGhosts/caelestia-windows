@@ -104,13 +104,13 @@ StyledRect {
                         inactiveOnColour: Colours.palette.m3onSurfaceVariant
                         isToggle: false
                         onClicked: {
-                            root.screenState.utilities = false;
                             // Upstream opens the staged Nexus settings window.
                             // The combined Windows host stages modules/nexus and
                             // its WindowFactory, so this is the original path
                             // instead of the previous "open shell.json in an
                             // editor" stand-in.
                             WindowFactory.create();
+                            root.screenState.utilities = false;
                         }
                     }
                 }

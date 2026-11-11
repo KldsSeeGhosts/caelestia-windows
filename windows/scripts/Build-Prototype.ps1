@@ -432,6 +432,7 @@ try {
     Invoke-BuildCommand 'configure-backend' (@('-S', $backendPath,
         '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
         "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
+        "-DQS_ICON_FILE:FILEPATH=$repoRoot/assets/caelestia.ico",
         '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
         '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
     Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$backendJobs")
