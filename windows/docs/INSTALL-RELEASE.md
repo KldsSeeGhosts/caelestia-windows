@@ -15,8 +15,8 @@ before installing.
 
 ## Microsoft runtime prerequisite
 
-Install Microsoft's free **Visual C++ x64 Redistributable**, version
-**14.44.35211.0 or newer**, if a compatible version is not already installed:
+The installer requires Microsoft's free **Visual C++ x64 Redistributable**,
+version **14.44.35211.0 or newer**:
 
 https://aka.ms/vc14/vc_redist.x64.exe
 
@@ -25,9 +25,26 @@ Visual Studio and developer tools are not required. The runtime installer may
 request administrator approval; Caelestia's own installation stays per-user.
 The release installer checks the x64 runtime registration and system DLL
 versions before changing an installation. If the runtime is missing, outdated
-or incomplete, install or repair it and rerun `Install.cmd`. Nothing is
-downloaded, launched or elevated automatically. Bundle verification with
-`-VerifyOnly` does not require the runtime.
+or incomplete, the current installer asks permission to download and install it.
+Declining leaves the Caelestia installation unchanged. Older ZIPs may instead
+require you to install or repair it yourself and rerun `Install.cmd`.
+
+The installer downloads only the manifest's official URL above into a fresh
+temporary directory. It requires a valid Authenticode signature from Microsoft
+Corporation and a trusted Microsoft root certificate chain before execution.
+It then requests administrator approval once and runs `/install /quiet /norestart`.
+Exit codes 0, 3010 and 1638 are accepted, but the runtime must pass detection
+again before any Caelestia installation or profile files are written. Code 3010
+prints a reboot notice. Network, signature, UAC or installation failures stop
+installation with instructions for manual repair. The temporary download is
+deleted on success or failure. The runtime is installed system-wide, never app-local.
+
+For automation, use `-NonInteractive -InstallPrerequisites` to consent without
+a question. UAC approval may still be required. `-NonInteractive` alone refuses
+if the prerequisite is not met. Redirected input and PowerShell's
+`-NonInteractive` mode also refuse without explicit `-InstallPrerequisites`.
+Bundle verification with `-VerifyOnly` never downloads, launches or elevates
+anything and does not require the runtime.
 
 Microsoft runtime DLLs are deliberately not bundled. The shared runtime can
 receive Microsoft servicing independently of Caelestia. See
