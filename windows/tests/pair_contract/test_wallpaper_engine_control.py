@@ -72,6 +72,30 @@ class WallpaperEngineControlTests(unittest.TestCase):
                 self.bridge.control_desktop("stop")
             self.assertEqual(1, run.call_count)
 
+    def test_status_after_stop_play_reports_process_liveness_not_playback(self):
+        # No native scan or WE command escapes these mocks. stop/play keep
+        # wallpaper64.exe alive and reuse its window. The status API has no
+        # "stopped" playback state that could suppress native discovery.
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            (directory / "config.json").write_text(
+                '{"fixture-user": {"general": {"wallpaperconfig": '
+                '{"selectedwallpapers": {}}}}}', encoding="utf-8")
+            with patch.object(self.bridge, "libraries", return_value=[]), \
+                 patch.object(self.bridge, "install", return_value=directory), \
+                 patch.object(self.bridge, "running_executable", return_value="wallpaper64.exe"), \
+                 patch.object(Path, "is_file", return_value=True), \
+                 patch.object(self.bridge.subprocess, "run") as run:
+                for action in ("stop", "play"):
+                    self.bridge.control_desktop(action)
+                    for status_only in (True, False):
+                        status = self.bridge.snapshot(status_only=status_only)
+                        self.assertTrue(status["ok"])
+                        self.assertTrue(status["running"])
+                        self.assertTrue(status["detected"])
+                    self.assertEqual(action, run.call_args.args[0][-1])
+                self.assertEqual(2, run.call_count)
+
 
 @unittest.skipUnless(os.name == "nt", "Windows-only bridge imports winreg")
 class WallpaperEngineOpenTests(unittest.TestCase):
