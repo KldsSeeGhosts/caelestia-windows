@@ -165,6 +165,10 @@ Singleton {
     property string itemsJson: ""
     property string monitorsJson: ""
     property bool scanPending: false
+    // An enable can arrive during an idle scan. Preserve its full refresh
+    // even if that older result clears fullScanNeeded before it exits.
+    property bool refreshPending: false
+    property bool deepRefreshPending: false
     property bool scanTimedOut: false
     // The config watcher starts a status scan immediately; a scan that is
     // already running gets one queued status pass instead of being dropped.
@@ -185,6 +189,11 @@ Singleton {
         }
         if (deep === true)
             fullScanNeeded = true;
+        if (scan.running || scanPending) {
+            refreshPending = true;
+            deepRefreshPending = deepRefreshPending || deep === true;
+            return;
+        }
         startScan(!fullScanNeeded && haveSnapshot && statusTicks < 20);
     }
 
@@ -296,7 +305,8 @@ Singleton {
             // above and does not need the catalogue walk. Keep fullScanNeeded
             // unacknowledged until applySnapshot succeeds.
             fullScanNeeded = true;
-            Qt.callLater(() => startScan(false));
+            if (!refreshPending)
+                Qt.callLater(() => startScan(false));
             return;
         }
         status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
@@ -425,10 +435,16 @@ Singleton {
     }
 
     onEnabledChanged: {
-        // Disabling stops the idle timer; re-enabling must not wait for its
-        // backed-off interval before the first scan.
-        if (enabled)
-            refresh(false);
+        // A stop/play cycle does not restart wallpaper64.exe. Re-arm the
+        // ownership guard just as at startup instead of retaining a handback
+        // from the disabled era until a process-start edge or a shell reload.
+        // This is a claim, not a rendered-output acknowledgement.
+        if (enabled) {
+            seedDesktopClaim();
+            refresh(true);
+        } else {
+            status = python ? "disabled" : "unavailable";
+        }
     }
     Component.onCompleted: {
         seedDesktopClaim();
@@ -656,7 +672,13 @@ Singleton {
                     root.scanFailed(String(error));
                 }
             }
-            if (root.activeScanPending) {
+            if (root.refreshPending) {
+                root.refreshPending = false;
+                root.activeScanPending = false;
+                const deep = root.deepRefreshPending;
+                root.deepRefreshPending = false;
+                Qt.callLater(() => root.refresh(deep));
+            } else if (root.activeScanPending) {
                 root.activeScanPending = false;
                 Qt.callLater(() => root.refreshActive());
             }
