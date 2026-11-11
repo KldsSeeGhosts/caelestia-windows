@@ -62,6 +62,8 @@ Singleton {
     property bool bannerStarting: false
     property bool bannerRecoveryComplete: false
     property bool bannerFailed: false
+    property int bannerConsecutiveFailures: 0
+    readonly property int bannerFailureLimit: 3
     property var pendingBannerApps: []
     readonly property bool bannerWanted: bannerConfigReady && bannerRecoveryComplete && !bannerFailed
         && root.service.pathConfined && bannerHelper !== ""
@@ -85,6 +87,7 @@ Singleton {
         if (!root.bannerWanted)
             return;
         root.bannerStarted = false;
+        root.bannerConsecutiveFailures++;
         root.bannerFailed = true;
         root.bannerRecoveryComplete = false;
         console.warn("Caelestia banner helper failed to start");
@@ -391,7 +394,14 @@ Singleton {
             "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
             "-Command", "Worker"]
         stdinEnabled: true
-        stdout: SplitParser { onRead: line => {} }
+        stdout: SplitParser {
+            onRead: line => {
+                // A spawned PowerShell process is not yet a healthy worker.
+                // Only an acknowledged command proves worker initialization ran.
+                if (line.trim() === "ok")
+                    root.bannerConsecutiveFailures = 0;
+            }
+        }
         stderr: SplitParser { onRead: line => console.warn("Caelestia banner helper stderr bytes=" + line.length) }
         onStarted: {
             root.bannerStarting = false;
@@ -419,6 +429,7 @@ Singleton {
             root.bannerStarted = false;
             root.bannerStopping = false;
             if (code !== 0 || !expected) {
+                root.bannerConsecutiveFailures++;
                 root.bannerFailed = true;
                 root.bannerRecoveryComplete = false;
                 console.warn("Caelestia banner helper exited unexpectedly with", code);
@@ -439,9 +450,9 @@ Singleton {
         onExited: code => {
             if (code === 0) {
                 root.bannerRecoveryComplete = true;
-                // A successful recovery clears an earlier helper failure, so
-                // replacement can start again; bannerWanted reconciles it.
-                root.bannerFailed = false;
+                // Restoration does not prove the worker can initialize.
+                // Stop replacing after repeated failures in this session.
+                root.bannerFailed = root.bannerConsecutiveFailures >= root.bannerFailureLimit;
             } else {
                 console.warn("Caelestia banner recovery failed; replacement remains disabled");
             }

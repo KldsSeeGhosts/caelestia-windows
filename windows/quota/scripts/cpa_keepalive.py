@@ -293,7 +293,6 @@ def main() -> int:
         targets.append(f)
 
     results: list[dict[str, Any]] = []
-    ok_count = 0
     total = len(targets)
     for idx, item in enumerate(targets):
         if refused():
@@ -302,11 +301,12 @@ def main() -> int:
         label = _text(_first(item, "account", "account_name", "accountName", "email", "file_name", "name"))
         auth_index = _text(_first(item, "auth_index", "authIndex"))
         if not auth_index:
-            results.append({"provider": prov, "account": label, "ok": False, "error": "no auth_index"})
-            prog = {"type": "progress", "done": idx + 1, "total": total, "provider": prov, "account": label, "ok": False}
+            results.append({"provider": prov, "account": label, "ok": False, "outcome": "failed", "error": "no auth_index"})
+            prog = {"type": "progress", "done": idx + 1, "total": total, **results[-1]}
             _emit(prog, separators=(",", ":"))
             sys.stdout.flush()
             continue
+        outcome = "inference"
         try:
             if prov == "codex":
                 # Real keepalive for OpenAI: gpt-5.6-luna at low reasoning (user spec).
@@ -319,13 +319,14 @@ def main() -> int:
                     try:
                         status, body = api_call(client, auth_index, "GET", CODEX_USAGE_URL, headers)
                         ok = 200 <= status < 300 and isinstance(body, dict) and bool(body)
+                        if ok:
+                            outcome = "quota_read"
                         if not ok:
                             err = _text(body.get("error") if isinstance(body, dict) else "")[:120] or err
                     except Exception as e:
                         err = str(e)[:120]
                 if ok:
-                    ok_count += 1
-                    results.append({"provider": prov, "account": label, "ok": True})
+                    results.append({"provider": prov, "account": label, "ok": outcome == "inference", "outcome": outcome})
                 else:
                     results.append({"provider": prov, "account": label, "ok": False, "error": err[:200]})
             elif prov == "antigravity":
@@ -362,10 +363,11 @@ def main() -> int:
                                 success = True
                                 break
                     ok = success
+                    if ok:
+                        outcome = "quota_read"
                     err = last_err
                 if ok:
-                    ok_count += 1
-                    results.append({"provider": prov, "account": label, "ok": True})
+                    results.append({"provider": prov, "account": label, "ok": outcome == "inference", "outcome": outcome})
                 else:
                     results.append({"provider": prov, "account": label, "ok": False, "error": (err or "gemini keepalive failed")[:200]})
             elif prov == "zai":
@@ -396,21 +398,26 @@ def main() -> int:
                     except Exception as e:
                         err = str(e)[:120]
                 if ok:
-                    ok_count += 1
-                    results.append({"provider": prov, "account": label, "ok": True})
+                    # This fallback is an actual messages inference, not a quota read.
+                    results.append({"provider": prov, "account": label, "ok": True, "outcome": "inference"})
                 else:
                     results.append({"provider": prov, "account": label, "ok": False, "error": (err or "zai keepalive failed")[:200]})
             else:
                 results.append({"provider": prov, "account": label, "ok": False, "error": "unsupported provider"})
         except Exception as exc:
             results.append({"provider": prov, "account": label, "ok": False, "error": str(exc)[:160]})
-        prog = {"type": "progress", "done": idx + 1, "total": total, "provider": prov, "account": label, "ok": results[-1].get("ok", False)}
+        results[-1].setdefault("outcome", "failed")
+        prog = {"type": "progress", "done": idx + 1, "total": total, **results[-1]}
         _emit(prog, separators=(",", ":"))
         sys.stdout.flush()
 
     if refused():
         return 0
-    summary = {"ok": ok_count > 0 or not targets, "pinged": len(targets), "succeeded": ok_count, "results": results}
+    succeeded = sum(result["outcome"] == "inference" for result in results)
+    fallback = sum(result["outcome"] == "quota_read" for result in results)
+    failed = sum(result["outcome"] == "failed" for result in results)
+    summary = {"ok": succeeded == total, "pinged": total, "succeeded": succeeded,
+               "fallback": fallback, "failed": failed, "results": results}
     _emit(summary, separators=(",", ":"))
     sys.stdout.flush()
     return 0
