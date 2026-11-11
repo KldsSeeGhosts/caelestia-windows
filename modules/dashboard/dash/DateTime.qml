@@ -65,6 +65,14 @@ Item {
 
             sourceComponent: StyledText {
                 text: Time.format("ss")
+                Component.onCompleted: {
+                    if (typeof Time.retainSeconds === "function")
+                        Time.retainSeconds();
+                }
+                Component.onDestruction: {
+                    if (Time && typeof Time.releaseSeconds === "function")
+                        Time.releaseSeconds();
+                }
                 color: Colours.palette.m3secondary
                 font: Tokens.font.clock.size(28).weight(Font.DemiBold).build()
             }

@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import idle_work
 
 spec = importlib.util.spec_from_file_location("perf_method", Path(__file__).with_name("method.py"))
 m = importlib.util.module_from_spec(spec)
@@ -27,6 +28,24 @@ def receipt():
 
 
 class Analysis(unittest.TestCase):
+    def test_idle_count_controls_fail_closed(self):
+        row = {"minutes": 60.25 / 60, "processStarts": 4,
+               "clockWakeups": 60, "plantedWakeups": 0}
+        session = {name: dict(row) for name in ("a", "aa", "added", "b")}
+        session["added"].update(processStarts=8, plantedWakeups=60)
+        session["b"].update(processStarts=0, clockWakeups=1)
+        self.assertEqual({"recorderStartsSaved": 4, "clockWakeupsSaved": 59},
+                         idle_work.qualify(session))
+        for name, metric, value in (
+                ("aa", "processStarts", 3), ("aa", "clockWakeups", 63),
+                ("added", "processStarts", 7), ("added", "plantedWakeups", 0),
+                ("added", "clockWakeups", 65), ("b", "processStarts", 1),
+                ("b", "clockWakeups", 60), ("a", "minutes", 0)):
+            bad = copy.deepcopy(session)
+            bad[name][metric] = value
+            with self.subTest(name=name, metric=metric), self.assertRaises(ValueError):
+                idle_work.qualify(bad)
+
     def test_all_four_verdicts(self):
         a = [100.] * 12
         self.assertEqual("improved", m.analyze(a, [80.] * 12, 5)["verdict"])
