@@ -37,13 +37,17 @@ Singleton {
     property real eventSequence: 0
     property bool connectionFailed: false
     property bool recovering: false
+    // The classic tool has its own tray, which can start a recording without
+    // the shell; keep the slow idle poll for it. CaptureUi clears this on the
+    // shell route, where every start passes through pendingStart.
+    property bool externalStarts: true
     property bool incompatible: false
     readonly property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
     readonly property bool paused: state === "paused"
     readonly property bool stopping: state === "finalizing"
     // One startup observation recovers recordings across shell reloads. Once
     // idle, merely reading outputDir must not keep a status client alive.
-    readonly property bool statusNeeded: baselinePending || pendingStart || state !== "idle" || refCount > 0 || recovering
+    readonly property bool statusNeeded: baselinePending || pendingStart || state !== "idle" || refCount > 0 || recovering || externalStarts
     readonly property bool pollFast: pendingStart || (!connectionFailed && (state !== "idle" || refCount > 0))
     onRefCountChanged: {
         if (refCount > 0)

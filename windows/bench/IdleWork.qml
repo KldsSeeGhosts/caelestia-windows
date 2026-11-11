@@ -28,6 +28,8 @@ ShellRoot {
     Component.onCompleted: {
         // Instantiate only these services, with all paths in the disposable stage.
         console.log("CAELESTIA_IDLE_INIT " + Recorder.outputDir + Time.timeStr);
+        // The default shell capture route; CaptureUi is not loaded here.
+        Recorder.externalStarts = false;
     }
     Timer {
         interval: 2000
@@ -37,6 +39,9 @@ ShellRoot {
             root.check(Recorder.outputDir === "C:/synthetic/recordings", "output directory");
             if (root.testing) {
                 root.check(!Recorder.statusNeeded, "idle status must sleep");
+                Recorder.externalStarts = true;
+                root.check(Recorder.statusNeeded, "classic tray keeps the idle poll");
+                Recorder.externalStarts = false;
                 root.check(Time.secondsConsumers === 0 && Time.seconds === 0, "minute default");
                 Time.retainSeconds();
                 Time.retainSeconds();
