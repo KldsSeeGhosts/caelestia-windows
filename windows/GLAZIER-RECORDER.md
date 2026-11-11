@@ -71,6 +71,15 @@ Sound and Discard use the helper's control protocol. Additive v1 `audio` and
 a host. Status includes `region` and `ui` so a reload can restore the controls.
 The helper still owns elapsed time, the journal, output files and recovery.
 
+The recording overlay retains its last physical region across a soft reload.
+Its retained properties reload before its window loader, so the existing
+excluded border and control windows can be adopted even before the new
+Recorder singleton receives status. Previously the loader was empty during
+adoption, destroying those full-monitor windows and recreating them after the
+poll. Recovery never sends a recording or region command. Fresh idle or offline
+status removes the retained controls. The helper's WGC monitor, crop box and
+encoder dimensions remain fixed for the recording.
+
 Start delegates to the native identity registry. Cold launch retains the
 `CreateProcessW` handle without inherited handles or a console. A forwarding
 client never claims host ownership or launched-host journal freshness.
@@ -134,3 +143,11 @@ modes, pause/resume, stop and playable finalized MP4, list/open/reveal/delete,
 tray/hotkey reflection, failure recovery and owned-host shutdown. Include
 delete/modal teardown and rapid restart with the default D3D renderer.
 Keep recordings and screenshots outside the checkout and exclude personal data.
+
+For #119, the owner should record a region over a static test grid in shell
+mode, reload repeatedly while recording and paused, then stop and inspect the
+finalized video frame by frame around each reload. Repeat on a scaled monitor
+with a negative desktop origin. The grid's crop, pixel spacing and encoded
+dimensions must stay constant, and the restored controls must still stop the
+recording. Unattended tests cover retained overlay geometry and command-free
+recovery, not the compositor's live response to capture exclusions.
