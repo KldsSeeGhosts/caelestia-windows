@@ -2,6 +2,8 @@
 // installed-host names. The per-test class is supplied by its parent.
 #include <windows.h>
 #include <shellapi.h>
+#include <qdir.h>
+#include <qfile.h>
 #include <qjsondocument.h>
 #include <qjsonobject.h>
 #include <qstringlist.h>
@@ -37,6 +39,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     for (int i = 1; i < count; ++i)
         args.append(QString::fromWCharArray(argv[i]));
     LocalFree(argv);
+    const auto cwdLog = qEnvironmentVariable("CAELESTIA_CAPTURE_FIXTURE_CWD_LOG");
+    if (!cwdLog.isEmpty()) {
+        QFile file(cwdLog + (args.contains(QStringLiteral("--status"))
+            ? QStringLiteral(".status") : QStringLiteral(".host")));
+        if (!file.open(QIODevice::WriteOnly))
+            return 7;
+        file.write(QDir::currentPath().toUtf8());
+    }
     if (args.contains(QStringLiteral("--status"))) {
         const auto window = FindWindowW(reinterpret_cast<LPCWSTR>(name.utf16()), nullptr);
         DWORD pid = 0;

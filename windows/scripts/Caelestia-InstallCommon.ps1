@@ -1145,7 +1145,7 @@ function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs 
     $Prefix = Resolve-CaelestiaRuntimePrefix $Prefix -Running
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = Join-Path $Prefix 'qs.exe'
-    $info.WorkingDirectory = $Prefix
+    $info.WorkingDirectory = $env:USERPROFILE
     $info.Arguments = 'ipc --path "' + (Join-Path $Prefix 'shell\shell.qml') + '" call shell ' + $Command
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -1203,7 +1203,7 @@ function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime
     elseif ($DisableSchemeProvisioning) { $launchArguments += ' -SkipSchemeRuntime' }
     $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) `
         -Argument $launchArguments `
-        -WorkingDirectory $Prefix
+        -WorkingDirectory $env:USERPROFILE
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null

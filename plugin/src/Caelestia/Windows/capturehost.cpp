@@ -127,7 +127,9 @@ public:
         auto command = quotedArgument(QDir::toNativeSeparators(image));
         for (const auto& arg : args)
             command += QLatin1Char(' ') + quotedArgument(arg);
-        const auto directory = QDir::toNativeSeparators(QFileInfo(image).absolutePath());
+        // The image and all supplied file paths are absolute. Do not pin a
+        // retired payload as cwd for the lifetime of the capture host.
+        const auto directory = QDir::toNativeSeparators(QDir::homePath());
         STARTUPINFOW startup{};
         startup.cb = sizeof(startup);
         PROCESS_INFORMATION process{};
@@ -186,7 +188,7 @@ public:
         });
         process->setProgram(image);
         process->setArguments({QStringLiteral("--status")});
-        process->setWorkingDirectory(QFileInfo(image).absolutePath());
+        process->setWorkingDirectory(QDir::homePath());
         process->setStandardErrorFile(QProcess::nullDevice());
         timeout->start(16000);
         process->start();

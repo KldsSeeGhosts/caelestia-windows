@@ -70,7 +70,8 @@ using System.Threading;
 public static class LifecycleIpcFixture {
     public static int Main(string[] args) {
         string command = args[args.Length - 1];
-        string mode = File.ReadAllText("mode.txt");
+        string prefix = Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+        string mode = File.ReadAllText(Path.Combine(prefix, "mode.txt"));
         if (mode == "timeout") { Thread.Sleep(10000); return 0; }
         if (mode == "failure") {
             Console.Out.WriteLine("private-state-sentinel");
@@ -78,13 +79,13 @@ public static class LifecycleIpcFixture {
             return 3;
         }
         if (mode == "quit-failure") {
-            File.WriteAllText("quit-called.txt", "1");
+            File.WriteAllText(Path.Combine(prefix, "quit-called.txt"), "1");
             Console.Out.WriteLine("private-state-sentinel");
             Console.Error.WriteLine("private-error-sentinel");
             return 3;
         }
-        int calls = Int32.Parse(File.ReadAllText("calls.txt"));
-        File.WriteAllText("calls.txt", (calls + 1).ToString());
+        int calls = Int32.Parse(File.ReadAllText(Path.Combine(prefix, "calls.txt")));
+        File.WriteAllText(Path.Combine(prefix, "calls.txt"), (calls + 1).ToString());
         if (command == "restart") { Console.WriteLine(""); return 0; }
         if (mode == "legacy") Console.WriteLine("{\"screens\":1,\"windows\":[{}]}");
         else {

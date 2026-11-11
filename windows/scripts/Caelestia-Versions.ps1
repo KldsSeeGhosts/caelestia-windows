@@ -697,6 +697,18 @@ function Remove-CaelestiaRetiredVersions([string]$Prefix) {
         if ($directory.Name -in @($record.current, $record.previous) -or
             (Get-CaelestiaLongPath $directory.FullName) -in $running) { continue }
         try {
+            # A prior recursive removal can remove install.json before a cwd
+            # lock prevents deleting the directory itself. Retry only a plain,
+            # valid-id, empty child without adopting an unknown payload.
+            Assert-CaelestiaVersionId $directory.Name
+            # The resolver refuses reparse points in this path and its parents.
+            $retired = Resolve-CaelestiaDirectory $directory.FullName
+            if (@(Get-ChildItem -LiteralPath $retired -Force -ErrorAction Stop).Count -eq 0) {
+                # Non-recursive deletion also refuses anything created since
+                # enumeration, or a directory still held as a process cwd.
+                [IO.Directory]::Delete($retired, $false)
+                continue
+            }
             # Ownership, exact child path and link refusal are checked before
             # every recursive removal. Unknown directories are never adopted.
             $retired = Get-CaelestiaVersionPrefix $Prefix $directory.Name

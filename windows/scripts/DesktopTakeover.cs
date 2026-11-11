@@ -1430,7 +1430,7 @@ namespace Caelestia.Takeover {
             // Most sessions never suppress banners. Avoid spawning PowerShell
             // on every launch, crash and quit when there is nothing to restore.
             if (!File.Exists(Path.Combine(state, "banner-suppression.json"))) return;
-            string helper = Path.Combine(launch.WorkingDirectory, "Banner-Suppression.ps1");
+            string helper = Path.Combine(Path.GetDirectoryName(launch.Executable), "Banner-Suppression.ps1");
             if (!File.Exists(helper)) {
                 if (File.Exists(Path.Combine(state, "banner-suppression.json")))
                     throw new InvalidOperationException("Banner recovery helper is missing: " + helper);
@@ -1438,6 +1438,7 @@ namespace Caelestia.Takeover {
             }
             var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
                 "-NoProfile -File \"" + helper + "\" -StateDirectory \"" + state + "\" -Command Restore") {
+                WorkingDirectory = launch.WorkingDirectory,
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
             };
             var errors = new StringBuilder();

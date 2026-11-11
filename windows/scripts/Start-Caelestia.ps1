@@ -200,7 +200,9 @@ $wePython = if ($schemeAvailable) { [string]$schemeRuntime.python }
 
 $info = New-Object Diagnostics.ProcessStartInfo
 $info.FileName = $exe
-$info.WorkingDirectory = $Prefix
+# Launcher apps and helpers inherit this directory. Never pin an updatable
+# payload, and let terminals open in the same home directory as Explorer apps.
+$info.WorkingDirectory = $env:USERPROFILE
 $info.UseShellExecute = $false
 $info.CreateNoWindow = $true
 # Preserve the user's launch environment in normal use. Smoke deliberately

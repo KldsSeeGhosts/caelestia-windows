@@ -837,9 +837,13 @@ Item {
         qmlRegistry = nullptr;
     }
     void realNativeLaunchAndHandoff() {
+        QTemporaryDir cwdLogs;
+        QVERIFY(cwdLogs.isValid());
+        const auto cwdLog = cwdLogs.path() + QStringLiteral("/cwd");
         const auto fixtureClass = QStringLiteral("CaelestiaCaptureFixture.launch.%1").arg(QCoreApplication::applicationPid());
         qputenv("CAELESTIA_CAPTURE_FIXTURE_CLASS", fixtureClass.toUtf8());
         qputenv("CAELESTIA_CAPTURE_FIXTURE_CLOSE_DELAY", "1");
+        qputenv("CAELESTIA_CAPTURE_FIXTURE_CWD_LOG", cwdLog.toUtf8());
         const auto childPath = QCoreApplication::applicationDirPath() + QStringLiteral("/capture-host-child.exe");
         auto ops = makeCaptureHostOps();
         struct Cleanup {
@@ -851,12 +855,19 @@ Item {
                     ops->postClose(probe.identity);
                 qunsetenv("CAELESTIA_CAPTURE_FIXTURE_CLASS");
                 qunsetenv("CAELESTIA_CAPTURE_FIXTURE_CLOSE_DELAY");
+                qunsetenv("CAELESTIA_CAPTURE_FIXTURE_CWD_LOG");
             }
         } cleanup{ops, childPath, fixtureClass};
         CaptureHostRegistry registry(ops);
         CaptureHost original(&registry);
         original.acquire(childPath, fixtureClass, {});
         QTRY_COMPARE(state(registry), QStringLiteral("Owned"));
+        for (const auto& suffix : {QStringLiteral(".host"), QStringLiteral(".status")}) {
+            QFile cwdFile(cwdLog + suffix);
+            QVERIFY(cwdFile.open(QIODevice::ReadOnly));
+            QCOMPARE(QString::fromUtf8(cwdFile.readAll()), QDir::homePath());
+            QVERIFY(QDir::homePath() != QFileInfo(childPath).absolutePath());
+        }
         QVERIFY(original.snapshot().value(QStringLiteral("launched")).toBool());
         const auto identity = ops->probe(childPath, fixtureClass).identity;
         QVERIFY(identity.handle);
