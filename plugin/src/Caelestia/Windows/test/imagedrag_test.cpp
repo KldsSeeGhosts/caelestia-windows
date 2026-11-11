@@ -49,43 +49,22 @@ class ImageDragTest : public QObject {
 private slots:
     void initTestCase() { QVERIFY(dir.isValid()); }
 
-    // The drag offers the real file, so a target that wants a file gets the one
-    // on disk and not a copy made for the drag.
-    void offersTheFileItself() {
+    void offersOnlyImageFormats() {
         const auto path = save(sample(), QStringLiteral("shot.png"));
         const auto data = imagedrag::mimeData(path);
         QVERIFY(data);
-#ifdef Q_OS_WIN
-        // Not a URL: Qt would deliver a URL list as UniformResourceLocator(W) too,
-        // which chat boxes and browsers paste as text beside the file.
+        QCOMPARE(data->formats(), QStringList{QStringLiteral("application/x-qt-image")});
         QVERIFY(!data->hasUrls());
+        QVERIFY(!data->hasText());
         QVERIFY(!data->hasFormat(QStringLiteral("text/uri-list")));
-        QCOMPARE(QString::fromUtf8(data->data(QLatin1StringView(imagedrag::fileDropMime))),
-            QDir::toNativeSeparators(path));
-#else
-        QVERIFY(data->hasUrls());
-        QCOMPARE(data->urls().size(), 1);
-        QCOMPARE(data->urls().constFirst(), QUrl::fromLocalFile(path));
-#endif
+        QVERIFY(!data->hasFormat(QStringLiteral("application/x-caelestia-file-drop")));
+        for (const auto& name : {"CF_HDROP", "CF_TEXT", "CF_UNICODETEXT", "FileName", "FileNameW",
+                 "FileGroupDescriptor", "FileGroupDescriptorW", "UniformResourceLocator",
+                 "UniformResourceLocatorW", "Preferred DropEffect"}) {
+            QVERIFY(!data->hasFormat(QStringLiteral("application/x-qt-windows-mime;value=\"%1\"")
+                    .arg(QLatin1StringView(name))));
+        }
     }
-
-#ifdef Q_OS_WIN
-    // CF_HDROP: a DROPFILES header, the wide path, then two nulls.
-    void dropFilesHoldsTheWidePath() {
-        const auto path = QStringLiteral("C:/Users/someone/AppData/Local/Temp/caelestia-drag-0/annotate.png");
-        const auto bytes = imagedrag::dropFiles(path);
-        QVERIFY(bytes.size() > qsizetype(sizeof(DROPFILES)));
-        DROPFILES header{};
-        memcpy(&header, bytes.constData(), sizeof(header));
-        QCOMPARE(header.pFiles, DWORD(sizeof(DROPFILES)));
-        QVERIFY(header.fWide);
-        const auto* wide = reinterpret_cast<const char16_t*>(bytes.constData() + sizeof(DROPFILES));
-        const auto native = QDir::toNativeSeparators(path);
-        QCOMPARE(QString::fromUtf16(wide), native);
-        QCOMPARE(bytes.size(), qsizetype(sizeof(DROPFILES)) + (native.size() + 2) * 2);
-        QVERIFY(imagedrag::dropFiles({}).isEmpty());
-    }
-#endif
 
     // The decoded image is what Qt's Windows converters turn into PNG, CF_DIB
     // and CF_DIBV5. This is the image data, unchanged.
@@ -99,34 +78,15 @@ private slots:
         QCOMPARE(image.convertToFormat(QImage::Format_ARGB32), original);
     }
 
-    // Offers a file and an image and nothing else: no text, no HTML.
-    void offersOnlyTheFileAndTheImage() {
+    void offersNoHtmlOrColor() {
         const auto data = imagedrag::mimeData(save(sample(), QStringLiteral("only.png")));
         QVERIFY(data);
         // (hasText() is true for a URL list, so look at the formats themselves.)
         QVERIFY(!data->hasFormat(QStringLiteral("text/plain")));
         QVERIFY(!data->hasHtml());
         QVERIFY(!data->hasColor());
-        for (const auto& format : data->formats()) {
-            const bool known = format == QStringLiteral("text/uri-list") || format == QStringLiteral("application/x-qt-image")
-                || format == QStringLiteral("application/x-caelestia-file-drop")
-                || format.startsWith(QStringLiteral("application/x-qt-windows-mime;value="));
-            QVERIFY2(known, qPrintable(format));
-        }
+        QCOMPARE(data->formats(), QStringList{QStringLiteral("application/x-qt-image")});
     }
-
-#ifdef Q_OS_WIN
-    // Explorer and several editors read this to choose between copy and move.
-    void prefersCopyOnWindows() {
-        const auto data = imagedrag::mimeData(save(sample(), QStringLiteral("effect.png")));
-        QVERIFY(data);
-        const auto bytes = data->data(QStringLiteral("application/x-qt-windows-mime;value=\"Preferred DropEffect\""));
-        QCOMPARE(bytes.size(), 4);
-        QCOMPARE(quint32(quint8(bytes[0])) | quint32(quint8(bytes[1])) << 8 | quint32(quint8(bytes[2])) << 16
-                | quint32(quint8(bytes[3])) << 24,
-            quint32(1));
-    }
-#endif
 
     void refusesWhatIsNotAnImageFile() {
         QVERIFY(!imagedrag::mimeData(QString()));
