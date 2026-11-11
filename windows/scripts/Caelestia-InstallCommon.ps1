@@ -240,10 +240,12 @@ function Stop-CaelestiaSupervisor($Supervisor, [int]$RecoveryTimeoutMs = 60000) 
 function Repair-CaelestiaStaleSupervisors([string]$ProfileRoot) {
     foreach ($supervisor in @(Get-CaelestiaSupervisors $ProfileRoot)) {
         # Starting includes the existing 45 s banner recovery. Running owners
-        # publish a heartbeat every 250 ms. Observe twice before taking over.
-        $limit = if ($supervisor.Phase -in @('starting', 'restoring')) { 75 } else { 2 }
+        # publish a heartbeat every second. Allow several missed beats before
+        # taking over. A supervisor from before heartbeats wrote utc once, so
+        # its age proves nothing; leave it alone.
+        $limit = if ($supervisor.Phase -in @('starting', 'restoring')) { 75 } else { 5 }
         $status = Read-CaelestiaSupervisorStatus $supervisor.StatusPath
-        if (-not $status.utc) { continue }
+        if (-not $status.utc -or -not $status.heartbeat) { continue }
         $deadline = [DateTimeOffset]::Parse($status.utc).UtcDateTime.AddSeconds($limit)
         $latest = $status
         while (-not $supervisor.Process.HasExited -and $latest.utc -eq $status.utc -and [DateTime]::UtcNow -lt $deadline) {

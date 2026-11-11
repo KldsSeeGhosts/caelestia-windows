@@ -1295,6 +1295,7 @@ namespace Caelestia.Takeover {
         uint lastHookFailure;
         DateTime nextPersistLog;
         DateTime nextExplorerRetry;
+        DateTime nextHeartbeat;
         string statusPhase;
         int statusPid;
         bool done;
@@ -1612,6 +1613,9 @@ namespace Caelestia.Takeover {
                 var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
                     quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
                     forcedChildTermination = forcedChildTermination,
+                    // Tells Start this owner refreshes utc while alive. Older
+                    // supervisors wrote it once, so staleness says nothing there.
+                    heartbeat = true,
                     utc = DateTime.UtcNow.ToString("o") });
                 File.WriteAllText(path + ".tmp", text);
                 if (File.Exists(path)) File.Replace(path + ".tmp", path, null);
@@ -1680,7 +1684,12 @@ namespace Caelestia.Takeover {
         void Tick(object sender, EventArgs args) {
             try {
                 // Refresh even during intentional backoff and snapshot retries.
-                Status(statusPhase, statusPid);
+                // Once a second is enough for Start's stale-owner check and
+                // keeps the status file from being rewritten on every tick.
+                if (DateTime.UtcNow >= nextHeartbeat) {
+                    nextHeartbeat = DateTime.UtcNow.AddSeconds(1);
+                    Status(statusPhase, statusPid);
+                }
                 if (!recovering && recovery.WaitOne(0)) {
                     recovering = true;
                     stopDeadline = Stopwatch.GetTimestamp() + ChildExitGraceMs * Stopwatch.Frequency / 1000;
