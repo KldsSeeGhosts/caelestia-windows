@@ -326,12 +326,12 @@ class Evidence(unittest.TestCase):
             (directory / name).write_bytes(b"inert unsealed asset")
         native = c.read(self.build / "logs/build.json")
         release = {
-            "displayVersion": identity, "buildVersion": identity, "releaseId": identity, "tag": "v" + identity,
+            "displayVersion": identity, "buildVersion": identity, "releaseId": identity, "tag": "v" + identity + "-development",
             "sourceRevision": self.ctx["sha"], "backendRevision": native["backendRevision"],
             "manifestSha256": "c" * 64, "profileSchema": 1, "minimumUpdaterSchema": 1,
-            "notesUrl": f"https://github.com/{n.REPO}/releases/tag/v{identity}",
+            "notesUrl": f"https://github.com/{n.REPO}/releases/tag/v{identity}-development",
             "bundle": {"name": root + ".zip", "root": root,
-                       "url": f"https://github.com/{n.REPO}/releases/download/v{identity}/{root}.zip",
+                       "url": f"https://github.com/{n.REPO}/releases/download/v{identity}-development/{root}.zip",
                        "size": (directory / (root + ".zip")).stat().st_size,
                        "sha256": c.digest(directory / (root + ".zip")), "entries": 1, "unpackedSize": 20},
             "provenance": {"runId": self.ctx["runId"], "runAttempt": self.ctx["runAttempt"]}}
@@ -351,7 +351,7 @@ class Evidence(unittest.TestCase):
     def test_seal_preserves_today_candidate_schema_and_receipt_binding(self):
         directory, unsealed = self.unsealed()
         self.assertFalse((directory / "candidate.json").exists())
-        self.assertEqual("0.2.0-dev.1.8.2", self.seal(directory))
+        self.assertEqual("0.2.0", self.seal(directory))
         doc = n.verify_candidate_header(directory, self.ctx)
         self.assertEqual(assembly.HEADER, set(doc))
         self.assertEqual(n.GATES, doc["gates"])
@@ -542,7 +542,7 @@ class Evidence(unittest.TestCase):
             assembly.resume(self.shell, self.build, self.results)
 
     def test_real_pinned_validator_and_same_build_evidence_pass(self):
-        self.assertEqual("0.2.0-dev.1.8.2", self.verify())
+        self.assertEqual("0.2.0", self.verify())
         output = self.root / "public"; output.mkdir()
         c.export_evidence(self.shell, self.build, self.results, self.validator, self.ctx, output)
         c.verify_receipt(self.shell, output, self.validator, self.ctx)
@@ -656,7 +656,7 @@ class Evidence(unittest.TestCase):
                          | {f"ci-pair/{name}" for name in expected_pair},
                          {path.relative_to(transfer).as_posix() for path in transfer.rglob("*") if path.is_file()})
         build, results = transfer / "b-public", transfer / "ci-pair"
-        self.assertEqual("0.2.0-dev.1.8.2",
+        self.assertEqual("0.2.0",
                          c.verify_live_evidence(self.shell, build, results, self.validator, self.ctx))
         output = self.root / "transferred-public"; output.mkdir()
         c.export_evidence(self.shell, build, results, self.validator, self.ctx, output)
@@ -868,17 +868,17 @@ class Pipeline(unittest.TestCase):
     def candidate(self, core="0.2.0"):
         self.number += 1
         directory = self.root / f"candidate-{self.number}"; directory.mkdir()
-        build = core + "-dev.1.5.1"
+        build = core
         root = f"caelestia-windows-{build}-windows-x64"
         for name in n.EVIDENCE | {root + ".zip"}:
             (directory / name).write_bytes(b"synthetic data, not native qualification")
-        release = {"displayVersion": build, "buildVersion": build, "releaseId": build, "tag": "v" + build,
+        release = {"displayVersion": build, "buildVersion": build, "releaseId": build, "tag": "v" + build + "-development",
                    "sourceRevision": self.ctx["sha"], "backendRevision": "b" * 40, "manifestSha256": "c" * 64,
                    "profileSchema": 1, "minimumUpdaterSchema": 1,
-                   "notesUrl": f"https://github.com/{n.REPO}/releases/tag/v{build}",
+                   "notesUrl": f"https://github.com/{n.REPO}/releases/tag/v{build}-development",
                    "bundle": {"name": root + ".zip", "root": root, "size": (directory / (root + ".zip")).stat().st_size,
                               "sha256": n.digest(directory / (root + ".zip")), "entries": 1, "unpackedSize": 20,
-                              "url": f"https://github.com/{n.REPO}/releases/download/v{build}/{root}.zip"},
+                              "url": f"https://github.com/{n.REPO}/releases/download/v{build}-development/{root}.zip"},
                    "provenance": {"runId": self.ctx["runId"], "runAttempt": self.ctx["runAttempt"],
                                   "pairResultSha256": n.digest(directory / "pair-result.json"),
                                   "candidateReceiptSha256": n.digest(directory / "candidate-result.json")}}
@@ -954,7 +954,7 @@ class Pipeline(unittest.TestCase):
                 self.develop(directory)
             self.assertFalse(self.github.writes)
 
-    def test_publish_exact_bytes_and_idempotent_pointer(self):
+    def test_publish_exact_bytes_and_refuse_published_identity(self):
         directory, doc = self.candidate()
         originals = {row["name"]: (directory / row["name"]).read_bytes() for row in doc["assets"]}
         self.assertEqual("published", self.develop(directory))
@@ -965,7 +965,8 @@ class Pipeline(unittest.TestCase):
                 self.assertEqual(originals[asset["name"]], self.github.bytes[asset["id"]])
         directory2, _ = self.candidate()
         writes = list(self.github.writes)
-        self.assertEqual("unchanged", self.develop(directory2))
+        with self.assertRaisesRegex(ValueError, "development-not-newer"):
+            self.develop(directory2)
         self.assertEqual(writes, self.github.writes)
 
     def test_partial_draft_recovery_and_randomized_record_reuse(self):
@@ -982,6 +983,27 @@ class Pipeline(unittest.TestCase):
         self.assertEqual("published", self.develop(directory2))
         self.assertEqual(record_bytes, self.github.bytes[record["id"]])
         self.assertEqual(1, len([row for row in self.github.writes if row == ("upload", "release-record.dsse.json")]))
+
+    def test_rerun_cannot_take_another_attempts_version(self):
+        directory, doc = self.candidate()
+        self.github.fail_download_once = True
+        with self.assertRaises(ValueError):
+            self.develop(directory)
+        writes = list(self.github.writes)
+        self.ctx["runAttempt"] = "2"
+        rerun, rerun_doc = self.candidate()
+        self.assertEqual(doc["release"]["buildVersion"], rerun_doc["release"]["buildVersion"])
+        with self.assertRaisesRegex(ValueError, "immutable-record-payload-mismatch"):
+            self.develop(rerun)
+        self.assertEqual(writes, self.github.writes)
+        self.assertFalse(self.branch.writes)
+
+    def test_legacy_highwater_precedes_plain_and_plain_never_regresses(self):
+        legacy = "0.2.0-dev.999999999999999999999.999999999999999999999.99999999999"
+        self.assertLess(n.build_key(legacy), n.build_key("0.3.0"))
+        self.assertLess(n.build_key("0.3.0-dev.1.9.1"), n.build_key("0.3.0"))
+        self.assertLess(n.build_key("0.3.9"), n.build_key("0.3.10"))
+        self.assertLess(n.build_key("0.3.99"), n.build_key("0.4.0"))
 
     def test_partial_missing_upload_resumes_without_clobber(self):
         directory, _ = self.candidate()
@@ -1024,14 +1046,15 @@ class Pipeline(unittest.TestCase):
         directory, doc = self.candidate()
         newer = copy.deepcopy(doc["release"])
         for field in ("displayVersion", "buildVersion", "releaseId"):
-            newer[field] = "0.2.0-dev.1.6.1"
-        newer["tag"] = "v" + newer["buildVersion"]
+            newer[field] = "0.2.1"
+        newer["tag"] = "v" + newer["buildVersion"] + "-development"
         z = "caelestia-windows-" + newer["buildVersion"] + "-windows-x64"
         newer["bundle"].update(name=z + ".zip", root=z,
                               url=f"https://github.com/{n.REPO}/releases/download/{newer['tag']}/{z}.zip")
         newer["notesUrl"] = f"https://github.com/{n.REPO}/releases/tag/{newer['tag']}"
         self.branch.documents["development"] = self.pointer(newer)
-        self.assertEqual("superseded", self.develop(directory))
+        with self.assertRaisesRegex(ValueError, "development-not-newer"):
+            self.develop(directory)
         self.assertFalse(self.github.writes)
         changed = copy.deepcopy(doc["release"]); changed["bundle"]["sha256"] = "0" * 64
         self.branch.documents["development"] = self.pointer(changed)
@@ -1101,16 +1124,23 @@ class Pipeline(unittest.TestCase):
         self.assertEqual("published", self.develop(directory))
         promotion = n.Crypto(ROOT, self.work, self.trust, MATERIAL["promotion"])
         originals = {path.name: path.read_bytes() for path in directory.iterdir()}
-        for channel, alias in (("preview", "1.0.0-preview.1"), ("stable", "1.0.0")):
+        for channel, alias in (("preview", "1.0.0"), ("stable", "1.0.0")):
             with patch.object(n, "ancestor", return_value=True), patch.object(n.pair, "git", return_value=self.ctx["sha"]):
                 self.assertEqual("published", n.promote(directory, doc["release"]["buildVersion"], channel, alias,
                                                        self.github, self.branch, promotion, ROOT, lambda _: None))
-            target = self.github.releases["v" + alias]
+            target = self.github.releases["v" + alias + ("-preview" if channel == "preview" else "")]
             for asset in target["assets"]:
                 if asset["name"] != "alias-record.dsse.json":
                     self.assertEqual(originals[asset["name"]], self.github.bytes[asset["id"]])
             # Next promotion starts from immutable development assets only.
             (directory / "alias-record.dsse.json").unlink()
+            writes = list(self.github.writes)
+            with patch.object(n, "ancestor", return_value=True), \
+                    patch.object(n.pair, "git", return_value=self.ctx["sha"]), \
+                    self.assertRaisesRegex(ValueError, "promotion-not-newer"):
+                n.promote(directory, doc["release"]["buildVersion"], channel, alias,
+                          self.github, self.branch, promotion, ROOT, lambda _: None)
+            self.assertEqual(writes, self.github.writes)
 
     def test_promotion_rejects_core_relabel_stable_zero_and_bad_alias(self):
         directory, doc = self.candidate()

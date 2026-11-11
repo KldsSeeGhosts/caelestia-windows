@@ -27,7 +27,7 @@ class PublicationCheckTests(unittest.TestCase):
         for path in (self.shell / "windows/release", self.directory, self.work):
             path.mkdir(parents=True)
         n.write(self.shell / "windows/release/version.json", {"version": "0.2.0", "developmentEpoch": 1})
-        self.doc = {"release": {"buildVersion": "0.2.0-dev.1.5.1"}}
+        self.doc = {"release": {"buildVersion": "0.2.0"}}
         n.write(self.directory / "candidate.json", self.doc)
         self.inventory = {"projects": [{"revision": "a" * 40, "sha256": "b" * 64}],
                           "notices": [{"path": "notice.txt", "sha256": "c" * 64}]}
@@ -77,6 +77,7 @@ class PublicationCheckTests(unittest.TestCase):
             return "false"
 
         with patch.object(n.candidate, "verify_receipt_data", return_value=({}, {})), \
+                patch.object(n.candidate.history_version, "resolve", return_value="0.2.0"), \
                 patch.object(n.candidate, "check_pair_header"), \
                 patch.object(n.pair, "git", side_effect=git), \
                 patch.object(n, "extract_source", side_effect=lambda archive, target: target.mkdir()), \

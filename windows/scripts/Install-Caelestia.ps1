@@ -293,6 +293,7 @@ try {
     # install.json is written last: a staging directory without it is not an install.
     . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
     $appVersion = Read-CaelestiaVersion "$payload\version.json"
+    $appVersion.version = Get-CaelestiaSourceVersion $repoRoot
     [ordered]@{
         product = 'caelestia-windows'; version = 1; prefix = $Prefix; profile = $ProfileRoot
         installId = $installId

@@ -1,57 +1,87 @@
 # Versioning
 
-Versions are MAJOR.MINOR.PATCH, not decimals. `windows/release/version.json`
-is the reviewed native version source, currently 0.2.0. Existing
-0.1.0-preview.1 and 0.1.0-preview.2 history is preserved.
+Published build and display versions are plain `MAJOR.MINOR.PATCH`, without
+prerelease identifiers or build metadata. General client parsing and precedence
+still follow SemVer 2.0.0 and accept historical versions.
 
-Before 1.0, a minor may break settings, bindings or installation layout.
-Every break must have a changelog migration and a rollback compatibility note.
-Patches must not break compatibility. After 1.0, breaking changes require a
-major, compatible features a minor, and fixes a patch. Only the owner declares
-1.0, after polished, dependable operation has been demonstrated.
+## Immutable allocation
 
-General parsing and precedence follow SemVer 2.0.0, including build metadata
-(ignored for precedence), arbitrary-length numeric identifiers, and ordinal
-case-sensitive prerelease ordering. Published versions deliberately use a
-narrower grammar without build metadata.
+`windows/release/version.json` contains the reviewed base, initially `0.3.0`.
+It is an anchor, not a file to bump for every release. The anchor commit is
+the latest first-parent commit where that base value changed, found with
+`git log` on the file and comparison against each candidate's first parent.
+The switch's own merge commit therefore receives `0.3.0`. Editing other fields
+does not move the anchor. A later reviewed base change starts a new anchor.
+Only the owner declares 1.0 after dependable operation and release review.
 
-Development identity is `CORE-dev.EPOCH.RUN.ATTEMPT`. All three identifiers
-are positive decimal strings, not bounded integers. EPOCH is a reviewed
-`developmentEpoch` in version.json. Increment it before renaming/replacing the
-producer workflow or resetting its run counter. RUN is that workflow's
-run_number; ATTEMPT is run_attempt. A rerun cannot overwrite an earlier
-attempt's immutable bytes. Source ancestry and the channel highwater must also
-advance; an overlapping older build must never supersede a newer publication.
-Pointer sequence is separate from build identity.
+`windows/ci/history_version.py` folds every later first-parent commit in order.
+For GitHub merge commits, it reads the PR title recorded after
+`Merge pull request #N from ...`. Topic-branch commits do not count separately.
+It never reads labels, releases, channel pointers or run numbers to allocate
+a version. Direct non-merge commits always consume a patch.
 
-Preview and stable are deliberate signed aliases of immutable development
-artifacts. Installed build identity must always remain visible separately from
-the alias and selected update channel. Never rewrite compiled or manifest bytes
-to promote them. Stable aliases require a core of at least 1.0.0: promoting a
-0.2.0 artifact to 1.0.0 is forbidden. The reviewed core bump must first produce
-and validate a 1.0.0-dev artifact. Stable clients use only stable metadata, not
-the development pointer. A channel switch cannot authorize a network downgrade.
+| Recorded PR title or merge message | Bump |
+| --- | --- |
+| `feat: ...` or `feat(scope): ...` | MINOR, reset PATCH |
+| `feat!: ...`, `fix(scope)!: ...`, or a `BREAKING CHANGE:` line | MAJOR, reset MINOR and PATCH. Before 1.0, MINOR and reset PATCH |
+| `fix: ...`, `perf: ...`, `refactor: ...`, any other or missing prefix | PATCH |
 
-Native numeric version is CORE only, with components 0..65535 for future
-Windows VERSIONINFO compatibility. A source revision is provenance, not a
-version. Release IDs, directory IDs and JSON schema versions are not app
-versions. Local/unpublished payloads must not be advertised as channel releases.
+There is no threshold rollover. For example, `0.3.99` plus a patch is
+`0.3.100`. All computed components must fit native Windows VERSIONINFO,
+0 through 65535. Overflow fails, never wraps. Every compatibility break needs
+a changelog migration and rollback compatibility note.
+
+| First-parent history | Computed version | Publication outcome |
+| --- | --- | --- |
+| Switch anchor | `0.3.0` | Initial plain build |
+| C1, `fix: ...` | `0.3.1` | Can publish before C2 |
+| C2, `fix: ...` | `0.3.2` | Distinct even if C1 has not published |
+| C3, `docs: ...` | `0.3.3` | May not publish, still consumes version |
+| C4, `feat: ...` | `0.4.0` | PATCH resets |
+| Re-run C2 at any time | `0.3.2` | Never reallocates to another version |
+
+Failed builds and docs/CI-only commits leave gaps. Versions are never reused.
+CI checks out complete history. Shallow history fails closed. Local builds on
+topic branches use the same fold on their own first-parent history, but only
+exact-main push evidence can authorize a channel publication.
+
+The existing `nexus-publication` concurrency group serializes publication.
+A version at or below the authenticated channel highwater is refused before
+release writes. Source ancestry and immutable asset/tag checks remain gates.
+Thus C1 finishing after C2 cannot publish out of order. An Actions re-run keeps
+the version but has new run/attempt provenance and must rerun all producer gates.
+It cannot replace an existing version's bytes or adopt another attempt's
+candidate. Same-attempt partial draft recovery retains its existing byte checks.
+
+## Titles and promotions
+
+PR titles must start with `feat`, `fix`, `perf`, `refactor`, `docs`, `test`,
+`build`, `ci`, `chore`, `style` or `revert`, followed by an optional scope,
+optional `!`, then `: description`. The existing Change scope job checks this
+on PR creation, updates and title edits. It adds no new required check.
+Review the final title before merging. Editing a PR title after merge cannot
+alter the title stored in the merge commit. Labels have no versioning role.
+
+Preview and stable promote identical tested development artifacts. They do not
+rewrite native VERSIONINFO, manifests or build identity. For build `0.3.0`,
+development uses `v0.3.0-development` and preview uses `v0.3.0-preview`.
+Stable requires tested bytes at least `1.0.0` and uses `v1.0.0`.
+The explicit promotion alias must equal the build version. All these tags
+match the active immutable `v*` tag ruleset. Historical tags stay unchanged.
+Stable clients never fall back to development. Channel switches cannot
+authorize a network downgrade. Pointer sequence remains separate from version.
 
 ## SemVer migration bridge
 
-This stage still produces and publishes `CORE-dev.EPOCH.RUN.ATTEMPT`.
-The updater and Nexus page now accept both that grammar and plain
-`MAJOR.MINOR.PATCH`, without build metadata. SemVer precedence puts every
-`0.2.0-dev.*` build below `0.3.0`, regardless of epoch, run or attempt size.
-Signature, channel-role, replay and downgrade checks remain unchanged.
-Plain versions use channel-specific tags: `v0.3.0-development`,
-`v0.3.0-preview`, and, from 1.0, `v1.0.0` for stable. This lets each channel
-promote identical bytes without trying to add alias assets to an immutable
-development release. Display and build versions remain plain. Legacy tags and
-aliases keep their existing rules.
+PR #140 is the bridge. It still publishes legacy
+`CORE-dev.EPOCH.RUN.ATTEMPT` builds, but its updater and Nexus page accept both
+legacy versions and plain SemVer. This switch must merge only after a bridge
+build has been published and the owner has installed it.
 
-The switch to plain versions must merge only after a bridge build has been
-published and the owner has installed it. Clients such as
-`0.2.0-dev.1.283.1` reject plain versions as `bad-metadata`. They must install
-the legacy-format bridge first. Rolling back to a pre-bridge payload restores
-that old client's limitation. Never clear trust highwater to bypass it.
+Every `0.2.0-dev.*` build precedes `0.3.0`, regardless of epoch, run or attempt
+size. Older clients such as `0.2.0-dev.1.283.1` reject plain versions as
+`bad-metadata` and must install the bridge first. Rolling back to a pre-bridge
+payload restores that old client's format limit. Signature, channel-role,
+replay and downgrade checks remain unchanged. Never clear trust or highwater
+state to bypass them. A source revision, release directory or JSON schema
+number is not an app version. Local payloads are not channel releases.

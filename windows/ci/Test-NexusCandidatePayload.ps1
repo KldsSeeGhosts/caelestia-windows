@@ -111,6 +111,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Trusted receipt toolchain could not be read.' 
 $receiptActual = Read-CaelestiaStrictJsonFile $receiptToolchain 1048576
 }
 $version = Read-CaelestiaVersion "$SourceDataRoot\windows\release\version.json"
+$version.version = Get-CaelestiaSourceVersion (Resolve-Path "$PSScriptRoot\..\..").Path $doc.sourceRevision $Python
 if ($manifest.sourceRevision -cne $doc.sourceRevision -or $manifest.nativeSourceRevision -cne $doc.sourceRevision -or
     $manifest.releaseId -cne $release.buildVersion -or $manifest.backendRevision -cne $release.backendRevision -or
     $native.sourceRevision -cne $doc.sourceRevision -or $native.sourceDirty -ne $false -or

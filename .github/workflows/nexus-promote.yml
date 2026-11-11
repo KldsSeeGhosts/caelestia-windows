@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       build_version:
-        description: Exact immutable CORE-dev.EPOCH.RUN.ATTEMPT
+        description: Exact immutable MAJOR.MINOR.PATCH build
         type: string
         required: true
       channel:
@@ -12,7 +12,7 @@ on:
         options: [preview, stable]
         required: true
       alias:
-        description: Matching-core preview.N, rc.N or stable core (1.0+ only)
+        description: Same plain version as build_version. Stable requires 1.0.0 or newer.
         type: string
         required: true
 permissions:

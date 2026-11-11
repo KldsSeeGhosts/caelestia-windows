@@ -49,20 +49,18 @@ def resume(shell, build, results):
 def assembly_identity(shell, build, ctx):
     record = production_record(shell, build, ctx["sha"])
     version_file = Path(shell) / "windows/release/version.json"
-    version = read(version_file)
+    identity = candidate.history_version.resolve(shell, ctx["sha"])
     lock = read(Path(shell) / "windows/sources.lock.json")
     backend = lock["quickshell"]["revision"]
     require(record["backendMode"] == "pinned" and record["backendRevision"] ==
             record["pinnedBackendRevision"] == record["lockBackendRevision"] == backend
             and pair.git(shell, "ls-tree", "HEAD", "--", "windows/deps/quickshell") ==
             "160000 commit " + backend + "\twindows/deps/quickshell", "assembly-backend-pin-mismatch")
-    require(record["nativeVersion"] == version["version"]
+    require(record["nativeVersion"] == identity
             and record["versionFileSha256"] == digest(version_file)
             and record["publicRelease"] is True and record["pluginTests"] is True
             and record["captureBundled"] is True, "build-version-provenance-mismatch")
-    identity = (version["version"] + "-dev." + str(version["developmentEpoch"]) + "." +
-                ctx["runNumber"] + "." + ctx["runAttempt"])
-    require(candidate.DEV.fullmatch(identity) and len(identity) <= 80, "invalid-build-identity")
+    require(candidate.VERSION.fullmatch(identity) and len(identity) <= 80, "invalid-build-identity")
     return identity
 
 

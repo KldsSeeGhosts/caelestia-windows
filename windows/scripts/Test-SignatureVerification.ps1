@@ -176,6 +176,10 @@ try {
     $channels = @(
         @{ ref = 'refs/tags/v0.2.0-dev.1.23.4'; channel = 'development' }
         @{ ref = 'v0.2.0-dev.1.1.1'; channel = 'development' }
+        @{ ref = 'v0.3.0-development'; channel = 'development' }
+        @{ ref = 'v1.0.0-development'; channel = 'development' }
+        @{ ref = 'v0.3.0-preview'; channel = 'preview' }
+        @{ ref = 'v1.0.0-preview'; channel = 'preview' }
         @{ ref = 'refs/tags/v0.1.0-preview.2'; channel = 'preview' }
         @{ ref = 'refs/tags/v1.0.0-rc.1'; channel = 'preview' }
         @{ ref = 'refs/tags/v1.0.0'; channel = 'stable' }

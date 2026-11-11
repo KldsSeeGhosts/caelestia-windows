@@ -72,14 +72,15 @@ if (-not $build.supervisor -or $build.supervisor.sourceSha256 -ne
 . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
 $versionPath = Join-Path $repoRoot 'windows\release\version.json'
 $appVersion = Read-CaelestiaVersion $versionPath
+$appVersion.version = Get-CaelestiaSourceVersion $repoRoot
 if ($build.nativeVersion -cne $appVersion.version -or $build.versionFileSha256 -cne
     (Get-FileHash -LiteralPath $versionPath -Algorithm SHA256).Hash.ToLowerInvariant()) {
     throw 'Build version provenance differs from the authoritative version source; rebuild.'
 }
 try { $parsedId = ConvertTo-CaelestiaSemVer $ReleaseId } catch { throw 'New release IDs must be SemVer build identities.' }
 if ($parsedId.Core -cne $appVersion.version -or $parsedId.Build -or
-    (-not (Test-CaelestiaDevVersion $ReleaseId) -and $parsedId.Prerelease -cne 'local')) {
-    throw 'Assemble only a matching development build identity or CORE-local, never a promotion alias.'
+    ($parsedId.Prerelease -and $parsedId.Prerelease -cne 'local')) {
+    throw 'Assemble only the computed plain build identity or CORE-local, never a promotion alias.'
 }
 if ($build.sourceDirty -ne $false -or $build.publicRelease -ne $true -or $build.sourceRevision -notmatch '^[a-f0-9]{40}$' -or
     -not $build.captureBundled -or $build.qtVersion -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$') {

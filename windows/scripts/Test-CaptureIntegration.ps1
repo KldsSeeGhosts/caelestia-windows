@@ -21,7 +21,7 @@ Assert-True ($source.cargoLockSha256 -ceq '334db81cddfdb2020dd6738b0acc10a449bfb
 foreach ($inputPath in @('windows/capture/src/main.rs', 'windows/capture/assets/tabler-icons.ttf',
     'windows/capture/Source.ps1', 'windows/capture/docs/control-protocol.md', 'windows/deps/quickshell',
     'windows/sources.lock.json', 'elsewhere/implementation.rs', 'windows/toolchain.json',
-    'windows/scripts/Build-Prototype.ps1')) {
+    'windows/scripts/Build-Prototype.ps1', 'windows/ci/history_version.py')) {
     Assert-True (Test-CaelestiaCaptureNativeInput $inputPath) "Native reuse must refuse: $inputPath"
     Assert-True (Test-CaelestiaCiNativeInput $inputPath) "CI native reuse must refuse: $inputPath"
 }

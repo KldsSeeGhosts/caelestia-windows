@@ -29,7 +29,7 @@ foreach ($root in @($ShellRoot, $BuildRoot, $ToolRoot, $PreparedSources) | Where
 }
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Candidate assembly requires fresh output.' }
 $identity = & $Python -I -B "$PSScriptRoot\nexus_assembly.py" identity --shell $ShellRoot --build $BuildRoot
-if ($LASTEXITCODE -ne 0 -or -not (Test-CaelestiaDevVersion "$identity")) { throw 'Exact-main production identity refused before assembly.' }
+if ($LASTEXITCODE -ne 0 -or "$identity" -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') { throw 'Exact-main production identity refused before assembly.' }
 # Assembly does not claim test eligibility. Sealing verifies final evidence
 # and byte equality before it creates the unchanged candidate.json.
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
@@ -139,16 +139,16 @@ Copy-Item -LiteralPath "$assets\component-inventory.json" -Destination "$out\sou
 [IO.File]::WriteAllText("$out\manifest.sha256", ($manifestHash + "  release.json`n"), [Text.Encoding]::ASCII)
 $manifest = Read-CaelestiaStrictJsonFile "$bundle\release.json" 16777216 -AllowUtf8Bom
 $release = [ordered]@{
-    displayVersion = "$identity"; buildVersion = "$identity"; releaseId = "$identity"; tag = "v$identity"
+    displayVersion = "$identity"; buildVersion = "$identity"; releaseId = "$identity"; tag = "v$identity-development"
     sourceRevision = $env:GITHUB_SHA; backendRevision = $manifest.backendRevision
     bundle = [ordered]@{
         name = "$rootName.zip"; root = $rootName
-        url = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v$identity/$rootName.zip"
+        url = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v$identity-development/$rootName.zip"
         size = (Get-Item -LiteralPath $zip).Length; sha256 = (Get-FileHash $zip).Hash.ToLowerInvariant()
         entries = $entries; unpackedSize = $unpacked
     }
     manifestSha256 = $manifestHash; profileSchema = 1; minimumUpdaterSchema = 1
-    notesUrl = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/tag/v$identity"
+    notesUrl = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/tag/v$identity-development"
     provenance = @{
         runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT
     }

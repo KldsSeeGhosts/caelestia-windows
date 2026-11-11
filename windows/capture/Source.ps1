@@ -44,7 +44,7 @@ function Assert-CaelestiaCaptureBuild {
 
 function Test-CaelestiaCaptureNativeInput {
     param([Parameter(Mandatory)][string]$Path)
-    return $Path -match '^plugin/|^cmake/|^windows/(capture/|deps/|release/version\.json$|sources\.lock\.json$|toolchain[/.])|^windows/scripts/(DesktopTakeover\.cs$|Build-|Caelestia-SemVer\.ps1$|Caelestia-Toolchain|Prepare-Toolchain)|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
+    return $Path -match '^plugin/|^cmake/|^windows/(capture/|deps/|ci/history_version\.py$|release/version\.json$|sources\.lock\.json$|toolchain[/.])|^windows/scripts/(DesktopTakeover\.cs$|Build-|Caelestia-SemVer\.ps1$|Caelestia-Toolchain|Prepare-Toolchain)|\.(rs|cpp|hpp|h|c|cc|cmake|qrc)$|(^|/)(CMakeLists\.txt|Cargo\.toml|Cargo\.lock)$'
 }
 
 # CI-only, stricter than the installer/release override above (which keeps
