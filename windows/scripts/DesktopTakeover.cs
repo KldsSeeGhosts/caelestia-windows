@@ -1219,7 +1219,9 @@ namespace Caelestia.Takeover {
         Process child;
         LogDrain childDrain;
         long drainDeadline;
+        long stopDeadline;
         bool recovering;
+        bool forcedChildTermination;
         DateTime started, nextStart;
         int quickCrashes;
         int ownedPid = -1;
@@ -1234,6 +1236,9 @@ namespace Caelestia.Takeover {
         // Upper bound for a supervisor to finish restoring (banner recovery
         // alone may take 45 s). Quit and recovery callers wait this long.
         public const int RecoveryBoundMs = 60000;
+        // Leave room for the 45 s banner restore, 2 s log drain and cleanup
+        // within RecoveryBoundMs. Only an explicit recovery starts this clock.
+        public const int ChildExitGraceMs = 5000;
         public static void RecoverActive() {
             try { using (var handle = System.Threading.EventWaitHandle.OpenExisting(EventName)) handle.Set(); }
             catch (System.Threading.WaitHandleCannotBeOpenedException) {}
@@ -1529,6 +1534,7 @@ namespace Caelestia.Takeover {
                 var path = Path.Combine(launch.StateDirectory, "watchdog.json");
                 var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
                     quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
+                    forcedChildTermination = forcedChildTermination,
                     utc = DateTime.UtcNow.ToString("o") });
                 File.WriteAllText(path + ".tmp", text);
                 if (File.Exists(path)) File.Replace(path + ".tmp", path, null);
@@ -1598,8 +1604,7 @@ namespace Caelestia.Takeover {
             try {
                 if (!recovering && recovery.WaitOne(0)) {
                     recovering = true;
-                    BeginDrain();
-                    if (child != null && !child.HasExited) child.Kill();
+                    stopDeadline = Stopwatch.GetTimestamp() + ChildExitGraceMs * Stopwatch.Frequency / 1000;
                 }
                 if (child == null) {
                     if (recovering) { Finish("recovered", 0); return; }
@@ -1610,7 +1615,17 @@ namespace Caelestia.Takeover {
                 }
                 if (!child.HasExited) {
                     if (recovering) {
-                        if (Stopwatch.GetTimestamp() >= drainDeadline) Finish("recovered", 0);
+                        if (!forcedChildTermination && Stopwatch.GetTimestamp() >= stopDeadline) {
+                            // Use the retained Process, never a name/PID lookup.
+                            child.Kill();
+                            forcedChildTermination = true;
+                            BeginDrain();
+                            SupervisorSafety.Log(delegate {
+                                File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                                    "forced child termination after requested stop grace expired" + Environment.NewLine);
+                            });
+                        }
+                        if (forcedChildTermination && Stopwatch.GetTimestamp() >= drainDeadline) Finish("recovered", 0);
                         return;
                     }
                     if (hide) { RefreshShowHook(false); Native.Hide(false); SuppressRegions(); }
