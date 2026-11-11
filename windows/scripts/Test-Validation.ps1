@@ -161,17 +161,32 @@ function ConvertTo-ValidationArgument([string]$Value) {
     return '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
 }
 
+function Get-QmlSchedule([string[]]$Names) {
+    $hints = Import-PowerShellDataFile -LiteralPath "$PSScriptRoot\Qml-DurationHints.psd1"
+    # An explicit inventory index breaks ties on Windows PowerShell 5.1,
+    # whose Sort-Object has no -Stable option. Unknown tests follow known ones.
+    $ranked = for ($index = 0; $index -lt $Names.Count; $index++) {
+        $name = $Names[$index]
+        $seconds = if ($hints.ContainsKey($name)) { $hints[$name] } else { -1 }
+        [pscustomobject]@{ name = $name; seconds = $seconds; index = $index }
+    }
+    $ranked | Sort-Object @{ Expression = 'seconds'; Descending = $true }, index |
+        ForEach-Object { $_.name }
+}
+
 function Invoke-ParallelScriptChecks([string[]]$Names, [string[]]$Extra) {
     if (-not $Names.Count -or @($Names | Select-Object -Unique).Count -ne $Names.Count) {
         throw 'Parallel validation requires a nonempty, unique test inventory.'
     }
     $running = New-Object 'System.Collections.Generic.List[object]'
+    $schedule = @(Get-QmlSchedule $Names)
+    $finished = @{}
     $initialCount = $results.Count
     $next = 0
     try {
         while ($next -lt $Names.Count -or $running.Count) {
             while ($next -lt $Names.Count -and $running.Count -lt $QmlJobs) {
-                $name = $Names[$next]
+                $name = $schedule[$next]
                 $fixtureRoot = Join-Path $OutputRoot "fixtures\$name"
                 New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
                 $info = New-Object Diagnostics.ProcessStartInfo
@@ -202,15 +217,23 @@ function Invoke-ParallelScriptChecks([string[]]$Names, [string[]]$Extra) {
                 $stderr = $item.stderr.GetAwaiter().GetResult()
                 $logPath = Join-Path $OutputRoot ($item.name + '.log')
                 "$stdout`n$stderr" | Set-Content -LiteralPath $logPath -Encoding UTF8
-                $results.Add([ordered]@{ name = $item.name; exitCode = $code; testCount = $null; seconds = $seconds })
-                Write-Output ("{0} {1} ({2:N2}s)" -f $(if ($code -eq 0) { 'PASS' } else { 'FAIL' }), $item.name, $seconds)
-                if ($code -ne 0) {
-                    Write-Output "--- last 80 lines of $($item.name) ---"
-                    Get-Content -LiteralPath $logPath -Tail 80 -Encoding UTF8
-                    Write-Output "--- end of $($item.name) ---"
-                }
+                $finished[$item.name] = [ordered]@{ name = $item.name; exitCode = $code; testCount = $null; seconds = $seconds }
                 $item.process.Dispose()
                 $null = $running.Remove($item)
+            }
+            # Publish only the contiguous completed inventory prefix. Execution
+            # order and completion races never change logs, summary or JUnit order.
+            while ($results.Count - $initialCount -lt $Names.Count) {
+                $name = $Names[$results.Count - $initialCount]
+                if (-not $finished.ContainsKey($name)) { break }
+                $result = $finished[$name]
+                $results.Add($result)
+                Write-Output ("{0} {1} ({2:N2}s)" -f $(if ($result.exitCode -eq 0) { 'PASS' } else { 'FAIL' }), $name, $result.seconds)
+                if ($result.exitCode -ne 0) {
+                    Write-Output "--- last 80 lines of $name ---"
+                    Get-Content -LiteralPath (Join-Path $OutputRoot ($name + '.log')) -Tail 80 -Encoding UTF8
+                    Write-Output "--- end of $name ---"
+                }
             }
             if ($running.Count) { Start-Sleep -Milliseconds 50 }
         }

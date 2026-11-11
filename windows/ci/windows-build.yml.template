@@ -300,7 +300,7 @@ jobs:
           & powershell.exe -NoProfile -NonInteractive -File windows/ci/Invoke-PairIntegration.ps1 `
             -TestOnly -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot "$env:GITHUB_WORKSPACE/windows/deps/quickshell" `
             -Mode pinned -BackendSha $lock.quickshell.revision -ToolRoot $env:TOOL_ROOT `
-            -BuildRoot $env:BUILD_ROOT -Results C:/reuse-tests -QmlJobs 2 -JUnit C:/reuse-tests/unused.xml -EchoDiagnostics
+            -BuildRoot $env:BUILD_ROOT -Results C:/reuse-tests -QmlJobs 3 -JUnit C:/reuse-tests/unused.xml -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Verified-native PR tests failed.' }
       - name: Separate reuse summary or explicit full-build fallback
         if: always()
@@ -769,7 +769,7 @@ jobs:
             -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-PairIntegration.ps1" -ResumeProduction `
             -ShellRoot $env:GITHUB_WORKSPACE -BackendRoot $local.backendRoot `
             -Mode $request.mode -BackendSha $request.backend -ToolRoot $env:TOOL_ROOT `
-            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -QmlJobs 2 -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
+            -BuildRoot $env:BUILD_ROOT -Results $env:PAIR_RESULTS -QmlJobs 3 -JUnit "$env:PAIR_RESULTS\integration.raw.xml" -EchoDiagnostics
           if ($LASTEXITCODE -ne 0) { throw 'Consuming-shell integration failed.' }
 
       - name: Production and offscreen fixture timings
