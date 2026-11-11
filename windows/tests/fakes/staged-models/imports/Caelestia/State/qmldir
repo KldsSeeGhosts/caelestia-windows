@@ -1,0 +1,2 @@
+module Caelestia.State
+singleton PersistentState 1.0 PersistentState.qml

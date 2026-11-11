@@ -8,6 +8,7 @@ import Quickshell.Windows
 import Caelestia
 import Caelestia.Config
 import Caelestia.I18n
+import Caelestia.State
 import qs.components.misc
 
 // Windows replacement for the original services/Notifs.qml singleton contract.
@@ -159,7 +160,17 @@ Singleton {
     // The bounded host sets this while the original notification center is
     // visible. Denied access polling is bounded to that window.
     property bool centerVisible: false
-    property bool doNotDisturb: false
+    // Persisted by the state plugin, so a shell reload or restart keeps the
+    // user's choice. Consumers assign this facade property; the bridge writes
+    // through and mirrors changes made elsewhere.
+    property bool doNotDisturb: PersistentState.doNotDisturb
+    onDoNotDisturbChanged: PersistentState.doNotDisturb = root.doNotDisturb
+    Connections {
+        target: PersistentState
+        function onDoNotDisturbChanged(): void {
+            root.doNotDisturb = PersistentState.doNotDisturb;
+        }
+    }
 
     // Preserved original Notifs singleton surface consumed by
     // modules/notifications/* and the sidebar notification components.
