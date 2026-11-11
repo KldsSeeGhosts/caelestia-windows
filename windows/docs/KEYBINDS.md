@@ -92,7 +92,7 @@ Available Caelestia global shortcut names:
 | `caelestia:nexus` | Open the Nexus settings window | `daemons/Shortcuts.qml` |
 | `caelestia:screenshot` | Glazier screenshot picker and editor | `daemons/Shortcuts.qml` |
 | `caelestia:screenshotFreeze` | Glazier screenshot (frozen picker variant) | `daemons/Shortcuts.qml` |
-| `caelestia:record` | Start or stop a Glazier recording | `daemons/Shortcuts.qml` |
+| `caelestia:record` | Start or stop a recording | `daemons/Shortcuts.qml` |
 | `caelestia:launcher` | Toggle launcher (fires on release unless interrupted) | `daemons/Shortcuts.qml` |
 | `caelestia:launcherInterrupt` | Interrupt lone-Super launcher tap | `daemons/Shortcuts.qml` |
 | `caelestia:dashboard` | Toggle top dashboard drawer | `daemons/Shortcuts.qml` |
@@ -112,12 +112,13 @@ Available Caelestia global shortcut names:
 
 All handlers in the table are staged in production, plus `caelestia:volumeUp`, `caelestia:volumeDown`, and `caelestia:volumeMute` from the audio adapter. Service actions retain their control gates. Production targets the focused monitor; bounded previews target their selected screen.
 
-### Glazier screenshots and recording
+### Screenshots and recording
 
-Glazier ships with Caelestia as the shell's screenshot and recording tool. The
-installer places `glazier.exe` beside `qs.exe` in the versioned payload, so an
-update or rollback keeps the matching shell and tool together. The shell starts
-Glazier in its tray with the profile's
+The shell draws the screenshot picker, editor and recording controls by default.
+The bundled Caelestia Capture helper, maintained from Glazier, encodes recordings
+and provides the classic UI opt-out. The installer places `caelestia-capture.exe`
+beside `qs.exe` in the versioned payload, so an update or rollback keeps the
+matching shell and helper together. The shell starts the helper with the profile's
 `state\caelestia\theme-tokens.json`, and passes `--no-hotkeys` so exactly one
 owner handles each chord.
 
@@ -139,20 +140,23 @@ name is already used.
 
 The launcher also offers **Screenshot** and **Record screen**. IPC callers can
 use `screenshot capture` or the upstream `picker open`, `openFreeze`,
-`openClip`, and `openFreezeClip` functions. All open Glazier's frozen picker and
-editor; Glazier determines how the resulting image is saved or copied.
+`openClip`, and `openFreezeClip` functions. All use the configured capture UI
+and open its frozen picker and editor.
 
-#### QML screenshot picker (preview)
+#### Shell screenshot picker
 
-`windows.capture.ui` in `shell.json` chooses the screenshot interface:
-`"classic"` (the default) starts Glazier as described above, and `"shell"` opens
+`windows.capture.ui` in `shell.json` chooses the screenshot and recording interface:
+`"classic"` starts Glazier as described above, and `"shell"` (the default) opens
 a picker drawn by the shell itself. Every entry point follows the setting: the
 `PrintScreen` and `Win+Shift+S` chords, the launcher Screenshot action, IPC
-`screenshot capture` and the `picker` functions. A `glazier.exe` override
-(`glazier.json`) always uses the classic tool, and recording is always classic.
+`screenshot capture` and the `picker` functions. Launcher Record and the record
+shortcut follow the same setting. A `glazier.exe` override in `glazier.json`
+always uses the classic tool. Explicit saved values stay unchanged.
+
+To opt out of the shell UI:
 
 ```json
-{"windows":{"capture":{"ui":"shell"}}}
+{"windows":{"capture":{"ui":"classic"}}}
 ```
 
 The picker freezes every screen first, then lets you drag a region, click a
@@ -282,8 +286,8 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | Action | Default keys | Target |
 | --- | --- | --- |
 | Toggle the launcher (lone Super tap) | `Super` (tap on release) | `caelestia:launcher` |
-| Screenshot with Glazier | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
-| Start or stop a Glazier recording | `Win+Shift+R` | `caelestia:record` |
+| Screenshot | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
+| Start or stop a recording | `Win+Shift+R` | `caelestia:record` |
 | Toggle the launcher, dashboard, OSD and utilities together | `Super+K` | `caelestia:showall` |
 | Toggle the dashboard | `Super+Shift+D` | `caelestia:dashboard` |
 | Toggle the notification sidebar | `Super+N` | `caelestia:sidebar` |
