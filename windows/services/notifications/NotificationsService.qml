@@ -695,6 +695,28 @@ QtObject {
     readonly property int count: list.length
     readonly property int popupCount: popups.length
 
+    // One shared clock updates every visible record's age label. `ageClock` is
+    // the tick counter NotifData's age/time-string binding reads; the timer runs
+    // only while a record is visible (a popup or the notification center), so an
+    // empty list owns no running timer. A tick recomputes each binding in one
+    // pass instead of one repeating timer per record.
+    property int ageClock: 0
+    readonly property bool ageClockNeeded: list.some(notification => !notification.closed
+        && (notification.popup || root.centerVisible))
+    readonly property Timer ageClockTimer: Timer {
+        running: root.ageClockNeeded
+        // Refresh immediately when a popup or the history becomes visible,
+        // even after the clock was stopped for hours.
+        triggeredOnStart: true
+        repeat: true
+        interval: 5000
+        onTriggered: root.ageClock++
+    }
+    onCenterVisibleChanged: {
+        if (root.ageClockNeeded)
+            root.ageClock++;
+    }
+
     readonly property Component _recordComponent: Component {
         NotifData {}
     }
