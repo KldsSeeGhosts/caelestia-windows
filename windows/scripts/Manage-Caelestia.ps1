@@ -150,7 +150,7 @@ try {
     }
     if ($ExpectedCurrent) { Assert-CaelestiaVersionId $ExpectedCurrent }
     if ($Command -eq 'Update') {
-        if (-not $ExpectedCurrent -or -not (Test-CaelestiaDevVersion $ExpectedBuild) -or -not $Channel) {
+        if (-not $ExpectedCurrent -or -not (Test-CaelestiaPublishedVersion $ExpectedBuild) -or -not $Channel) {
             throw 'An update requires exact current, build and channel identities.'
         }
         if (-not (Test-CaelestiaTrustConfigured $trust)) { throw 'Updates are not configured.' }
