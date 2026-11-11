@@ -119,7 +119,7 @@ An overlay panel, also excluded from capture, bottom-right of the work area. It 
 
 ### Setting and compatibility
 
-- `windows.capture.ui` in `config/shell.json` is `"classic"` (the current tool) or `"shell"`. The default is `"classic"` until phase 5. A legacy `glazier.exe` override always uses classic.
+- `windows.capture.ui` in `config/shell.json` is `"classic"` (the separate tool) or `"shell"`. Phase 5 makes `"shell"` the default after the owner's live acceptance on 2026-11-10. Explicit saved values stay unchanged, and `"classic"` remains an opt-out. A legacy `glazier.exe` override always uses classic.
 - Every entry point routes through one shell function that picks the path:
   - PrintScreen and Win+Shift+S;
   - launcher Screenshot and Record;

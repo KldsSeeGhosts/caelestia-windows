@@ -280,12 +280,16 @@ test("IPC function names keep their upstream meaning", () => {
     assert.equal(logic.pickerOptions("nope"), null);
 });
 
-test("only an explicit shell setting with the bundled helper or none selects the QML picker", () => {
+test("shell is the default with the bundled helper or none, while explicit opt-outs stay classic", () => {
     const bundled = "C:/Program Files/Caelestia/caelestia-capture.exe";
-    assert.equal(logic.captureRoute(undefined, bundled), "classic");
+    assert.equal(logic.captureRoute(undefined, bundled), "shell");
+    assert.equal(logic.captureRoute(undefined, ""), "shell");
+    assert.equal(logic.captureRoute(undefined, "C:/Apps/Glazier/glazier.exe"), "classic");
     assert.equal(logic.captureRoute("classic", bundled), "classic");
     assert.equal(logic.captureRoute("SHELL", bundled), "classic");
     assert.equal(logic.captureRoute(true, bundled), "classic");
+    assert.equal(logic.captureRoute(null, bundled), "classic");
+    assert.equal(logic.captureRoute("", bundled), "classic");
     assert.equal(logic.captureRoute("shell", bundled), "shell");
     assert.equal(logic.captureRoute("shell", "C:\\Caelestia\\CAELESTIA-CAPTURE.EXE"), "shell");
     assert.equal(logic.captureRoute("shell", ""), "shell");

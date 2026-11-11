@@ -84,6 +84,11 @@ ShellRoot {
             classic.executable = "C:/legacy/glazier.exe";
             check(CaptureUi.record() && classic.calls === 2 && !picker.opened, "legacy recording");
             classic.executable = "C:/test/caelestia-capture.exe";
+            GlobalConfig.windows = {};
+            check(CaptureUi.setting === "shell" && CaptureUi.route === "shell", "recording defaults to shell");
+            check(CaptureUi.record() && picker.opened && picker.mode && classic.calls === 2, "default shell recording");
+            picker.opened = false;
+            GlobalConfig.windows = { capture: { ui: "shell" } };
             check(CaptureUi.record() && picker.opened && picker.mode && classic.calls === 2, "shell region picker");
             area.recordingMode = true;
             const screen = { x: -2560, y: 120, width: 1600, height: 900 };

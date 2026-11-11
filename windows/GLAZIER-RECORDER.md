@@ -58,8 +58,9 @@ Glazier's tray/hotkey review behavior is unchanged. Full current monitor means t
 monitor containing the pointer, with Glazier's existing even-pixel H.264 crop.
 
 With `windows.capture.ui: "shell"`, launcher Record and the record shortcut use
-the QML region picker. The default remains `"classic"`, and a legacy `glazier.exe`
-override always keeps the classic flow. The helper receives `--region x,y,w,h`
+the QML region picker. The default is `"shell"`; an explicit `"classic"` setting
+or a legacy `glazier.exe` override keeps the classic flow. Existing saved values
+stay unchanged. The helper receives `--region x,y,w,h`
 and `--no-ui`, equivalent to protocol-v1 `record.region` and `record.ui: false`.
 The region uses physical virtual-desktop pixels. Only local monitor offsets
 scale by DPR, and the helper crops the region to even dimensions.

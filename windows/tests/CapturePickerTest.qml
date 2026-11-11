@@ -237,9 +237,13 @@ ShellRoot {
         check(CaptureUi.picker === picker, "the picker registers itself with the router");
         check(Quickshell.screens.length > 0, "the fixture has a screen");
 
-        // Classic is the default and behaves as before: one call, no picker.
-        GlobalConfig.windows = {};
-        check(CaptureUi.setting === "classic" && CaptureUi.route === "classic", "no setting means classic");
+        for (const config of [{}, { capture: {} }]) {
+            GlobalConfig.windows = config;
+            check(CaptureUi.setting === "shell" && CaptureUi.route === "shell", "no setting means shell");
+        }
+
+        // An explicit classic setting keeps the existing tool.
+        GlobalConfig.windows = { capture: { ui: "classic" } };
         check(CaptureUi.screenshot("open") === true && classicCalls === 1, "classic opens the existing tool");
         check(!picker.opened && dismissCalls === 0, "classic never touches the picker or dismisses panels itself");
         for (const name of ["openFreeze", "openClip", "openFreezeClip"])
@@ -255,7 +259,7 @@ ShellRoot {
         classicCalls = 0;
 
         // A legacy glazier.exe override always stays classic.
-        GlobalConfig.windows = { capture: { ui: "shell" } };
+        GlobalConfig.windows = {};
         glazier.executable = "C:/Apps/Glazier/glazier.exe";
         check(CaptureUi.route === "classic", "shell with a legacy override stays classic");
         CaptureUi.screenshot("open");
@@ -267,7 +271,7 @@ ShellRoot {
         check(CaptureUi.route === "classic", "an unread override file means classic");
         glazier.ready = true;
 
-        // The bundled helper, or none, with the shell setting opens the picker.
+        // The bundled helper with no saved setting opens the picker.
         check(CaptureUi.route === "shell", "shell with the bundled helper routes to the picker");
         check(CaptureUi.shellAvailable, "the picker is available");
         check(CaptureUi.screenshot("bogus") === false, "an unknown picker name is refused");

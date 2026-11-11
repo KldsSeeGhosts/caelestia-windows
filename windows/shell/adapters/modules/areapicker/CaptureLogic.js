@@ -235,12 +235,12 @@ function pickerOptions(name) {
     return table[name] || null;
 }
 
-// "classic" starts the Rust capture tool and is the default. "shell" opens the
-// QML picker. A legacy glazier.exe override has no shell integration, so it
+// "shell" opens the QML picker and is the default. "classic" starts the Rust
+// capture tool. A legacy glazier.exe override has no shell integration, so it
 // always stays on the classic path. `executable` is the resolved override or
 // bundled helper path, empty when none is available.
 function captureRoute(setting, executable) {
-    if (setting !== "shell")
+    if (setting !== undefined && setting !== "shell")
         return "classic";
     var path = String(executable || "");
     if (path.length > 0 && !/(?:^|[\\\/])caelestia-capture\.exe$/i.test(path))

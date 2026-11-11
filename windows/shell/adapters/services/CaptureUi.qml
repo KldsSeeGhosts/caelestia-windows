@@ -9,9 +9,9 @@ import "../modules/areapicker/CaptureLogic.js" as Logic
 
 // Windows: the one place that decides which capture UI runs.
 //
-// `windows.capture.ui` in shell.json is "classic" (default), which starts the
-// bundled Rust capture tool through Glazier.qml exactly as before, or "shell",
-// which opens the QML picker in modules/areapicker. A legacy glazier.exe
+// `windows.capture.ui` in shell.json is "shell" (default), which opens the QML
+// picker in modules/areapicker, or "classic", which starts the bundled Rust
+// capture tool through Glazier.qml exactly as before. A legacy glazier.exe
 // override has no shell integration, so it always stays classic.
 //
 // Every entry point calls screenshot(): PrintScreen and Win+Shift+S
@@ -33,6 +33,8 @@ Singleton {
 
     readonly property string setting: {
         const value = GlobalConfig.windows?.capture?.ui;
+        if (value === undefined)
+            return "shell";
         return typeof value === "string" ? value : "classic";
     }
     // Until Glazier has read glazier.json, a legacy override is not ruled out,
