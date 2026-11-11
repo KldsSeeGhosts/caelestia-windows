@@ -60,7 +60,7 @@ PageBase {
                 source: !modelData ? "" : modelData.preview ? Paths.absolutePath(String(modelData.preview)) : modelData.engine ? "" : String(modelData.path ?? "")
                 text: modelData?.name ?? ""
                 onClicked: {
-                    Wallpapers.setWallpaper(modelData.path, root.QsWindow.window?.screen);
+                    Wallpapers.setWallpaper(modelData.path, root.nState.wallpaperTarget);
                     // Upstream calls closeSubPage() twice here, which pops this
                     // page and its parent at once. The sibling pages close the
                     // one page they belong to, so the duplicate is dropped.

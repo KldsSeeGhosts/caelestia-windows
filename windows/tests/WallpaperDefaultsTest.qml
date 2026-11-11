@@ -93,6 +93,8 @@ QtObject {
             check(Wallpapers.sourceInitialized, "the fresh wallpaper source resolved");
             check(Wallpapers.sourceRecordHealth === "missing", "the fresh profile found a record");
             check(Wallpapers.profilePick === "", "a fresh profile has a profile-wide pick");
+            check(Wallpapers.defaultPickerTarget({name: "primary"}) === undefined,
+                "the launcher defaults to one display without individual choices");
             check(Wallpapers.fileCurrent === Wallpapers.fallback, "fresh fileCurrent is the bundled asset");
             check(Wallpapers.current === Wallpapers.fallback, "fresh current is the bundled asset");
             check(Wallpapers.currentImage === Wallpapers.fallback, "fresh palette source is the bundled asset");
@@ -206,6 +208,8 @@ QtObject {
             check(saved.monitors["secondary-id"] === "C:/walls/picked.jpg",
                 "the display pick was not recorded");
             check(saved.monitors["primary-id"] === undefined, "the display pick recorded another display");
+            check(Wallpapers.defaultPickerTarget({name: "secondary"}).targetId === "secondary-id",
+                "the launcher does not preserve deliberate individual wallpapers");
 
             // The palette source must not keep naming a display that has
             // disconnected. The remaining display shows the bundled default.
@@ -226,9 +230,13 @@ QtObject {
             check(Wallpapers.setWallpaper("C:/walls/picked2.jpg"), "the global pick was rejected");
             check(Native.Wallpaper.calls.length === 1, "the global pick was not applied once");
             check(Wallpapers.profilePick === "C:/walls/picked2.jpg", "the global pick was not stored");
+            check(Wallpapers.defaultPickerTarget({name: "primary"}) === undefined,
+                "All displays did not restore shared launcher picks");
             check(Wallpapers.current === "C:/walls/picked2.jpg", "the global pick is not visible");
             check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked2.jpg",
                 "the global pick did not reach the primary display");
+            check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked2.jpg",
+                "the global pick did not replace the individual display choice");
             checkedGlobalRecord(saved);
             Native.Wallpaper.currentPath = "C:/walls/windows-default.jpg";
             Native.Wallpaper.screenPaths = {primary: "C:/walls/settings-primary.jpg",

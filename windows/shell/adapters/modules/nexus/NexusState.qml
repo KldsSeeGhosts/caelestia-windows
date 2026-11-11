@@ -26,6 +26,9 @@ QtObject {
     property var pendingSearchRoute: null
 
     property string selectedWallpaperCategory
+    // Undefined means all displays. Explicit choices retain the physical
+    // identity, so disconnecting/replacing a display cannot retarget a pick.
+    property var wallpaperTarget: undefined
     property var selectedBtDevice
     property var selectedApp
     property int editingVpnIndex: -1

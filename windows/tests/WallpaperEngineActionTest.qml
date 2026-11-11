@@ -101,6 +101,14 @@ QtObject {
             action.exited(0);
             check(!WallpaperEngine.actionPending,
                 "a completed action kept its pending claim");
+            WallpaperEngine.options = {enabled: true, monitor: "Monitor9"};
+            check(WallpaperEngine.open("C:/we/project.json"), "all-display selection was rejected");
+            check(action.command.length === 6 && action.command[5] === "--all-displays",
+                "default engine pick used the configured single monitor");
+            check(WallpaperEngine.actionAllDisplays && !WallpaperEngine.actionScreenTarget,
+                "default engine pick retained a previous explicit target");
+            action.running = false;
+            action.exited(0);
             console.log("CAELESTIA_WALLPAPER_ENGINE_ACTION_PASS " + assertions);
             Qt.quit();
         })
