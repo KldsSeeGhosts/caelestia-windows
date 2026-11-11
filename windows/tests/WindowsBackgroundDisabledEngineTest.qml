@@ -98,9 +98,29 @@ Item {
             check(nativeLayer.externalWallpaperEnabled,
                 "enabled integration did not restore the released policy");
             check(subject.underlayActive, "enabled integration no longer yields to foreign wallpaper");
+            // OFF/ON controls playback without replacing the foreign HWND.
+            // The host drops coverage while stopped, then acknowledges the
+            // same window again. A handback latch must not disable placement.
             WallpaperEngine.options = {enabled: false};
             check(!nativeLayer.externalWallpaperEnabled,
                 "disabling integration did not restore the own background policy");
+            nativeLayer.coveredByForeign = false;
+            WallpaperEngine.options = {enabled: true};
+            check(nativeLayer.externalWallpaperEnabled && !subject.underlayActive,
+                "ON did not keep discovery enabled while playback resumed");
+            nativeLayer.coveredByForeign = true;
+            check(subject.underlayActive && WallpaperEngine.desktopClaimed
+                && !WallpaperEngine.desktopHandedBack,
+                "the same window did not regain its underlay acknowledgement");
+            nativeLayer.coveredByForeign = false;
+            check(WallpaperEngine.desktopHandedBack,
+                "destroying the wallpaper window did not hand back");
+            WallpaperEngine.applyStatus({detected: true, running: true, monitors: {}});
+            check(WallpaperEngine.desktopHandedBack && !subject.externalActive,
+                "a process-only status scan reclaimed a destroyed wallpaper");
+            check(nativeLayer.externalWallpaperEnabled,
+                "genuine handback disabled discovery of a later wallpaper");
+            WallpaperEngine.options = {enabled: false};
             wallpaperEngine.running = false;
             check(!nativeLayer.externalWallpaperEnabled,
                 "process liveness changed the integration policy");

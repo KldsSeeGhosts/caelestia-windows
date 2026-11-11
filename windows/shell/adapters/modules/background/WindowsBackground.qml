@@ -68,6 +68,36 @@ Background {
             || s === Quickshell.screens[screenIndex])
         : []
 
+    property string lastUnderlayDecision: ""
+    function logUnderlayDecision(): void {
+        // Booleans and fixed status values only. No paths, window titles,
+        // process/window handles, monitor names or profile identifiers.
+        const decision = JSON.stringify({
+            integration: WallpaperEngine.enabled, freshProfile: Wallpapers.sourceFresh,
+            policy: externalWallpaperEnabled, running: engineRunning,
+            snapshotReady: WallpaperEngine.snapshotReady, status: WallpaperEngine.status,
+            claimed: WallpaperEngine.desktopClaimed, handedBack: WallpaperEngine.desktopHandedBack,
+            requested: backgroundRequested, nativeEnabled: Native.DesktopLayer.enabled,
+            active: Native.DesktopLayer.active, underlay: underlayActive,
+            refused: embedRefused, aboveIcons: Native.DesktopLayer.aboveIcons.length !== 0
+        });
+        if (decision !== lastUnderlayDecision) {
+            lastUnderlayDecision = decision;
+            console.log("CAELESTIA_UNDERLAY_DECISION " + decision);
+        }
+    }
+    property Connections engineDecisionWatcher: Connections {
+        target: WallpaperEngine
+        function onDesktopHandedBackChanged(): void { Qt.callLater(root.logUnderlayDecision); }
+        function onStatusChanged(): void { Qt.callLater(root.logUnderlayDecision); }
+    }
+    property Connections nativeDecisionWatcher: Connections {
+        target: Native.DesktopLayer
+        ignoreUnknownSignals: true
+        function onActiveChanged(): void { Qt.callLater(root.logUnderlayDecision); }
+        function onEmbedRefusedChanged(): void { Qt.callLater(root.logUnderlayDecision); }
+    }
+
     function reconcileDesktop(): void {
         if ("externalWallpaperEnabled" in Native.DesktopLayer)
             Native.DesktopLayer.externalWallpaperEnabled = externalWallpaperEnabled;
@@ -88,6 +118,7 @@ Background {
         } else {
             Native.DesktopLayer.enabled = false;
         }
+        Qt.callLater(logUnderlayDecision);
     }
     onBackgroundRequestedChanged: reconcileDesktop()
     onExternalWallpaperEnabledChanged: reconcileDesktop()
@@ -95,6 +126,7 @@ Background {
     onDesktopIconsChanged: reconcileDesktop()
     onEngineRunningChanged: reconcileDesktop()
     onUnderlayActiveChanged: {
+        Qt.callLater(logUnderlayDecision);
         // The external wallpaper window left the host, so the backend has
         // dropped its acknowledgement. Re-scan now instead of waiting for the
         // idle poll, so a process that really stopped is noticed promptly.
