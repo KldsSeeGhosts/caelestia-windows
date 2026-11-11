@@ -244,6 +244,14 @@ source/lock/toolchain identities, binary hash and all native acceptance reasons.
 Raw paths/logs remain local. Empty execution, unreviewed tests, compiler failure
 or a failed test makes the gate fail. No ignored test runs in public CI.
 
+The image-only format regressions register format names and inspect an in-memory
+`IDataObject`. The preview test initializes the shell helper from a 2 x 2
+bitmap and enumerates its binary metadata. These tests never publish clipboard
+data, enter `DoDragDrop`, show a window or inject input. The export regression
+checks the pure format list shared by screenshot clipboard writes.
+The recording regression enumerates the unchanged file data object, with and
+without preview metadata, without publishing it to the clipboard or dragging.
+
 The original 61 attributes were not 61 executed tests. Four desktop tests and
 14 additional GPU/native-window/OLE/encoding cases are now explicitly ignored
 with reasons. Two added config/identity regressions bring the current inventory
@@ -267,6 +275,12 @@ and auto-dismiss. It removes its scratch files. The separate
 `real_input_thumbnail_settings_and_exit` opt-in test temporarily edits and restores
 the settings file, checks live reload and zero lifetime, then exits capture to
 verify temporary-file cleanup. Relaunch the release app after that test.
+
+The Explorer screenshot-drop assertion above predates image-only drags and now
+needs a different acceptance target. It remains ignored and was not run for
+this change. The owner must paste and drop screenshots into Discord or a browser
+chat box and confirm that only the image appears. Recording drags must still
+produce a file.
 
 `cargo test real_input_recording -- --ignored --nocapture --test-threads=1`
 temporarily changes and restores settings and audio preferences, operates both monitors,

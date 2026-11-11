@@ -227,6 +227,11 @@ impl Drop for ClipboardMemory {
     }
 }
 
+/// Exact content formats shared by screenshot copy and drag.
+pub(crate) fn image_formats(png_format: u16) -> [u16; 2] {
+    [png_format, CF_DIB.0]
+}
+
 /// Places the image on the clipboard as PNG and as a DIB for older apps.
 pub fn copy_to_clipboard(owner: HWND, img: &Image, png: &[u8]) -> Result<()> {
     let header = BITMAPINFOHEADER {
@@ -262,8 +267,9 @@ pub fn copy_to_clipboard(owner: HWND, img: &Image, png: &[u8]) -> Result<()> {
         opened?;
         let result = (|| {
             EmptyClipboard()?;
-            png_mem.give(png_format)?;
-            dib_mem.give(CF_DIB.0 as u32)?;
+            let formats = image_formats(png_format as u16);
+            png_mem.give(formats[0] as u32)?;
+            dib_mem.give(formats[1] as u32)?;
             Ok(())
         })();
         let _ = CloseClipboard();
@@ -372,6 +378,16 @@ fn write_then_rename(tmp: &Path, dest: &Path, data: &[u8]) -> std::io::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screenshot_copy_formats_are_exactly_png_and_dib() {
+        use windows::Win32::System::Ole::{CF_HDROP, CF_TEXT, CF_UNICODETEXT};
+        let formats = image_formats(0xc000);
+        assert_eq!(formats, [0xc000, CF_DIB.0]);
+        for forbidden in [CF_HDROP.0, CF_TEXT.0, CF_UNICODETEXT.0] {
+            assert!(!formats.contains(&forbidden));
+        }
+    }
 
     #[test]
     fn stems_are_safe() {

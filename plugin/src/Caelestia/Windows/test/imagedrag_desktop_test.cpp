@@ -6,7 +6,7 @@
 // A drag hands the target a data object that Qt builds around the QMimeData. Qt
 // builds the same object for the clipboard, so the test puts the drag's data on
 // the clipboard, reads it back through OLE (OleGetClipboard) and decodes every
-// format that a drop target would be offered: CF_HDROP, PNG, CF_DIB, CF_DIBV5
+// format that a drop target would be offered: PNG, CF_DIB, CF_DIBV5
 // and "Preferred DropEffect". THE TEST REPLACES THE CLIPBOARD CONTENT, and
 // empties it at the end, as the Rust tool's desktop tests did.
 //
@@ -110,7 +110,7 @@ class ImageDragDataObjectTest : public QObject {
     Q_OBJECT
 
 private slots:
-    void windowsDeliversTheFileAndTheImage() {
+    void windowsDeliversOnlyTheImage() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const auto original = picture();
@@ -136,17 +136,13 @@ private slots:
         list->Release();
         qInfo().noquote() << "formats offered to a drop target:" << formats.join(QStringLiteral(", "));
 
-        // CF_HDROP: the real file, by its own path.
-        QVERIFY2(formats.contains(QStringLiteral("CF_HDROP")), "no CF_HDROP");
-        FORMATETC hdrop = { CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-        STGMEDIUM medium = {};
-        QCOMPARE(data->GetData(&hdrop, &medium), S_OK);
-        const auto drop = reinterpret_cast<HDROP>(medium.hGlobal);
-        QCOMPARE(DragQueryFileW(drop, 0xffffffff, nullptr, 0), UINT(1));
-        wchar_t file[MAX_PATH] = {};
-        DragQueryFileW(drop, 0, file, MAX_PATH);
-        ReleaseStgMedium(&medium);
-        QCOMPARE(QDir::fromNativeSeparators(QString::fromWCharArray(file)), QDir::fromNativeSeparators(path));
+        formats.sort();
+        QStringList expected{QStringLiteral("PNG"), QStringLiteral("CF_DIB"), QStringLiteral("CF_DIBV5")};
+        expected.sort();
+        QCOMPARE(formats, expected);
+        QVERIFY(!formats.contains(QStringLiteral("CF_HDROP")));
+        QVERIFY(!formats.contains(QStringLiteral("CF_TEXT")));
+        QVERIFY(!formats.contains(QStringLiteral("CF_UNICODETEXT")));
 
         // PNG: what Discord, a browser or Word read as an image.
         QVERIFY2(formats.contains(QStringLiteral("PNG")), "no PNG format");
@@ -167,12 +163,6 @@ private slots:
         const auto dibV5 = imageFromDib(bytesOf(data, CF_DIBV5));
         QVERIFY(!dibV5.isNull());
         QCOMPARE(dibV5.size(), original.size());
-
-        // Copy is the preferred effect.
-        QVERIFY2(formats.contains(QStringLiteral("Preferred DropEffect")), "no Preferred DropEffect");
-        const auto effect = bytesOf(data, registered(L"Preferred DropEffect"));
-        QCOMPARE(effect.size(), 4);
-        QCOMPARE(quint8(effect[0]), quint8(DROPEFFECT_COPY));
 
         data->Release();
         QGuiApplication::clipboard()->clear();
