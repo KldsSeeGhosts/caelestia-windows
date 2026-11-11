@@ -20,21 +20,50 @@ Region {
         Logic.extraWidth(GlobalConfig.windows?.innerEdgeHoverWidth),
         win.contentItem.Config.osd.enabled, win.contentItem.Config.utilities.enabled)
     property bool ready: false
-    property var childrenToDestroy: []
+    // Regions in the same order as the rectangles that produced them. They are
+    // reused when only their bounds change, so a resize does not destroy and
+    // recreate objects.
+    property var liveRegions: []
     property Component regionFactory: Component { Region {} }
     intersection: Intersection.Subtract
 
     function rebuild(): void {
         if (!ready)
             return;
-        const next = [];
-        for (const r of rectangles.osd.concat(rectangles.utilities))
-            next.push(regionFactory.createObject(root, r));
-        root.regions = next;
+        const desired = [];
+        for (const r of rectangles.osd)
+            desired.push(r);
+        for (const r of rectangles.utilities)
+            desired.push(r);
+
+        const live = root.liveRegions.slice();
+        const countChanged = live.length !== desired.length;
+        const kept = Math.min(live.length, desired.length);
+        for (let i = 0; i < kept; ++i) {
+            const region = live[i];
+            const r = desired[i];
+            region.x = r.x;
+            region.y = r.y;
+            region.width = r.width;
+            region.height = r.height;
+        }
+
+        const removed = [];
+        while (live.length > desired.length)
+            removed.push(live.pop());
+        for (let i = kept; i < desired.length; ++i)
+            live.push(regionFactory.createObject(root, desired[i]));
+
+        root.liveRegions = live;
+        // Publish the new set before deleting the removed regions, so the mask
+        // never holds a region that is about to be destroyed. The list was
+        // already appended by createObject, so a geometry-only change leaves it
+        // untouched.
+        if (countChanged)
+            root.regions = live;
+        for (const region of removed)
+            region.destroy();
         root.changed();
-        for (const child of childrenToDestroy)
-            child.destroy();
-        childrenToDestroy = next;
     }
     function inOsd(x: real, y: real): bool { return Logic.contains(rectangles.osd, x, y); }
     function inUtilities(x: real, y: real): bool { return Logic.contains(rectangles.utilities, x, y); }

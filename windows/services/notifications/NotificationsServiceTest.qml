@@ -2415,6 +2415,7 @@ QtObject {
         for (const open of service.list.slice())
             open.close();
         check(service.list.length === 0, "delivery confirmation records can be closed");
+        check(!service.ageClockTimer.running, "the shared age clock stops with no records");
 
         // --- Disable clears every observation ---------------------------------
         service.enabled = false;
@@ -2439,7 +2440,10 @@ QtObject {
         check(test.asyncRecord.popup === true, "async record starts popped up");
         check(test.asyncRecord.timer.interval === 40, "async timer interval");
         check(test.asyncRecord.timer.running, "async timer is running");
-        check(test.asyncRecord.timeStrTimer.running, "visible popup updates its age");
+        check(test.asyncRecord.timeStrTimer === undefined, "records own no age timer");
+        check(service.ageClockTimer.interval === 5000 && service.ageClockTimer.repeat,
+            "the shared clock repeats every five seconds");
+        check(service.ageClockTimer.running, "visible popup updates its age through the shared clock");
         test.setupObservationOwnership();
         realExpiry.start();
         guard.start();
@@ -2462,7 +2466,7 @@ QtObject {
         check(test.asyncRecord.popup === false, "real Timer expired the popup");
         check(service.popups.length === 0 && service.notClosed.length === 1,
             "expired popup remains a list notification");
-        check(!test.asyncRecord.timeStrTimer.running, "hidden history stops its age timer");
+        check(!service.ageClockTimer.running, "hidden history stops the shared age clock");
 
         // The locked evicted record survived the event-loop turns since the
         // cap test: destroying it is deferred to its last lock's release.
@@ -2475,7 +2479,7 @@ QtObject {
         test.evictedLockKey = null;
         test.asyncRecord.time = new Date(Date.now() - 10 * 60000);
         service.centerVisible = true;
-        check(test.asyncRecord.timeStrTimer.running, "opening history resumes age updates");
+        check(service.ageClockTimer.running, "opening history resumes age updates");
         ageRefresh.start();
     }
 
@@ -2494,7 +2498,7 @@ QtObject {
     function finishAgeRefresh(): void {
         check(test.asyncRecord.ageMins === 10, "opening history refreshes stale age immediately");
         service.centerVisible = false;
-        check(!test.asyncRecord.timeStrTimer.running, "closing history stops age updates again");
+        check(!service.ageClockTimer.running, "closing history stops age updates again");
         test.asyncRecord.close();
         check(service.list.length === 0, "async record can be dismissed after expiry");
         check(service.localDismissals >= test.dismissalsBeforeImages + 3, "async dismissal counted");
