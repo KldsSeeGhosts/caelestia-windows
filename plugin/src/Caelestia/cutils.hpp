@@ -51,7 +51,7 @@ public:
     Q_INVOKABLE static bool removeDragFile(const QString& path);
 
     // Drags the image file at `path` out of the shell, Windows only. It offers
-    // only the decoded image (PNG, CF_DIB, CF_DIBV5), allows copy only
+    // the file (CF_HDROP) and the decoded image (PNG, CF_DIB), allows copy only
     // and shows `preview` (an Item that draws the image) under the pointer. The
     // call returns when the drag has ended, wherever it was dropped or whether
     // Esc cancelled it. It returns false when no drag ran: the path is not an

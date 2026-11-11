@@ -104,7 +104,7 @@ if(CAELESTIA_WINDOWS_TESTS)
     endforeach()
 
     # The Windows data object that the drag hands a target, read back through
-    # OLE: PNG, CF_DIB and CF_DIBV5 only. It needs Qt's real windows platform
+    # OLE: CF_HDROP, PNG, CF_DIB and the rest. It needs Qt's real windows platform
     # plugin and replaces the clipboard content, so it is off by default and never
     # registered with CTest. No CI gate runs it. After building with it on, run
     # lib\imagedrag-desktop-tests.exe from the build directory (the Qt bin

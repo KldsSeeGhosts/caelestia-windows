@@ -2,15 +2,19 @@
 
 #include <algorithm>
 
+#include <qdir.h>
 #include <qdrag.h>
 #include <qfileinfo.h>
 #include <qguiapplication.h>
 #include <qimagereader.h>
 #include <qloggingcategory.h>
 #include <qstylehints.h>
+#include <qurl.h>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
+#include <shlobj.h>
+#include <qwindowsmimeconverter.h>
 #endif
 
 namespace {
@@ -18,6 +22,58 @@ namespace {
 Q_LOGGING_CATEGORY(lcImageDrag, "caelestia.imagedrag", QtInfoMsg)
 
 constexpr int fallbackLongSide = 256;
+
+#ifdef Q_OS_WIN
+// Delivers `fileDropMime` as CF_HDROP and nothing else. Qt's own URL converter
+// would add UniformResourceLocator(W), which targets paste as text.
+class FileDropConverter final : public QWindowsMimeConverter {
+public:
+    bool canConvertFromMime(const FORMATETC& formatetc, const QMimeData* mimeData) const override {
+        return formatetc.cfFormat == CF_HDROP && (formatetc.tymed & TYMED_HGLOBAL) && mimeData
+            && mimeData->hasFormat(QLatin1StringView(caelestia::shell::imagedrag::fileDropMime));
+    }
+
+    bool convertFromMime(const FORMATETC& formatetc, const QMimeData* mimeData, STGMEDIUM* pmedium) const override {
+        if (!pmedium || !canConvertFromMime(formatetc, mimeData))
+            return false;
+        const auto path =
+            QString::fromUtf8(mimeData->data(QLatin1StringView(caelestia::shell::imagedrag::fileDropMime)));
+        const auto bytes = caelestia::shell::imagedrag::dropFiles(path);
+        if (bytes.isEmpty())
+            return false;
+        const HGLOBAL global = GlobalAlloc(GMEM_MOVEABLE, SIZE_T(bytes.size()));
+        if (!global)
+            return false;
+        void* target = GlobalLock(global);
+        if (!target) {
+            GlobalFree(global);
+            return false;
+        }
+        memcpy(target, bytes.constData(), size_t(bytes.size()));
+        GlobalUnlock(global);
+        pmedium->tymed = TYMED_HGLOBAL;
+        pmedium->hGlobal = global;
+        pmedium->pUnkForRelease = nullptr;
+        return true;
+    }
+
+    QList<FORMATETC> formatsForMime(const QString& mimeType, const QMimeData* mimeData) const override {
+        if (mimeType != QLatin1StringView(caelestia::shell::imagedrag::fileDropMime) || !mimeData
+            || !mimeData->hasFormat(mimeType))
+            return {};
+        FORMATETC format{};
+        format.cfFormat = CF_HDROP;
+        format.dwAspect = DVASPECT_CONTENT;
+        format.lindex = -1;
+        format.tymed = TYMED_HGLOBAL;
+        return { format };
+    }
+
+    bool canConvertToMime(const QString&, IDataObject*) const override { return false; }
+    QVariant convertToMime(const QString&, IDataObject*, QMetaType) const override { return {}; }
+    QString mimeForFormat(const FORMATETC&) const override { return {}; }
+};
+#endif
 
 } // namespace
 
@@ -39,9 +95,49 @@ std::unique_ptr<QMimeData> mimeData(const QString& path) {
     }
 
     auto data = std::make_unique<QMimeData>();
+#ifdef Q_OS_WIN
+    ensureFileDropConverter();
+    data->setData(QLatin1StringView(fileDropMime), QDir::toNativeSeparators(info.absoluteFilePath()).toUtf8());
+#else
+    data->setUrls({ QUrl::fromLocalFile(info.absoluteFilePath()) });
+#endif
     data->setImageData(image);
+#ifdef Q_OS_WIN
+    // DROPEFFECT_COPY (1) as a little-endian DWORD, the format Explorer reads to
+    // choose between copy and move. Qt passes this key to Windows by name.
+    QByteArray copy(4, '\0');
+    copy[0] = 1;
+    data->setData(QStringLiteral("application/x-qt-windows-mime;value=\"Preferred DropEffect\""), copy);
+#endif
     return data;
 }
+
+#ifdef Q_OS_WIN
+QByteArray dropFiles(const QString& path) {
+    if (path.isEmpty())
+        return {};
+    DROPFILES header{};
+    header.pFiles = sizeof(DROPFILES);
+    header.fWide = TRUE;
+    QByteArray bytes(reinterpret_cast<const char*>(&header), sizeof(header));
+    const auto native = QDir::toNativeSeparators(path);
+    bytes.append(reinterpret_cast<const char*>(native.utf16()), native.size() * qsizetype(sizeof(char16_t)));
+    bytes.append(4, '\0'); // the path's terminator and the list's
+    return bytes;
+}
+
+void ensureFileDropConverter() {
+    // Lives for the process. The constructor registers it with Qt's Windows
+    // platform, and it is never unregistered, so it outlives every drag.
+    // Only the real Windows platform has a mime registry to join; under the
+    // offscreen platform (tests) there is no OLE drag and the base class has
+    // nothing to register with.
+    if (QGuiApplication::platformName() != QLatin1StringView("windows"))
+        return;
+    static auto* converter = new FileDropConverter;
+    Q_UNUSED(converter);
+}
+#endif
 
 Preview preview(const QMimeData& data, const QSizeF& logical, qreal dpr) {
     const auto image = qvariant_cast<QImage>(data.imageData());

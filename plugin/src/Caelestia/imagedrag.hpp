@@ -19,11 +19,28 @@ class QObject;
 // separate so the offered data and the preview can be tested without a window.
 namespace caelestia::shell::imagedrag {
 
-// Offers only the decoded image, which Qt's Windows converters deliver as
-// PNG, CF_DIB and CF_DIBV5. No file, text, URL or Preferred DropEffect.
-// Returns null unless
+// What the drag offers for the image file at `path`: the file itself and the
+// decoded image (which Qt's Windows converters deliver as PNG, CF_DIB and
+// CF_DIBV5). On Windows the file is carried under `fileDropMime` and delivered
+// as CF_HDROP only, by a converter of our own, and "Preferred DropEffect" is set
+// to copy. It is deliberately not a URL: Qt turns a URL list into CF_HDROP plus
+// UniformResourceLocator(W), and chat boxes and browsers paste that URL as text
+// next to the file. Elsewhere the file is a file URL. Returns null unless
 // `path` is an absolute path to an existing image that Qt can decode.
 std::unique_ptr<QMimeData> mimeData(const QString& path);
+
+#ifdef Q_OS_WIN
+// The mime type that carries the file's absolute native path (UTF-8) for CF_HDROP.
+inline constexpr auto fileDropMime = "application/x-caelestia-file-drop";
+
+// The CF_HDROP payload (DROPFILES, the wide path, then two nulls) for one
+// file, or empty for an empty path. Exposed for tests.
+QByteArray dropFiles(const QString& path);
+
+// Registers the converter that turns `fileDropMime` into CF_HDROP. Safe to call
+// more than once. mimeData() calls it.
+void ensureFileDropConverter();
+#endif
 
 struct Preview {
     QPixmap pixmap;
