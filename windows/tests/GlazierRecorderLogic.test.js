@@ -38,7 +38,7 @@ function recorder() {
         permitted: true, probed: true, available: true, executable: "C:/synthetic/glazier.exe",
         state: "idle", elapsed: 0, outputDir: "", lastFile: "", finishedFiles: [],
         lastError: "", connectionError: "", pendingStart: false, baselinePending: true,
-        hostId: "", eventSequence: 0, connectionFailed: false, incompatible: false,
+        hostId: "", eventSequence: 0, connectionFailed: false, recovering: false, incompatible: false,
         startTimeout: { stop() {}, restart() {} },
         Quickshell: { env() { return ""; }, execDetached(spec) { context.launched = spec; } },
         Glazier: { ownedHost: false, launchedHost: false,

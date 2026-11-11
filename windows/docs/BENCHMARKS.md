@@ -31,6 +31,10 @@ hypotheses. This short disabled-provider host cannot measure 15/60-second helper
 polls or qualify idle wakeups. Do not use its CPU-through-exit metric to accept
 clock, recorder or quota polling changes. Those need the owner's longer idle
 window, process-lifecycle evidence and relevant providers enabled explicitly.
+The [#35 idle-count experiment](perf/IDLE-WAKEUPS-35.md) adds a separate bounded
+offscreen host for recorder starts and clock callbacks, with synthetic helper
+lifecycle logs and count controls. It does not extend the CPU/timing gate or
+qualify live-desktop costs.
 
 ## Workflow 1. Explore and profile
 

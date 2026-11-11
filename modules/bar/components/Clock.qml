@@ -117,6 +117,14 @@ StyledRect {
 
             sourceComponent: StyledText {
                 text: Time.format("ss")
+                Component.onCompleted: {
+                    if (typeof Time.retainSeconds === "function")
+                        Time.retainSeconds();
+                }
+                Component.onDestruction: {
+                    if (Time && typeof Time.releaseSeconds === "function")
+                        Time.releaseSeconds();
+                }
                 font: root.fontFor(text, secMetrics.width)
                 color: root.colour
 
