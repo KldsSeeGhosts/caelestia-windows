@@ -6,22 +6,18 @@ profiles, or personal data publicly.
 
 ## Reporting privately
 
-This repository does not publish a dedicated security email address or another
-confirmed private reporting address. Availability of GitHub's private
-vulnerability reporting for this repository has not been verified. If the
-repository's Security tab offers **Report a vulnerability**, use that private
-form. Do not assume it is enabled unless GitHub actually presents the option.
+Use GitHub's private vulnerability reporting: open the repository's Security tab
+and choose **Report a vulnerability**, or go directly to the
+[private report form](https://github.com/KldsSeeGhosts/caelestia-windows/security/advisories/new).
+Only maintainer [@KldsSeeGhosts](https://github.com/KldsSeeGhosts) can see the report.
+This repository does not publish a security email address.
 
-If the private form is unavailable, use the existing
+Include the affected release or commit, impact, reproduction steps, and any
+relevant sanitized diagnostic data. Remove secrets, personal paths, account names,
+clipboard contents, notification contents, and other user data before sharing.
+
+If the private form does not work for you, use the
 [public issue tracker contact-request form](https://github.com/KldsSeeGhosts/caelestia-windows/issues/new?template=security_contact.yml)
-only to ask maintainer [@KldsSeeGhosts](https://github.com/KldsSeeGhosts) for a
-private reporting channel. Keep that request generic: do not include affected
-versions, reproduction steps, logs, proof-of-concept files, or other vulnerability
-details. Treat anything submitted there as public, and wait for a private route
-before sending technical details.
-
-Once a private route is confirmed, include the affected release or commit, impact,
-reproduction steps, and any relevant sanitized diagnostic data. Remove secrets,
-personal paths, account names, clipboard contents, notification contents, and
-other user data before sharing. No direct email address is provided by this
-policy.
+only to ask for another private channel. Keep that request generic: do not include
+affected versions, reproduction steps, logs, proof-of-concept files, or other
+vulnerability details. Treat anything submitted there as public.
