@@ -32,13 +32,17 @@ This is an implementation handoff, not release or live acceptance.
 General SemVer allows `+metadata`, ignored for ordering. Numeric identifiers use
 decimal string comparison, not bounded integer parsing.
 
-Development identity is `CORE-dev.EPOCH.RUN.ATTEMPT`, replacing devFloor and the
-999999 cap. Reviewed epoch increments handle workflow replacement/reset;
-attempts get distinct immutable identities. Publication requires source ancestry,
-supersession and same-attempt idempotency. Pointer sequence is independent.
+Development identity is plain SemVer, computed from the reviewed base and
+immutable first-parent merge titles. Allocation never reads publication state
+or mutable labels. Gaps consume versions and re-runs keep their original version.
+Publication requires strict channel advancement, source ancestry and unchanged
+immutable bytes. Pointer sequence and run/attempt provenance are independent.
+See [VERSIONING.md](../../VERSIONING.md) for the bridge prerequisite and fold.
 
-Compiled core, signed channel alias, immutable build and selected channel are
-distinct. A stable 1.0 alias promotes tested 1.0-core bytes, never a 0.2 payload.
+The compiled native version, display version and build version agree.
+Development and preview tags have channel suffixes. Stable uses an unqualified
+tag and requires tested 1.0-or-newer bytes, never a relabelled 0.x payload.
+Promotion preserves identical artifacts and changes only signed channel records.
 
 CNG ECCPUBLICBLOB import avoids modern-only EC import APIs. P1363 signatures
 are explicitly 64 bytes; native PKCS8 import is tested. This is not full TUF.

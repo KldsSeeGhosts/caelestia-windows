@@ -105,6 +105,17 @@ the exact verified package source and are immutable once created.
 [REPOSITORY-POLICY.md](windows/docs/REPOSITORY-POLICY.md) records the active
 rulesets, the required backend check and the admin recovery bypass.
 Use `windows: <description>` commit subjects for this port.
+Use Conventional Commits PR titles, such as `feat(nexus): add a setting`,
+`fix: correct an update error` or `docs: clarify setup`. Recognised types are
+`feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`,
+`style` and `revert`. Put `!` before the colon for a breaking change.
+The existing Change scope job checks titles. It adds no required check.
+Review the final title before merge. The title stored in the GitHub merge
+commit determines the version, not PR labels or publication state.
+`feat` bumps MINOR. Breaking changes bump MAJOR, or MINOR before 1.0.
+All other merges and direct first-parent commits bump PATCH. Every commit
+after the reviewed base consumes a version even if it never publishes.
+See [VERSIONING.md](VERSIONING.md) for anchoring, gaps, re-runs and promotion.
 Keep changes focused, follow nearby QML/C++/PowerShell style, and include
 behavior, validation, side effects and known gaps in the pull request.
 Do not publish packages as part of routine development.

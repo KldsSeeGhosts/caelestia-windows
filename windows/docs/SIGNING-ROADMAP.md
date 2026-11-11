@@ -93,7 +93,7 @@ restrictions on every signed PE file. The build must emit a `VERSIONINFO`
 resource with:
 
 - product name `Caelestia Windows`;
-- product version set to the same reviewed core version in every first-party PE.
+- product version set to the same history-derived version in every first-party PE.
 
 The resource is missing today in the capture host, the managed supervisor and
 the Caelestia QML modules. Add it to each build:

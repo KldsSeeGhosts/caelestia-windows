@@ -18,8 +18,8 @@ if ($Mode -eq 'development') {
 }
 if ($Mode -eq 'promote') {
     . "$PSScriptRoot\..\scripts\Caelestia-SemVer.ps1"
-    if (-not (Test-CaelestiaDevVersion $BuildVersion) -or $Channel -cnotin @('preview', 'stable') -or
-        $Alias -cnotmatch '\A[0-9A-Za-z.-]+\z') { throw 'Invalid explicit promotion input.' }
+    if ($BuildVersion -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z' -or
+        $Channel -cnotin @('preview', 'stable') -or $Alias -cne $BuildVersion) { throw 'Invalid explicit promotion input.' }
     $arguments += @('--build', $BuildVersion, '--channel', $Channel, '--alias', $Alias)
 }
 try {

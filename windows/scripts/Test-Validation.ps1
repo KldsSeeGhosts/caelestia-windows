@@ -23,6 +23,7 @@ $unitTests = @(
     @{ name = 'public-release-metadata'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/TestPublicReleaseMetadata.py') }
     @{ name = 'Test-Toolchain'; shard = 3; kind = 'script' }
     @{ name = 'Test-Versioning'; shard = 3; kind = 'script' }
+    @{ name = 'history-version'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/test_history_version.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
     @{ name = 'Test-PairContract'; shard = 2; kind = 'script' }
     @{ name = 'Test-NexusPipeline'; shard = 3; kind = 'script'; extra = @('-Python', $Python) }
     @{ name = 'Test-CaptureIntegration'; shard = 3; kind = 'script' }

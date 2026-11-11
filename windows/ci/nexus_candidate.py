@@ -10,13 +10,14 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pair_result as pair
+import history_version
 
 REPOSITORY = "KldsSeeGhosts/caelestia-windows"
 PRODUCER = "bd5c68196edbdaad23db8f28ca64214d075711b4"
 VALIDATOR = "e7e890428a49812208866349a00482cf0cddbca6ebbaf71cb7a06a5c3284b5a0"
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"[a-f0-9]{64}")
-DEV = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.([1-9][0-9]*)\.([1-9][0-9]*)\.([1-9][0-9]*)")
+VERSION = history_version.PLAIN
 
 
 class GateRejection(ValueError):
@@ -205,14 +206,12 @@ def verify_live_evidence(shell, build, results, validator, ctx):
     require(all(build_record["toolchain"][key] == value for key, value in receipt["toolchain"]["actual"].items()),
             "native-toolchain-version-mismatch")
     version_file = Path(shell) / "windows/release/version.json"
-    version = read(version_file)
+    identity = history_version.resolve(shell, ctx["sha"])
     require(build_record["sourceRevision"] == ctx["sha"] and build_record["sourceDirty"] is False
-            and build_record["nativeVersion"] == version["version"]
+            and build_record["nativeVersion"] == identity
             and build_record["versionFileSha256"] == digest(version_file),
             "build-version-provenance-mismatch")
-    identity = (version["version"] + "-dev." + str(version["developmentEpoch"]) + "." +
-                ctx["runNumber"] + "." + ctx["runAttempt"])
-    require(DEV.fullmatch(identity) and len(identity) <= 80, "invalid-build-identity")
+    require(VERSION.fullmatch(identity) and len(identity) <= 80, "invalid-build-identity")
     return identity
 
 

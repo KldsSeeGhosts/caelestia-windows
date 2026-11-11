@@ -1,6 +1,12 @@
 ## Change
 
 Describe the problem and resulting Windows behavior. Link related issues.
+Use a Conventional Commits PR title, such as `feat(scope): description` or
+`fix: description`. Other recognised prefixes are `perf`, `refactor`, `docs`,
+`test`, `build`, `ci`, `chore`, `style` and `revert`. Add `!` before `:` for a
+breaking change and describe its migration and rollback compatibility.
+The final title recorded in the merge commit determines the immutable version
+bump. Labels do not. See [VERSIONING.md](../VERSIONING.md).
 
 ## Validation
 

@@ -50,7 +50,7 @@ function Test-CaelestiaDevVersion([string]$Version) {
 }
 
 function Test-CaelestiaPublishedVersion([string]$Version) {
-    # Bridge clients read both formats. Producers still use the legacy grammar.
+    # Retain legacy read compatibility after the producer switches to plain.
     return (Test-CaelestiaDevVersion $Version) -or
         $Version -cmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z'
 }
@@ -58,7 +58,7 @@ function Test-CaelestiaPublishedVersion([string]$Version) {
 function Read-CaelestiaVersion([string]$Path) {
     $value = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
     if ($value.schema -ne 1 -or $value.version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
-        [string]$value.developmentEpoch -cnotmatch '^[1-9][0-9]*$' -or $value.profileSchema -ne 1) {
+        $value.profileSchema -ne 1) {
         throw 'Invalid authoritative version file.'
     }
     $parsed = ConvertTo-CaelestiaSemVer $value.version
@@ -66,4 +66,12 @@ function Read-CaelestiaVersion([string]$Path) {
         if ((Compare-CaelestiaDecimal $part '65535') -gt 0) { throw 'Native version components must fit Windows VERSIONINFO.' }
     }
     return $value
+}
+
+function Get-CaelestiaSourceVersion([string]$Root, [string]$Revision = 'HEAD', [string]$Python = 'python') {
+    $version = & $Python -I -B "$Root\windows\ci\history_version.py" --root $Root --revision $Revision
+    if ($LASTEXITCODE -ne 0 -or $version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') {
+        throw 'Cannot compute source version from complete first-parent history.'
+    }
+    return [string]$version
 }

@@ -268,7 +268,9 @@ if ($PublicRelease) {
 # build.json keeps describing the state the build ended in.
 . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
 $versionPath = Join-Path $repoRoot 'windows\release\version.json'
-$sourceVersion = (Read-CaelestiaVersion $versionPath).version
+$sourceVersion = Get-CaelestiaSourceVersion $repoRoot
+$nativeVersionPath = Join-Path $logRoot 'product-version.txt'
+[IO.File]::WriteAllText($nativeVersionPath, ($sourceVersion + "`n"), [Text.Encoding]::ASCII)
 $versionFileSha256 = (Get-FileHash -LiteralPath $versionPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $ErrorActionPreference = 'Continue'
 $rawShortRevision = & git -C $repoRoot rev-parse --short HEAD 2>$null
@@ -433,6 +435,7 @@ try {
         '-B', "$BuildRoot\quickshell") + $common + @("-DCMAKE_C_COMPILER:FILEPATH=$LlvmBin\clang-cl.exe",
         "-DCLI11_INCLUDE_DIR=$Cli11Include", '-DCRASH_HANDLER=OFF', '-DBUILD_TESTING=OFF', '-DINSTALL_QMLDIR=qml',
         "-DQS_ICON_FILE:FILEPATH=$repoRoot/assets/caelestia.ico",
+        "-DQS_VERSION_FILE:FILEPATH=$nativeVersionPath",
         '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
         '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
     Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$backendJobs")

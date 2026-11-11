@@ -17,7 +17,13 @@ This recommendation is not an authenticated preview/stable update channel.
 
 ## Version-format migration
 
-The bridge still publishes legacy `CORE-dev.EPOCH.RUN.ATTEMPT` builds.
+This switch publishes plain SemVer, starting with the reviewed `0.3.0` base.
+Each later first-parent main commit consumes its history-derived version,
+including commits whose build fails or does not publish. The merge commit's
+recorded Conventional Commits PR title determines the bump, never mutable labels
+or published state. Racing commits get distinct ordered versions and re-runs
+keep their original version.
+The bridge publishes legacy `CORE-dev.EPOCH.RUN.ATTEMPT` builds.
 Its updater and Nexus page accept both legacy versions and plain SemVer.
 An installed client such as `0.2.0-dev.1.283.1` must install a bridge build
 before it can accept the first plain `0.3.0` build. The switch must merge
@@ -182,17 +188,22 @@ allow those token permissions and normal branch pushes. No PAT is required.
   distinct-key threshold. Keys remain in process memory, never repository files.
 
 Same-attempt retries recover partial drafts without replacing assets or tags.
-An Actions rerun has a new immutable attempt identity and requires the full
-producer job to rerun; it cannot adopt a previous attempt's candidate.
-Superseded builds do not move pointers. Pointer commits use non-force CAS and
+An Actions rerun keeps its history-derived version, has new run/attempt
+provenance and requires the full producer job to rerun. It cannot adopt a
+previous attempt's candidate or replace an existing version's bytes.
+Versions at or below channel highwater fail closed before release writes.
+Pointer commits use non-force CAS and
 bounded revalidation/retry. Invalid pointers never become missing pointers;
 only first publication seeds a missing channel. Online freshness can renew an
 expired authentic pointer with currently authorized keys, not expired keys or
 the offline keys document. Clients still reject expired metadata.
 
 Promotion copies identical tested assets, including the unchanged development
-manifest and compiled core. Only signed alias/pointer records change. A stable
-1.0 release therefore requires tested 1.0-core bytes; 0.2 cannot be relabelled.
+manifest and computed native version. Only signed alias/pointer records change.
+Display and build versions stay plain and equal. Tags are
+`v0.3.0-development`, `v0.3.0-preview` and, from 1.0, `v1.0.0` for stable.
+All match the immutable `v*` tag ruleset. A stable 1.0 release requires tested
+1.0 bytes. A 0.3 artifact cannot be relabelled.
 No release pruning or unreferenced draft cleanup runs automatically.
 
 See [VERSIONING.md](VERSIONING.md) and the

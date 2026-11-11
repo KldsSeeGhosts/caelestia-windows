@@ -25,8 +25,8 @@ and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
 
 | Channel | Reference | Signed | Notes |
 | --- | --- | --- | --- |
-| Development | `vX.Y.Z-dev.EPOCH.RUN.ATTEMPT` | No | Every green `main` push publishes a pre-release. These are continuous development builds. |
-| Preview | `vX.Y.Z-preview.N`, `vX.Y.Z-rc.N` | No | Pre-1.0 aliases of tested development artifacts. The existing `v0.1.0-preview.2` release is one. |
+| Development | `vX.Y.Z-development` | No | Eligible green `main` pushes publish history-derived plain versions. |
+| Preview | `vX.Y.Z-preview` | No | Promotion of identical tested development artifacts. Historical `v0.1.0-preview.2` keeps its original tag. |
 | Stable | `vMAJOR.MINOR.PATCH`, `MAJOR >= 1` | Intended | The owner's decision is that stable releases will be signed through SignPath Foundation once the pipeline exists. No stable release exists today. |
 
 The table describes this project's own publisher signature. Deployed Qt DLLs
@@ -40,6 +40,8 @@ fixtures only; no CI job runs it. A tag that is not an unqualified core of 1.0.0
 or newer is never treated as stable. Promotion to the Nexus `stable` channel
 already requires the alias to equal the core and refuses a 0.x core, so the tag
 grammar and the channel metadata agree.
+Legacy development and preview tags retain their historical classification.
+Only version/tag classification changes here, not signing policy or keys.
 
 Development and preview releases stay unsigned on purpose. They change with
 every push, they are not manual release decisions, and signing each one would

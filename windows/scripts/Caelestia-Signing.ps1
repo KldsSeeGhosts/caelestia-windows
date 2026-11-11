@@ -51,8 +51,8 @@ function Test-CaelestiaQtSignerSubject {
 #   windows/scripts/Caelestia-SemVer.ps1   (Test-CaelestiaDevVersion)
 #   windows/ci/New-NexusCandidate.ps1      (identity and tag)
 #   windows/ci/nexus_publish.py            (development publish, promote)
-# Development is CORE-dev.EPOCH.RUN.ATTEMPT and is always a pre-release.
-# Preview is any other pre-release alias (for example 0.1.0-preview.2).
+# Plain builds use channel suffixes on development/preview tags only.
+# Legacy development and preview references retain their classification.
 # Stable is an unqualified core of 1.0.0 or newer: promotion requires the alias
 # to equal the core and refuses a 0.x core, and published versions never carry
 # build metadata.
@@ -71,7 +71,7 @@ function Get-CaelestiaReleaseChannel {
     $result.releaseId = $identity
     $result.tag = 'v' + $identity
     $result.core = $parsed.Core
-    if (Test-CaelestiaDevVersion $identity) {
+    if ((Test-CaelestiaDevVersion $identity) -or $parsed.Prerelease -ceq 'development') {
         $result.channel = 'development'
     } elseif ($parsed.Prerelease) {
         $result.channel = 'preview'

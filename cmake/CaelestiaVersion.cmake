@@ -1,17 +1,14 @@
 # Shared by normal configure and the SDK-free version-reader regression.
-file(READ "${CMAKE_CURRENT_LIST_DIR}/../windows/release/version.json" CAELESTIA_VERSION_JSON)
-string(JSON CAELESTIA_VERSION_SCHEMA GET "${CAELESTIA_VERSION_JSON}" schema)
-string(JSON CAELESTIA_VERSION GET "${CAELESTIA_VERSION_JSON}" version)
-if(NOT CAELESTIA_VERSION_SCHEMA STREQUAL "1" OR
-   NOT CAELESTIA_VERSION MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
-    message(FATAL_ERROR "Invalid authoritative windows/release/version.json")
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+execute_process(
+    COMMAND "${Python3_EXECUTABLE}" -I -B "${CMAKE_CURRENT_LIST_DIR}/../windows/ci/history_version.py"
+    RESULT_VARIABLE CAELESTIA_VERSION_RESULT
+    OUTPUT_VARIABLE CAELESTIA_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT CAELESTIA_VERSION_RESULT EQUAL 0)
+    message(FATAL_ERROR "Cannot compute version from complete first-parent history")
 endif()
-foreach(CAELESTIA_COMPONENT IN ITEMS "${CMAKE_MATCH_1}" "${CMAKE_MATCH_2}" "${CMAKE_MATCH_3}")
-    if(CAELESTIA_COMPONENT GREATER 65535)
-        message(FATAL_ERROR "Native version components must fit Windows VERSIONINFO")
-    endif()
-endforeach()
 if(DEFINED VERSION AND NOT VERSION STREQUAL CAELESTIA_VERSION)
-    message(FATAL_ERROR "VERSION must match windows/release/version.json")
+    message(FATAL_ERROR "VERSION must match the history-derived version")
 endif()
 set(VERSION "${CAELESTIA_VERSION}")

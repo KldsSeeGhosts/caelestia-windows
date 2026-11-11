@@ -296,9 +296,15 @@ def decimal_key(value):
 
 
 def build_key(version):
-    match = candidate.DEV.fullmatch(version)
+    # Read the legacy channel highwater during migration, but only produce plain.
+    legacy = re.fullmatch(
+        r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+        r"-dev\.([1-9][0-9]*)\.([1-9][0-9]*)\.([1-9][0-9]*)", version)
+    match = candidate.VERSION.fullmatch(version) or legacy
     require(match is not None, "invalid-build-version")
-    return tuple(decimal_key(part) for part in match.groups())
+    parts = match.groups()
+    return (tuple(decimal_key(part) for part in parts[:3]), not bool(legacy),
+            tuple(decimal_key(part) for part in parts[3:]))
 
 
 def asset_rows(directory, names):
@@ -351,8 +357,9 @@ def verify_candidate_header(directory, ctx, extras=()):
             and doc["qualification"] == "component-offscreen-and-data-only-not-windows11-acceptance",
             "candidate-run-binding")
     release = doc["release"]
-    require(candidate.DEV.fullmatch(release["buildVersion"])
-            and release["buildVersion"].split(".")[-2:] == [ctx["runNumber"], ctx["runAttempt"]]
+    require(candidate.VERSION.fullmatch(release["buildVersion"])
+            and release["displayVersion"] == release["releaseId"] == release["buildVersion"]
+            and release["tag"] == "v" + release["buildVersion"] + "-development"
             and release["sourceRevision"] == ctx["sha"], "candidate-build-binding")
     expected = EVIDENCE | {release["bundle"]["name"]}
     require({row["name"] for row in doc["assets"]} == expected, "candidate-asset-set")
@@ -445,9 +452,8 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
         request, receipt = candidate.verify_receipt(source, directory, validator, ctx)
     data = read(directory / "candidate.json")
     release = data["release"]
-    version = read(source / "windows/release/version.json")
-    require(release["buildVersion"] == version["version"] + "-dev." + str(version["developmentEpoch"]) +
-            "." + ctx["runNumber"] + "." + ctx["runAttempt"], "version-source-binding")
+    require(release["buildVersion"] == candidate.history_version.resolve(shell, ctx["sha"]),
+            "version-source-binding")
     if not historical:
         # The unprivileged assembler already checked bundle/source contents.
         # Seal bound those exact bytes to the final independent pair evidence.
@@ -653,11 +659,8 @@ def development(directory, ctx, github, branch, crypto, shell, verify):
         if old is None:
             return "advance"
         previous = old["release"]
-        if build_key(release["buildVersion"]) == build_key(previous["buildVersion"]):
-            require(release_equal(release, previous), "same-version-different-payload")
-            return "unchanged"
-        if build_key(release["buildVersion"]) < build_key(previous["buildVersion"]):
-            return "superseded"
+        require(build_key(release["buildVersion"]) > build_key(previous["buildVersion"]),
+                "development-not-newer")
         require(ancestor(shell, previous["sourceRevision"], release["sourceRevision"]), "non-descendant-publication")
         return "advance"
     def prepare(keys):
@@ -686,12 +689,11 @@ def existing_record(github, crypto, keys, tag, channel, expected, directory):
 
 
 def promote(directory, build, channel, alias, github, branch, crypto, shell, verify):
-    require(channel in ("preview", "stable") and candidate.DEV.fullmatch(build), "invalid-promotion-input")
-    core = build.split("-")[0]
+    require(channel in ("preview", "stable") and candidate.VERSION.fullmatch(build), "invalid-promotion-input")
+    core = build
+    require(alias == build, "promotion-version-mismatch")
     if channel == "stable":
         require(alias == core and not core.startswith("0."), "stable-requires-tested-1-plus-core")
-    else:
-        require(re.fullmatch(re.escape(core) + r"-(preview|rc)\.[1-9][0-9]*", alias), "preview-alias-core-mismatch")
     keys, _ = branch.read("development")
     record = crypto.invoke("ReadRecord", "development", keys,
                            document=(Path(directory) / "release-record.dsse.json").read_bytes())
@@ -705,21 +707,15 @@ def promote(directory, build, channel, alias, github, branch, crypto, shell, ver
     verify(doc)
     require(ancestor(shell, doc["sourceRevision"], pair.git(shell, "rev-parse", "HEAD")), "promotion-not-main-ancestor")
     release = copy.deepcopy(doc["release"])
-    release.update(displayVersion=alias, tag="v" + alias,
-                   notesUrl=f"https://github.com/{REPO}/releases/tag/v{alias}")
-    release["bundle"]["url"] = f"https://github.com/{REPO}/releases/download/v{alias}/" + release["bundle"]["name"]
+    tag = "v" + build + ("-preview" if channel == "preview" else "")
+    release.update(displayVersion=build, tag=tag,
+                   notesUrl=f"https://github.com/{REPO}/releases/tag/{tag}")
+    release["bundle"]["url"] = f"https://github.com/{REPO}/releases/download/{tag}/" + release["bundle"]["name"]
     def decide(old):
         if old is None:
             return "advance"
         previous = old["release"]
-        if previous == release:
-            return "unchanged"
         require(build_key(release["buildVersion"]) > build_key(previous["buildVersion"]), "promotion-not-newer")
-        if channel == "preview" and previous["displayVersion"].split("-")[0] == core:
-            # rc sorts after preview; numeric identifiers compare without bounds.
-            label, number = alias.split("-")[1].split(".")
-            old_label, old_number = previous["displayVersion"].split("-")[1].split(".")
-            require((label, decimal_key(number)) > (old_label, decimal_key(old_number)), "promotion-alias-not-newer")
         require(ancestor(shell, previous["sourceRevision"], release["sourceRevision"]), "promotion-non-descendant")
         return "advance"
     rows = record["assets"] + asset_rows(directory, ["release-record.dsse.json"])
@@ -810,8 +806,8 @@ def main():
             verify = lambda doc: verify_payload(shell, args.candidate, work, ctx, validator)
             result = development(Path(args.candidate), ctx, github, branch, crypto, shell, verify)
         elif args.mode == "promote":
-            require(args.build and candidate.DEV.fullmatch(args.build), "invalid-build-input")
-            source = github.api(f"repos/{REPO}/releases/tags/v{args.build}")
+            require(args.build and candidate.VERSION.fullmatch(args.build), "invalid-build-input")
+            source = github.api(f"repos/{REPO}/releases/tags/v{args.build}-development")
             directory = work / "development-assets"; directory.mkdir()
             # The signed record is small; GitHub's HTTPS metadata digest bounds
             # the bootstrap fetch. All remaining bytes are then signed-bound.

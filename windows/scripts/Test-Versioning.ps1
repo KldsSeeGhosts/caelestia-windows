@@ -39,9 +39,11 @@ foreach ($legacy in @('0.2.0-dev.1.283.1', '0.2.0-dev.99999999999999999999999999
     Assert ((Compare-CaelestiaSemVer '0.3.0' $legacy) -eq 1) 'Plain version must exceed every legacy 0.2.0 build.'
 }
 $version = Read-CaelestiaVersion "$repo\windows\release\version.json"
-foreach ($tag in @(& git -C $repo tag --list 'v*')) {
+$computedVersion = Get-CaelestiaSourceVersion $repo
+# A newer, non-reachable tag must not invalidate an older commit's re-run.
+foreach ($tag in @(& git -C $repo tag --merged HEAD --list 'v*')) {
     try { $tagVersion = ConvertTo-CaelestiaSemVer $tag.Substring(1) } catch { continue }
-    Assert ((Compare-CaelestiaSemVer $version.version $tagVersion.Core) -ge 0) 'Version source predates public history.'
+    Assert ((Compare-CaelestiaSemVer $computedVersion $tagVersion.Core) -ge 0) 'Computed version predates reachable public history.'
 }
 Assert ((Get-Content "$repo\CHANGELOG.md" -Raw) -match '(?m)^## \[Unreleased\]') 'Missing Unreleased changelog.'
 & cmake -P "$repo\cmake\CaelestiaVersion.cmake"
