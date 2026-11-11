@@ -135,8 +135,14 @@ Assert-Contains $policy 'v*' 'release-tag protection is not documented'
 Assert-Contains $policy 'force pushes' 'force-push restriction is not documented'
 Assert-Contains $policy 'deletion' 'branch/tag deletion restriction is not documented'
 
-Assert-Contains $security 'Availability of GitHub' 'private advisory availability must be stated truthfully'
-Assert-Contains $security 'has not been verified' 'private advisory availability must not be assumed'
+if ($scopeName -eq 'shell') {
+    # Private vulnerability reporting was enabled and verified through the API on 2026-11-11.
+    Assert-Contains $security '/security/advisories/new' 'the private vulnerability report form must be linked'
+    Assert-Contains $security 'Report a vulnerability' 'the Security tab route must be named'
+} else {
+    Assert-Contains $security 'Availability of GitHub' 'private advisory availability must be stated truthfully'
+    Assert-Contains $security 'has not been verified' 'private advisory availability must not be assumed'
+}
 Assert-Contains $security 'public issue tracker' 'the existing safe fallback route is missing'
 Assert-Contains $security $issueTracker 'security fallback must use this repository’s existing public tracker'
 Assert-Contains $security 'do not include' 'the public fallback must prohibit vulnerability details'

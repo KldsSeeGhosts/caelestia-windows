@@ -6,6 +6,8 @@ the Windows port were written with AI assistance under the maintainer's
 direction and review. Describe material AI assistance in your contribution and
 verify generated code, dependencies, attribution and documentation.
 
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
 ## Build
 
 Use native Windows PowerShell and the toolchain in
