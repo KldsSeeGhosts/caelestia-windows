@@ -25,6 +25,7 @@
         "Test-WindowsBackground": 5,
         "Test-UpdateManager": 1,
         "Test-UpdatesPage": 5,
-        "Test-FileUrls": 3
+        "Test-FileUrls": 3,
+        "Test-IdleWork": 26
     }
 }
