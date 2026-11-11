@@ -143,12 +143,13 @@ Singleton {
     property string configPath: ""
     property var items: []
     property var monitors: ({})
+    property var displays: ({})
     readonly property string monitor: String(options.monitor || "Monitor0")
     readonly property var current: monitors[monitor] ?? null
     readonly property string picker: !enabled ? "files" : ["engine", "files", "both"].includes(options.picker)
         ? options.picker : (running && detected && enabled ? "engine" : "files")
     property string actionProject: ""
-    property string actionMonitor: ""
+    property bool actionAllDisplays: false
     property string actionScreenTarget: ""
     // The bridge's own subprocess timeout is 15 s; this outer watchdog only
     // covers a helper that never returns, so it must outlast the bridge error
@@ -236,6 +237,7 @@ Singleton {
         detected = data.detected;
         running = data.running;
         configPath = data.configPath || "";
+        displays = data.displays ?? {};
         // Compare against one cached serialization instead of re-stringifying
         // the live models: redundant assignments would rebuild the carousel
         // delegates on every poll.
@@ -277,6 +279,7 @@ Singleton {
         // Status mode carries the resolved selected projects, so a config
         // change reaches currentImage without waiting for the catalogue scan.
         if (data.monitors) {
+            displays = data.displays ?? {};
             const nextMonitors = JSON.stringify(data.monitors);
             if (nextMonitors !== monitorsJson) {
                 monitorsJson = nextMonitors;
@@ -390,19 +393,18 @@ Singleton {
     function open(path: string, screen): bool {
         if (!controlsEnabled || action.running || !items.some(item => item.path === path))
             return false;
-        // Capture the owning screen's identity now. Config changes, a picker
-        // closing, or moving its window cannot retarget the async process.
+        // Omitted targets mean all displays, as for local image picks.
+        // Capture explicit physical targets before starting the async process.
         const explicit = screen !== undefined;
         const target = explicit && screen ? Native.Wallpaper.screenTargetId(screen.name) : "";
-        if ((explicit && (!target || (screen.targetId !== undefined && screen.targetId !== target)))
-                || (!explicit && !/^Monitor\d+$/.test(monitor))) {
+        if (explicit && (!target || (screen.targetId !== undefined && screen.targetId !== target))) {
             lastError = "The wallpaper display is no longer available";
             Toaster.toast("Wallpaper Engine", lastError, "wallpaper");
             return false;
         }
         actionProject = path;
         actionScreenTarget = target;
-        actionMonitor = monitor.replace(/^Monitor/, "");
+        actionAllDisplays = !explicit;
         actionTimedOut = false;
         actionPending = true;
         actionWatchdog.restart();
@@ -682,9 +684,8 @@ Singleton {
     Process {
         id: action
         objectName: "wallpaperEngineAction"
-        command: [root.python, root.helper, "open", "--project", root.actionProject,
-            root.actionScreenTarget ? "--screen-target" : "--monitor",
-            root.actionScreenTarget || root.actionMonitor]
+        command: [root.python, root.helper, "open", "--project", root.actionProject].concat(
+            root.actionAllDisplays ? ["--all-displays"] : ["--screen-target", root.actionScreenTarget])
         stdout: StdioCollector { id: actionOutput }
         onRunningChanged: {
             if (!action.running && root.actionPending) {

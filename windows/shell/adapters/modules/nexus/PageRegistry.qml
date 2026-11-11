@@ -15,6 +15,8 @@ QtObject {
             category: "appearance",
             searchSubPages: [
                 { label: Tr.tr("Wallpaper"), keywords: Tr.tr("Background images"), path: [1] },
+                { label: Tr.tr("Wallpaper displays"), keywords: Tr.tr("Monitor per-display background target"), path: [] },
+                { label: Tr.tr("Wallpaper Engine"), keywords: Tr.tr("Desktop playback integration toggle status"), path: [] },
                 { label: Tr.tr("Colours"), keywords: Tr.tr("Color scheme"), path: [3] }
             ]
         },

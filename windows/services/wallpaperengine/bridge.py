@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 import winreg
 
 
@@ -240,7 +241,8 @@ def workshop_project(path: Path, libs: list[Path]) -> dict:
     raise ValueError("project is not in the discovered workshop catalog")
 
 
-def open_wallpaper(project_path: str, monitor: int | None, screen_target: str | None) -> None:
+def open_wallpaper(project_path: str, monitor: int | None, screen_target: str | None,
+                   all_displays: bool = False) -> None:
     """Validate and dispatch one selection without rebuilding the catalogue."""
     if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
         raise ValueError("Wallpaper Engine controls are disabled")
@@ -258,24 +260,58 @@ def open_wallpaper(project_path: str, monitor: int | None, screen_target: str | 
     executable = (directory / ("wallpaper64.exe" if (directory / "wallpaper64.exe").is_file()
                                else "wallpaper32.exe")).as_posix()
     command = [executable, "-control", "openWallpaper", "-file", str(target)]
-    if screen_target is not None:
+    targets = [[]]
+    if all_displays or screen_target is not None:
         try:
             general = config_general(read_json(directory / "config.json"))
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             raise ValueError("Wallpaper Engine configuration is unavailable") from None
-        location = screen_location(general, screen_target, active_display_ids())
-        command += ["-location", location]
+        active = active_display_ids()
+        if all_displays:
+            if not active:
+                raise ValueError("The wallpaper display is no longer available")
+            # Resolve every connected physical display before dispatching any
+            # command. Never guess MonitorN from Qt/Windows enumeration order.
+            locations = [screen_location(general, target, active) for target in sorted(active)]
+            if len(set(locations)) != len(locations):
+                raise ValueError("Wallpaper Engine has an ambiguous display mapping")
+            targets = [["-location", location] for location in locations]
+        else:
+            targets = [["-location", screen_location(general, screen_target, active)]]
     elif monitor is not None:
-        command += ["-monitor", str(monitor)]
+        targets = [["-monitor", str(monitor)]]
     else:
         raise ValueError("A wallpaper display is required")
     try:
-        subprocess.run(command, check=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 15
+        for target_args in targets:
+            remaining = deadline - time.monotonic() if all_displays else 15
+            if remaining <= 0:
+                raise ValueError("Wallpaper Engine could not apply the wallpaper to every display")
+            subprocess.run(command + target_args, check=True, timeout=remaining,
+                           creationflags=subprocess.CREATE_NO_WINDOW,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except (subprocess.SubprocessError, OSError):
         # subprocess exceptions contain the full command, including private
         # project paths and sometimes native monitor IDs.
-        raise ValueError("Wallpaper Engine could not apply the wallpaper") from None
+        message = "Wallpaper Engine could not apply the wallpaper to every display" if all_displays \
+            else "Wallpaper Engine could not apply the wallpaper"
+        raise ValueError(message) from None
+
+
+def display_projects(general: dict, monitors: dict) -> dict:
+    """Read-only display summaries. No enumeration-index routing assumptions."""
+    result = {display_id(key): value for key, value in monitors.items()
+              if not re.fullmatch(r"Monitor\d+", key)}
+    user = general.get("user", {})
+    if user.get("monitordetection") == "managed":
+        for key, value in user.get("monitormap", {}).items():
+            if not isinstance(value, dict) or type(value.get("location")) is not int:
+                continue
+            project = monitors.get(f"Monitor{value['location']}")
+            if project:
+                result[display_id(key)] = project
+    return result
 
 
 def snapshot(status_only: bool = False) -> dict:
@@ -301,7 +337,8 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
     config = read_json(config_path)
     # Only the active user's wallpaperconfig. Do not recurse through recent
     # layouts, which contain stale selectedwallpapers with the same keys.
-    selected = config_general(config).get("wallpaperconfig", {}).get("selectedwallpapers", {})
+    general = config_general(config)
+    selected = general.get("wallpaperconfig", {}).get("selectedwallpapers", {})
     active_files = {
         str(monitor): str(value.get("file", ""))
         for monitor, value in sorted(selected.items())
@@ -309,6 +346,7 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
     }
     executable = (directory / ("wallpaper64.exe" if (directory / "wallpaper64.exe").is_file()
                                else "wallpaper32.exe")).as_posix()
+    monitors = selected_monitors(selected)
     # The selection watcher only needs the active projects. Resolving them in
     # status mode keeps a wallpaper change off the full-workshop-scan path;
     # the catalogue still refreshes on its own schedule.
@@ -316,9 +354,9 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
         return {
             "ok": True, "detected": True, "running": active,
             "configPath": config_path.as_posix(), "executable": executable,
-            "active": active_files, "monitors": selected_monitors(selected),
+            "active": active_files, "monitors": monitors,
+            "displays": display_projects(general, monitors),
         }
-    monitors = selected_monitors(selected)
     items = []
     for library in libs:
         workshop = library / "steamapps/workshop/content/431960"
@@ -333,6 +371,7 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
         "ok": True, "detected": True, "running": active,
         "configPath": config_path.as_posix(), "executable": executable,
         "active": active_files, "monitors": monitors, "items": items,
+        "displays": display_projects(general, monitors),
     }
 
 
@@ -365,8 +404,10 @@ def main() -> None:
     parser.add_argument("command", choices=["snapshot", "open", "stop", "play"])
     parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--project")
-    parser.add_argument("--monitor", type=int)
-    parser.add_argument("--screen-target")
+    targets = parser.add_mutually_exclusive_group()
+    targets.add_argument("--monitor", type=int)
+    targets.add_argument("--screen-target")
+    targets.add_argument("--all-displays", action="store_true")
     args = parser.parse_args()
     try:
         if args.command == "snapshot":
@@ -375,7 +416,7 @@ def main() -> None:
             control_desktop(args.command)
             result = {"ok": True}
         else:
-            open_wallpaper(args.project or "", args.monitor, args.screen_target)
+            open_wallpaper(args.project or "", args.monitor, args.screen_target, args.all_displays)
             result = {"ok": True}
         print(json.dumps(result, ensure_ascii=True))
     except Exception as error:

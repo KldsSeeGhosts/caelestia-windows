@@ -116,6 +116,18 @@ QtObject {
             check(saved.note === "keep", "the rewrite dropped an unknown record field");
             check(Wallpapers.sourceRecordConfirmed === Wallpapers.sourceRecordPending,
                 "the rewritten record was not confirmed");
+            check(Wallpapers.currentImage === "C:/walls/new-pick.jpg",
+                "dynamic colours did not follow the first connected display's pick");
+            // A later pick on another display must not make the palette
+            // depend on which picker happened to run last.
+            check(Wallpapers.setWallpaper("C:/walls/profile-pick.jpg", {name: "secondary"}),
+                "the later secondary pick was rejected");
+            check(Wallpapers.currentImage === "C:/walls/new-pick.jpg",
+                "a secondary pick replaced the first display's palette source");
+            const parsed = Wallpapers.parseSourceRecord(Files.contents[root.recordPath]);
+            check(parsed.monitors["primary-id"] === "C:/walls/new-pick.jpg"
+                && parsed.monitors["secondary-id"] === "C:/walls/profile-pick.jpg",
+                "the persisted display choices could not be reloaded");
 
             console.log("CAELESTIA_WALLPAPER_RESTART_PASS " + assertions);
             Qt.quit();

@@ -14,7 +14,13 @@ if ($null -eq $defaults.windows.wallpaperEngine -or
 # the facade instead of a dead row that only flips a local toggle. A handed-back
 # engine still runs but no longer covers the desktop, so the status must not
 # claim that it does.
+$wallpaperPage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\shell\adapters\modules\nexus\pages\WallpaperAndStyle.qml') -Raw -Encoding UTF8
+$engineSettings = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\shell\adapters\components\wallpaper\WallpaperEngineSettings.qml') -Raw -Encoding UTF8
 $servicesPage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\shell\adapters\modules\nexus\pages\ServicesPage.qml') -Raw -Encoding UTF8
+if (-not $wallpaperPage.Contains('WallpaperEngineSettings {') -or
+    $servicesPage.Contains('WallpaperEngine')) {
+    throw 'Wallpaper Engine controls must be on Wallpaper & style and not on Services.'
+}
 foreach ($required in @(
     'Needs Wallpaper Engine installed and running',
     'resumes its wallpapers on all displays',
@@ -26,8 +32,8 @@ foreach ($required in @(
     'Not installed',
     'Installed, not running'
 )) {
-    if ($servicesPage.IndexOf($required, [StringComparison]::Ordinal) -lt 0) {
-        throw "Nexus Services no longer explains the Wallpaper Engine opt-in: missing '$required'."
+    if ($engineSettings.IndexOf($required, [StringComparison]::Ordinal) -lt 0) {
+        throw "Nexus Wallpaper & style no longer explains the Wallpaper Engine opt-in: missing '$required'."
     }
 }
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"

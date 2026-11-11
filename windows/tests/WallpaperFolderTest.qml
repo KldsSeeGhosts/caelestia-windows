@@ -9,6 +9,7 @@ import qs.components.controls
 import qs.components.wallpaper
 import qs.modules.launcher
 import qs.modules.nexus as Nexus
+import qs.modules.nexus.pages as Pages
 import qs.modules.nexus.pages.wallandstyle as WallStyle
 import qs.services
 import qs.utils
@@ -126,6 +127,26 @@ ShellRoot {
             width: 900
             height: 900
             nState: Nexus.NexusState {}
+        }
+    }
+    readonly property Component styleComponent: Component {
+        Pages.WallpaperAndStyle {
+            width: 900
+            height: 900
+            nState: Nexus.NexusState {}
+        }
+    }
+    readonly property Component servicesComponent: Component {
+        Pages.ServicesPage {
+            width: 900
+            height: 900
+            nState: Nexus.NexusState {}
+        }
+    }
+    readonly property Component targetComponent: Component {
+        MenuItem {
+            text: "Fixture display"
+            property var screenTarget: ({name: "Fixture display", targetId: "fixture-target"})
         }
     }
     // The fixture never says how wide the picker should be. A production
@@ -738,6 +759,34 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
             root.check(nexusPath !== null && nexusPath.width > 0, "the Nexus folder path has no width");
             const nexusEmpty = root.find(root.nexusPage, "nexusWallpaperEmpty");
             root.check(nexusEmpty !== null && nexusEmpty.folderEmpty, "the Nexus page has no empty-folder explanation");
+
+            // Exercise selector signals only. The separate defaults/IPC
+            // fixtures apply picks with a recording native facade. This real
+            // native graph must never call a wallpaper setter.
+            const targetRow = root.find(root.nexusPage, "wallpaperDisplayTarget");
+            root.check(targetRow !== null, "the Nexus display control is missing");
+            root.check(root.nexusPage.nState.wallpaperTarget === undefined,
+                "the Nexus picker default is not all displays");
+            const explicit = root.targetComponent.createObject(host);
+            targetRow.selected(explicit);
+            root.check(root.nexusPage.nState.wallpaperTarget.targetId === "fixture-target",
+                "a per-display Nexus choice lost its physical target");
+            targetRow.selected(targetRow.menuItems[0]);
+            root.check(root.nexusPage.nState.wallpaperTarget === undefined,
+                "All displays did not clear the explicit pick target");
+            explicit.destroy();
+            const stylePage = root.styleComponent.createObject(host);
+            root.check(stylePage !== null, "the Wallpaper & style page did not load");
+            root.check(root.find(stylePage, "wallpaperDisplayTarget") !== null,
+                "the main wallpaper page does not expose display targeting");
+            root.check(root.find(stylePage, "wallpaperEngineToggle") !== null,
+                "Wallpaper Engine is not on Wallpaper & style");
+            const servicesPage = root.servicesComponent.createObject(host);
+            root.check(servicesPage !== null, "the Services page did not load");
+            root.check(root.find(servicesPage, "wallpaperEngineToggle") === null,
+                "Services still exposes Wallpaper Engine");
+            stylePage.destroy();
+            servicesPage.destroy();
 
             // 17. The real asynchronous folder job and copy against the
             // disposable directory. The facade's startup scan saw no folder.

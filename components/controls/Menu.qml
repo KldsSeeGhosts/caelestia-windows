@@ -37,7 +37,8 @@ MouseArea {
     parent: {
         const win = QsWindow.window;
         const contentWin = win as ContentWindow; // If inside the drawer content window, put it inside the interaction wrapper so hover works
-        return contentWin ? contentWin.interactionWrapper : (win as QsWindow).contentItem;
+        // A Nexus page can finish incubating while its window is closing.
+        return contentWin ? contentWin.interactionWrapper : (win as QsWindow)?.contentItem ?? null;
     }
     anchors.fill: parent
 

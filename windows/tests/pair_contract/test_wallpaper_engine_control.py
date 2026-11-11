@@ -166,6 +166,46 @@ class WallpaperEngineOpenTests(unittest.TestCase):
                 snapshot.assert_not_called()
                 run.assert_not_called()
 
+    def test_all_displays_resolves_every_physical_target_before_dispatch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            library, workshop = self.make_library(root)
+            project = self.make_project(workshop / "12345")
+            install = self.make_install(root)
+            general = {"wallpaperconfig": {"selectedwallpapers": {
+                "display-one": {}, "display-two": {}}}}
+            active = {self.bridge.display_id(name) for name in ("display-one", "display-two")}
+            with patch.object(self.bridge, "libraries", return_value=[library]), \
+                 patch.object(self.bridge, "install", return_value=install), \
+                 patch.object(self.bridge, "running", return_value=True), \
+                 patch.object(self.bridge, "read_json", return_value={"user": {"general": general}}), \
+                 patch.object(self.bridge, "active_display_ids", return_value=active), \
+                 patch.object(self.bridge.subprocess, "run") as run:
+                self.bridge.open_wallpaper(str(project), None, None, all_displays=True)
+                self.assertEqual(2, run.call_count)
+                self.assertEqual({"display-one", "display-two"},
+                                 {call.args[0][-1] for call in run.call_args_list})
+                for call in run.call_args_list:
+                    self.assertEqual("-location", call.args[0][-2])
+                    self.assertGreater(call.kwargs["timeout"], 0)
+                    self.assertLessEqual(call.kwargs["timeout"], 15)
+                run.reset_mock()
+                # A connected but unmapped display must reject the whole
+                # request, not change the first display and then fail.
+                active.add(self.bridge.display_id("unmapped"))
+                with self.assertRaisesRegex(ValueError, "no unambiguous mapping"):
+                    self.bridge.open_wallpaper(str(project), None, None, all_displays=True)
+                run.assert_not_called()
+
+    def test_display_summary_uses_native_ids_and_managed_locations(self):
+        project = {"path": "C:/we/project.json", "title": "Fixture"}
+        direct = self.bridge.display_projects({}, {"display-one": project})
+        self.assertEqual(project, direct[self.bridge.display_id("display-one")])
+        general = {"user": {"monitordetection": "managed",
+                            "monitormap": {"display-two": {"location": 9}}}}
+        managed = self.bridge.display_projects(general, {"Monitor9": project})
+        self.assertEqual(project, managed[self.bridge.display_id("display-two")])
+
     def test_traversal_and_nested_project_paths_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

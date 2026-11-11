@@ -36,7 +36,7 @@ Item {
 
         radius: Tokens.rounding.large
         onClicked: {
-            Wallpapers.setWallpaper(root.modelData.path, root.QsWindow.window?.screen);
+            Wallpapers.setWallpaper(root.modelData.path, Wallpapers.defaultPickerTarget(root.QsWindow.window?.screen));
             root.screenState.launcher = false;
         }
     }

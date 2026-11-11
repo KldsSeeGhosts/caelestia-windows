@@ -40,7 +40,7 @@ QtObject {
             // state. Only the local scan and the native facade are synthetic.
             Native.FsUtils.existingFiles = ["C:/fixture/assets/wallpaper.webp", "C:/walls/one.png",
                 "C:/walls/two.jpg", "C:/walls/picked.jpg", "C:/walls/picked2.jpg"];
-            Quickshell.screens = [{name: "primary"}];
+            Quickshell.screens = [{name: "primary"}, {name: "secondary"}];
             WallpaperEngine.options = {};
             Wallpapers.files = [];
 
@@ -76,6 +76,15 @@ QtObject {
             WallpaperEngine.items = [];
             WallpaperEngine.detected = false;
             check(call("get") === Wallpapers.actualCurrent, "get() disagrees with actualCurrent");
+            check(Wallpapers.setWallpaper("C:/walls/picked.jpg",
+                Wallpapers.defaultPickerTarget({name: "primary"})),
+                "a default launcher pick was rejected");
+            check(Native.Wallpaper.calls.length === 1 && Native.Wallpaper.screenCalls.length === 0,
+                "the default launcher pick targeted one display");
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked.jpg"
+                && Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "the default launcher pick did not update every display");
+            Native.Wallpaper.calls = [];
 
             // 3. set(path) is the picker path: the native facade is called,
             // the pick is recorded on a fresh profile, and the visible source
@@ -86,6 +95,9 @@ QtObject {
             check(Native.Wallpaper.screenCalls.length === 0, "set(path) targeted one display instead of the profile");
             check(Wallpapers.profilePick === "C:/walls/picked.jpg", "set(path) did not record the fresh-profile pick");
             check(Wallpapers.current === "C:/walls/picked.jpg", "set(path) did not change the visible wallpaper");
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked.jpg"
+                && Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "a default IPC pick did not apply to all displays");
             check(call("get") === "C:/walls/picked.jpg", "get() did not follow set(path)");
             check(call("list") === "C:/walls/one.png\nC:/walls/two.jpg", "set(path) changed the scanned list");
             check(root.record().version === 1 && root.record().wallpaper === "C:/walls/picked.jpg",
@@ -100,6 +112,9 @@ QtObject {
                 "a second set(path) did not apply the image");
             check(call("get") === "C:/walls/picked2.jpg", "get() did not follow a second set(path)");
             check(root.record().wallpaper === "C:/walls/picked2.jpg", "a second set(path) did not replace the record");
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked2.jpg"
+                && Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked2.jpg",
+                "a second default pick did not update every display");
 
             console.log("CAELESTIA_WALLPAPER_IPC_PASS " + assertions);
             Qt.quit();

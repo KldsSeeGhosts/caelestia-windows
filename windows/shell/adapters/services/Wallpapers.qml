@@ -461,6 +461,16 @@ Singleton {
             return null;
         return {name: screen.name, targetId: id};
     }
+    // Launcher picks are shared until the user has individual wallpapers.
+    // Fresh profiles already persist that intent in monitorPicks; existing
+    // profiles persist it in Windows, which refreshScreenFiles reads.
+    readonly property bool individualWallpapers: (root.externalWallpaperActive
+        && new Set(Object.values(WallpaperEngine.displays).map(project => project.path)).size > 1)
+        || (root.sourceFresh ? Object.keys(root.monitorPicks).length > 0
+            : new Set(Object.values(root.screenFiles)).size > 1)
+    function defaultPickerTarget(screen): var {
+        return individualWallpapers ? captureScreen(screen) : undefined;
+    }
     // A fresh profile's displays show their picks or the bundled asset. Nothing
     // in this function reads Windows: an image written there by Windows
     // Settings, Wallpaper Engine or an older build is never adopted.

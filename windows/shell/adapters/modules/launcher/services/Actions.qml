@@ -62,7 +62,7 @@ Searcher {
                 // it to the previously focused application.
                 list.screenState.launcher = false;
             } else if (command[0] === "chooseWallpaper") {
-                Wallpapers.choose(list.QsWindow.window?.screen);
+                Wallpapers.choose(Wallpapers.defaultPickerTarget(list.QsWindow.window?.screen));
             } else if (command[0] === "screenshot") {
                 CaptureUi.screenshot("open");
             } else if (command[0] === "record") {

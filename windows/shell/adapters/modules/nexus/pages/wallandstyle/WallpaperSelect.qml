@@ -63,14 +63,14 @@ PageBase {
                 horizontalPadding: Tokens.padding.extraLarge
                 verticalPadding: Tokens.padding.medium
                 onClicked: {
-                    browseDialog.targetScreen = Wallpapers.captureScreen(root.QsWindow.window?.screen);
+                    browseDialog.targetScreen = root.nState.wallpaperTarget;
                     browseDialog.open();
                 }
 
                 FileDialog {
                     id: browseDialog
                     // Capture before opening the asynchronous native dialog.
-                    property var targetScreen: null
+                    property var targetScreen: undefined
 
                     title: Tr.tr("Select an image")
                     filterLabel: Tr.tr("Image files")
@@ -102,10 +102,16 @@ PageBase {
                 verticalPadding: Tokens.padding.medium
                 type: IconTextButton.Tonal
                 onClicked: {
-                    Wallpapers.setRandom(root.QsWindow.window?.screen);
+                    Wallpapers.setRandom(root.nState.wallpaperTarget);
                     root.nState.closeSubPage();
                 }
             }
+        }
+
+        WallpaperDisplays {
+            Layout.fillWidth: true
+            targetScreen: root.nState?.wallpaperTarget
+            onTargetSelected: screen => root.nState.wallpaperTarget = screen
         }
 
         // Windows port: name the folder this page scans and offer the same
@@ -140,13 +146,14 @@ PageBase {
         }
 
         WallItem {
+            objectName: "wallpaperFeatured"
             imgHeight: Math.round(width * 0.3)
             radius: Tokens.rounding.extraLarge
             source: Quickshell.shellPath("assets/wallpaper.webp")
             text: Tr.tr("Featured wallpaper")
             fillLabel: false
             onClicked: {
-                Wallpapers.setWallpaper(Quickshell.shellPath("assets/wallpaper.webp"), root.QsWindow.window?.screen);
+                Wallpapers.setWallpaper(Quickshell.shellPath("assets/wallpaper.webp"), root.nState.wallpaperTarget);
                 root.nState.closeSubPage();
             }
         }
@@ -195,7 +202,7 @@ PageBase {
                     source: !modelData ? "" : modelData.preview ? Paths.absolutePath(String(modelData.preview)) : modelData.engine ? "" : String(modelData.path ?? "")
                     text: modelData?.name ?? ""
                     onClicked: {
-                        Wallpapers.setWallpaper(modelData.path, root.QsWindow.window?.screen);
+                        Wallpapers.setWallpaper(modelData.path, root.nState.wallpaperTarget);
                         root.nState.closeSubPage();
                     }
                 }

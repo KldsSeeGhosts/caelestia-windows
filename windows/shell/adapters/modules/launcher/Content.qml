@@ -73,7 +73,7 @@ Item {
                 if (list.showWallpapers) {
                     if (false && currentItem.modelData.path !== Wallpapers.actualCurrent)
                         Wallpapers.previewColourLock = true;
-                    Wallpapers.setWallpaper(currentItem.modelData.path, root.QsWindow.window?.screen);
+                    Wallpapers.setWallpaper(currentItem.modelData.path, Wallpapers.defaultPickerTarget(root.QsWindow.window?.screen));
                     root.screenState.launcher = false;
                 } else if (text.startsWith(GlobalConfig.launcher.actionPrefix)) {
                     if (text.startsWith(`${GlobalConfig.launcher.actionPrefix}calc `))
