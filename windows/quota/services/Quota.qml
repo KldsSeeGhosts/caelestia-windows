@@ -94,6 +94,7 @@ Singleton {
     // The helper's view of the hub: "" (not started), ok, key_rejected, banned,
     // insecure, unreachable, management_off, remote_off, ...
     property string hubState: ""
+    property bool hubStarting: false
     property double hubNextDueAt: 0
     property double hubUpdatedAt: 0
     // The helper's persisted state (Claude 429 windows by opaque account tag).
@@ -322,6 +323,8 @@ Singleton {
                         root.keepaliveDone = Math.max(0, Math.min(msg.total || root.keepaliveTotal, msg.done));
                         if (msg.total)
                             root.keepaliveTotal = msg.total;
+                    } else if (msg && typeof msg.failed === "number") {
+                        root.applyKeepaliveSummary(msg);
                     } else if (msg && typeof msg.ok === "boolean" && msg.ok === false) {
                         root.keepaliveError = msg.error || "Keepalive failed";
                     }
@@ -347,6 +350,12 @@ Singleton {
             if (QuotaConfig.enabled)
                 root.refresh(true);
         }
+    }
+
+    function applyKeepaliveSummary(message: var): void {
+        if (message.failed > 0 || message.fallback > 0)
+            root.keepaliveError = qsTr("Keepalive: %1 inference succeeded, %2 quota reads only, %3 failed")
+                .arg(message.succeeded).arg(message.fallback).arg(message.failed);
     }
 
     // -- Endpoint and cache --------------------------------------------------
@@ -1110,6 +1119,10 @@ Singleton {
             }
         }
         const merged = Hub.order(Hub.merge(root.summaryRecords, root.hubRecords));
+        // Source transitions and failed reads can briefly have no rows. Keep
+        // the last useful reading, including one restored from disk.
+        if (merged.length === 0 && root.providers.length > 0)
+            return;
         root.providers = merged;
         if (!merged.some(r => r.id === prior)) {
             // A cached summary uses display-only ids. Keep the same provider
@@ -1157,18 +1170,34 @@ Singleton {
     }
 
     function startHub(): void {
-        if (!hubProcess.running)
+        if (!hubProcess.running) {
+            root.hubStarting = true;
             hubProcess.running = true;
+            if (!hubProcess.running)
+                hubStartCheck.start();
+        }
+    }
+
+    function hubFailed(): void {
+        root.hubStarting = false;
+        if (!root.hubWanted)
+            return;
+        root.hubState = "helper_failed";
+        root.loading = false;
+        root.applyHubStatus();
     }
 
     function stopHub(): void {
         hubTimer.stop();
+        hubStartCheck.stop();
+        root.hubStarting = false;
         // signal(9) kills; `running = false` only terminates, which does not stop the Python helper on Windows.
         if (hubProcess.running)
             hubProcess.signal(9);
         // Switched off: keep the reading for when it comes back on. Not wanted
         // any more (the setting went off and the summary answers): drop it.
-        if (root.enabled && root.hubRecords.length > 0) {
+        // A refusal stops requests, not the last-good readings or their cache.
+        if (root.enabled && !root.keyRefused && root.hubRecords.length > 0) {
             root.hubRecords = [];
             root.hubState = "";
             root.rebuild();
@@ -1235,16 +1264,26 @@ Singleton {
                 root.sendHubConfig();
                 if (!root.hubOnly)
                     root.hubCommand({ type: "summary", accounts: root.summaryIdentities });
+            } else if (root.hubStarting) {
+                hubStartCheck.start();
             }
         }
+        onStarted: root.hubStarting = false
         onExited: (exitCode, exitStatus) => {
             hubTimer.stop();
             // Still wanted: it failed on its own. No blind restart; the next
             // Refresh now or setting change starts it again.
-            if (root.hubWanted) {
-                root.hubState = "helper_failed";
-                root.applyHubStatus();
-            }
+            root.hubFailed();
+        }
+    }
+
+    Timer {
+        id: hubStartCheck
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!hubProcess.running && root.hubStarting)
+                root.hubFailed();
         }
     }
 

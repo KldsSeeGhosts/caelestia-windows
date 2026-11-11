@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia.Config
+import Caelestia.State
 import StagedFixture
 import qs.services as Services
 import "./windows/services/apps" as Apps
@@ -144,6 +145,16 @@ QtObject {
         completedBeforeDisable = Driver.writes.length;
     }
 
+    function dndPersistence(): void {
+        const facade = Services.Notifs;
+        check("persistence.dnd-initial", facade.doNotDisturb === false && PersistentState.doNotDisturb === false);
+        facade.doNotDisturb = true;
+        check("persistence.dnd-writes-through", PersistentState.doNotDisturb === true);
+        PersistentState.doNotDisturb = false;
+        check("persistence.dnd-mirrors-external", facade.doNotDisturb === false);
+        finishCase("notification-dnd-persistence");
+    }
+
     function startObservation(): void {
         firstBackend = backendComponent.createObject(test);
         replacementBackend = backendComponent.createObject(test);
@@ -231,6 +242,7 @@ QtObject {
                     test.frequencyPersistence();
                     // Lazy singleton construction, then allow wrapper ready timers.
                     test.check("notifications.facade-constructed", Services.Notifs.enabled);
+                    test.dndPersistence();
                     break;
                 case 1:
                     if (!Services.Notifs.backend?.ready) { test.phase--; break; }

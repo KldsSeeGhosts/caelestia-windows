@@ -12,8 +12,11 @@ import QtQuick
 // adapter" (native backend; the facade keeps a bounded fallback for older
 // pins). Construction starts connectivity and WLAN observation after the first
 // frame, and a successful WLAN open performs one available-network query even
-// while the list is hidden. This adapter distinguishes what it observes from
-// what it can only request:
+// while the list is hidden. A denied refresh is the only thing that can clear
+// the native denial flag, so reopening the visible list arms one retry; a
+// denied result stops the timer and nothing retries until the list is reopened
+// again. This adapter distinguishes what it observes from what it can only
+// request:
 //   - initialized is the native WLAN initialization result;
 //   - nativeError carries a refused subscription or failed open, so it is never
 //     presented as a ready or no-adapter state;
@@ -272,8 +275,16 @@ QtObject {
     // swap or a state change does not repeat an identical request.
     property bool backendListVisible: false
 
+    // One denied-refresh probe per list open. setWifiListVisible(true) runs the
+    // query that can clear needsLocationPermission; while denied, listAvailable
+    // is false and the normal visibility rule would never send it. The probe is
+    // consumed before the native call and a still-denied result immediately
+    // writes false, so it cannot become a denied-state scan loop.
+    property bool locationRetryPending: false
+
     onBackendChanged: {
         root.backendListVisible = false;
+        root.locationRetryPending = false;
         root._applyListVisibility();
     }
 
@@ -514,7 +525,18 @@ QtObject {
         if (root.listVisible === next)
             return;
         root.listVisible = next;
+        if (next)
+            root._armLocationRetry();
         root._applyListVisibility();
+    }
+
+    // A denied list cannot run its normal visibility rule, which requires
+    // listAvailable. Opening it is the user action that gets one probe after
+    // they may have changed Windows location permission.
+    function _armLocationRetry(): void {
+        if (root.enabled && root.controlsEnabled && root.listVisible
+                && root.locationDenied && root.adapterPresent && root.radioOn)
+            root.locationRetryPending = true;
     }
 
     // Caller-scoped visibility. Every page instance passes itself, so duplicate
@@ -523,9 +545,18 @@ QtObject {
     function acquireListVisibility(owner): void {
         if (!owner)
             return;
-        if (root.listVisibilityOwners.indexOf(owner) < 0)
+        const added = root.listVisibilityOwners.indexOf(owner) < 0;
+        if (added)
             root.listVisibilityOwners = [...root.listVisibilityOwners, owner];
+        const wasVisible = root.listVisible;
         root.setListVisible(true);
+        if (added && wasVisible) {
+            // The list was already open (for example the page regained
+            // visibility after Windows Settings). A new owner is a new open,
+            // so it gets its own single denied-refresh probe.
+            root._armLocationRetry();
+            root._applyListVisibility();
+        }
     }
 
     function releaseListVisibility(owner): void {
@@ -557,13 +588,23 @@ QtObject {
         do {
             root._visibilityDirty = false;
             // Periodic scans are radio activity: they need the controls opt-in
-            // as well as a visible, queryable list. Any other state, including
-            // disabling the service, stops the timer.
-            const next = root.enabled && root.controlsEnabled && root.listVisible && root.listAvailable;
+            // as well as a visible, queryable list. A one-shot denied probe is
+            // allowed through even though listAvailable is false; it is
+            // consumed here and the native call's synchronous result decides
+            // whether a later iteration keeps the timer on or stops it.
+            const retry = root.locationRetryPending;
+            root.locationRetryPending = false;
+            const next = root.enabled && root.controlsEnabled && root.listVisible
+                && (root.listAvailable || retry);
             if (root.backendListVisible !== next) {
                 root.backendListVisible = next;
                 root.backend.setWifiListVisible(next);
             }
+            // A still-denied probe must reconcile once more so the scan timer
+            // is stopped; a synchronous grant is already satisfied by the
+            // normal rule and produces no extra backend call.
+            if (retry)
+                root._visibilityDirty = true;
         } while (root._visibilityDirty);
         root._applyingVisibility = false;
     }
@@ -621,6 +662,7 @@ QtObject {
     onEnabledChanged: {
         if (!root.enabled) {
             root.listVisible = false;
+            root.locationRetryPending = false;
             root.pendingSsid = "";
             root.pendingSelectionId = "";
             root.lastResult = null;

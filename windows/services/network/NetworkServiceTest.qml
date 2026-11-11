@@ -64,6 +64,9 @@ QtObject {
         // refresh inside setWifiListVisible(true) (network.cpp:75-78) and
         // WlanSetProfile/WlanConnect failures (network_wifi.cpp:423-447).
         property bool denyOnVisible: false
+        // Models the user granting location permission while Settings was open:
+        // the next visible-list refresh clears the native denial flag.
+        property bool grantLocationOnVisible: false
         property bool failConnectSync: false
         // The native timer starts after the refresh returns, so a nested
         // setWifiListVisible(false) during that refresh does not stop it.
@@ -114,7 +117,9 @@ QtObject {
                 scanTimerRunning = false;
                 return;
             }
-            if (denyOnVisible)
+            if (grantLocationOnVisible)
+                needsLocationPermission = false;
+            else if (denyOnVisible)
                 needsLocationPermission = true;
             scanTimerRunning = true;
         }
@@ -401,6 +406,63 @@ QtObject {
         expectStatus("connected", "denial recovery");
         check(service.activeSsid === "OpenNet" && service.networkCount === 3,
             "observation recovers after denial");
+
+        // --- One-shot retry after a location permission change -----------------
+        // A denied list cannot satisfy the normal listAvailable visibility rule.
+        // Reopening it must still run exactly one native refresh (the query that
+        // clears the denial), then stop the timer again if permission is still
+        // denied. No denied-state polling loop is allowed.
+        service.controlsEnabled = true;
+        service.setListVisible(false);
+        fixture.needsLocationPermission = true;
+        fixture.grantLocationOnVisible = true;
+        expectStatus("location-denied", "denied list before reopen");
+        const grantBase = fixture.listVisibilityCalls;
+        service.setListVisible(true);
+        check(fixture.listVisibilityCalls === grantBase + 1 && fixture.listVisibleArg === true,
+            "reopening a denied list did not run one native refresh");
+        check(!service.locationDenied && service.listAvailable && fixture.scanTimerRunning,
+            "a granted permission was not adopted by the reopen probe");
+        service.setListVisible(false);
+        check(fixture.listVisibilityCalls === grantBase + 2 && fixture.listVisibleArg === false,
+            "closing the recovered list did not stop the timer");
+
+        // The same probe is refused once when permission is still denied, then
+        // nothing retries while the list stays open.
+        fixture.grantLocationOnVisible = false;
+        fixture.denyOnVisible = true;
+        fixture.needsLocationPermission = true;
+        const deniedBase = fixture.listVisibilityCalls;
+        service.setListVisible(true);
+        check(fixture.listVisibilityCalls === deniedBase + 2 && fixture.listVisibleArg === false,
+            "a refused reopen probe did not stop the denied scan timer");
+        check(service.locationDenied && !fixture.scanTimerRunning,
+            "a refused probe left the denied list scanning");
+        service.setListVisible(true);
+        check(fixture.listVisibilityCalls === deniedBase + 2,
+            "the denied list kept probing without another open");
+        fixture.denyOnVisible = false;
+
+        // A new visibility owner is another open: the page returning from
+        // Settings while already visible gets one more probe.
+        fixture.needsLocationPermission = false;
+        service.setListVisible(true);
+        fixture.needsLocationPermission = true;
+        expectStatus("location-denied", "denial while the list stays visible");
+        const ownerBase = fixture.listVisibilityCalls;
+        fixture.grantLocationOnVisible = true;
+        const retryOwner = {};
+        service.acquireListVisibility(retryOwner);
+        check(fixture.listVisibilityCalls === ownerBase + 1 && fixture.listVisibleArg === true,
+            "a new visible owner did not run the one-shot probe");
+        check(!service.locationDenied && fixture.scanTimerRunning,
+            "a granted permission was not adopted by the owner probe");
+        service.releaseListVisibility(retryOwner);
+        check(!service.listVisible && !fixture.scanTimerRunning,
+            "releasing the retry owner did not stop the list");
+        fixture.grantLocationOnVisible = false;
+        fixture.needsLocationPermission = false;
+        service.controlsEnabled = false;
 
         // --- Connected, limited, connecting -----------------------------------
         fixture.activeSignalQuality = 137;

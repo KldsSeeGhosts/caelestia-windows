@@ -12,6 +12,7 @@ import qs.components.containers
 import qs.components.controls
 import qs.services
 import qs.utils
+import "../../../utils/RecordingDate.js" as RecordingDate
 
 ColumnLayout {
     id: root
@@ -89,11 +90,10 @@ ColumnLayout {
                 Layout.rightMargin: Tokens.spacing.extraSmall
                 text: {
                     const time = recording.baseName;
-                    const matches = time.match(/^recording_(\d{4})(\d{2})(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
-                    if (!matches)
+                    // Windows: legacy and current Glazier names encode local time.
+                    const date = RecordingDate.parse(time);
+                    if (!date)
                         return time;
-                    const date = new Date(...matches.slice(1));
-                    date.setMonth(date.getMonth() - 1); // Woe (months start from 0)
                     const dateStr = date.toLocaleDateString(Qt.locale(), Locale.ShortFormat);
                     const timeStr = Tr.formatDateTime(date, Units.twelveHourClock ? "h:mm a" : "hh:mm");
                     // TRANSLATORS: %1 = date, %2 = time
