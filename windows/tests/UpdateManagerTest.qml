@@ -43,6 +43,37 @@ QtObject {
                 phase: "working", kind: "update", step: "verifying"});
             manager.operationFile.reload();
             check(manager.step === "verifying" && manager.submitted, "matched update progress missing");
+            for (const sample of [
+                {step: "downloading", completed: 0, total: 100, unit: "bytes", expected: 0},
+                {step: "downloading", completed: 25, total: 100, unit: "bytes", expected: 0.25},
+                {step: "downloading", completed: 100, total: 100, unit: "bytes", expected: 1},
+                {step: "verifying", completed: 3, total: 4, unit: "entries", expected: 0.75}
+            ]) {
+                Files.contents[manager.operationFile.path] = JSON.stringify({schema: 1, operationId: firstId,
+                    phase: "working", step: sample.step, progress: sample});
+                manager.operationFile.reload();
+                check(manager.determinate && manager.progressFraction === sample.expected, "wrong real progress fraction");
+            }
+            Files.contents[manager.operationFile.path] = JSON.stringify({schema: 1, operationId: secondId,
+                phase: "working", step: "downloading", progress: {completed: 1, total: 1, unit: "bytes"}});
+            manager.operationFile.reload();
+            check(manager.progressFraction === 0.75, "foreign progress applied");
+            for (const progress of [null, {}, {completed: -1, total: 2, unit: "bytes"},
+                {completed: 3, total: 2, unit: "bytes"}, {completed: 0, total: 0, unit: "bytes"},
+                {completed: "1", total: 2, unit: "bytes"}, {completed: 1.5, total: 2, unit: "bytes"},
+                {completed: 1, total: 2, unit: "arbitrary"}, {completed: 1, total: Infinity, unit: "bytes"}]) {
+                Files.contents[manager.operationFile.path] = JSON.stringify({schema: 1, operationId: firstId,
+                    phase: "working", step: "downloading", progress});
+                manager.operationFile.reload();
+                check(!manager.determinate && manager.progressFraction === 0, "invalid progress fabricated fraction");
+                check(manager.submitted && manager.deadline.running, "progress settled request or altered deadline");
+            }
+            for (const step of ["checking", "installing", "restarting", "unknown"]) {
+                Files.contents[manager.operationFile.path] = JSON.stringify({schema: 1, operationId: firstId,
+                    phase: "working", step, progress: {completed: 1, total: 2, unit: "bytes"}});
+                manager.operationFile.reload();
+                check(!manager.determinate, "unmeasurable phase has fabricated progress");
+            }
             journal(firstId, "failed");
             check(manager.failed, "update terminal phase not settled");
             manager.operationKind = "rollback";
@@ -106,6 +137,7 @@ QtObject {
             check(manager.unconfirmed, "stale operation failure applied");
             journal(secondId, "complete");
             check(manager.complete && !manager.unconfirmed && !manager.submitted, "late completion did not settle");
+            check(manager.progressFraction === 1, "completed operation did not fill progress");
             check(!manager.deadline.running, "completion retained timer");
             journal(secondId, "failed");
             check(manager.complete, "terminal completion regressed");

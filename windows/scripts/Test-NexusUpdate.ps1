@@ -88,10 +88,18 @@ try {
         $inputStream = [IO.MemoryStream]::new($bytes)
         $outputStream = [IO.MemoryStream]::new()
         try {
+            $samples = [Collections.Generic.List[object]]::new()
+            $report = [Action[long,long]]{ param($done, $total) $samples.Add(@{ done = $done; total = $total }) }
             $action = { [Caelestia.Update.Transport]::CopyBounded($inputStream, $outputStream, $case.cap,
-                $case.size, $case.hash, [Threading.CancellationToken]::None) }
+                $case.size, $case.hash, [Threading.CancellationToken]::None, $report) }
             if ($case.valid) { & $action; Assert ($outputStream.Length -eq 3) 'Valid bounded copy failed.' }
             else { Refuse $action 'body overflow/underflow/hash' }
+            Assert ($samples[0].done -eq 0 -and $samples[0].total -eq $case.size) 'Download initial byte totals missing.'
+            if ($case.valid) {
+                Assert ($samples[-1].done -eq 3 -and $samples[-1].total -eq 3) 'Authenticated copy did not report actual final bytes.'
+            } else {
+                Assert ($samples.Count -eq 1) 'Rejected bounded copy reported successful final progress.'
+            }
         } finally { $inputStream.Dispose(); $outputStream.Dispose() }
     }
     $inputStream = [IO.MemoryStream]::new($bytes); $outputStream = [IO.MemoryStream]::new()

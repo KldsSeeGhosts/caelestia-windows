@@ -92,6 +92,55 @@ test("checks validate states, identities, bounds and release links", () => {
     ]) assert.equal(logic.parseCheck(0, JSON.stringify(mutation)), null);
     assert.equal(logic.parseCheck(1, JSON.stringify(data)), null);
 });
+
+test("friendly versions are presentation only and share one formatter", () => {
+    for (const [input, expected] of [
+        ["0.2.0-dev.1.283.1", "0.2.0 · Dev build 283"],
+        ["0.2.0-dev.2.283.4", "0.2.0 · Dev build 283"],
+        ["0.2.0-preview.3", "0.2.0 · Preview 3"],
+        ["1.0.0-rc.2", "1.0.0 · RC 2"],
+        ["1.0.0", "1.0.0"], ["retained-fixture", "retained-fixture"],
+        ["", "Unknown"], [null, "Unknown"]
+    ]) assert.equal(logic.formatVersion(input), expected);
+    const version = "0.2.0-dev.1.283.1";
+    const status = logic.normalize({current: version, releaseVersion: version,
+        displayVersion: version, previousDisplayVersion: "0.2.0-preview.1"});
+    logic.formatVersion(status.displayVersion);
+    assert.equal(status.current, version);
+    assert.equal(status.releaseVersion, version);
+    assert.equal(status.previousDisplayVersion, "0.2.0-preview.1");
+});
+
+test("one primary action maps every maintenance and check state", () => {
+    const available = {displayVersion: "0.2.0-dev.1.283.1"};
+    assert.equal(logic.primaryState({}).label, "Check for updates");
+    const update = logic.primaryState({available});
+    assert.equal(update.label, "Update now");
+    assert.equal(update.action, "update");
+    assert.equal(update.disabled, false);
+    assert.equal(update.status, "Update available: 0.2.0 · Dev build 283");
+    assert.equal(logic.primaryState({result: {state: "not-newer"}}).status, "Up to date");
+    for (const step of ["checking", "downloading", "verifying", "installing", "restarting", ""]) {
+        const running = logic.primaryState({operationState: "waiting", operationKind: "update", step, available});
+        assert.equal(running.disabled, true);
+        assert.match(running.status, /…$/);
+        assert.equal(running.label, running.status);
+    }
+    for (const operationState of ["unconfirmed", "complete"])
+        assert.equal(logic.primaryState({operationState, available}).disabled, true);
+    assert.match(logic.primaryState({operationState: "failed"}).status, /could not complete/);
+    assert.equal(logic.primaryState({checking: true}).disabled, true);
+    assert.equal(logic.primaryState({operationState: "failed", checking: true}).label, "Checking…");
+    assert.equal(logic.primaryState({available, blocked: true}).disabled, true);
+    assert.equal(logic.primaryState({operationState: "waiting", operationKind: "rollback"}).label, "Restarting…");
+    for (const state of ["offline", "bad-signature", "expired", "clock", "replay", "bad-metadata", "unsupported", "busy", "not-configured"]) {
+        const result = logic.primaryState({result: {state}});
+        assert.equal(result.label, "Check for updates");
+        assert.equal(result.status, logic.checkLabel(state));
+        assert.notEqual(result.status, "Up to date");
+    }
+});
+
 test("bridge accepts legacy and plain build identities without formatting them", () => {
     for (const buildVersion of ["0.2.0-dev.1.283.1", "0.3.0", "0.3.1", "1.0.0"]) {
         const available = {buildVersion, displayVersion: buildVersion, bundle: {size: 1}};

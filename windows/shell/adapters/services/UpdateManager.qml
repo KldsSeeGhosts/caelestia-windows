@@ -16,6 +16,11 @@ QtObject {
     property string operationId: ""
     property string operationKind: "rollback"
     property string step: ""
+    property real progressCompleted: 0
+    property real progressTotal: 0
+    property string progressUnit: ""
+    readonly property bool determinate: progressTotal > 0 && progressUnit !== ""
+    readonly property real progressFraction: complete ? 1 : determinate ? progressCompleted / progressTotal : 0
 
     function request(command: var, kind: var): void {
         if (submitted || unconfirmed || complete || process.running || Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1")
@@ -24,6 +29,9 @@ QtObject {
         operationId = "";
         operationKind = kind === "update" ? "update" : "rollback";
         step = "";
+        progressCompleted = 0;
+        progressTotal = 0;
+        progressUnit = "";
         deadline.restart();
         process.command = command;
         process.running = true;
@@ -35,8 +43,18 @@ QtObject {
         try {
             const data = JSON.parse(operationFile.text());
             if (data.schema === 1 && data.operationId === operationId) {
-                const steps = ["checking", "downloading", "verifying", "installing"];
+                const steps = ["checking", "downloading", "verifying", "installing", "restarting"];
                 step = steps.indexOf(data.step) >= 0 ? data.step : "";
+                const p = data.progress;
+                // Progress is display-only. It never authorizes activation or
+                // settles a request. Old/malformed journals remain indeterminate.
+                const valid = p && Number.isSafeInteger(p.completed) && Number.isSafeInteger(p.total)
+                    && p.completed >= 0 && p.total > 0 && p.completed <= p.total
+                    && ((step === "downloading" && p.unit === "bytes")
+                        || (step === "verifying" && p.unit === "entries"));
+                progressCompleted = valid ? p.completed : 0;
+                progressTotal = valid ? p.total : 0;
+                progressUnit = valid ? p.unit : "";
             }
             if (data.schema === 1 && data.operationId === operationId && (data.phase === "failed" || data.phase === "complete")) {
                 deadline.stop();

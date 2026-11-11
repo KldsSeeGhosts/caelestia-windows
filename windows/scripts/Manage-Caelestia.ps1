@@ -52,6 +52,7 @@ if ($Command -eq 'Status') {
         channel = Get-CaelestiaUpdateChannel $record.profile $current.appVersion
         updatesConfigured = Test-CaelestiaTrustConfigured $trust
         previous = $(if ($previous) { $previous.versionId } else { '' })
+        previousDisplayVersion = $(if ($previous.displayVersion) { $previous.displayVersion } elseif ($previous.releaseId) { $previous.releaseId } else { '' })
         previousRevision = $(if ($previous) { $previous.sourceRevision } else { '' })
         canRollback = $null -ne $previous
         # Public previews are manually downloadable. This command reads only
@@ -73,11 +74,13 @@ $tracked = $false
 $terminalWritten = $false
 $queuedTask = ''
 $operationKind = if ($Command -eq 'Update') { 'update' } else { 'rollback' }
-function Write-Operation([string]$Id, [string]$Phase, [string]$Step = '') {
+function Write-Operation([string]$Id, [string]$Phase, [string]$Step = '',
+    [long]$Completed = 0, [long]$Total = 0, [string]$Unit = '') {
     Write-CaelestiaJsonAtomic $operationFile @{
         schema = 1; operationId = $Id; phase = $Phase
         kind = $operationKind
         step = $Step
+        progress = @{ completed = $Completed; total = $Total; unit = $Unit }
         expectedCurrent = $(if ($ExpectedCurrent) { $ExpectedCurrent } else { $record.current })
         expectedBuild = $ExpectedBuild; channel = $Channel
         prefix = $Prefix; installId = $record.installId
@@ -232,8 +235,8 @@ try {
             if ($tracked) { Write-Operation $operationId 'working' }
             if ($Command -eq 'Update') {
                 Invoke-CaelestiaUpdateInstall $Prefix $ExpectedCurrent $ExpectedBuild $Channel $trust {
-                    param($step)
-                    if ($tracked) { Write-Operation $operationId 'working' $step }
+                    param($step, [long]$completed = 0, [long]$total = 0, [string]$unit = '')
+                    if ($tracked) { Write-Operation $operationId 'working' $step $completed $total $unit }
                 }
             } else { Switch-CaelestiaVersion $Prefix $record.previous -Restart }
             if ($tracked) { Write-Operation $operationId 'complete'; $terminalWritten = $true }
