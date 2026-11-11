@@ -314,6 +314,15 @@ activation when Wallpaper Engine is detected and running; a saved `"auto"` is a
 value, not the new default, so no upgrade rewrites it. Nexus writes `true` or
 `false` only when the user changes the toggle. `picker` accepts `"engine"`,
 `"files"` or `"both"`, and `monitor` defaults to `"Monitor0"`.
+After a successful settings save, the Nexus toggle sends Wallpaper Engine's
+documented `-control stop` when switched off and `-control play` when switched
+on. These commands affect all displays without quitting WE or replacing its
+selected wallpapers. Startup sends stop once if the saved setting is off and
+WE is running. Later discovery polls, settings-file notifications and wallpaper
+changes inside WE do not repeat the command. The existing Live/non-smoke gate
+and Python bridge are required. Nexus reports dispatch errors. Actual desktop
+release and restoration on every monitor still require an owner live check.
+
 The picker targets its owning display, for both images and Wallpaper Engine
 projects. `monitor` remains the default palette source and the target for
 requests without a display. Explicit display requests never fall back to it.
