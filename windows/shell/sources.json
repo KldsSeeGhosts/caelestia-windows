@@ -148,7 +148,7 @@
   "modules/nexus/pages/panels/TaskbarPanel.qml": "modules/nexus/pages/panels/TaskbarPanel.qml",
   "modules/nexus/pages/panels/UtilitiesPanel.qml": "modules/nexus/pages/panels/UtilitiesPanel.qml",
   "modules/nexus/pages/PanelsPage.qml": "modules/nexus/pages/PanelsPage.qml",
-  "modules/nexus/pages/services/NotificationsPage.qml": "modules/nexus/pages/services/NotificationsPage.qml",
+  "windows/shell/adapters/modules/nexus/pages/services/NotificationsPage.qml": "modules/nexus/pages/services/NotificationsPage.qml",
   "modules/nexus/pages/wallandstyle/ColourSelect.qml": "modules/nexus/pages/wallandstyle/ColourSelect.qml",
   "modules/nexus/pages/WallpaperAndStyle.qml": "modules/nexus/pages/WallpaperAndStyle.qml",
   "modules/notifications/Content.qml": "modules/notifications/Content.qml",
