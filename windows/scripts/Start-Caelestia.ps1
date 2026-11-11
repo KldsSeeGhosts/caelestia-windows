@@ -111,6 +111,12 @@ $profile = Resolve-CaelestiaDirectory $record.profile
 $stage = Join-Path $Prefix 'shell'
 $exe = Join-Path $Prefix 'qs.exe'
 
+# A healthy owner refreshes its status every tick. Only a stale owner of this
+# profile is eligible for bounded recovery during Start.
+if ($Command -eq 'Start' -and -not $Smoke) {
+    Repair-CaelestiaStaleSupervisors $profile
+}
+
 # A normal restart is a transactional in-process reload: Quickshell retains
 # existing windows until the new graph loads. Never quit/reinstall for this.
 if ($Command -in @('State', 'Restart', 'Settings')) {
@@ -332,17 +338,19 @@ if ($Command -ne 'Start') {
             if (-not ('Caelestia.Takeover.Native' -as [type])) {
                 Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
             }
-            [Caelestia.Takeover.Supervisor]::RecoverActive()
+            Stop-CaelestiaSupervisor $supervisor
             if (-not $supervisor.Process.WaitForExit([Math]::Max(1000, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds))) {
                 throw "Desktop supervisor has not finished restoring: $($supervisor.StatusPath)"
             }
         }
-        if (-not $supervisors.Count) {
+        if (-not @(Get-CaelestiaSupervisors $profile).Count) {
             if ($ipcFailure) { Write-Verbose "No running shell to quit: $ipcFailure" }
             $unrestored = Get-CaelestiaUnrestoredSnapshot $profile
             if ($unrestored) {
-                & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') -SnapshotPath $unrestored.FullName | Out-Null
-                Move-Item -LiteralPath $unrestored.FullName -Destination ($unrestored.FullName + '.adopted') -Force
+                & (Join-Path $PSScriptRoot 'Restore-Desktop.ps1') -SnapshotPath $unrestored.FullName -InactiveOnly | Out-Null
+                if (-not [Caelestia.Takeover.Native]::ExplorerWorkDeferred) {
+                    Move-Item -LiteralPath $unrestored.FullName -Destination ($unrestored.FullName + '.adopted') -Force
+                }
             }
         }
         # Without a journal there is nothing to restore. Skipping it avoids the
