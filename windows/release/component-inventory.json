@@ -5,7 +5,7 @@
     "windows/capture/Cargo.lock": "bfaec55217a0bd82b5842d5243362da5cf4c4ea70b81a659161b93cf9cc5ea49",
     "windows/capture/Cargo.toml": "bf530f11a081880ab01f5939545a3305b80b3262fb8600b0735e6f53dc1c06a1",
     "windows/toolchain.json": "1b3e4e2d0210b8c92011d35156b54605a8514ea512f8726977e087c63becf0aa",
-    "windows/sources.lock.json": "cb20429322282871a347502c2f1983a2e815eef5ed2fe1c9dbc9f16485d2b536",
+    "windows/sources.lock.json": "78301c3ce4377ec56141e0b0803692484052c1f1f76abd9a4c2a0b196c2868bb",
     "windows/release/source-assets.json": "a12df42cbc44ab3959ddc7d571cae3a1f74ae401175495030c7f8ba54921787d",
     "windows/release/qt-source-notices.json": "d8984d3933f119c601c94abf2c07c6322fe44df857e1777e00b0df5020300dd3",
     "windows/release/vendor-privacy-review.json": "ef19c7759bb6a22816cdca88108e9af41ce5b31619a992061593e67f09036170",
@@ -73,7 +73,7 @@
     },
     {
       "id": "backend",
-      "version": "2789ba932bd50f22d02dec942f77b793fdf3a9c8",
+      "version": "20c8586b1226f897aab09f2bb3267f1a5c05fc8b",
       "source": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
       "license": "LGPL-3.0-only",
       "classification": "runtime payload"
