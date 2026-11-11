@@ -35,6 +35,7 @@ $unitTests = @(
     @{ name = 'Test-SchemeProbeGuard'; shard = 3; kind = 'script' }
     @{ name = 'Test-KsgSettingsImport'; shard = 3; kind = 'script' }
     @{ name = 'Test-ShellLifecycle'; shard = 3; kind = 'script' }
+    @{ name = 'Test-DesktopSupervisorStop'; shard = 3; kind = 'script' }
     @{ name = 'Test-ValidationCounts'; shard = 3; kind = 'script' }
     @{ name = 'Test-RepositoryPolicy'; shard = 3; kind = 'script' }
     @{ name = 'javascript'; shard = 3; kind = 'node'; testCountPattern = '(?m)^# tests ([0-9]+)\s*$' }

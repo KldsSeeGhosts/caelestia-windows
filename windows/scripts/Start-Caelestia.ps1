@@ -317,24 +317,20 @@ if ($Command -ne 'Start') {
     }
     if ($Command -eq 'Quit') {
         # Let the supervisor restore its owned AppBars/taskbar before uninstall.
-        # 60 s covers its bounded banner recovery (45 s) and desktop restore.
+        # 60 s covers child exit grace (5 s), log drain (2 s), bounded banner
+        # recovery (45 s) and desktop restore.
         $bound = 60000
         $supervisors = @(Get-CaelestiaSupervisors $profile)
         foreach ($supervisor in $supervisors) {
             $deadline = [DateTime]::UtcNow.AddMilliseconds($bound)
-            # Startup is not interruptible until banner recovery finishes.
-            while ($supervisor.Phase -eq 'starting' -and [DateTime]::UtcNow -lt $deadline -and -not $supervisor.Process.HasExited) {
-                Start-Sleep -Milliseconds 250
-                try { $supervisor.Phase = [string](Get-Content -LiteralPath $supervisor.StatusPath -Raw | ConvertFrom-Json).phase } catch { }
-            }
             if ($supervisor.Process.HasExited) { continue }
-            if ($ipcFailure -or $supervisor.Phase -ne 'running') {
-                # No shell answered, so ask the supervisor itself to stop.
-                if (-not ('Caelestia.Takeover.Native' -as [type])) {
-                    Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
-                }
-                [Caelestia.Takeover.Supervisor]::RecoverActive()
+            # IPC acceptance does not mean qs has exited. Always notify the
+            # supervisor so it can bound the wait for its own child. Its event
+            # exists before "starting" is published, including banner recovery.
+            if (-not ('Caelestia.Takeover.Native' -as [type])) {
+                Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
             }
+            [Caelestia.Takeover.Supervisor]::RecoverActive()
             if (-not $supervisor.Process.WaitForExit([Math]::Max(1000, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds))) {
                 throw "Desktop supervisor has not finished restoring: $($supervisor.StatusPath)"
             }

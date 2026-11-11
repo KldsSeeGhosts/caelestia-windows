@@ -61,7 +61,8 @@ class CiShardsAndTiming(unittest.TestCase):
             return json.loads(result.stdout)
         full, first, second, third = (names(), names("-Shard", "1/3"),
                                       names("-Shard", "2/3"), names("-Shard", "3/3"))
-        self.assertEqual(22, len(full))
+        self.assertEqual(23, len(full))
+        self.assertIn("Test-DesktopSupervisorStop", third)
         self.assertIn("history-version", third)
         self.assertIn("public-release-metadata", third)
         self.assertEqual(["Test-CIAcceleration"], first)
