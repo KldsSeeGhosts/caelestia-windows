@@ -7,6 +7,8 @@ param(
     [switch]$Autostart,
     [switch]$DesktopShortcut,
     [switch]$NoIntegration,
+    [switch]$InstallPrerequisites,
+    [switch]$NonInteractive,
     # Optional Python/CLI downloads are not part of the basic shell install.
     [switch]$PrepareSchemeRuntime,
     # Obtain this digest from trusted release metadata, not the extracted ZIP.
@@ -92,6 +94,78 @@ function Test-ReleaseVCRuntime([version]$MinimumVersion) {
     finally {
         if ($runtimeKey) { $runtimeKey.Dispose() }
         if ($baseKey) { $baseKey.Dispose() }
+    }
+}
+
+function Test-ReleaseMicrosoftSubject([string]$Subject) {
+    return $Subject -match '(?:^|,\s*)O=Microsoft Corporation(?:,|$)'
+}
+
+function Test-ReleaseMicrosoftChain($Certificate) {
+    $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
+    try {
+        $chain.ChainPolicy.RevocationMode = [Security.Cryptography.X509Certificates.X509RevocationMode]::Online
+        $chain.ChainPolicy.UrlRetrievalTimeout = [TimeSpan]::FromSeconds(30)
+        if (-not $chain.Build($Certificate)) { return $false }
+        $root = $chain.ChainElements[$chain.ChainElements.Count - 1].Certificate
+        return (Test-ReleaseMicrosoftSubject $root.Subject) -and
+            $root.Subject -eq $root.Issuer -and
+            $root.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -match
+                '^Microsoft (?:RSA |ECC )?Root Certificate Authority(?: \d{4})?$'
+    } finally { $chain.Dispose() }
+}
+
+function Assert-ReleaseVCRuntimeSignature([string]$Path) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or
+        -not (Test-ReleaseMicrosoftSubject $signature.SignerCertificate.Subject) -or
+        -not (Test-ReleaseMicrosoftChain $signature.SignerCertificate)) {
+        throw 'Runtime download must have a valid Microsoft Corporation signature and trusted Microsoft root chain.'
+    }
+}
+
+function Confirm-ReleaseVCRuntimeInstall([switch]$Unattended) {
+    if ($Unattended -or -not [Environment]::UserInteractive -or [Console]::IsInputRedirected -or
+        [Environment]::GetCommandLineArgs() -match '^-NonI(?:nteractive)?$') { return $false }
+    $answer = Read-Host 'Install Microsoft Visual C++ x64 Redistributable? This downloads from Microsoft and requests administrator approval [y/N]'
+    return $answer -match '^(?i:y|yes)$'
+}
+
+function Install-ReleaseVCRuntime($Prerequisite, [switch]$Consent, [switch]$Unattended) {
+    $refusal = ('Microsoft Visual C++ x64 Redistributable 14.44.35211.0 or newer is required. ' +
+        'Install or repair it using Microsoft''s official download, then rerun Install.cmd: ' +
+        'https://aka.ms/vc14/vc_redist.x64.exe . The runtime installer may require administrator approval. ' +
+        'Caelestia has not changed your installation.')
+    $temporary = $null
+    try {
+        if ($Prerequisite.downloadUrl -cne 'https://aka.ms/vc14/vc_redist.x64.exe') {
+            throw 'Unsupported runtime download URL.'
+        }
+        if (-not $Consent) {
+            if (-not (Confirm-ReleaseVCRuntimeInstall -Unattended:$Unattended)) {
+                throw 'Runtime installation declined or non-interactive. Use -InstallPrerequisites to consent without prompting.'
+            }
+        }
+        $candidate = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-vcredist-' + [guid]::NewGuid().ToString('N'))
+        $directory = New-Item -ItemType Directory -Path $candidate
+        $temporary = $directory.FullName
+        $download = Join-Path $temporary 'vc_redist.x64.exe'
+        Invoke-WebRequest -Uri $Prerequisite.downloadUrl -OutFile $download -UseBasicParsing
+        Assert-ReleaseVCRuntimeSignature $download
+        $process = Start-Process -FilePath $download -ArgumentList '/install', '/quiet', '/norestart' `
+            -Verb RunAs -Wait -PassThru
+        $exitCode = $process.ExitCode
+        if ($exitCode -notin @(0, 3010, 1638)) { throw "Runtime installer exited with code $exitCode." }
+        if ($exitCode -eq 3010) { Write-Warning 'Microsoft Visual C++ runtime installation requires a reboot. Restart Windows before using Caelestia.' }
+        if (-not (Test-ReleaseVCRuntime ([version]$Prerequisite.minimumVersion))) {
+            throw "Runtime still does not meet the minimum after installer exit code $exitCode."
+        }
+    } catch {
+        throw ($refusal + ' ' + $_.Exception.Message)
+    } finally {
+        if ($temporary -and (Test-Path -LiteralPath $temporary)) {
+            Remove-Item -LiteralPath $temporary -Recurse -Force
+        }
     }
 }
 
@@ -260,10 +334,8 @@ if ([Environment]::OSVersion.Version.Build -lt 22000) {
     throw 'Installation requires Windows 11 x64. VerifyOnly is data-only and is not installation acceptance.'
 }
 if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {
-    throw ('Microsoft Visual C++ x64 Redistributable 14.44.35211.0 or newer is required. ' +
-        'Install or repair it using Microsoft''s official download, then rerun Install.cmd: ' +
-        'https://aka.ms/vc14/vc_redist.x64.exe . The runtime installer may require administrator approval. ' +
-        'Caelestia has not downloaded anything or changed your installation.')
+    Install-ReleaseVCRuntime $release.prerequisites.visualCppRuntime `
+        -Consent:$InstallPrerequisites -Unattended:$NonInteractive
 }
 $payloadSource = Join-Path $BundleRoot 'payload'
 # Supplied maintenance code is loaded only after every file passed verification.

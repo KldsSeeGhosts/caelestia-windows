@@ -367,11 +367,129 @@ function Get-IntegrationRegistryState([string]$Root) {
     }
     return $lines -join "`n"
 }
+function Test-PrerequisiteInstallation {
+    # Run the real bootstrap in memory, with synthetic bundle bytes and every
+    # external prerequisite action replaced before the runtime gate. Never run
+    # an EXE, use the network, request UAC, or import bundle maintenance code.
+    $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
+    $tokens = $null; $errors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors)
+    Assert ($errors.Count -eq 0) 'Release bootstrap does not parse.'
+    $confirm = $ast.Find({ param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq 'Confirm-ReleaseVCRuntimeInstall'
+    }, $true)
+    . ([scriptblock]::Create($confirm.Extent.Text))
+    function Read-Host { throw 'Unattended prerequisite handling must not prompt.' }
+    Assert (-not (Confirm-ReleaseVCRuntimeInstall -Unattended)) 'Unattended consent was implicit.'
+    $source = Replace-Exactly $source 'if ([Environment]::OSVersion.Version.Build -lt 22000) {' 'if ($false) {'
+    $source = Replace-Exactly $source ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')" "throw 'fixture-prerequisite-passed'"
+    $injection = @'
+function Test-ReleaseVCRuntime([version]$MinimumVersion) {
+    Assert ($MinimumVersion -eq [version]'14.44.35211.0') 'Detection ignored manifest minimum.'
+    $state.probes++
+    if (($state.probes -eq 1 -and -not $state.present) -or $state.stillMissing) {
+        if ($state.missing) { return Test-ReleaseVCRuntimeVersions 0 '' @() $MinimumVersion }
+        $v = [version]'14.0.0.0'
+        return Test-ReleaseVCRuntimeVersions 1 'v14.0.0.0' @($v, $v, $v) $MinimumVersion
+    }
+    $v = [version]'14.44.35211.0'
+    return Test-ReleaseVCRuntimeVersions 1 'v14.44.35211.0' @($v, $v, $v) $MinimumVersion
+}
+function Confirm-ReleaseVCRuntimeInstall([switch]$Unattended) {
+    $state.prompts++
+    return $state.consent -and -not $Unattended
+}
+function Invoke-WebRequest($Uri, $OutFile, [switch]$UseBasicParsing) {
+    Assert ($Uri -ceq 'https://aka.ms/vc14/vc_redist.x64.exe') 'Unexpected download URL.'
+    Assert $UseBasicParsing 'Download must support Windows PowerShell.'
+    Assert (-not (Test-Path -LiteralPath $OutFile)) 'Download must use a fresh file.'
+    $state.download = $OutFile
+    [IO.File]::WriteAllText($OutFile, 'inert fixture, never execute')
+    if ($state.networkFailure) { throw 'fixture network failure' }
+}
+function Get-AuthenticodeSignature($LiteralPath) {
+    Assert ($LiteralPath -eq $state.download) 'Signature checked a different file.'
+    $state.signatures++
+    return [pscustomobject]@{ Status = $state.signature; SignerCertificate = [pscustomobject]@{ Subject = $state.subject } }
+}
+function Test-ReleaseMicrosoftChain($Certificate) { return $state.chain }
+function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$PassThru) {
+    Assert ($FilePath -eq $state.download -and $state.signatures -eq 1) 'Launch preceded signature verification.'
+    Assert (($ArgumentList -join ' ') -ceq '/install /quiet /norestart') 'Unexpected runtime arguments.'
+    Assert ($Verb -ceq 'RunAs' -and $Wait -and $PassThru) 'Runtime launch must elevate once and wait.'
+    $state.launches++
+    if ($state.uacFailure) { throw 'fixture UAC cancelled' }
+    return [pscustomobject]@{ ExitCode = $state.exitCode }
+}
+'@
+    $gate = 'if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {'
+    $source = Replace-Exactly $source $gate ($injection + "`n" + $gate)
+    foreach ($scenario in @('declined', 'noninteractive', 'bad-signature', 'wrong-signer', 'wrong-root',
+        'network-failure', 'uac-cancelled', 'failure-exit', 'still-missing', 'success', 'reboot', 'newer', 'prompt-consent', 'already-present')) {
+        $case = New-Case "prerequisite-$scenario"
+        $before = Snapshot $case
+        $state = @{
+            probes = 0; prompts = 0; consent = $scenario -ne 'declined'; download = ''
+            signature = 'Valid'; subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US'
+            chain = $true; signatures = 0; launches = 0; exitCode = 0
+            networkFailure = $scenario -eq 'network-failure'; uacFailure = $scenario -eq 'uac-cancelled'
+            stillMissing = $scenario -eq 'still-missing'
+            missing = $scenario -in @('declined', 'network-failure', 'success', 'reboot')
+            present = $scenario -eq 'already-present'
+        }
+        switch ($scenario) {
+            'bad-signature' { $state.signature = 'HashMismatch' }
+            'wrong-signer' { $state.subject = 'CN=Microsoft Corporation, O=Not Microsoft Corporation, C=US' }
+            'wrong-root' { $state.chain = $false }
+            'failure-exit' { $state.exitCode = 1603 }
+            'reboot' { $state.exitCode = 3010 }
+            'newer' { $state.exitCode = 1638 }
+        }
+        $message = ''
+        $warnings = @()
+        try {
+            & ([scriptblock]::Create($source)) -BundleRoot (Join-Path $case 'bundle') `
+                -Prefix (Join-Path $case 'new-prefix') -ProfileRoot (Join-Path $case 'new-profile') `
+                -InstallPrerequisites:($scenario -notin @('declined', 'noninteractive', 'prompt-consent')) `
+                -NonInteractive:($scenario -eq 'noninteractive') -WarningVariable warnings -WarningAction SilentlyContinue
+        } catch { $message = $_.Exception.Message }
+        $success = $scenario -in @('success', 'reboot', 'newer', 'prompt-consent', 'already-present')
+        if ($success) {
+            Assert ($message -eq 'fixture-prerequisite-passed') "Prerequisite did not pass: $message"
+            if ($state.present) {
+                Assert ($state.probes -eq 1 -and -not $state.download -and $state.prompts -eq 0) 'Present runtime triggered prerequisite installation.'
+            } else {
+                Assert ($state.probes -eq 2 -and $state.launches -eq 1) 'Success skipped re-detection or launched twice.'
+            }
+        } else {
+            Assert ($message -match 'Microsoft Visual C\+\+ x64 Redistributable') "Missing refusal: $message"
+        }
+        if ($scenario -eq 'failure-exit') { Assert ($message -match '1603') 'Failure omitted exit code.' }
+        if ($scenario -eq 'still-missing') { Assert ($state.probes -eq 2) 'Missing post-install detection.' }
+        if ($scenario -eq 'reboot') { Assert (($warnings -join ' ') -match 'reboot') 'Missing reboot notice.' }
+        if ($scenario -in @('declined', 'noninteractive')) {
+            Assert (-not $state.download) 'Declined consent downloaded a file.'
+        }
+        if ($scenario -in @('bad-signature', 'wrong-signer', 'wrong-root', 'network-failure')) {
+            Assert ($state.launches -eq 0) 'Untrusted or partial download was launched.'
+        }
+        if ($state.download) {
+            Assert (-not (Test-Path -LiteralPath (Split-Path -Parent $state.download))) 'Runtime temporary directory leaked.'
+        }
+        Assert ((Snapshot $case) -ceq $before) 'Prerequisite handling wrote Caelestia-owned files.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $case 'new-prefix')) -and
+            -not (Test-Path -LiteralPath (Join-Path $case 'new-profile'))) 'Prerequisite handling created install/profile roots.'
+        $script:scenarios += "prerequisite-$scenario"
+    }
+}
+
 $passed = $false
 $failure = ''
 $failureLine = $null
 $failureCase = $null
 try {
+    if (-not $StaleReadOnly) { Test-PrerequisiteInstallation }
     if (-not $StaleReadOnly) {
     foreach ($recovery in @('orphan-queued', 'dead-working', 'expired-queued', 'legacy-queued', 'foreign-task')) {
         $case = New-Case "queue-recovery-$recovery"

@@ -123,7 +123,13 @@ function Start-CaelestiaDetached { throw 'Package tests must never launch the sh
         Assert-True ($text.Contains($boundary)) 'Import fixture boundary changed.'
         $text = $text.Replace($boundary, $boundary + "`n" + $Injection)
     }
-    & ([scriptblock]::Create($text)) -BundleRoot $Bundle -Prefix $Prefix -ProfileRoot $Profile
+    $install = [scriptblock]::Create($text)
+    $arguments = @{ BundleRoot = $Bundle; Prefix = $Prefix; ProfileRoot = $Profile }
+    # Historical ZIPs predate this switch and only refuse missing prerequisites.
+    if (@($install.Ast.ParamBlock.Parameters.Name.VariablePath.UserPath) -contains 'NonInteractive') {
+        $arguments.NonInteractive = $true
+    }
+    & $install @arguments
 }
 function Get-Selector([string]$Prefix) {
     Get-Content -LiteralPath "$Prefix\install.json" -Raw | ConvertFrom-Json
