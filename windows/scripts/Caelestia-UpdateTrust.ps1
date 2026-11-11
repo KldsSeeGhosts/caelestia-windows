@@ -157,15 +157,18 @@ function Test-CaelestiaMetadata([byte[]]$KeysEnvelope, [byte[]]$ChannelEnvelope,
 function Assert-CaelestiaReleaseMetadata($release, $Trust, [string]$Channel) {
     Assert-CaelestiaFields $release @('displayVersion', 'buildVersion', 'releaseId', 'tag', 'sourceRevision', 'backendRevision',
         'bundle', 'manifestSha256', 'profileSchema', 'minimumUpdaterSchema', 'notesUrl', 'provenance')
-    if (-not (Test-CaelestiaDevVersion $release.buildVersion) -or $release.releaseId -cne $release.buildVersion -or
-        $release.tag -cne ('v' + $release.displayVersion) -or
+    $legacy = Test-CaelestiaDevVersion $release.buildVersion
+    $expectedTag = 'v' + $release.displayVersion
+    if (-not $legacy -and $Channel -cin @('development', 'preview')) { $expectedTag += '-' + $Channel }
+    if (-not (Test-CaelestiaPublishedVersion $release.buildVersion) -or $release.releaseId -cne $release.buildVersion -or
+        $release.tag -cne $expectedTag -or
         $release.sourceRevision -cnotmatch '^[a-f0-9]{40}$' -or $release.backendRevision -cnotmatch '^[a-f0-9]{40}$' -or
         $release.manifestSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'bad-metadata' }
     $build = ConvertTo-CaelestiaSemVer $release.buildVersion
     $display = ConvertTo-CaelestiaSemVer $release.displayVersion
     if ($build.Core -cne $display.Core -or $display.Build) { throw 'bad-metadata' }
-    if ($Channel -ceq 'development' -and $release.displayVersion -cne $release.buildVersion) { throw 'bad-metadata' }
-    if ($Channel -ceq 'preview' -and $display.Prerelease -cnotmatch '^(preview|rc)\.[1-9][0-9]*$') { throw 'bad-metadata' }
+    if (($Channel -ceq 'development' -or -not $legacy) -and $release.displayVersion -cne $release.buildVersion) { throw 'bad-metadata' }
+    if ($Channel -ceq 'preview' -and $legacy -and $display.Prerelease -cnotmatch '^(preview|rc)\.[1-9][0-9]*$') { throw 'bad-metadata' }
     if ($Channel -ceq 'stable' -and ($display.Major -ceq '0' -or $display.Prerelease)) { throw 'bad-metadata' }
     Assert-CaelestiaInteger $release.profileSchema 1 ([long]::MaxValue)
     Assert-CaelestiaInteger $release.minimumUpdaterSchema 1 ([long]::MaxValue)

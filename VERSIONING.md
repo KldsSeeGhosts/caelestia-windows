@@ -36,3 +36,22 @@ Native numeric version is CORE only, with components 0..65535 for future
 Windows VERSIONINFO compatibility. A source revision is provenance, not a
 version. Release IDs, directory IDs and JSON schema versions are not app
 versions. Local/unpublished payloads must not be advertised as channel releases.
+
+## SemVer migration bridge
+
+This stage still produces and publishes `CORE-dev.EPOCH.RUN.ATTEMPT`.
+The updater and Nexus page now accept both that grammar and plain
+`MAJOR.MINOR.PATCH`, without build metadata. SemVer precedence puts every
+`0.2.0-dev.*` build below `0.3.0`, regardless of epoch, run or attempt size.
+Signature, channel-role, replay and downgrade checks remain unchanged.
+Plain versions use channel-specific tags: `v0.3.0-development`,
+`v0.3.0-preview`, and, from 1.0, `v1.0.0` for stable. This lets each channel
+promote identical bytes without trying to add alias assets to an immutable
+development release. Display and build versions remain plain. Legacy tags and
+aliases keep their existing rules.
+
+The switch to plain versions must merge only after a bridge build has been
+published and the owner has installed it. Clients such as
+`0.2.0-dev.1.283.1` reject plain versions as `bad-metadata`. They must install
+the legacy-format bridge first. Rolling back to a pre-bridge payload restores
+that old client's limitation. Never clear trust highwater to bypass it.

@@ -28,6 +28,16 @@ foreach ($pair in @(
 }
 Assert (Test-CaelestiaDevVersion '0.2.0-dev.1.123456789012345678901234567890.2') 'Artificial dev sequence limit.'
 Assert (-not (Test-CaelestiaDevVersion '0.2.0-dev.1.1.1+metadata')) 'Publish format accepted build metadata.'
+foreach ($identity in @('0.2.0-dev.1.283.1', '0.2.0-dev.999999999999999999999999999.999999999999999999999999999.9', '0.3.0', '1.0.0')) {
+    Assert (Test-CaelestiaPublishedVersion $identity) "Bridge rejected published format $identity"
+}
+foreach ($identity in @('v0.3.0', '0.03.0', '0.3.0+meta', '0.3.0-preview.1', '0.2.0-dev.0.283.1', "0.3.0`n")) {
+    Assert (-not (Test-CaelestiaPublishedVersion $identity)) "Bridge accepted invalid build $identity"
+}
+foreach ($legacy in @('0.2.0-dev.1.283.1', '0.2.0-dev.999999999999999999999999999.999999999999999999999999999.9')) {
+    Assert ((Compare-CaelestiaSemVer $legacy '0.3.0') -eq -1) 'Legacy must precede first plain version.'
+    Assert ((Compare-CaelestiaSemVer '0.3.0' $legacy) -eq 1) 'Plain version must exceed every legacy 0.2.0 build.'
+}
 $version = Read-CaelestiaVersion "$repo\windows\release\version.json"
 foreach ($tag in @(& git -C $repo tag --list 'v*')) {
     try { $tagVersion = ConvertTo-CaelestiaSemVer $tag.Substring(1) } catch { continue }
