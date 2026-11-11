@@ -141,13 +141,23 @@ function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$T
 
 # Live desktop supervisors recorded under the profile. A supervisor in
 # starting or restart-backoff has no qs.exe, but still owns the prefix files.
+function Read-CaelestiaSupervisorStatus([string]$Path) {
+    for ($attempt = 0; ; $attempt++) {
+        try { return ([IO.File]::ReadAllText($Path) | ConvertFrom-Json) }
+        catch {
+            if ($attempt -ge 4 -or $_.Exception.InnerException -isnot [IO.IOException]) { throw }
+            Start-Sleep -Milliseconds (25 * [Math]::Pow(2, $attempt))
+        }
+    }
+}
+
 function Get-CaelestiaSupervisors([string]$ProfileRoot) {
     $found = @()
     if (-not $ProfileRoot) { return $found }
     foreach ($file in @(Get-ChildItem -Path (Join-Path $ProfileRoot 'runtime\supervisor-*\watchdog.json') -ErrorAction SilentlyContinue)) {
         $status = $null
-        try { $status = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
-        if (-not $status -or $status.phase -notin @('starting', 'running', 'restart-backoff')) { continue }
+        try { $status = Read-CaelestiaSupervisorStatus $file.FullName } catch { continue }
+        if (-not $status -or $status.phase -notin @('starting', 'running', 'restart-backoff', 'restoring')) { continue }
         $id = if ($status.watchdogPid) { $status.watchdogPid } else { $status.pid }
         if (-not $id) { continue }
         $process = Get-Process -Id $id -ErrorAction SilentlyContinue
@@ -169,6 +179,80 @@ function Get-CaelestiaSupervisors([string]$ProfileRoot) {
         $found += [pscustomobject]@{ StatusPath = $file.FullName; Phase = [string]$status.phase; Process = $process }
     }
     return $found
+}
+
+# Forced recovery is stricter than discovery. Fail closed if command line,
+# session, owner SID or process identity cannot be verified.
+function Stop-CaelestiaSupervisor($Supervisor, [int]$RecoveryTimeoutMs = 60000) {
+    $process = $Supervisor.Process
+    if ($process.HasExited) { return }
+    $spec = Join-Path (Split-Path -Parent $Supervisor.StatusPath) 'launch.json'
+    $native = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)" -OperationTimeoutSec 5 -ErrorAction Stop
+    if ($process.HasExited) { return }
+    $owner = Invoke-CimMethod -InputObject $native -MethodName GetOwnerSid -OperationTimeoutSec 5 -ErrorAction Stop
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $argument = '(?i)(?:^|\s)-LaunchSpec\s+(?:"' + [regex]::Escape($spec) + '"|' + [regex]::Escape($spec) + '(?=\s|$))'
+    if ($process.SessionId -ne [Diagnostics.Process]::GetCurrentProcess().SessionId -or
+        $owner.ReturnValue -ne 0 -or $owner.Sid -ne $sid -or
+        $native.CommandLine -notmatch $argument -or
+        $native.CommandLine -notmatch '(?i)[\\/]Watch-DesktopShell\.ps1"' -or
+        [Math]::Abs(($native.CreationDate.ToUniversalTime() - $process.StartTime.ToUniversalTime()).TotalMilliseconds) -gt 1) {
+        throw 'Refusing forced recovery of an unverified desktop supervisor.'
+    }
+    if (-not ('Caelestia.Takeover.Supervisor' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    }
+    try { [Caelestia.Takeover.Supervisor]::RecoverActive($RecoveryTimeoutMs) }
+    catch {
+        if ($_.Exception.InnerException -isnot [InvalidOperationException] -or
+            $_.Exception.InnerException.Message -ne 'Supervisor has not stopped. Retry recovery after it exits.') { throw }
+        if (-not $process.HasExited) {
+            # Retain handles before killing the parent. Never kill by name or
+            # trust shellPid alone, which can refer to a recycled PID.
+            $status = Read-CaelestiaSupervisorStatus $Supervisor.StatusPath
+            $launch = Get-Content -LiteralPath $spec -Raw | ConvertFrom-Json
+            $child = $null
+            if ($status.shellPid) {
+                $candidate = Get-Process -Id $status.shellPid -ErrorAction SilentlyContinue
+                if ($candidate) {
+                    $childInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $($candidate.Id)" -OperationTimeoutSec 5 -ErrorAction Stop
+                    if ($childInfo.ParentProcessId -eq $process.Id -and
+                        $candidate.SessionId -eq $process.SessionId -and
+                        $candidate.StartTime -ge $process.StartTime -and
+                        (Test-CaelestiaSamePath $candidate.Path $launch.Executable)) {
+                        $null = $candidate.Handle
+                        $childOwner = Invoke-CimMethod -InputObject $childInfo -MethodName GetOwnerSid -OperationTimeoutSec 5 -ErrorAction Stop
+                        if ($childOwner.ReturnValue -eq 0 -and $childOwner.Sid -eq $sid) { $child = $candidate }
+                    }
+                }
+            }
+            $process.Kill()
+            if (-not $process.WaitForExit(2000)) { throw 'Forced desktop supervisor stop timed out.' }
+            if ($child -and -not $child.HasExited) {
+                $child.Kill()
+                if (-not $child.WaitForExit(2000)) { throw 'Forced owned shell stop timed out.' }
+            }
+        }
+    }
+    if (-not $process.WaitForExit(2000)) { throw 'Desktop supervisor exit timed out.' }
+}
+
+function Repair-CaelestiaStaleSupervisors([string]$ProfileRoot) {
+    foreach ($supervisor in @(Get-CaelestiaSupervisors $ProfileRoot)) {
+        # Starting includes the existing 45 s banner recovery. Running owners
+        # publish a heartbeat every 250 ms. Observe twice before taking over.
+        $limit = if ($supervisor.Phase -in @('starting', 'restoring')) { 75 } else { 2 }
+        $status = Read-CaelestiaSupervisorStatus $supervisor.StatusPath
+        if (-not $status.utc) { continue }
+        $deadline = [DateTimeOffset]::Parse($status.utc).UtcDateTime.AddSeconds($limit)
+        $latest = $status
+        while (-not $supervisor.Process.HasExited -and $latest.utc -eq $status.utc -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+            $latest = Read-CaelestiaSupervisorStatus $supervisor.StatusPath
+        }
+        if ($supervisor.Process.HasExited) { continue }
+        if ($latest.utc -eq $status.utc) { Stop-CaelestiaSupervisor $supervisor }
+    }
 }
 
 # Keep the previous session's log for crash diagnosis. Moving the file can fail

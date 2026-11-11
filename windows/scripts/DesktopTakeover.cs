@@ -43,6 +43,8 @@ namespace Caelestia.Takeover {
     }
     public sealed class Snapshot {
         public ulong TaskbarFlags;
+        // Default true keeps snapshots written by older versions compatible.
+        public bool TaskbarFlagsSaved = true;
         // Explorer's "Show my taskbar on all displays" (MMTaskbarEnabled) before
         // the supervisor turned it off. Null means the value was absent.
         public bool MultiMonitorTaskbarSaved;
@@ -81,6 +83,29 @@ namespace Caelestia.Takeover {
         }
         public static void Fail(Action log, Action cleanup) {
             try { Log(log); } finally { cleanup(); }
+        }
+    }
+    // Shell APIs have no timeout and a responsiveness check alone races a
+    // subsequent hang. Keep at most one outstanding native call, never queue
+    // retries, and never hold the supervisor's message pump waiting for it.
+    public sealed class BoundedExplorerCall {
+        int busy;
+        public bool Try<T>(Func<T> action, out T result) {
+            result = default(T);
+            if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) return false;
+            T value = default(T);
+            Exception failure = null;
+            var worker = new Thread(delegate() {
+                try { value = action(); }
+                catch (Exception error) { failure = error; }
+                finally { Interlocked.Exchange(ref busy, 0); }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+            if (!worker.Join(100)) return false;
+            if (failure != null) throw failure;
+            result = value;
+            return true;
         }
     }
     // Null DataReceived marks EOF after all preceding callbacks have returned.
@@ -577,13 +602,24 @@ namespace Caelestia.Takeover {
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
-        [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
+        [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
+        [DllImport("user32.dll")] public static extern bool IsHungAppWindow(IntPtr window);
         [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorCallback callback, IntPtr data);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
         [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
         [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
         [DllImport("user32.dll", SetLastError = true)] static extern bool SystemParametersInfo(uint action, uint parameter, ref Rect rect, uint flags);
         [DllImport("shell32.dll")] static extern UIntPtr SHAppBarMessage(uint message, ref AppBarData data);
+        static readonly BoundedExplorerCall explorerCalls = new BoundedExplorerCall();
+        public static bool ExplorerWorkDeferred { get; private set; }
+        static bool TryAppBar(uint message, AppBarData data, out ulong result) {
+            // SHAppBarMessage talks to Explorer, not necessarily data.Window.
+            foreach (var bar in Taskbars())
+                if (IsHungAppWindow(new IntPtr(bar.Handle))) { result = 0; ExplorerWorkDeferred = true; return false; }
+            bool ready = explorerCalls.Try(delegate { return SHAppBarMessage(message, ref data).ToUInt64(); }, out result);
+            if (!ready) ExplorerWorkDeferred = true;
+            return ready;
+        }
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint RegisterWindowMessage(string message);
         [DllImport("user32.dll")] static extern IntPtr GetDesktopWindow();
         [DllImport("user32.dll")] static extern bool RedrawWindow(IntPtr window, IntPtr update, IntPtr region, uint flags);
@@ -806,10 +842,12 @@ namespace Caelestia.Takeover {
               catch (System.ComponentModel.Win32Exception) { return false; }
         }
         public static SavedRegion CaptureRegion(Bar bar) {
-            return DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
+            if (IsHungAppWindow(new IntPtr(bar.Handle))) return null;
+            SavedRegion result;
+            return explorerCalls.Try(delegate { return DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
                 return RegionCapture.TryCapture(delegate { return CaptureRegionCore(bar); },
                     delegate { return !CurrentTaskbar(bar); });
-            });
+            }); }, out result) ? result : null;
         }
         static bool CurrentTaskbar(Bar bar) {
             var window = new IntPtr(bar.Handle);
@@ -853,10 +891,12 @@ namespace Caelestia.Takeover {
             // The system owns a successfully assigned region.
         }
         public static void ApplyEmptyRegion(SavedRegion saved) {
-            DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
+            if (IsHungAppWindow(new IntPtr(saved.Handle))) return;
+            bool ignored;
+            explorerCalls.Try(delegate { return DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
                 ApplyEmptyRegionCore(saved);
                 return true;
-            });
+            }); }, out ignored);
         }
         static void ApplyEmptyRegionCore(SavedRegion saved) {
             if (!SameRegionWindow(saved)) return;
@@ -870,10 +910,12 @@ namespace Caelestia.Takeover {
             SetRegion(saved, empty);
         }
         public static void RestoreRegion(SavedRegion saved) {
-            DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
+            if (IsHungAppWindow(new IntPtr(saved.Handle))) { ExplorerWorkDeferred = true; return; }
+            bool ignored;
+            if (!explorerCalls.Try(delegate { return DpiScope.Run(SetThreadDpiAwarenessContext, delegate {
                 RestoreRegionCore(saved);
                 return true;
-            });
+            }); }, out ignored)) ExplorerWorkDeferred = true;
         }
         static void RestoreRegionCore(SavedRegion saved) {
             if (!SameRegionWindow(saved)) return;
@@ -974,7 +1016,7 @@ namespace Caelestia.Takeover {
             try {
                 var result = new Snapshot();
                 var data = AppBar(IntPtr.Zero);
-                result.TaskbarFlags = SHAppBarMessage(4, ref data).ToUInt64();
+                result.TaskbarFlagsSaved = TryAppBar(4, data, out result.TaskbarFlags);
                 result.Bars = Taskbars();
                 EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
                     delegate(IntPtr monitor, IntPtr dc, ref Rect rect, IntPtr unused) {
@@ -986,12 +1028,21 @@ namespace Caelestia.Takeover {
                 return result;
             } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
         }
+        public static bool CaptureMissingTaskbarFlags(Snapshot snapshot) {
+            if (snapshot.TaskbarFlagsSaved) return false;
+            ulong flags;
+            if (!TryAppBar(4, AppBar(IntPtr.Zero), out flags)) return false;
+            snapshot.TaskbarFlags = flags;
+            snapshot.TaskbarFlagsSaved = true;
+            return true;
+        }
         static TaskbarAction Visibility(Bar bar, bool visible, string operation, long? showTicks) {
             var window = new IntPtr(bar.Handle);
             uint owner;
             GetWindowThreadProcessId(window, out owner);
             if (!IsWindow(window) || owner != bar.Owner) return null;
-            ShowWindow(window, visible ? 8 : 0); // SW_SHOWNA avoids taking focus
+            if (IsHungAppWindow(window)) { ExplorerWorkDeferred = true; return null; }
+            ShowWindowAsync(window, visible ? 8 : 0); // SW_SHOWNA avoids taking focus
             long ticks = Stopwatch.GetTimestamp();
             var action = ActionFor(bar, operation, ticks);
             action.RequestedVisible = visible;
@@ -1018,7 +1069,12 @@ namespace Caelestia.Takeover {
         }
         // The backend records AppBar HWND -> PID here. Never remove a live
         // registration or a registration belonging to a different live shell.
+        static readonly HashSet<int> deferredAppBarOwners = new HashSet<int>();
+        public static void RetryStaleAppBars() {
+            foreach (var owner in new List<int>(deferredAppBarOwners)) RemoveStaleAppBars(owner);
+        }
         public static int RemoveStaleAppBars(int owner) {
+            deferredAppBarOwners.Remove(owner);
             int removed = 0;
             using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Quickshell\AppBars", true)) {
                 if (key == null) return 0;
@@ -1029,7 +1085,11 @@ namespace Caelestia.Takeover {
                     var window = new IntPtr(handle);
                     if (IsWindow(window)) continue;
                     var data = AppBar(window);
-                    SHAppBarMessage(1, ref data); // ABM_REMOVE, including destroyed HWNDs
+                    ulong ignored;
+                    if (!TryAppBar(1, data, out ignored)) {
+                        deferredAppBarOwners.Add(owner);
+                        continue; // retry from the retained registry journal
+                    }
                     key.DeleteValue(name, false);
                     removed++;
                 }
@@ -1046,6 +1106,7 @@ namespace Caelestia.Takeover {
             RestoreDesktop(saved, owner, workAreas, taskbars);
         }
         static void RestoreDesktop(Snapshot saved, int owner, bool workAreas, bool taskbars) {
+            ExplorerWorkDeferred = false;
             var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
             try {
                 var regionErrors = new List<string>();
@@ -1058,13 +1119,15 @@ namespace Caelestia.Takeover {
                             catch (Exception error) { regionErrors.Add(region.Handle + ": " + error.Message); }
                         }
                     var data = AppBar(FindWindow("Shell_TrayWnd", null));
-                    ulong currentFlags = SHAppBarMessage(4, ref data).ToUInt64();
+                    ulong currentFlags;
+                    bool flagsReady = TryAppBar(4, data, out currentFlags);
                     // Emergency recovery deliberately makes the real taskbar
                     // accessible. Exact lifecycle restoration uses saved flags.
                     ulong targetFlags = saved == null ? currentFlags & ~1UL : saved.TaskbarFlags;
-                    if (currentFlags != targetFlags) {
+                    if (flagsReady && (saved == null || saved.TaskbarFlagsSaved) && currentFlags != targetFlags) {
                         data.Parameter = new IntPtr((long)targetFlags);
-                        SHAppBarMessage(10, ref data);
+                        ulong ignored;
+                        TryAppBar(10, data, out ignored);
                     }
                     foreach (var bar in Taskbars()) {
                         Bar original = saved == null ? null : saved.Bars.Find(b => b.Device == bar.Device);
@@ -1096,7 +1159,9 @@ namespace Caelestia.Takeover {
                 }
                 // qs-owned background children die with qs. Do not destroy
                 // Explorer's WorkerW/Progman, which host other applications.
-                RedrawWindow(GetDesktopWindow(), IntPtr.Zero, IntPtr.Zero, 0x181);
+                // Invalidate without RDW_UPDATENOW, which synchronously paints
+                // foreign desktop children.
+                RedrawWindow(GetDesktopWindow(), IntPtr.Zero, IntPtr.Zero, 0x81);
                 if (regionErrors.Count != 0)
                     throw new InvalidOperationException("Taskbar region restoration failed: " + String.Join("; ", regionErrors.ToArray()));
             } finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
@@ -1142,6 +1207,7 @@ namespace Caelestia.Takeover {
                         normal.Right += offset.X; normal.Bottom += offset.Y;
                         if (MonitorFromRect(ref normal, MonitorDefaultToNull) != IntPtr.Zero) continue;
                         placement.Normal = ScreenToPlacement(window, restore);
+                        placement.Flags |= 4; // WPF_ASYNCWINDOWPLACEMENT
                         SetWindowPlacement(window, ref placement);
                         rescued++;
                         continue;
@@ -1228,6 +1294,9 @@ namespace Caelestia.Takeover {
         volatile int startGeneration;
         uint lastHookFailure;
         DateTime nextPersistLog;
+        DateTime nextExplorerRetry;
+        string statusPhase;
+        int statusPid;
         bool done;
         public int ExitCode;
 
@@ -1240,12 +1309,16 @@ namespace Caelestia.Takeover {
         // within RecoveryBoundMs. Only an explicit recovery starts this clock.
         public const int ChildExitGraceMs = 5000;
         public static void RecoverActive() {
+            RecoverActive(RecoveryBoundMs);
+        }
+        public static void RecoverActive(int timeoutMs) {
+            if (timeoutMs < 0 || timeoutMs > RecoveryBoundMs) throw new ArgumentOutOfRangeException("timeoutMs");
             try { using (var handle = System.Threading.EventWaitHandle.OpenExisting(EventName)) handle.Set(); }
             catch (System.Threading.WaitHandleCannotBeOpenedException) {}
             // Wait for the owner to finish restoring before emergency fallback.
             using (var mutex = new System.Threading.Mutex(false, MutexName)) {
                 bool acquired;
-                try { acquired = mutex.WaitOne(RecoveryBoundMs); }
+                try { acquired = mutex.WaitOne(timeoutMs); }
                 catch (System.Threading.AbandonedMutexException) { acquired = true; }
                 if (!acquired) throw new InvalidOperationException("Supervisor has not stopped. Retry recovery after it exits.");
                 mutex.ReleaseMutex();
@@ -1358,6 +1431,7 @@ namespace Caelestia.Takeover {
                 var prior = json.Deserialize<Snapshot>(File.ReadAllText(best));
                 if (prior == null) return null;
                 target.TaskbarFlags = prior.TaskbarFlags;
+                target.TaskbarFlagsSaved = prior.TaskbarFlagsSaved;
                 target.MultiMonitorTaskbarSaved = prior.MultiMonitorTaskbarSaved;
                 target.MultiMonitorTaskbar = prior.MultiMonitorTaskbar;
                 if (prior.Displays != null && prior.Displays.Count != 0) target.Displays = prior.Displays;
@@ -1531,6 +1605,8 @@ namespace Caelestia.Takeover {
             }, delegate { Finish("watchdog-error", 1); });
         }
         void Status(string phase, int pid) {
+            statusPhase = phase;
+            statusPid = pid;
             SupervisorSafety.Log(delegate {
                 var path = Path.Combine(launch.StateDirectory, "watchdog.json");
                 var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
@@ -1603,6 +1679,8 @@ namespace Caelestia.Takeover {
         static void Retire(LogDrain drain) { lock (logLock) drain.Retired = true; }
         void Tick(object sender, EventArgs args) {
             try {
+                // Refresh even during intentional backoff and snapshot retries.
+                Status(statusPhase, statusPid);
                 if (!recovering && recovery.WaitOne(0)) {
                     recovering = true;
                     stopDeadline = Stopwatch.GetTimestamp() + ChildExitGraceMs * Stopwatch.Frequency / 1000;
@@ -1630,6 +1708,18 @@ namespace Caelestia.Takeover {
                         return;
                     }
                     if (hide) { RefreshShowHook(false); Native.Hide(false); SuppressRegions(); }
+                    if (!isolatedTest && DateTime.UtcNow >= nextExplorerRetry) {
+                        nextExplorerRetry = DateTime.UtcNow.AddSeconds(1);
+                        if (Native.CaptureMissingTaskbarFlags(saved)) {
+                            try { SaveSnapshot(); }
+                            catch (Exception error) {
+                                if (!(error is IOException || error is UnauthorizedAccessException)) throw;
+                                saved.TaskbarFlagsSaved = false;
+                                LogPersistFailure(error);
+                            }
+                        }
+                        Native.RetryStaleAppBars();
+                    }
                     return;
                 }
                 showHook.Dispose();
@@ -1646,6 +1736,7 @@ namespace Caelestia.Takeover {
                 Retire(childDrain);
                 child.Dispose(); child = null;
                 childDrain = null;
+                Status("restoring", 0);
                 RestoreBanners();
                 if (code == 0) { Finish("clean-exit", 0); return; }
                 quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
@@ -1669,6 +1760,7 @@ namespace Caelestia.Takeover {
         }
         void Finish(string phase, int code) {
             ExitCode = code;
+            Status("restoring", 0);
             try { Dispose(); }
             catch (Exception error) {
                 ExitCode = 1;
@@ -1678,7 +1770,9 @@ namespace Caelestia.Takeover {
                 });
             }
             finally {
-                try { Status(phase, 0); }
+                // Keep the journal eligible for adoption if Explorer could not
+                // restore yet. Quit still releases ownership and stops the child.
+                try { Status(!isolatedTest && Native.ExplorerWorkDeferred ? "restore-pending" : phase, 0); }
                 finally { Application.ExitThread(); }
             }
         }
