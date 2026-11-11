@@ -42,9 +42,9 @@ function parseCheck(exitCode, output) {
         var available = null;
         if (data.state === "available") {
             var release = data.available;
-            var dev = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*$/;
+            var build = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-dev\.[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*)?$/;
             var display = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:dev\.[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*|(?:preview|rc)\.[1-9][0-9]*))?$/;
-            if (!release || !dev.test(text(release.buildVersion)) || !display.test(text(release.displayVersion)) ||
+            if (!release || !build.test(text(release.buildVersion)) || !display.test(text(release.displayVersion)) ||
                     /[\r\n]/.test(release.buildVersion + release.displayVersion) ||
                     !release.bundle || !Number.isSafeInteger(release.bundle.size) ||
                     release.bundle.size < 1 || release.bundle.size > 1073741824)

@@ -92,3 +92,14 @@ test("checks validate states, identities, bounds and release links", () => {
     ]) assert.equal(logic.parseCheck(0, JSON.stringify(mutation)), null);
     assert.equal(logic.parseCheck(1, JSON.stringify(data)), null);
 });
+test("bridge accepts legacy and plain build identities without formatting them", () => {
+    for (const buildVersion of ["0.2.0-dev.1.283.1", "0.3.0", "0.3.1", "1.0.0"]) {
+        const available = {buildVersion, displayVersion: buildVersion, bundle: {size: 1}};
+        const data = {schema: 1, state: "available", channel: "development", available};
+        assert.equal(logic.parseCheck(0, JSON.stringify(data)).available.buildVersion, buildVersion);
+        for (const invalid of ["0.03.0", "0.3.0+meta", "0.3.0-preview.1", "0.3.0\n", "0.2.0-dev.0.283.1"]) {
+            assert.equal(logic.parseCheck(0, JSON.stringify({...data,
+                available: {...available, buildVersion: invalid}})), null);
+        }
+    }
+});

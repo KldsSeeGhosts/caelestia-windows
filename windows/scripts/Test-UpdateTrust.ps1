@@ -75,6 +75,41 @@ function Verify($K = $keys, $C = $channel, $State = $null, $Signer = $dev, $T = 
     return Test-CaelestiaMetadata (Sign $K 'keys' $root) (Sign $C 'channel' $Signer) $T $Name $State $now
 }
 Assert ((Verify).Release.buildVersion -ceq $id) 'Native CNG/PKCS8/P1363 round trip failed.'
+# Exercise signed metadata through the actual client, not just its format helper.
+$plain = $channel.Clone(); $plain.release = $channel.release.Clone()
+$plain.release.bundle = $channel.release.bundle.Clone(); $plain.sequence = 2
+$plainId = '0.3.0'; $plainRoot = "caelestia-windows-$plainId-windows-x64"
+foreach ($field in @('displayVersion', 'buildVersion', 'releaseId')) { $plain.release[$field] = $plainId }
+$plain.release.tag = "v$plainId-development"
+$plain.release.notesUrl = "https://github.com/$($trust.repository)/releases/tag/v$plainId-development"
+$plain.release.bundle.root = $plainRoot; $plain.release.bundle.name = "$plainRoot.zip"
+$plain.release.bundle.url = $trust.assetPrefix + "v$plainId-development/$plainRoot.zip"
+Assert ((Verify $keys $plain).Release.buildVersion -ceq $plainId) 'Bridge rejected signed plain SemVer.'
+$plainPreview = $plain.Clone(); $plainPreview.channel = 'preview'; $plainPreview.release = $plain.release.Clone()
+$plainPreview.release.bundle = $plain.release.bundle.Clone(); $plainPreview.release.tag = 'v0.3.0-preview'
+$plainPreview.release.notesUrl = "https://github.com/$($trust.repository)/releases/tag/v0.3.0-preview"
+$plainPreview.release.bundle.url = $trust.assetPrefix + "v0.3.0-preview/$plainRoot.zip"
+Assert ((Verify $keys $plainPreview $null $promotion $trust 'preview').Release.buildVersion -ceq $plainId) 'Plain preview promotion failed.'
+Refuse { Verify $keys $plainPreview $null $dev $trust 'preview' } 'plain version cannot bypass promotion role' 'bad-signature'
+$plainStable = $plainPreview.Clone(); $plainStable.channel = 'stable'
+Refuse { Verify $keys $plainStable $null $promotion $trust 'stable' } 'plain pre-1.0 cannot become stable' 'bad-metadata'
+$stableJson = ($plainPreview | ConvertTo-Json -Depth 12 -Compress).Replace('0.3.0', '1.0.0').Replace('v1.0.0-preview', 'v1.0.0')
+$plainStable = ConvertFrom-CaelestiaStrictJson ([Text.Encoding]::UTF8.GetBytes($stableJson))
+$plainStable.channel = 'stable'
+Assert ((Verify $keys $plainStable $null $promotion $trust 'stable').Release.buildVersion -ceq '1.0.0') 'Plain stable promotion failed.'
+Refuse { Verify $keys $plainStable $null $dev $trust 'stable' } 'plain stable cannot use development key' 'bad-signature'
+$mixedHigh = Strict @{ schema = 1; rootVersion = 1; rootSha256 = (Get-CaelestiaRootDigest $trust)
+    keysVersion = 1; keysSha256 = (Verify).KeysSha256; channels = @{
+        development = @{ sequence = 1; sha256 = (Verify).Sha256; buildVersion = $id
+            bundleSha256 = $channel.release.bundle.sha256; manifestSha256 = $channel.release.manifestSha256 } } }
+Assert ((Verify $keys $plain $mixedHigh).Release.buildVersion -ceq $plainId) 'Legacy highwater blocked plain upgrade.'
+$mixedHigh.channels.development.buildVersion = $plainId
+$legacyAfter = $channel.Clone(); $legacyAfter.sequence = 3
+Refuse { Verify $keys $legacyAfter $mixedHigh } 'plain highwater refuses legacy downgrade' 'replay'
+foreach ($invalid in @('0.03.0', '0.3.0+meta', '0.3.0-preview.1', "0.3.0`n")) {
+    $bad = $plain.Clone(); $bad.release = $plain.release.Clone(); $bad.release.buildVersion = $invalid
+    Refuse { Verify $keys $bad } "invalid bridge format $invalid" 'bad-metadata'
+}
 $twoRoots = Strict ($trust | ConvertTo-Json -Depth 12 | ConvertFrom-Json)
 $twoRoots['rootKeys'] = @((Strict $root.Public), (Strict $backup.Public))
 $twoRoots['rootThreshold'] = 2L
@@ -185,6 +220,16 @@ try {
     $script:testChannelEnvelope = [byte[]]::new(65537)
     $checked = Invoke-CaelestiaUpdateCheck $trust 'development' $id $statePath $transport
     Assert ($checked.state -ceq 'bad-metadata' -and (Get-FileHash -LiteralPath $statePath).Hash -ceq $savedHash) 'Oversize metadata mutated highwater.'
+    $script:testChannelEnvelope = Sign $plain 'channel' $dev
+    $checked = Invoke-CaelestiaUpdateCheck $trust 'development' '0.2.0-dev.1.283.1' $statePath $transport
+    Assert ($checked.state -ceq 'available' -and $checked.available.buildVersion -ceq '0.3.0') 'Bridge Check did not offer plain upgrade.'
+    $checked = Invoke-CaelestiaUpdateCheck $trust 'development' '0.3.0' $statePath $transport
+    Assert ($checked.state -ceq 'not-newer') 'Plain installed build was offered again.'
+    $script:testChannelEnvelope = Sign $legacyAfter 'channel' $dev
+    $checked = Invoke-CaelestiaUpdateCheck $trust 'development' '0.3.0' $statePath $transport
+    Assert ($checked.state -ceq 'replay') 'Bridge Check allowed a legacy network downgrade.'
+    $checked = Invoke-CaelestiaUpdateCheck $trust 'development' '0.3.0' (Join-Path $stateRoot 'fresh-highwater.json') $transport
+    Assert ($checked.state -ceq 'not-newer') 'Plain installed version accepted legacy without channel history.'
 } finally {
     if (Test-Path -LiteralPath $stateRoot) {
         Assert-CaelestiaUpdatePath $stateRoot

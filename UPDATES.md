@@ -15,6 +15,17 @@ Public previews remain manual downloads. The [verified public release table](win
 pins the recommended preview, exact assets, hashes and unsigned status.
 This recommendation is not an authenticated preview/stable update channel.
 
+## Version-format migration
+
+The bridge still publishes legacy `CORE-dev.EPOCH.RUN.ATTEMPT` builds.
+Its updater and Nexus page accept both legacy versions and plain SemVer.
+An installed client such as `0.2.0-dev.1.283.1` must install a bridge build
+before it can accept the first plain `0.3.0` build. The switch must merge
+only after a bridge build has been published and the owner has installed it.
+See [VERSIONING.md](VERSIONING.md#semver-migration-bridge) for ordering and
+channel-tag rules. Rolling back to an older client restores its format limit.
+Do not clear trust or highwater state to bypass it.
+
 ## After owner activation
 
 Open Nexus, Updates, choose a channel, and explicitly check. Opening the page

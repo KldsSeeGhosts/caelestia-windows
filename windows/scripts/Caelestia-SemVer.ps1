@@ -49,6 +49,12 @@ function Test-CaelestiaDevVersion([string]$Version) {
     return $Version -cmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-dev\.[1-9][0-9]*\.[1-9][0-9]*\.[1-9][0-9]*\z'
 }
 
+function Test-CaelestiaPublishedVersion([string]$Version) {
+    # Bridge clients read both formats. Producers still use the legacy grammar.
+    return (Test-CaelestiaDevVersion $Version) -or
+        $Version -cmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z'
+}
+
 function Read-CaelestiaVersion([string]$Path) {
     $value = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
     if ($value.schema -ne 1 -or $value.version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
