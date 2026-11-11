@@ -201,6 +201,83 @@ def screen_location(general: dict, target: str, active: set[str]) -> str:
     return location
 
 
+def _is_direct_workshop_project(candidate: Path, location: Path) -> bool:
+    """True for <workshop location>/<project>/project.json and nothing else."""
+    candidate_parts = [part.casefold() for part in candidate.parts]
+    location_parts = [part.casefold() for part in location.parts]
+    return (len(candidate_parts) == len(location_parts) + 2
+            and candidate_parts[:len(location_parts)] == location_parts
+            and candidate_parts[-1] == "project.json")
+
+
+def workshop_project(path: Path, libs: list[Path]) -> dict:
+    """Validate one selected workshop project without scanning the catalogue.
+
+    The full snapshot reads every project's project.json. A wallpaper selection
+    only needs the project it names, but it still has to be a direct child of a
+    Steam workshop location for Wallpaper Engine. resolve() follows junctions
+    and symlinks, so a reparse point that leaves the location fails the check
+    instead of being accepted by its displayed path.
+    """
+    candidate = Path(path)
+    if candidate.name.casefold() != "project.json":
+        candidate = candidate / "project.json"
+    try:
+        candidate = candidate.resolve()
+    except OSError:
+        raise ValueError("project is not in the discovered workshop catalog") from None
+    for library in libs:
+        try:
+            location = (library / "steamapps/workshop/content/431960").resolve()
+        except OSError:
+            continue
+        if not _is_direct_workshop_project(candidate, location):
+            continue
+        try:
+            return project(candidate)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            break
+    raise ValueError("project is not in the discovered workshop catalog")
+
+
+def open_wallpaper(project_path: str, monitor: int | None, screen_target: str | None) -> None:
+    """Validate and dispatch one selection without rebuilding the catalogue."""
+    if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
+        raise ValueError("Wallpaper Engine controls are disabled")
+    try:
+        libs = libraries()
+    except OSError:
+        libs = []
+    try:
+        directory = install(libs) if libs else None
+    except OSError:
+        raise ValueError("Wallpaper Engine configuration is unavailable") from None
+    if directory is None or not running():
+        raise ValueError("Wallpaper Engine is not running")
+    target = Path(workshop_project(Path(project_path), libs)["path"])
+    executable = (directory / ("wallpaper64.exe" if (directory / "wallpaper64.exe").is_file()
+                               else "wallpaper32.exe")).as_posix()
+    command = [executable, "-control", "openWallpaper", "-file", str(target)]
+    if screen_target is not None:
+        try:
+            general = config_general(read_json(directory / "config.json"))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            raise ValueError("Wallpaper Engine configuration is unavailable") from None
+        location = screen_location(general, screen_target, active_display_ids())
+        command += ["-location", location]
+    elif monitor is not None:
+        command += ["-monitor", str(monitor)]
+    else:
+        raise ValueError("A wallpaper display is required")
+    try:
+        subprocess.run(command, check=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (subprocess.SubprocessError, OSError):
+        # subprocess exceptions contain the full command, including private
+        # project paths and sometimes native monitor IDs.
+        raise ValueError("Wallpaper Engine could not apply the wallpaper") from None
+
+
 def snapshot(status_only: bool = False) -> dict:
     active = running()
     try:
@@ -298,32 +375,7 @@ def main() -> None:
             control_desktop(args.command)
             result = {"ok": True}
         else:
-            if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
-                raise ValueError("Wallpaper Engine controls are disabled")
-            state = snapshot()
-            if state.get("discoveryError"):
-                raise ValueError("Wallpaper Engine configuration is unavailable")
-            target = Path(args.project or "").resolve()
-            if not state["detected"] or not state["running"]:
-                raise ValueError("Wallpaper Engine is not running")
-            if str(target).casefold() not in {str(Path(item["path"])).casefold() for item in state["items"]}:
-                raise ValueError("project is not in the discovered workshop catalog")
-            command = [state["executable"], "-control", "openWallpaper", "-file", str(target)]
-            if args.screen_target is not None:
-                general = config_general(read_json(Path(state["configPath"])))
-                location = screen_location(general, args.screen_target, active_display_ids())
-                command += ["-location", location]
-            elif args.monitor is not None:
-                command += ["-monitor", str(args.monitor)]
-            else:
-                raise ValueError("A wallpaper display is required")
-            try:
-                subprocess.run(command, check=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except (subprocess.SubprocessError, OSError):
-                # subprocess exceptions contain the full command, including
-                # private project paths and sometimes native monitor IDs.
-                raise ValueError("Wallpaper Engine could not apply the wallpaper") from None
+            open_wallpaper(args.project or "", args.monitor, args.screen_target)
             result = {"ok": True}
         print(json.dumps(result, ensure_ascii=True))
     except Exception as error:

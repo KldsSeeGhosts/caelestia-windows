@@ -150,6 +150,12 @@ Singleton {
     property string actionProject: ""
     property string actionMonitor: ""
     property string actionScreenTarget: ""
+    // The bridge's own subprocess timeout is 15 s; this outer watchdog only
+    // covers a helper that never returns, so it must outlast the bridge error
+    // that is worth showing.
+    property int actionTimeout: 20000
+    property bool actionPending: false
+    property bool actionTimedOut: false
     // Full snapshots parse every workshop project.json, so idle polls run the
     // cheap status mode and escalate only when something changed.
     property bool haveSnapshot: false
@@ -397,8 +403,23 @@ Singleton {
         actionProject = path;
         actionScreenTarget = target;
         actionMonitor = monitor.replace(/^Monitor/, "");
+        actionTimedOut = false;
+        actionPending = true;
+        actionWatchdog.restart();
         action.running = true;
+        if (!action.running) {
+            // FailedToStart clears running without emitting exited. Clear the
+            // claim here so the next selection is not blocked behind it.
+            actionPending = false;
+            actionWatchdog.stop();
+            actionFailed("wallpaper engine helper failed to start");
+            return false;
+        }
         return true; // Request accepted; config watcher confirms actual selection.
+    }
+    function actionFailed(message: string): void {
+        lastError = message;
+        Toaster.toast("Wallpaper Engine", lastError, "wallpaper");
     }
 
     onEnabledChanged: {
@@ -639,17 +660,53 @@ Singleton {
             }
         }
     }
+    // A selection whose helper never returns must not keep action.running true
+    // forever; later selections are blocked by that flag. Outlast the bridge's
+    // own 15 s dispatch timeout so its error wins when it can report one.
+    Timer {
+        id: actionWatchdog
+        interval: root.actionTimeout
+        onTriggered: {
+            if (!root.actionPending && !action.running)
+                return;
+            root.actionTimedOut = true;
+            root.actionPending = false;
+            if (action.running) {
+                action.signal(9);
+                action.running = false;
+            }
+            root.actionFailed("wallpaper engine action timed out");
+            debounce.restart();
+        }
+    }
     Process {
         id: action
+        objectName: "wallpaperEngineAction"
         command: [root.python, root.helper, "open", "--project", root.actionProject,
             root.actionScreenTarget ? "--screen-target" : "--monitor",
             root.actionScreenTarget || root.actionMonitor]
         stdout: StdioCollector { id: actionOutput }
+        onRunningChanged: {
+            if (!action.running && root.actionPending) {
+                Qt.callLater(() => {
+                    if (!action.running && root.actionPending) {
+                        root.actionPending = false;
+                        actionWatchdog.stop();
+                        root.actionFailed("wallpaper engine helper failed to start");
+                    }
+                });
+            }
+        }
         onExited: code => {
-            if (code !== 0) {
-                try { root.lastError = JSON.parse(actionOutput.text).error || "Wallpaper change failed"; }
-                catch (error) { root.lastError = "Wallpaper change failed"; }
-                Toaster.toast("Wallpaper Engine", root.lastError, "wallpaper");
+            root.actionPending = false;
+            actionWatchdog.stop();
+            const timedOut = root.actionTimedOut;
+            root.actionTimedOut = false;
+            if (!timedOut && code !== 0) {
+                let message = "Wallpaper change failed";
+                try { message = JSON.parse(actionOutput.text).error || message; }
+                catch (error) { message = "Wallpaper change failed"; }
+                root.actionFailed(message);
             }
             debounce.restart();
         }

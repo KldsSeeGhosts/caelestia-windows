@@ -11,9 +11,11 @@ import qs.modules.nexus.common
 
 // Windows adaptation of modules/nexus/pages/ServicesPage.qml.
 //
-// Every polling, unit and scheme control is upstream and writes the same
-// GlobalConfig keys the installed shell reads. Two Linux-only pieces are
-// replaced:
+// Polling, unit and scheme controls that the installed shell reads are kept.
+// Three controls are removed because the staged Windows graph has no consumer
+// for the behavior they configure (the native services behind them are excluded
+// from the portable build): the system-stats refresh, the Wi-Fi rescan interval
+// and the GPU selection. Two Linux-only pieces are replaced:
 //   * `Lyrics.preferredBackend` comes from the upstream Caelestia.Services
 //     module, which the portable Windows build excludes (windows/README.md), so
 //     the lyrics-backend select becomes an honest "unavailable" row;
@@ -22,22 +24,16 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    // GPU types, ordered to match config::GpuType (Auto, Nvidia, Generic, None)
-    readonly property list<MenuItem> gpuItems: [
-        MenuItem {
-            text: Tr.trCtx("Auto", "gpu type")
-        },
-        MenuItem {
-            text: "NVIDIA"
-        },
-        MenuItem {
-            text: Tr.trCtx("Generic", "gpu type")
-        },
-        MenuItem {
-            text: Tr.trCtx("None", "gpu type")
-        }
-    ]
-
+    // Removed from this Windows page, because the staged graph has no consumer
+    // for the behavior they configure:
+    //   * dashboard.resourceUpdateInterval (system-stats refresh). The portable
+    //     build excludes Caelestia.Services/TickingService; its only staged
+    //     use is a NetworkCard sparkline animation, not the CPU/memory/GPU
+    //     sampling this row promised;
+    //   * nexus.networkRescanInterval (Wi-Fi rescan). The Windows network page
+    //     uses the native backend's own 8-second scan timer;
+    //   * services.gpuType (GPU selection). The Windows Gpu facade reports the
+    //     native SystemMonitor GPU and never selects a vendor type.
     title: Tr.tr("Services")
 
     readonly property bool agentUsageOn: GlobalConfig.windows?.quota?.enabled ?? true
@@ -234,6 +230,7 @@ PageBase {
 
         StepperRow {
             first: true
+            last: true
             label: Tr.tr("Media refresh")
             // TRANSLATORS: ms is the millisecond unit, leave it untranslated
             subtext: Tr.tr("How often the media position updates (ms)")
@@ -242,28 +239,6 @@ PageBase {
             to: 2000
             stepSize: 50
             onMoved: v => GlobalConfig.dashboard.mediaUpdateInterval = v
-        }
-
-        StepperRow {
-            label: Tr.tr("System stats refresh")
-            // TRANSLATORS: CPU and GPU are hardware abbreviations, leave them untranslated
-            subtext: Tr.tr("CPU, memory and GPU update interval (seconds)")
-            value: GlobalConfig.dashboard.resourceUpdateInterval / 1000
-            from: 0.5
-            to: 10
-            stepSize: 0.5
-            onMoved: v => GlobalConfig.dashboard.resourceUpdateInterval = Math.round(v * 1000)
-        }
-
-        StepperRow {
-            last: true
-            label: Tr.tr("Wi-Fi rescan")
-            subtext: Tr.tr("How often available networks are rescanned (seconds)")
-            value: GlobalConfig.nexus.networkRescanInterval / 1000
-            from: 5
-            to: 120
-            stepSize: 5
-            onMoved: v => GlobalConfig.nexus.networkRescanInterval = Math.round(v * 1000)
         }
 
         // Media & lyrics
@@ -347,20 +322,11 @@ PageBase {
         }
 
         ToggleRow {
+            last: true
             text: Tr.tr("Smart colour scheme")
             subtext: Tr.tr("Derive theme mode and variant from the wallpaper")
             checked: GlobalConfig.services.smartScheme
             onToggled: GlobalConfig.services.smartScheme = checked
-        }
-
-        SelectRow {
-            last: true
-            label: Tr.tr("GPU")
-            subtext: Gpu.name ? Tr.tr("Monitoring: %1").arg(Gpu.name) : Tr.tr("Override for GPU type")
-            menuOnTop: true
-            menuItems: root.gpuItems
-            active: root.gpuItems[GlobalConfig.services.gpuType]
-            onSelected: item => GlobalConfig.services.gpuType = root.gpuItems.indexOf(item)
         }
 
         // Wallpaper Engine is an optional third-party integration, not part of
