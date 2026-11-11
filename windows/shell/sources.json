@@ -275,6 +275,7 @@
   "windows/services/tray/TrayService.qml": "services/TrayService.qml",
   "windows/services/wallpaperengine/bridge.py": "services/wallpaperengine_bridge.py",
   "windows/services/wallpaperengine/WallpaperEngine.qml": "services/WallpaperEngine.qml",
+  "windows/services/wallpaperengine/DesktopControl.js": "services/DesktopControl.js",
   "windows/shell/adapters/imports/Caelestia/Services/SessionManager.qml": "imports/Caelestia/Services/SessionManager.qml",
   "windows/shell/adapters/components/filedialog/FileDialog.qml": "components/filedialog/FileDialog.qml",
   "windows/shell/adapters/components/FocusRing.qml": "components/FocusRing.qml",

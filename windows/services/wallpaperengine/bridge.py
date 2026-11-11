@@ -40,12 +40,12 @@ def install(libs: list[Path]) -> Path | None:
         match = re.search(r'"installdir"\s*"([^"]+)"', manifest.read_text(encoding="utf-8"))
         if match:
             directory = library / "steamapps/common" / match[1]
-            if (directory / "wallpaper64.exe").is_file():
+            if any((directory / name).is_file() for name in ("wallpaper64.exe", "wallpaper32.exe")):
                 return directory
     return None
 
 
-def running() -> bool:
+def running_executable() -> str:
     class Entry(ctypes.Structure):
         _fields_ = [
             ("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
@@ -68,11 +68,15 @@ def running() -> bool:
         found = kernel.Process32FirstW(handle, ctypes.byref(entry))
         while found:
             if entry.szExeFile.lower() in ("wallpaper64.exe", "wallpaper32.exe"):
-                return True
+                return entry.szExeFile.lower()
             found = kernel.Process32NextW(handle, ctypes.byref(entry))
-        return False
+        return ""
     finally:
         kernel.CloseHandle(handle)
+
+
+def running() -> bool:
+    return bool(running_executable())
 
 
 def project(path: Path) -> dict:
@@ -226,7 +230,8 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
         for monitor, value in sorted(selected.items())
         if isinstance(value, dict)
     }
-    executable = (directory / "wallpaper64.exe").as_posix()
+    executable = (directory / ("wallpaper64.exe" if (directory / "wallpaper64.exe").is_file()
+                               else "wallpaper32.exe")).as_posix()
     # The selection watcher only needs the active projects. Resolving them in
     # status mode keeps a wallpaper change off the full-workshop-scan path;
     # the catalogue still refreshes on its own schedule.
@@ -254,9 +259,33 @@ def catalog_snapshot(active: bool, status_only: bool) -> dict:
     }
 
 
+def control_desktop(action: str) -> None:
+    """Stop/resume all displays without closing WE or rewriting its selection.
+
+    https://help.wallpaperengine.io/en/functionality/cli.html documents stop
+    and play as a reversible pair. closeWallpaper instead removes wallpapers.
+    """
+    if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
+        raise ValueError("Wallpaper Engine controls are disabled")
+    if action not in ("stop", "play"):
+        raise ValueError("Unsupported Wallpaper Engine desktop control")
+    # Revalidate liveness so an absent engine is never launched. This does
+    # not depend on readable project/config files or a workshop catalogue.
+    directory = install(libraries())
+    executable = running_executable()
+    if directory is None or not executable or not (directory / executable).is_file():
+        raise ValueError("Wallpaper Engine is not running")
+    try:
+        subprocess.run([(directory / executable).as_posix(), "-control", action],
+                       check=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (subprocess.SubprocessError, OSError):
+        raise ValueError("Wallpaper Engine could not change desktop playback") from None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["snapshot", "open"])
+    parser.add_argument("command", choices=["snapshot", "open", "stop", "play"])
     parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--project")
     parser.add_argument("--monitor", type=int)
@@ -265,6 +294,9 @@ def main() -> None:
     try:
         if args.command == "snapshot":
             result = snapshot(status_only=args.status_only)
+        elif args.command in ("stop", "play"):
+            control_desktop(args.command)
+            result = {"ok": True}
         else:
             if os.environ.get("CAELESTIA_COMBINED_LIVE") != "1" or os.environ.get("CAELESTIA_SHELL_SMOKE") == "1":
                 raise ValueError("Wallpaper Engine controls are disabled")

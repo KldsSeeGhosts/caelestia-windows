@@ -7,10 +7,15 @@ process list. No Steam or workshop installation path is hardcoded.
 
 When the integration is disabled, or enabled but Wallpaper Engine is not
 installed or not running, the shell selects its own wallpaper and derives its
-palette from that image. A running engine still owns a visible wallpaper
-window: the pinned backend places marked backgrounds below every visible
-foreign child and refuses an above-icons embed while one exists, so the engine
-covers the shell's image until the process quits or hands the desktop back. A
+palette from that image. Turning the Nexus switch off sends the documented
+`-control stop` command to the running engine on all displays. Turning it on
+sends `-control play`, which resumes wallpapers from stop without losing their
+selection or quitting WE. Startup sends stop once after settings and discovery
+load when the saved setting is off, including a missing key. Neither idle scans
+nor WE selection/config changes repeat these requests. A subsequent change
+inside WE is left alone. The bridge rechecks process liveness and refuses to
+launch an absent engine. Both paths retain the existing Live/non-smoke gate.
+Dispatch failures appear in Nexus. A
 fresh profile starts on `assets/wallpaper.webp` and then follows only
 Caelestia picks: provenance is recorded once in
 `state/caelestia/wallpaper/profile.json` before any other start-up writer, and

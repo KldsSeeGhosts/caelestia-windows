@@ -17,6 +17,8 @@ if ($null -eq $defaults.windows.wallpaperEngine -or
 $servicesPage = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\shell\adapters\modules\nexus\pages\ServicesPage.qml') -Raw -Encoding UTF8
 foreach ($required in @(
     'Needs Wallpaper Engine installed and running',
+    'resumes its wallpapers on all displays',
+    'stops Wallpaper Engine wallpapers without quitting Wallpaper Engine',
     'handed the desktop back',
     'its wallpaper covers the desktop until it does',
     'checked: WallpaperEngine.enabled',
@@ -51,7 +53,7 @@ $fixtures = @(
     [ordered]@{ name = 'wallpaper-future-record'; source = 'windows/tests/WallpaperFutureRecordTest.qml'
         marker = 'CAELESTIA_WALLPAPER_FUTURE'; minimum = 7 },
     [ordered]@{ name = 'wallpaper-engine-config'; source = 'windows/tests/WallpaperEngineConfigTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_ENGINE_CONFIG'; minimum = 16 },
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_CONFIG'; minimum = 29 },
     # One scenario, two profiles: the released behaviour for an existing
     # profile and the fresh-profile policy are asserted from the same code.
     [ordered]@{ name = 'wallpaper-engine-handback-existing'; source = 'windows/tests/WallpaperEngineHandbackExistingTest.qml'

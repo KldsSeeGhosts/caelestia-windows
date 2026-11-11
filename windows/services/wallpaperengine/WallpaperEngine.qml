@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Windows as Native
 import qs.services
+import "DesktopControl.js" as DesktopControl
 
 Singleton {
     id: root
@@ -15,6 +16,49 @@ Singleton {
     property var options: ({})
     property var configDocument: ({})
     property bool configLoaded: false
+    property bool startupSettingsReady: false
+    property bool startupDiscoveryReady: false
+    property bool startupControlPending: true
+    property string pendingDesktopControl: ""
+    property string desktopControlError: ""
+    property bool desktopControlAwaitingExit: false
+    readonly property bool desktopControlAllowed: python !== ""
+        && Quickshell.env("CAELESTIA_COMBINED_LIVE") === "1"
+        && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1"
+    readonly property bool desktopControlPending: desktopControl.running || pendingDesktopControl !== ""
+
+    function startupDesktopControl(): void {
+        if (!startupControlPending)
+            return;
+        const request = DesktopControl.startup(startupSettingsReady, startupDiscoveryReady, enabled, running);
+        if (request === null)
+            return;
+        startupControlPending = false;
+        requestDesktopControl(request);
+    }
+    function requestDesktopControl(request: string): void {
+        pendingDesktopControl = request;
+        drainDesktopControl();
+    }
+    function drainDesktopControl(): void {
+        if (desktopControl.running || !pendingDesktopControl)
+            return;
+        const command = DesktopControl.command(python, helper, pendingDesktopControl,
+            desktopControlAllowed);
+        pendingDesktopControl = "";
+        if (command.length === 0)
+            return;
+        desktopControlError = "";
+        desktopControl.command = command;
+        desktopControlAwaitingExit = true;
+        desktopControl.running = true;
+        if (!desktopControl.running) {
+            desktopControlAwaitingExit = false;
+            desktopControlError = "Wallpaper Engine desktop control failed to start";
+        }
+    }
+    onStartupSettingsReadyChanged: startupDesktopControl()
+    onStartupDiscoveryReadyChanged: Qt.callLater(startupDesktopControl)
     // An absent key is an install that has not opted in; a saved "auto" is a
     // value an older build wrote and keeps automatic activation. The old
     // default therefore stays distinguishable from no value at all. Nothing
@@ -205,6 +249,7 @@ Singleton {
         snapshotReady = true;
         status = !enabled ? "disabled" : running && detected ? "ready" : "absent";
         lastError = "";
+        startupDiscoveryReady = true;
     }
 
     function applyDiscoveryFailure(data): void {
@@ -213,6 +258,7 @@ Singleton {
         // but never let its stale running flag hold the desktop hostage.
         running = data.running;
         snapshotReady = true;
+        startupDiscoveryReady = true;
         scanFailed(data.discoveryError);
     }
 
@@ -233,6 +279,7 @@ Singleton {
             }
         }
         snapshotReady = true;
+        startupDiscoveryReady = true;
         statusTicks++;
         if (!haveSnapshot || fullScanNeeded || stateChanged || statusTicks >= 20) {
             // First settle, a start/stop, or the periodic catalogue refresh
@@ -324,6 +371,10 @@ Singleton {
         root.options = next?.windows?.wallpaperEngine ?? {};
         root.configLoaded = true;
         root.lastError = "";
+        // Only a verified Nexus save is a user request. Watcher reloads and
+        // discovery never send desktop commands.
+        root.startupControlPending = false;
+        root.requestDesktopControl(DesktopControl.toggle(root.enabled));
         // A click made while the write was in flight keeps only the latest
         // value; merge it against the file that was just saved.
         if (root.toggleValue !== root.enabled)
@@ -377,6 +428,7 @@ Singleton {
                 root.configDocument = parsed;
                 root.options = parsed.windows?.wallpaperEngine ?? {};
                 root.configLoaded = true;
+                root.startupSettingsReady = true;
             } catch (error) {
                 // A malformed read can be a writer's partial document. Keep
                 // the last successfully loaded settings instead of disabling
@@ -412,6 +464,7 @@ Singleton {
             if (error === FileViewError.FileNotFound) {
                 root.configDocument = {};
                 root.options = {};
+                root.startupSettingsReady = true;
             }
             root.configLoaded = true;
             if (error !== FileViewError.FileNotFound)
@@ -599,6 +652,30 @@ Singleton {
                 Toaster.toast("Wallpaper Engine", root.lastError, "wallpaper");
             }
             debounce.restart();
+        }
+    }
+    Process {
+        id: desktopControl
+        objectName: "wallpaperEngineDesktopControl"
+        onRunningChanged: {
+            if (!running) {
+                Qt.callLater(() => {
+                    if (!desktopControl.running && root.desktopControlAwaitingExit) {
+                        root.desktopControlAwaitingExit = false;
+                        root.desktopControlError = "Wallpaper Engine desktop control failed to start";
+                    }
+                    root.drainDesktopControl();
+                });
+            }
+        }
+        onExited: code => {
+            root.desktopControlAwaitingExit = false;
+            // Dispatch is not visible-output acknowledgement. Keep native
+            // ownership/handback detection as the physical desktop authority.
+            if (code !== 0) {
+                root.desktopControlError = "Wallpaper Engine could not change desktop playback";
+                Toaster.toast("Wallpaper Engine", root.desktopControlError, "wallpaper");
+            }
         }
     }
 }

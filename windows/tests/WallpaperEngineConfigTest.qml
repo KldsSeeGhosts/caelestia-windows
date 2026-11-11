@@ -41,6 +41,8 @@ QtObject {
     // The saved document the profile starts with. Seeding the fake before the
     // producers exist is the state the real view first reads.
     property bool seeded: {
+        Quickshell.environment = {CAELESTIA_COMBINED_LIVE: "1",
+            CAELESTIA_WE_PYTHON: "C:/fake/python.exe"};
         Native.FsUtils.existingFiles = ["C:/fixture/assets/wallpaper.webp",
             "C:/walls/windows-default.jpg", root.configPath];
         Quickshell.screens = [{name: "primary"}];
@@ -128,8 +130,78 @@ QtObject {
             root.reload();
             check(!WallpaperEngine.enabled, "a missing sidecar kept the integration on");
 
-            root.finish();
+            root.controlChecks();
         });
+    }
+
+    function childNamed(parent, name) {
+        for (const child of (parent.data ?? parent.children ?? [])) {
+            if (child.objectName === name)
+                return child;
+            const found = childNamed(child, name);
+            if (found)
+                return found;
+        }
+        return null;
+    }
+
+    function controlChecks(): void {
+        const control = childNamed(WallpaperEngine, "wallpaperEngineDesktopControl");
+        check(control !== null, "the real desktop-control Process was not staged");
+        // Startup OFF is consumed once after both settings and discovery.
+        WallpaperEngine.applyDiscoveryFailure({running: true, discoveryError: "fixture locked config"});
+        WallpaperEngine.startupDesktopControl();
+        check(control.running && control.command[2] === "stop",
+            "saved OFF did not dispatch stop through the fake Process");
+        control.running = false;
+        control.exited(0);
+        WallpaperEngine.startupDesktopControl();
+        check(!control.running, "startup OFF was sent twice");
+
+        // Simulate the verified-save boundary. Persistence and failed-save
+        // coverage live in WallpaperDefaultsTest; no real Process runs here.
+        WallpaperEngine.pendingConfigDocument = {windows: {wallpaperEngine: {enabled: true}}};
+        WallpaperEngine.toggleValue = true;
+        // The bridge, not a potentially stale idle scan, revalidates liveness.
+        WallpaperEngine.running = false;
+        WallpaperEngine.applyToggle();
+        check(control.running && control.command[2] === "play",
+            "verified ON did not dispatch play");
+        WallpaperEngine.pendingConfigDocument = {windows: {wallpaperEngine: {enabled: false}}};
+        WallpaperEngine.toggleValue = false;
+        WallpaperEngine.applyToggle();
+        check(WallpaperEngine.pendingDesktopControl === "stop",
+            "a toggle during dispatch was lost");
+        control.running = false;
+        control.exited(0);
+        Qt.callLater(() => guard(function() {
+            check(control.running && control.command[2] === "stop",
+                "queued OFF did not follow the in-flight ON");
+            control.running = false;
+            control.exited(1);
+            check(WallpaperEngine.desktopControlError !== "", "control failure was hidden");
+            // Neither a WE selection/ownership change, a watcher reload nor
+            // another status snapshot may fight a user's subsequent WE action.
+            WallpaperEngine.desktopHandedBack = true;
+            WallpaperEngine.desktopHandedBack = false;
+            Files.contents[root.configPath] = JSON.stringify({windows: {wallpaperEngine: {enabled: true}}});
+            root.reload();
+            WallpaperEngine.applyStatus({detected: true, running: true, monitors: {}});
+            WallpaperEngine.startupDesktopControl();
+            Qt.callLater(() => guard(function() {
+                check(!control.running, "discovery or watcher changes reasserted playback");
+                check(WallpaperEngine.pendingDesktopControl === "", "a failed command was retried");
+                WallpaperEngine.requestDesktopControl("play");
+                control.running = false; // FailedToStart emits no exited().
+                Qt.callLater(() => guard(function() {
+                    check(WallpaperEngine.desktopControlError.includes("failed to start"),
+                        "asynchronous FailedToStart was hidden");
+                    check(!control.running && !WallpaperEngine.desktopControlPending,
+                        "FailedToStart kept the switch pending or retried");
+                    root.finish();
+                }));
+            }));
+        }));
     }
 
     function finish(): void {

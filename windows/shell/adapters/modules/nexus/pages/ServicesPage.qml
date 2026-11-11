@@ -55,10 +55,14 @@ PageBase {
         return Tr.tr("Running");
     }
     readonly property string engineUnavailableHint: {
-        if (!WallpaperEngine.enabled)
-            return Tr.tr("Caelestia selects its own wallpaper. A running Wallpaper Engine can still cover it until it quits.");
+        if (WallpaperEngine.desktopControlError)
+            return WallpaperEngine.desktopControlError;
+        if (WallpaperEngine.desktopControlPending)
+            return Tr.tr("Updating Wallpaper Engine desktop playback");
         if (!WallpaperEngine.python)
-            return Tr.tr("The settings bridge is unavailable; Caelestia keeps its own wallpaper.");
+            return Tr.tr("The settings bridge is unavailable; Wallpaper Engine playback cannot be changed.");
+        if (!WallpaperEngine.enabled)
+            return Tr.tr("Caelestia shows its own wallpaper. Turning this off stops Wallpaper Engine wallpapers without quitting Wallpaper Engine.");
         if (!WallpaperEngine.detected)
             return Tr.tr("Install Wallpaper Engine to use it; Caelestia keeps its own wallpaper.");
         if (!WallpaperEngine.running)
@@ -369,10 +373,7 @@ PageBase {
         ToggleRow {
             first: true
             text: Tr.tr("Wallpaper Engine wallpapers")
-            // A running engine owns a visible window until it hands the
-            // desktop back. The pinned backend cannot place the shell's own
-            // background above that window, so the limitation is stated.
-            subtext: Tr.tr("Needs Wallpaper Engine installed and running. Until it hands the desktop back, its wallpaper covers Caelestia's")
+            subtext: Tr.tr("Needs Wallpaper Engine installed and running. Turning this on resumes its wallpapers on all displays")
             checked: WallpaperEngine.enabled
             onToggled: WallpaperEngine.setEnabled(checked)
         }
