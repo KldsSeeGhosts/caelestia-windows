@@ -36,13 +36,23 @@ Singleton {
     property string hostId: ""
     property real eventSequence: 0
     property bool connectionFailed: false
+    property bool recovering: false
+    // The classic tool has its own tray, which can start a recording without
+    // the shell; keep the slow idle poll for it. CaptureUi clears this on the
+    // shell route, where every start passes through pendingStart.
+    property bool externalStarts: true
     property bool incompatible: false
     readonly property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
     readonly property bool paused: state === "paused"
     readonly property bool stopping: state === "finalizing"
-    // Fast only while healthy and something is happening or the card is open;
-    // a failed host retries slowly and a quiet shell polls occasionally.
+    // One startup observation recovers recordings across shell reloads. Once
+    // idle, merely reading outputDir must not keep a status client alive.
+    readonly property bool statusNeeded: baselinePending || pendingStart || state !== "idle" || refCount > 0 || recovering || externalStarts
     readonly property bool pollFast: pendingStart || (!connectionFailed && (state !== "idle" || refCount > 0))
+    onRefCountChanged: {
+        if (refCount > 0)
+            poll();
+    }
     // Observe the initial journal (or stopped host) before accepting Start;
     // protocol v1 cannot distinguish old errors from a pre-baseline attempt.
     readonly property bool canStart: permitted && available && !incompatible && !baselinePending && state === "idle" && !pendingStart
@@ -64,6 +74,7 @@ Singleton {
     }
 
     function disconnected(message): void {
+        recovering = recovering || pendingStart || state !== "idle";
         connectionFailed = true;
         state = "idle";
         elapsed = 0;
@@ -169,6 +180,7 @@ Singleton {
         incompatible = false;
         connectionError = "";
         connectionFailed = false;
+        recovering = false;
         state = data.state;
         elapsed = data.elapsed_ms / 1000;
         mic = data.mic === true;
@@ -344,13 +356,13 @@ Singleton {
         stdout: StdioCollector { onStreamFinished: root.applyResponse(text) }
     }
 
-    // Poll even when the card is closed: tray/hotkey actions must be reflected.
-    // Fast only when active or open; retry a failed host at 5 s, idle at 15 s.
+    // Keep active recordings and failed active connections observable even
+    // with the card closed. A closed, idle card needs no periodic status.
     // 1 s is plenty for Glazier's seconds-granularity state changes and halves
     // the status-client spawn rate while recording.
     Timer {
         interval: root.pollFast ? 1000 : root.connectionFailed ? 5000 : 15000
-        running: root.permitted && root.executable !== ""
+        running: root.permitted && root.executable !== "" && root.statusNeeded
         repeat: true
         onTriggered: root.poll()
     }

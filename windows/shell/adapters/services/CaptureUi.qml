@@ -43,6 +43,13 @@ Singleton {
         ? Logic.captureRoute(setting, glazierProvider.executable) : "classic"
     readonly property bool shellAvailable: route === "shell" && picker !== null
 
+    // Only the classic tray can start recordings behind the shell's back.
+    Binding {
+        target: Recorder
+        property: "externalStarts"
+        value: root.route !== "shell"
+    }
+
     // `name` is the upstream picker function: open, openFreeze, openClip or
     // openFreezeClip. The classic tool treats all four alike, and so does the
     // picker: a selection opens the editor, whose Copy and Save decide the

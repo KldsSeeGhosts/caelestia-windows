@@ -16,8 +16,40 @@ Scope {
     property bool interactionEnabled: true
     required property var recorder
     property var screenList: Screens.screens
-    readonly property bool active: interactionEnabled && recorder.running && recorder.shellRegion !== null
+    // Root windows reload before service singletons. Recorder starts at idle
+    // until its first asynchronous status response, which used to leave this
+    // loader empty during adoption and destroy its excluded full-screen HWNDs.
+    // Restore the physical region here, before the loader reloads, so those
+    // same windows survive. This is presentation state, never a start command.
+    readonly property var region: recorder.connectionFailed ? null : recorder.baselinePending === true
+        ? observation.region : recorder.running ? recorder.shellRegion : null
+    readonly property bool active: interactionEnabled && region !== null
     readonly property var displays: loader.item ? loader.item.instances : []
+
+    function remember(): void {
+        if (recorder.connectionFailed)
+            observation.region = null;
+        else if (recorder.baselinePending !== true)
+            observation.region = recorder.running ? recorder.shellRegion : null;
+    }
+
+    // Must precede the LazyLoader in reload traversal. Keeping this in the
+    // Recorder singleton is too late for the root graph's window adoption.
+    PersistentProperties {
+        id: observation
+        reloadableId: "recording-overlay-region"
+        property var region: null
+    }
+
+    Connections {
+        target: root.recorder
+        ignoreUnknownSignals: true
+        function onShellRegionChanged(): void { root.remember(); }
+        function onRunningChanged(): void { root.remember(); }
+        function onBaselinePendingChanged(): void { root.remember(); }
+        function onConnectionFailedChanged(): void { root.remember(); }
+    }
+    Component.onCompleted: remember()
 
     LazyLoader {
         id: loader
@@ -29,7 +61,7 @@ Scope {
                 required property ShellScreen modelData
                 readonly property alias borderWindow: borderWindow
                 readonly property alias controlsWindow: controls
-                readonly property var selection: Logic.localRegion(root.recorder.shellRegion, modelData, modelData.devicePixelRatio)
+                readonly property var selection: Logic.localRegion(root.region, modelData, modelData.devicePixelRatio)
 
                 StyledWindow {
                     id: borderWindow

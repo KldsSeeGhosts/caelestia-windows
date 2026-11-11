@@ -10,6 +10,10 @@ Singleton {
     id: root
 
     property alias enabled: clock.enabled
+    property int secondsConsumers: 0
+
+    function retainSeconds(): void { secondsConsumers++; }
+    function releaseSeconds(): void { secondsConsumers = Math.max(0, secondsConsumers - 1); }
     // Keep the last sample instead of binding through native objects whose
     // destruction invalidates the binding context, even with null guards.
     property date date: new Date(0)
@@ -53,7 +57,7 @@ Singleton {
     SystemClock {
         id: clock
 
-        precision: SystemClock.Seconds
+        precision: root.secondsConsumers > 0 ? SystemClock.Seconds : SystemClock.Minutes
         onDateChanged: root.sample()
     }
 }
