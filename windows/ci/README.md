@@ -42,12 +42,15 @@ before checkout. Scope uses a full-history checkout; its
   Main pushes export native files immediately. The recorded integration wrapper
   then runs `-ResumeProduction` for Services, plugin CTest, shell and smoke.
   Compile parallelism comes from the runner's processors and memory. Shell
-  fixtures use two independent PowerShell processes at a time, with separate
+  fixtures use three independent PowerShell processes at a time, with separate
   output roots and disposable profiles. Every fixture still checks its original
   assertion floor and timeout; every selected script must finish. Failures do
   not cancel the remaining fixtures. Services, CTest and integration stages
-  stay serial. Local validation defaults to serial; `-Suite Shell -QmlJobs 2`
-  opts into the same scheduling.
+  stay serial. Local validation defaults to serial; `-Suite Shell -QmlJobs 3`
+  opts into the same scheduling. Parallel Shell runs start longest-first using
+  `windows/scripts/Qml-DurationHints.json`. Equal hints and unknown tests keep
+  their inventory order, with unknown tests last. Logs, summary results and
+  JUnit stay in inventory order. Hints do not change the inventory or timeouts.
   Resume checks successful production rows, the clean checkout HEAD and every
   native hash before testing. The local `-ServicesPreflightRoot` diagnostic
   remains available.

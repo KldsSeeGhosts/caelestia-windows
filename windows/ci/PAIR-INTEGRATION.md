@@ -93,7 +93,12 @@ count and `floor(physical memory / 3 GiB)`, clamped to 1-16. Invalid or nonfinit
 memory measurements fail closed. The same value drives the capture Rust build,
 the trusted fixture build and production. It changes compile scheduling only.
 CTest, Services and recorded stages stay serial. Hosted integration and native
-reuse select `-QmlJobs 2` for Shell fixtures within the shell stage. Each script
+reuse select `-QmlJobs 3` for Shell fixtures within the shell stage. Parallel
+Shell validation starts the longest fixtures first using the approximate seconds
+in `windows/scripts/Qml-DurationHints.json`, taken from green hosted run summaries.
+Equal hints keep inventory order; unknown tests follow known tests in inventory
+order. Logs, summary results and JUnit retain inventory order regardless of
+completion order. Hints never select tests or alter timeout limits. Each script
 gets its own output root and disposable profiles; native build files are
 read-only. The suite still runs every script and checks the same exit codes,
 assertion floors and timeouts. It writes the same per-script logs and summary
