@@ -38,7 +38,7 @@ function recorder() {
         permitted: true, probed: true, available: true, executable: "C:/synthetic/glazier.exe",
         state: "idle", elapsed: 0, outputDir: "", lastFile: "", finishedFiles: [],
         lastError: "", connectionError: "", pendingStart: false, baselinePending: true,
-        hostId: "", eventSequence: 0, connectionFailed: false, incompatible: false,
+        hostId: "", eventSequence: 0, connectionFailed: false, recovering: false, incompatible: false,
         startTimeout: { stop() {}, restart() {} },
         Quickshell: { env() { return ""; }, execDetached(spec) { context.launched = spec; } },
         Glazier: { ownedHost: false, launchedHost: false,
@@ -162,5 +162,27 @@ r.store.input = JSON.stringify(Array.from({ length: 501 }, (_, i) => `c:/synthet
 r.restoreStore();
 check(r.finishedFiles.length === 500 && !r.owns("C:/synthetic/fixture-0.mp4")
     && r.owns("C:/synthetic/fixture-500.mp4"), "oversized saved ownership bounded on load");
+
+// Recovery observes the helper's physical crop. It never restarts recording
+// or sends a region command, including at fractional DPI and negative origins.
+for (const dpr of [1, 1.25, 1.5, 1.75, 2]) {
+    for (const state of ["recording", "paused", "finalizing"]) {
+        const region = { x: -3840 + Math.round(20 * dpr), y: -200 + Math.round(12 * dpr),
+            w: Math.floor(502 * dpr / 2) * 2, h: Math.floor(302 * dpr / 2) * 2 };
+        const response = JSON.stringify({ ...JSON.parse(reply("reload-host", [], state)),
+            ui: false, region, elapsed_ms: 12345, mic: true, system_sound: true });
+        const old = recorder();
+        check(old.applyResponse(response), "pre-reload shell recording observed");
+        const next = recorder();
+        check(next.applyResponse(response) && !next.launched,
+            "recovery poll never sends a recording or region command");
+        check(!next.startRegion(region, ["--record", "--region", "wrong-logical-region"]),
+            "reload cannot restart an observed recording");
+        check(JSON.stringify(next.shellRegion) === JSON.stringify(region),
+            "recovery does not scale the physical crop");
+        check(next.applyResponse(reply("reload-host")) && !next.running && next.shellRegion === null,
+            "fresh idle status removes retained overlays");
+    }
+}
 
 console.log(`Glazier recorder headless logic: ${assertions} assertions passed.`);

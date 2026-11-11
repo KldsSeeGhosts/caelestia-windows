@@ -40,7 +40,7 @@ class ParallelQmlTests(unittest.TestCase):
         self.output = self.root / "output"
 
     def populate(self, failure=False, jobs=2):
-        self.assertEqual(25, len(INVENTORY))
+        self.assertEqual(26, len(INVENTORY))
         first = ["Test-CaptureThumbnail", "Test-CapturePicker",
                  "Test-WallpaperDefaults"][:jobs]
         for index, name in enumerate(INVENTORY):

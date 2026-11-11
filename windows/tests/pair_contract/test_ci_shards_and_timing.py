@@ -12,6 +12,12 @@ ROOT = Path(__file__).resolve().parents[3]
 
 @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
 class CiShardsAndTiming(unittest.TestCase):
+    def test_shell_inventory_includes_idle_regression(self):
+        source = (ROOT / "windows/scripts/Test-Validation.ps1").read_text()
+        shell = source.split("@('Test-AccessibilityLauncher'", 1)[1].split("\n        }", 1)[0]
+        self.assertIn("'Test-IdleWork'", shell)
+        self.assertEqual(26, 1 + len(re.findall(r"'Test-[A-Za-z0-9]+'", shell)))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="ci-diagnostics-",
                                                  dir=os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT"))
