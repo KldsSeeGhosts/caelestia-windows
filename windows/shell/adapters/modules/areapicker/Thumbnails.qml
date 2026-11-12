@@ -29,7 +29,7 @@ import "../../utils/FileUrls.js" as FileUrls
 //
 // Files. A capture that was saved is shown from its file. A capture that was
 // only copied is shown from a preview file in the OS temp directory, made by
-// copying the picker's hand-over file before the picker deletes it. That file
+// copying the picker's pending preview after a confirmed clipboard write. That file
 // has the same exact-path scheme as the hand-over files (CUtils.newCaptureTempPath),
 // belongs to the preview alone and is deleted when the preview goes away. If a
 // viewer holds it open, its path goes on a retry list owned by this scope and
@@ -62,7 +62,8 @@ Scope {
     property string saveRoot: Paths.pictures
     property var screenList: Screens.screens
     // Needs a local file path. Fixtures replace it with a recorder.
-    property var clipboard: Native.Clipboard
+    property var clipboard: Native.ClipboardWriter
+    property int copyTimeout: 10000
     // Opens a file or folder URL with the default application. Fixtures replace
     // it with a recorder so that no test starts a program.
     property var openUrl: url => Qt.openUrlExternally(url)
@@ -114,8 +115,8 @@ Scope {
         return add(info, path, "", true);
     }
 
-    // `source` is the picker's hand-over file, which the picker deletes right
-    // after the clipboard call. The preview keeps its own copy.
+    // `source` is the picker's pending preview after confirmed clipboard
+    // success. The thumbnail keeps its own copy before the picker deletes it.
     function addCopy(info: var, source: string): bool {
         retryTemps();
         sweepDragFiles();
@@ -156,6 +157,7 @@ Scope {
             imagePath: path,
             temp: temp,
             saved: saved,
+            copied: !saved,
             imageWidth: info.width ?? 0,
             imageHeight: info.height ?? 0,
             dpr: info.dpr > 0 ? info.dpr : 1
@@ -172,6 +174,7 @@ Scope {
     // preview that is being dragged stays as it is, because the target may still
     // be reading its file, and closes as soon as the drag has ended.
     function close(entry: var): void {
+        entry.copyOperation = 0;
         if (entry.dragging) {
             entry.closeAfterDrag = true;
             return;
@@ -317,11 +320,46 @@ Scope {
         pendingTemps = pendingTemps.filter(path => !tryRemove(path));
     }
 
-    function copyEntry(entry: var): bool {
-        if (clipboard.copyImageFile(entry.path))
-            return true;
-        Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be copied."), "screenshot_region", Toast.Error);
-        return false;
+    function copyEntry(entry: var): void {
+        if (!entries.includes(entry) || entry.closing || entry.copyOperation)
+            return;
+        entry.copied = false;
+        entry.copyStarted = Date.now();
+        entry.copyOperation = clipboard.copyImageFile(entry.path);
+    }
+
+    function copyResult(entry: var, ok: bool): void {
+        entry.copyOperation = 0;
+        entry.copied = ok;
+        if (!ok) {
+            // Keep the card for retry/save instead of letting its timeout remove
+            // the only remaining copy of an unsaved capture.
+            entry.copyFailed = true;
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be copied."), "screenshot_region", Toast.Error);
+        } else {
+            entry.copyFailed = false;
+        }
+    }
+
+    Connections {
+        target: root.clipboard
+        function onWriteFinished(id: int, ok: bool, error: string): void {
+            const entry = root.entries.find(item => item.copyOperation === id && !item.closing);
+            if (entry)
+                root.copyResult(entry, ok);
+        }
+    }
+
+    Timer {
+        interval: Math.max(1, Math.min(root.copyTimeout, 250))
+        repeat: true
+        running: root.entries.some(entry => entry.copyOperation > 0)
+        onTriggered: {
+            for (const entry of root.entries) {
+                if (entry.copyOperation && Date.now() - entry.copyStarted >= root.copyTimeout)
+                    root.copyResult(entry, false);
+            }
+        }
     }
 
     // Writes a copy-only capture to the screenshots folder with the picker's
@@ -337,6 +375,7 @@ Scope {
         }
         entry.path = dest;
         entry.saved = true;
+        entry.copyFailed = false;
         // The card switches to the saved file first. Only then is the preview
         // file released, so it can never be deleted under a card that shows it.
         entry.imagePath = dest;
@@ -496,6 +535,13 @@ Scope {
             // owner's dragFiles list tracks it and outlives the entry.
             property string dragFile
             property bool saved
+            // An operation belongs to this entry, never to a replacement card.
+            // Closing, completion and timeout clear it before accepting results.
+            property int copyOperation
+            property double copyStarted
+            property bool copied
+            // Keep a failed copy available until retry, save or explicit close.
+            property bool copyFailed
             property int imageWidth
             property int imageHeight
             property real dpr: 1

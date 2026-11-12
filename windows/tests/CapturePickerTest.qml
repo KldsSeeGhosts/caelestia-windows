@@ -53,16 +53,24 @@ ShellRoot {
     property QtObject clipboardRecorder: QtObject {
         property var copied: []
         property bool result: true
+        property string error: "set-failed"
+        property bool autoFinish: true
+        signal writeFinished(int id, bool ok, string error)
         // What the file held at the moment of the call: the backend reads it
         // before copyImageFile returns, so it must exist and be readable then.
         property bool existedAtCall: false
         property size sizeAtCall: Qt.size(0, 0)
-        function copyImageFile(path: string): bool {
+        function copyImageFile(path: string): int {
             copied = copied.concat([path]);
             existedAtCall = WindowsFiles.isFile(path);
             shot.source = "file:///" + path.split("\\").join("/");
             sizeAtCall = shot.status === Image.Ready ? shot.sourceSize : Qt.size(0, 0);
-            return result;
+            const id = copied.length;
+            const ok = result;
+            const code = ok ? "" : error;
+            if (autoFinish)
+                Qt.callLater(() => writeFinished(id, ok, code));
+            return id;
         }
     }
 
@@ -772,7 +780,7 @@ ShellRoot {
         check(!WindowsFiles.isFile(path), "the temporary file is deleted right after the call");
         check(toastWith("Copying screenshot") === "" && toastWith("Screenshot taken") === "" && toastWith("copied to clipboard") === "",
             "no toast: the thumbnail is the feedback");
-        check(thumbRecorder.copies.length === 1 && thumbRecorder.copies[0].path === clipboardRecorder.copied[0], "the thumbnail was given the copy");
+        check(thumbRecorder.copies.length === 1 && thumbRecorder.copies[0].path !== clipboardRecorder.copied[0], "the thumbnail was given a separate pending preview");
         check(thumbRecorder.saved.length === 1, "and Copy saved no file");
         check(!picker.opened, "Copy closes the editor");
         shot.source = "";
@@ -1157,8 +1165,64 @@ ShellRoot {
         CaptureUi.screenshot("open");
         check(classicCalls === 1, "the setting applies live");
 
-        CaptureUi.glazierProvider = Glazier;
-        console.log("CAELESTIA_CAPTURE_PICKER_PASS " + assertions);
-        Qt.quit();
+        asyncCopyCases(0);
+    }
+
+    readonly property var writeErrors: ["read-failed", "decode-failed", "allocation-failed", "clipboard-busy", "set-failed"]
+
+    function asyncCopyCases(index: int): void {
+        // No window or capture is needed for completion routing. Use the image
+        // already exported in this disposable profile.
+        picker.screenList = [];
+        picker.opened = true;
+        picker.editing = true;
+        picker.editor.setTool("circle");
+        clipboardRecorder.result = false;
+        clipboardRecorder.error = writeErrors[index];
+        const before = thumbRecorder.copies.length;
+        const path = picker.beginClipboard();
+        check(CUtils.copyFile(fileUrl(savedPath), fileUrl(path), true), "prepare a synthetic hand-over");
+        picker.copyFinished(picker.session, path, { screen: "test", width: 1, height: 1, dpr: 1 });
+        const preview = picker.copyPreview;
+        check(picker.saving && picker.copyOperation > 0 && thumbRecorder.copies.length === before, "an id is not success");
+        check(!WindowsFiles.isFile(path), "hand-over removed before completion");
+        Qt.callLater(() => step(() => {
+            check(picker.opened && picker.editing && !picker.saving && !picker.closing, writeErrors[index] + " keeps the editor");
+            check(thumbRecorder.copies.length === before && !WindowsFiles.isFile(preview), "failure publishes no thumbnail and cleans the preview");
+            if (index + 1 < writeErrors.length)
+                asyncCopyCases(index + 1);
+            else
+                asyncCopyTimeout();
+        }));
+    }
+
+    function asyncCopyTimeout(): void {
+        clipboardRecorder.autoFinish = false;
+        const before = thumbRecorder.copies.length;
+        const path = picker.beginClipboard();
+        picker.copyFinished(picker.session, path);
+        const stale = picker.copyOperation;
+        picker.finishClose();
+        picker.opened = true;
+        picker.editing = true;
+        picker.saveTimeout = 30;
+        picker.copyFinished(picker.session, picker.beginClipboard());
+        const current = picker.copyOperation;
+        Qt.callLater(() => step(() => {
+            clipboardRecorder.writeFinished(stale, true, "");
+            check(picker.copyOperation === current && picker.saving && thumbRecorder.copies.length === before, "superseded success cannot finish a new session");
+        }));
+        later(150, () => step(() => {
+            check(!picker.saving && picker.opened && picker.editing && !picker.copyOperation, "no-result timeout keeps editor recoverable");
+            clipboardRecorder.writeFinished(current, true, "");
+            check(picker.opened && thumbRecorder.copies.length === before, "success after timeout is ignored");
+            picker.finishClose();
+            Qt.callLater(() => {
+                clipboardRecorder.writeFinished(current, false, "clipboard-busy");
+                CaptureUi.glazierProvider = Glazier;
+                console.log("CAELESTIA_CAPTURE_PICKER_PASS " + assertions);
+                Qt.quit();
+            });
+        }));
     }
 }
