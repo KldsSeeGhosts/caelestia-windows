@@ -861,6 +861,18 @@ Singleton {
             root.refreshScreenFiles();
         }
     }
+    // A setter returns true while Windows is still applying the image. Only a
+    // request that fails after that reports here, so this is the one place a
+    // late failure reaches the user. A superseded background request is not a
+    // failure. Older backends and test fakes have no such signal.
+    Connections {
+        target: Native.Wallpaper
+        ignoreUnknownSignals: true
+        function onWallpaperOperationFinished(operation, path, target, ok, reason): void {
+            if (!ok && reason !== "superseded")
+                Toaster.toast("Wallpaper", "Windows could not apply the wallpaper.", "wallpaper");
+        }
+    }
     NativeDialogs.FileDialog {
         id: picker
         property var targetScreen: undefined
