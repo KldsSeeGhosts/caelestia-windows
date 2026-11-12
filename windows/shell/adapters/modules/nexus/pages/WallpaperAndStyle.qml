@@ -103,6 +103,15 @@ PageBase {
             onTargetSelected: screen => root.nState.wallpaperTarget = screen
         }
 
+        StyledText {
+            Layout.fillWidth: true
+            visible: text !== ""
+            text: Wallpapers.windowsStatusText(root.nState?.wallpaperTarget)
+            color: Colours.palette.m3onSurfaceVariant
+            font: Tokens.font.body.medium
+            wrapMode: Text.WordWrap
+        }
+
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Tokens.spacing.extraSmall / 2

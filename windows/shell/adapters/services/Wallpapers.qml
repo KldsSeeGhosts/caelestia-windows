@@ -78,6 +78,29 @@ Singleton {
     // Only local, verified images live here. Engine previews never replace
     // a display's retained underlay. Keys are opaque physical-target digests.
     property var screenFiles: ({})
+    // These describe Windows, not the shell image or the persisted pick.
+    readonly property var windowsTargets: completion.targets
+    function windowsStatus(screen): string { return completion.status(screen); }
+    function windowsStatusText(screen): string {
+        const status = windowsStatus(screen);
+        return status === "pending" ? "Applying wallpaper"
+            : status === "applied" ? "Desktop wallpaper changed"
+            : status === "failed" ? "Windows could not apply the wallpaper"
+            : status === "unknown" ? "Windows wallpaper status unknown" : "";
+    }
+    WallpaperCompletion {
+        id: completion
+        onOutcomeChanged: (requestId, outcome) => {
+            if (outcome === "pending")
+                Toaster.toast("Wallpaper", "Applying wallpaper", "wallpaper");
+            else if (outcome === "applied")
+                Toaster.toast("Wallpaper", "Desktop wallpaper changed", "wallpaper");
+            else if (outcome === "failed")
+                Toaster.toast("Wallpaper", "Windows could not apply the wallpaper", "wallpaper");
+            else
+                Toaster.toast("Wallpaper", "Windows wallpaper status unknown", "wallpaper");
+        }
+    }
     // the mounted underlay must retain our own image, not transition
     // to an engine preview as soon as process/config discovery changes.
     // currentImage still supplies that preview to palette generation; it is
@@ -745,39 +768,26 @@ Singleton {
             Toaster.toast("Wallpaper", "The wallpaper display is no longer available", "wallpaper");
             return false;
         }
-        if (WallpaperEngine.items.some(item => item.path === path))
-            return WallpaperEngine.open(path, explicit ? target : undefined);
-        const local = String(path).replace(/^file:\/\/\//, "");
-        const ok = target ? Native.Wallpaper.setWallpaperForScreen(local, target.name)
-            : Native.Wallpaper.setWallpaper(local, false);
-        if (ok) {
-            // An explicit pick is recorded before any native notification: a
-            // global pick sets the profile-wide pick on a fresh profile or
-            // changes every display on an existing one, while a display pick
-            // records only that display. Untouched displays keep their own
-            // source and are not re-read from Windows on a fresh profile.
-            root.markOpened(local);
-            if (target) {
-                screenFiles = Object.assign({}, screenFiles, {[target.targetId]: local});
-                root.adoptPickedScreen(target.targetId, local);
-            } else {
-                screenFiles = {};
-                root.adoptPickedFile(local);
-            }
-            stopPreview();
-            // Native change notifications refresh the global palette source;
-            // a per-display pick must not replace another display's image.
-            if (!SchemeGenerator.available) {
-                Toaster.toast("Wallpaper", "Desktop wallpaper changed. Dynamic colours are unavailable.", "wallpaper");
-            } else if (!target && schemeName === "dynamic") {
-                Toaster.toast("Wallpaper", "Desktop wallpaper changed. Generating colours.", "palette");
-            } else {
-                Toaster.toast("Wallpaper", "Desktop wallpaper changed.", "wallpaper");
-            }
-        } else {
-            Toaster.toast("Wallpaper", "Windows could not apply the wallpaper.", "wallpaper");
+        if (WallpaperEngine.items.some(item => item.path === path)) {
+            const accepted = WallpaperEngine.open(path, explicit ? target : undefined);
+            if (accepted)
+                completion.release(target);
+            return accepted;
         }
-        return ok;
+        const local = Native.FsUtils.canonicalPath(String(path).replace(/^file:\/\/\//, ""));
+        // Persist and render the desired shell image independently of the
+        // Windows operation. A failed Windows pick is still the user's shell
+        // selection, and a fresh profile never adopts a Windows readback.
+        root.markOpened(local);
+        if (target) {
+            screenFiles = Object.assign({}, screenFiles, {[target.targetId]: local});
+            root.adoptPickedScreen(target.targetId, local);
+        } else {
+            screenFiles = {};
+            root.adoptPickedFile(local);
+        }
+        stopPreview();
+        return completion.request(local, target);
     }
 
     function choose(screen): void {
@@ -809,18 +819,6 @@ Singleton {
             const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
             root.fileCurrent = next || root.fallback;
             root.refreshScreenFiles();
-        }
-    }
-    // A setter returns true while Windows is still applying the image. Only a
-    // request that fails after that reports here, so this is the one place a
-    // late failure reaches the user. A superseded background request is not a
-    // failure. Older backends and test fakes have no such signal.
-    Connections {
-        target: Native.Wallpaper
-        ignoreUnknownSignals: true
-        function onWallpaperOperationFinished(operation, path, target, ok, reason): void {
-            if (!ok && reason !== "superseded")
-                Toaster.toast("Wallpaper", "Windows could not apply the wallpaper.", "wallpaper");
         }
     }
     NativeDialogs.FileDialog {

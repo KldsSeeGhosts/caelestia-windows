@@ -39,11 +39,14 @@ QtObject {
     function deliverLoad(): void {
         prepared = true;
         if (Files.unreadable[path]) {
+            writeFailed = true;
             loadFailed(3);
         } else if (Object.prototype.hasOwnProperty.call(Files.contents, path)) {
+            writeFailed = false;
             cachedText = String(Files.contents[path] ?? "");
             loaded();
         } else {
+            writeFailed = true;
             cachedText = "";
             loadFailed(2);
         }

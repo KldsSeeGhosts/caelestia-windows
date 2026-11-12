@@ -1,4 +1,5 @@
 module qs.services
+WallpaperCompletion 1.0 WallpaperCompletion.qml
 singleton Wallpapers 1.0 Wallpapers.qml
 singleton WallpaperProvenance 1.0 WallpaperProvenance.qml
 singleton WallpaperEngine 1.0 WallpaperEngine.qml
