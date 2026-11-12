@@ -14,6 +14,7 @@ ShellRoot {
         property bool firstFrame: false
         property QtObject window: QtObject {
             property bool backingWindowVisible: true
+            property bool takeoverOccluded: false
             property int width: 1920
             property int height: 1080
         }
@@ -24,7 +25,7 @@ ShellRoot {
         id: readiness
         screenCount: 0
         scopes: []
-        onFirstFramesReady: root.reports++
+        onTakeoverReported: root.reports++
     }
     Component {
         id: reloadedRoot
@@ -68,12 +69,29 @@ ShellRoot {
                 first.firstFrame = false;
                 const reloaded = reloadedRoot.createObject(root);
                 let reloadReports = 0;
-                reloaded.firstFramesReady.connect(() => reloadReports++);
+                reloaded.takeoverReported.connect(() => reloadReports++);
                 root.check(!reloaded.ready && !reloaded.reported, "new QML root reused readiness");
                 first.firstFrame = true;
                 root.check(reloaded.ready && reloaded.reported && reloadReports === 1, "reload did not report fresh first frames");
                 root.check(root.reports === 1, "old QML root reported twice during reload");
                 reloaded.destroy();
+                first.firstFrame = false;
+                first.window.takeoverOccluded = true;
+                root.check(readiness.takeoverReady && !readiness.ready, "fullscreen did not separate takeover from strict IPC readiness");
+                const initiallyOccluded = reloadedRoot.createObject(root);
+                root.check(initiallyOccluded.takeoverReady && !initiallyOccluded.ready && initiallyOccluded.reported,
+                    "starting under fullscreen did not report takeover readiness");
+                initiallyOccluded.destroy();
+                first.window.width = 0;
+                root.check(!readiness.takeoverReady, "fullscreen accepted an unplaced zero-size window");
+                first.window.width = 1920;
+                first.window.backingWindowVisible = false;
+                root.check(!readiness.takeoverReady, "fullscreen accepted a screen-loss hidden window");
+                first.window.backingWindowVisible = true;
+                first.window.takeoverOccluded = false;
+                root.check(!readiness.takeoverReady && !readiness.ready, "uncovered monitor bypassed its missing frame");
+                first.firstFrame = true;
+                root.check(readiness.ready && readiness.takeoverReady && root.reports === 1, "restored frames changed the per-root report latch");
                 console.log("CAELESTIA_SHELL_READINESS_PASS " + JSON.stringify({assertions: root.assertions}));
                 Qt.quit();
             } catch (error) {

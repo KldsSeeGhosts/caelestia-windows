@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name shell-readiness -ShellFixture -UseQuickshell `
     -Sources @('windows/tests/ShellReadinessTest.qml') -FixtureFile 'windows/tests/ShellReadinessTest.qml' `
-    -Marker CAELESTIA_SHELL_READINESS -MinimumAssertions 15
+    -Marker CAELESTIA_SHELL_READINESS -MinimumAssertions 21
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Shell readiness fixture failed. See $($result.stderr)." }
 # Exercise the real native log formatter/redactor and the production parser.

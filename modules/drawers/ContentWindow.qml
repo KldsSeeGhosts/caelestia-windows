@@ -44,6 +44,10 @@ StyledWindow {
         }
         return hasFullscreenOnNormalWs;
     }
+    // The native AppBar verdict lowers Top windows without hiding them.
+    // Overlay windows still need a real frame before desktop takeover.
+    readonly property bool takeoverOccluded: (monitor?.lastIpcObject.fullscreenOccluder ?? false)
+        && WlrLayershell.layer === WlrLayer.Top
 
     property real fsTransitionProg: hasFullscreen ? 1 : 0
     readonly property real sdfBorderOffset: 2 * fsTransitionProg // SDFs joins are not exact, so offset by 2px to ensure nothing shows

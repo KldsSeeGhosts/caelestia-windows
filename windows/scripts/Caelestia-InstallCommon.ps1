@@ -139,9 +139,8 @@ function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$T
     }
 }
 
-# Live desktop supervisors recorded under the profile. A supervisor in
-# Starting can be waiting for first frames or still have no qs.exe, as can
-# restart-backoff. Both phases still own the prefix files.
+# Live desktop supervisors recorded under the profile. Starting and backoff
+# can have no qs.exe; waiting-ready retains a live child. All own prefix files.
 function Read-CaelestiaSupervisorStatus([string]$Path) {
     for ($attempt = 0; ; $attempt++) {
         try { return ([IO.File]::ReadAllText($Path) | ConvertFrom-Json) }
@@ -158,7 +157,7 @@ function Get-CaelestiaSupervisors([string]$ProfileRoot) {
     foreach ($file in @(Get-ChildItem -Path (Join-Path $ProfileRoot 'runtime\supervisor-*\watchdog.json') -ErrorAction SilentlyContinue)) {
         $status = $null
         try { $status = Read-CaelestiaSupervisorStatus $file.FullName } catch { continue }
-        if (-not $status -or $status.phase -notin @('starting', 'running', 'restart-backoff', 'restoring')) { continue }
+        if (-not $status -or $status.phase -notin @('starting', 'waiting-ready', 'running', 'restart-backoff', 'restoring')) { continue }
         $id = if ($status.watchdogPid) { $status.watchdogPid } else { $status.pid }
         if (-not $id) { continue }
         $process = Get-Process -Id $id -ErrorAction SilentlyContinue
@@ -241,7 +240,7 @@ function Stop-CaelestiaSupervisor($Supervisor, [int]$RecoveryTimeoutMs = 60000) 
 function Repair-CaelestiaStaleSupervisors([string]$ProfileRoot) {
     foreach ($supervisor in @(Get-CaelestiaSupervisors $ProfileRoot)) {
         # Starting includes 45 s banner recovery and up to 20 s for first frames,
-        # within the launcher's 75 s allowance. Running owners
+        # within the launcher's 75 s allowance. Running and waiting-ready owners
         # publish a heartbeat every second. Allow several missed beats before
         # taking over. A supervisor from before heartbeats wrote utc once, so
         # its age proves nothing; leave it alone.

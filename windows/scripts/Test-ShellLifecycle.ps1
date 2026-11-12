@@ -61,6 +61,32 @@ try {
         if (-not $failed -or $script:waits -ne 1) { throw 'Cleanup failure masked the launch error or allowed a retry.' }
     }
     Write-Output 'PASS startup: cleanup failure preserves the launch error and prevents a retry.'
+    & {
+        $activation = [pscustomobject]@{ Starts = 0; Stops = 0; Unregisters = 0 }
+        function Start-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $activation.Starts++ }
+        function Stop-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $activation.Stops++ }
+        function Unregister-ScheduledTask { [CmdletBinding()] param([string]$TaskName, [switch]$Confirm) $activation.Unregisters++ }
+        function Wait-CaelestiaReady {
+            [CmdletBinding()] param([string]$Prefix, [int]$TimeoutSeconds, [switch]$LegacyReady, [string]$TaskName)
+            if ($TimeoutSeconds -ne 75) { throw 'Activation lost its outer launcher allowance.' }
+            throw 'fixture readiness missing'
+        }
+        $detached = Join-Path $root 'activation-readiness'
+        [IO.Directory]::CreateDirectory($detached) | Out-Null
+        @'
+param($Prefix, $Command)
+if ($Command -ne 'Quit') { throw 'Activation cleanup did not request Quit.' }
+Add-Content -LiteralPath (Join-Path $Prefix 'quit-calls') -Value 'quit'
+'@ | Set-Content -LiteralPath (Join-Path $detached 'Start-Caelestia.ps1') -Encoding UTF8
+        $refused = $false
+        try { Start-CaelestiaDetached $detached -TaskName 'fixture-task' 3>$null }
+        catch { $refused = $_.Exception.Message -eq 'fixture readiness missing' }
+        if (-not $refused -or $activation.Starts -ne 2 -or $activation.Stops -ne 2 -or
+            $activation.Unregisters -ne 1 -or @(Get-Content -LiteralPath (Join-Path $detached 'quit-calls')).Count -ne 2) {
+            throw 'Transactional activation did not stop/quit each failed attempt and report failure for rollback.'
+        }
+    }
+    Write-Output 'PASS activation: missing readiness still stops/quits both attempts and fails for transactional rollback.'
 
     # A real child process exercises IPC timeout, exit and pipe handling without
     # launching Qt, registering shortcuts or touching the session supervisor.
@@ -71,6 +97,7 @@ using System.Threading;
 public static class LifecycleIpcFixture {
     public static int Main(string[] args) {
         string command = args[args.Length - 1];
+        if (command == "--live") { Thread.Sleep(60000); return 0; }
         string prefix = Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
         string mode = File.ReadAllText(Path.Combine(prefix, "mode.txt"));
         if (mode == "timeout") { Thread.Sleep(10000); return 0; }
@@ -147,6 +174,65 @@ public static class LifecycleIpcFixture {
     if (-not (Test-Path -LiteralPath (Join-Path $quitPrefix 'quit-called.txt'))) { throw 'The launcher Quit path did not reach IPC.' }
     if ($quitOutput -match 'private-') { throw 'The launcher Quit path leaked failed IPC output.' }
     Write-Output 'PASS quit: failed IPC output is not echoed by the launcher.'
+    # Exercise plain Start and the actual logon/Start-menu wrapper, not just
+    # their phase consumer. Every executable below is our console fake.
+    $plainPrefix = Join-Path $root 'plain-start'
+    [IO.Directory]::CreateDirectory((Join-Path $plainPrefix 'defaults')) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $plainPrefix 'shell')) | Out-Null
+    foreach ($name in @('Start-Caelestia.ps1', 'Caelestia-Launcher.ps1', 'Caelestia-Versions.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $plainPrefix
+    }
+    $common = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1'))
+    $waitDefault = '[int]$TimeoutSeconds = 20, [string]$PreviousGeneration'
+    if ([regex]::Matches($common, [regex]::Escape($waitDefault)).Count -ne 1) { throw 'Readiness wait fixture boundary changed.' }
+    [IO.File]::WriteAllText((Join-Path $plainPrefix 'Caelestia-InstallCommon.ps1'),
+        $common.Replace($waitDefault, '[int]$TimeoutSeconds = 1, [string]$PreviousGeneration'))
+    Copy-Item -LiteralPath (Join-Path $root 'qs.exe') -Destination $plainPrefix
+    [IO.File]::WriteAllText((Join-Path $plainPrefix 'mode.txt'), 'not-ready')
+    [IO.File]::WriteAllText((Join-Path $plainPrefix 'calls.txt'), '0')
+    [IO.File]::WriteAllText((Join-Path $plainPrefix 'Get-AccountPicture.ps1'), 'param($CacheRoot) ""')
+    [IO.File]::WriteAllText((Join-Path $plainPrefix 'Install-SchemeRuntime.ps1'), 'param($ProfileRoot,$LockWaitSeconds) ''{"available":false}''')
+    foreach ($name in @('shell.json', 'windows.json', 'keybinds.json')) {
+        [IO.File]::WriteAllText((Join-Path $plainPrefix "defaults\$name"), '{}')
+    }
+    @{
+        product = 'caelestia-windows'; version = 1; prefix = $plainPrefix
+        profile = (Join-Path $plainPrefix 'profile')
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $plainPrefix 'install.json') -Encoding UTF8
+    @'
+param($StartInfo,$StateDirectory,$ConfigPath,$StdoutPath,$StderrPath)
+if ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helper-phase') -Raw).Trim() -eq 'waiting-ready') {
+    throw 'Caelestia did not become ready. The live shell and supervisor were left running beside Explorer.'
+}
+[pscustomobject]@{ Watchdog = [Diagnostics.Process]::GetCurrentProcess(); StatusPath = 'fixture-running' }
+'@ | Set-Content -LiteralPath (Join-Path $plainPrefix 'Start-DesktopShell.ps1') -Encoding UTF8
+    $liveInfo = New-Object Diagnostics.ProcessStartInfo
+    $liveInfo.FileName = Join-Path $plainPrefix 'qs.exe'
+    $liveInfo.Arguments = '--live'
+    $liveInfo.UseShellExecute = $false
+    $liveInfo.CreateNoWindow = $true
+    $live = [Diagnostics.Process]::Start($liveInfo)
+    try {
+        foreach ($phase in @('waiting-ready', 'running')) {
+            [IO.File]::WriteAllText((Join-Path $plainPrefix 'helper-phase'), $phase)
+            $failed = $false
+            try { & (Join-Path $plainPrefix 'Start-Caelestia.ps1') -Prefix $plainPrefix -SkipSchemeRuntime | Out-Null }
+            catch { $failed = $_.Exception.Message -match 'did not become ready' }
+            if (-not $failed -or $live.HasExited) { throw 'Plain Start killed its unready shell or accepted strict IPC failure.' }
+            $outcome = Join-Path $plainPrefix ('logon-' + $phase + '.json')
+            & (Get-WindowsPowerShellPath) -NoProfile -File (Join-Path $plainPrefix 'Caelestia-Launcher.ps1') `
+                -Action start -NoDialogs -OutcomeFile $outcome | Out-Null
+            $code = $LASTEXITCODE
+            $recorded = Get-Content -LiteralPath $outcome -Raw | ConvertFrom-Json
+            if ($code -ne 1 -or $recorded.exitCode -ne 1 -or $recorded.message -notmatch 'did not become ready' -or $live.HasExited) {
+                throw 'Logon launcher killed its unready shell or failed to report readiness failure.'
+            }
+        }
+    } finally {
+        if (-not $live.HasExited) { $live.Kill(); $null = $live.WaitForExit(2000) }
+        $live.Dispose()
+    }
+    Write-Output 'PASS plain/logon Start: waiting-ready and strict IPC failure report errors and preserve the live child.'
 
     # Compile only. No supervisor or native desktop operations run here.
     Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
@@ -196,15 +282,16 @@ function Read-CaelestiaSupervisorStatus($Path) { [pscustomobject]@{ phase = 'rec
             param($LiteralPath, [switch]$Raw)
             $index = [Math]::Min($consumer.Calls, $consumer.Phases.Count - 1)
             $consumer.Calls++
-            '{"phase":"' + $consumer.Phases[$index] + '"}'
+            '{"phase":"' + $consumer.Phases[$index] + '","shellPid":' + $consumer.ShellPid + '}'
         }
         $info = New-Object Diagnostics.ProcessStartInfo
         $info.FileName = 'fixture.exe'
         $info.WorkingDirectory = $root
-        foreach ($outcome in @('running', 'clean-exit', 'crash-give-up', 'restore-pending', 'timeout')) {
+        foreach ($outcome in @('running', 'waiting-ready', 'clean-exit', 'crash-give-up', 'restore-pending', 'timeout', 'timeout-live')) {
             $caseState = Join-Path $startupScripts $outcome
             $consumer = [pscustomobject]@{
-                Phases = @('starting', 'restart-backoff', $(if ($outcome -eq 'timeout') { 'starting' } else { $outcome }))
+                Phases = @('starting', 'restart-backoff', $(if ($outcome -like 'timeout*') { 'starting' } else { $outcome }))
+                ShellPid = $(if ($outcome -in @('waiting-ready', 'timeout-live')) { 123 } else { 0 })
                 Calls = 0; Recovered = $false
             }
             $succeeded = $false
@@ -212,7 +299,7 @@ function Read-CaelestiaSupervisorStatus($Path) { [pscustomobject]@{ phase = 'rec
                 $null = & (Join-Path $startupScripts 'Start-DesktopShell.ps1') -StartInfo $info -StateDirectory $caseState
                 $succeeded = $true
             } catch {
-                if ($_.Exception.Message -notmatch 'Desktop watchdog (stopped during startup|did not reach)') { throw }
+                if ($_.Exception.Message -notmatch 'Desktop watchdog (stopped during startup|did not reach)|Caelestia did not become ready') { throw }
             }
             if ($succeeded -ne ($outcome -eq 'running') -or $consumer.Calls -lt 3) {
                 throw "Startup consumer accepted a non-ready phase or failed running: $outcome."
@@ -220,7 +307,20 @@ function Read-CaelestiaSupervisorStatus($Path) { [pscustomobject]@{ phase = 'rec
             if ($consumer.Recovered -ne ($outcome -eq 'timeout')) { throw 'Launcher deadline bypassed bounded recovery.' }
         }
     }
-    Write-Output 'PASS startup consumer: starting/backoff wait, only running succeeds, terminal failures reject, deadline recovers.'
+    Write-Output 'PASS startup consumer: waiting-ready and live-start deadlines report failure without stopping the child; only stalled pre-child launch recovers.'
+    & {
+        $stale = [pscustomobject]@{ Stopped = $false }
+        function Get-CaelestiaSupervisors {
+            [pscustomobject]@{ Phase = 'waiting-ready'; Process = [pscustomobject]@{ HasExited = $false }; StatusPath = 'fixture-status' }
+        }
+        function Read-CaelestiaSupervisorStatus {
+            [pscustomobject]@{ heartbeat = $true; utc = [DateTime]::UtcNow.AddSeconds(-6).ToString('o') }
+        }
+        function Stop-CaelestiaSupervisor { param($Supervisor) $stale.Stopped = $true }
+        Repair-CaelestiaStaleSupervisors 'fixture-profile'
+        if (-not $stale.Stopped) { throw 'waiting-ready did not use the normal five-second stale heartbeat allowance.' }
+    }
+    Write-Output 'PASS stale waiting owner: missing heartbeat uses five seconds, not the 75-second starting allowance.'
     # Exercise real filesystem rollback, with only launch/process discovery
     # replaced. These fixtures never own a session supervisor or desktop.
     & {

@@ -985,7 +985,7 @@ namespace Caelestia.Takeover {
         readonly Func<int, bool> rescueFilter;
         Process child;
         ShellReadiness childReadiness;
-        bool childBecameReady, readinessTimedOut, takeover, tookOver, taskbarRestorePending;
+        bool childBecameReady, waitingReady, takeover, tookOver, taskbarRestorePending;
         long readyDeadline, takeoverGraceDeadline;
         LogDrain childDrain;
         long drainDeadline;
@@ -1015,8 +1015,9 @@ namespace Caelestia.Takeover {
         // Leave room for the 45 s banner restore, 2 s log drain and cleanup
         // within RecoveryBoundMs. Only an explicit recovery starts this clock.
         public const int ChildExitGraceMs = 5000;
-        // Provisioning happens before launch. Match Wait-CaelestiaReady's
-        // first-frame budget and fit 45 s banner replay + 20 s within 75 s.
+        // This is a reporting deadline, never a child lifetime bound.
+        // Match Wait-CaelestiaReady's budget; a live child can draw much later
+        // after unlock, display wake or hotplug placement.
         public const int ReadyTimeoutMs = 20000;
         public const int RestartTakeoverGraceMs = 2000;
         public static void RecoverActive() {
@@ -1373,7 +1374,7 @@ namespace Caelestia.Takeover {
             process.Start();
             child = process;
             childReadiness = readiness;
-            childBecameReady = readinessTimedOut = false;
+            childBecameReady = waitingReady = false;
             forcedChildTermination = false;
             childDrain = drain;
             drainDeadline = 0;
@@ -1464,7 +1465,7 @@ namespace Caelestia.Takeover {
                     }
                     if (!childBecameReady) {
                         long now = Stopwatch.GetTimestamp();
-                        if (childReadiness.Ready && !readinessTimedOut) {
+                        if (childReadiness.Ready) {
                             childBecameReady = true;
                             TakeOver();
                             Status("running", child.Id);
@@ -1473,16 +1474,12 @@ namespace Caelestia.Takeover {
                                 ReleaseTakeover();
                                 Status("starting", child.Id);
                             }
-                            if (!readinessTimedOut && now >= readyDeadline) {
-                                readinessTimedOut = true;
+                            if (!waitingReady && now >= readyDeadline) {
+                                waitingReady = true;
                                 ReleaseTakeover();
-                                child.Kill(); // Retained owned process, as in bounded stop.
-                                forcedChildTermination = true;
-                                BeginDrain();
-                                SupervisorSafety.Log(delegate {
-                                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
-                                        "shell readiness timed out" + Environment.NewLine);
-                                });
+                                // Missing frames are not a crash. Keep pumping,
+                                // heartbeating and accepting a marker indefinitely.
+                                Status("waiting-ready", child.Id);
                             }
                             return;
                         }
@@ -1507,11 +1504,11 @@ namespace Caelestia.Takeover {
                 if (recovering) { Finish("recovered", 0); return; }
                 // A very short-lived child can draw and exit between ticks.
                 // Drain first so a final readiness record is not lost.
-                childBecameReady |= childReadiness.Ready && !readinessTimedOut;
+                childBecameReady |= childReadiness.Ready;
                 int code = child.ExitCode;
                 // Even a zero exit before first frame is a failed start.
                 bool failedStart = !childBecameReady;
-                if ((failedStart && code == 0) || readinessTimedOut) code = 1;
+                if (failedStart && code == 0) code = 1;
                 // Past EOF or the deadline: drop any stalled tail so it cannot
                 // interleave with a restarted child's log.
                 Retire(childDrain);

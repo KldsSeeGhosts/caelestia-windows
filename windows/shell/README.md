@@ -60,7 +60,7 @@ and a published generation is never modified. Only then does it quit,
 atomically select the prepared version and launch through an on-demand,
 non-elevated interactive scheduled task. Provisioning is reported as its own
 phase; activation allows 75 s for launcher setup, including up to 45 s for
-banner recovery and 20 s per child for first frames. Provisioning finishes
+banner recovery and a 20 s initial child-readiness observation. Provisioning finishes
 before activation, so a cold venv or slow download cannot trigger a rollback. If
 provisioning fails, the install continues, the shell starts on its fixed
 palette and `scheme-runtime.log` records the fallback. A responsive IPC endpoint
@@ -208,11 +208,20 @@ Quickshell also retains native instance bookkeeping under
 `%LOCALAPPDATA%\quickshell`.
 
 Taskbar hiding is opt-in. On startup, Explorer stays unchanged until every
-monitor's shell window has presented a frame. The content-free stdout record
-`CAELESTIA_SHELL_READY` uses the same predicate as IPC `lifecycle.ready`.
-`watchdog.json` stays `starting` until then and becomes `running` only after
-readiness and takeover. A child that cannot draw within 20 s is stopped and
-counts as a failed start.
+monitor's shell window has presented a frame or the backend confirms that its
+placed, visible Top window is lowered beneath fullscreen. Overlay panels still
+need a frame. The content-free stdout record `CAELESTIA_SHELL_READY` reports this
+takeover predicate. IPC `lifecycle.ready` keeps its stricter first-frame check.
+`watchdog.json` stays `starting` for the first 20 s, then `waiting-ready` while
+the child is alive without a marker. The supervisor never kills or restarts a
+live child for missing readiness. It keeps its heartbeat and accepts readiness
+however late, then takes over and reports `running`.
+
+A plain Start or logon launch reports readiness failure without stopping that
+child. Transactional install/update activation keeps its existing policy of
+stopping unsuccessful attempts and rolling back. A locked session, sleeping
+display or pending hotplug placement can therefore delay ordinary startup
+without the supervisor terminating the shell.
 
 The watchdog retries the first crash immediately, retaining taskbar suppression
 for at most two seconds while waiting for the replacement's first frames.

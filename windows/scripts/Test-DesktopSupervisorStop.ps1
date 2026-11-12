@@ -408,7 +408,8 @@ public static class SupervisorStopFixture {
     foreach ($mode in @('controlled', 'never-ready', 'early-clean')) {
         $case = Join-Path $root ('readiness-' + $mode)
         $prefix = Join-Path $case 'prefix'
-        $state = Join-Path $case 'state'
+        $profile = Join-Path $case 'profile'
+        $state = Join-Path $profile 'runtime\supervisor-fixture'
         [IO.Directory]::CreateDirectory($prefix) | Out-Null
         [IO.Directory]::CreateDirectory($state) | Out-Null
         Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
@@ -486,8 +487,39 @@ public static class SupervisorStopFixture {
             $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
             try { $null = $event.Set() } finally { $event.Dispose() }
             Assert ($watchdog.WaitForExit(12000)) 'Controlled child did not stop within bounded recovery.'
+        } elseif ($mode -eq 'never-ready') {
+            Wait-Until {
+                try { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'waiting-ready' } catch { $false }
+            } 'Live never-ready child did not report waiting-ready.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            $owned = [Diagnostics.Process]::GetProcessById($s.shellPid)
+            $null = $owned.Handle
+            $children.Add($owned)
+            Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 1) 'Discovery lost a waiting-ready owner.'
+            $heartbeat = $s.utc
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Waiting-ready stopped heartbeating.'
+            Repair-CaelestiaStaleSupervisors $profile
+            # More than three fixture readiness budgets. No replacement may
+            # appear, even while strict first-frame readiness stays absent.
+            Start-Sleep -Milliseconds 10000
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert (-not $owned.HasExited -and -not $watchdog.HasExited -and $s.shellPid -eq $owned.Id) 'Readiness deadline or healthy-owner repair stopped/replaced a live child.'
+            Assert ($s.phase -eq 'waiting-ready' -and $s.quickCrashes -eq 0 -and -not $s.forcedChildTermination) 'Missing readiness counted as a crash.'
+            Assert (([DateTime]::UtcNow - [DateTimeOffset]::Parse($s.utc).UtcDateTime).TotalSeconds -lt 3) 'Waiting-ready heartbeat became stale.'
+            Assert (-not (Test-Path -LiteralPath $actions) -and
+                [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) -and
+                -not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Waiting-ready touched Explorer.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 1) 'Missing readiness restarted its live child.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'very late draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Very late readiness was ignored.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Very late readiness did not take over.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Very late readiness did not apply invisible suppression.'
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).shellPid -eq $owned.Id) 'Very late readiness used a replacement child.'
+            $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
+            try { $null = $event.Set() } finally { $event.Dispose() }
+            Assert ($watchdog.WaitForExit(12000)) 'Explicit stop of a late-ready child did not finish.'
         } else {
-            Assert ($watchdog.WaitForExit(25000)) 'Never-ready child did not exhaust the bounded failed-start policy.'
+            Assert ($watchdog.WaitForExit(25000)) 'Exited unready child did not exhaust the failed-start policy.'
             $s = Read-CaelestiaSupervisorStatus $statusPath
             Assert ($s.phase -eq 'crash-give-up' -and $s.quickCrashes -eq 3 -and $watchdog.ExitCode -ne 0) 'Unready start was accepted or skipped crash policy.'
             Assert (-not (Test-Path -LiteralPath $actions)) 'Never-ready child changed taskbars.'
