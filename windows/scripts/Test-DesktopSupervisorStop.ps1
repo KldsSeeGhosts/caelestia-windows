@@ -43,6 +43,14 @@ try {
     $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs'))
     Assert ($source.Contains('public const int ReadyTimeoutMs = 20000;')) 'Production first-frame budget changed.'
     $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 5000;'
+    # Never broadcast to the desktop, even on the worker. Send to exactly the
+    # three hidden fixture recipients instead, preserving serial timeout cost.
+    $source = Replace-Exactly $source `
+        'SendMessageTimeout(new IntPtr(0xFFFF), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);' @'
+foreach (var path in Directory.GetFiles(Environment.CurrentDirectory, "slow-ready-*")) {
+                    SendMessageTimeout(new IntPtr(Int64.Parse(File.ReadAllText(path))), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);
+                }
+'@
     # Exercise the real hide/region paths against our owner-filtered fake
     # taskbars. Replace registry suppression and restoration, never touch the
     # real taskbar, Explorer settings or session AppBars.
@@ -89,6 +97,12 @@ public static class HungExplorerFixture {
     static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
     static readonly BoundedExplorerCall call = new BoundedExplorerCall();
     public static void Reconcile(string directory) {
+        if (File.Exists(Path.Combine(directory, "notification-request")) &&
+            Directory.GetFiles(directory, "slow-ready-*").Length == 3 &&
+            !File.Exists(Path.Combine(directory, "notification-started"))) {
+            Native.NotifyTraySettings();
+            File.WriteAllText(Path.Combine(directory, "notification-started"), "started");
+        }
         string path = Path.Combine(directory, "fake-window.txt");
         if (!File.Exists(path)) return;
         IntPtr window = new IntPtr(Int64.Parse(File.ReadAllText(path)));
@@ -110,6 +124,20 @@ public sealed class Supervisor : NativeWindow, IDisposable {
 
 namespace Caelestia.Takeover {
     public static class TaskbarEventFixture {
+        public static void VerifyNotification() {
+            var notification = new BoundedNotification();
+            using (var entered = new ManualResetEvent(false))
+            using (var release = new ManualResetEvent(false))
+            using (var restored = new ManualResetEvent(false)) {
+                var clock = Stopwatch.StartNew();
+                notification.Request(delegate { entered.Set(); release.WaitOne(); });
+                if (!entered.WaitOne(1000)) throw new Exception("Notification did not start.");
+                notification.Request(delegate { restored.Set(); });
+                if (clock.ElapsedMilliseconds > 500) throw new Exception("Notification caller exceeded its budget.");
+                release.Set();
+                if (!restored.WaitOne(1000)) throw new Exception("In-flight notification lost restore.");
+            }
+        }
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
         public static bool Visible(string directory) {
             var bar = Read(directory);
@@ -224,6 +252,7 @@ namespace Caelestia.Takeover {
         'Write-Output "{}"'
     [IO.File]::WriteAllText((Join-Path $scripts 'Restore-Desktop.ps1'), $restore)
     Add-Type -Path (Join-Path $scripts 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    [Caelestia.Takeover.TaskbarEventFixture]::VerifyNotification()
     # The supervisor owns both switches. The shell filters Explorer's taskbar
     # shortcuts only while this supervisor hides the taskbar, and only the
     # shell's own crash relaunch is off. An inherited value never applies.
@@ -288,6 +317,24 @@ public sealed class HungExplorerWindow : NativeWindow, IDisposable {
     }
     public void Dispose() { DestroyHandle(); }
 }
+public sealed class SlowSettingsWindow : NativeWindow, IDisposable {
+    readonly string number;
+    public SlowSettingsWindow(string number) {
+        this.number = number;
+        CreateHandle(new CreateParams { Caption = "hidden settings fixture", Style = unchecked((int)0x80000000), ExStyle = 0x08000080 });
+        File.WriteAllText("slow-ready-" + number, Handle.ToInt64().ToString());
+    }
+    protected override void WndProc(ref Message message) {
+        if (message.Msg == 0x001A) {
+            if (Marshal.PtrToStringUni(message.LParam) != "TraySettings") throw new Exception("Notification payload lifetime lost.");
+            File.WriteAllText("slow-entered-" + number, "entered");
+            Thread.Sleep(2500);
+            File.WriteAllText("slow-returned-" + number, "returned");
+        }
+        base.WndProc(ref message);
+    }
+    public void Dispose() { DestroyHandle(); }
+}
 public sealed class FakeTaskbarWindow : IDisposable {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern ushort RegisterClass(ref WindowClass value);
@@ -319,6 +366,12 @@ public sealed class FakeTaskbarWindow : IDisposable {
 }
 public static class SupervisorStopFixture {
     [STAThread] public static int Main(string[] args) {
+        if (args[0] == "--slow") {
+            using (var window = new SlowSettingsWindow(args[1])) {
+                while (!File.Exists("slow-stop")) { Application.DoEvents(); Thread.Sleep(5); }
+            }
+            return 0;
+        }
         if (args[0] == "--bystander") { Thread.Sleep(60000); return 0; }
         if (args[0] == "--taskbar" || args[0] == "--decoy") {
             using (var window = new FakeTaskbarWindow(args[0].Substring(2) + "-ready")) {
@@ -532,7 +585,7 @@ public static class SupervisorStopFixture {
         Assert ($taskbar.WaitForExit(2000)) 'Readiness taskbar did not stop.'
         Write-Output "PASS readiness $mode`: first-frame/status gate, taskbar visibility and bounded failure/recovery."
     }
-    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'stuck-quit', 'stuck-start')) {
+    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'notification-quit', 'notification-recovery', 'stuck-quit', 'stuck-start')) {
         $case = Join-Path $root $mode
         $prefix = Join-Path $case 'prefix'
         $profile = Join-Path $case 'profile'
@@ -568,6 +621,13 @@ if (Test-Path -LiteralPath $order) {
         $witness = Start-FixtureProcess $fake '--witness' $case (Join-Path $case 'witness')
         Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-ready') } 'Hidden restore witness did not start.'
         $explorer = $null
+        $slowRecipients = @()
+        if ($mode -like 'notification-*') {
+            foreach ($number in 1..3) {
+                $slowRecipients += Start-FixtureProcess $fake ("--slow " + $number) $case (Join-Path $case ("slow-" + $number))
+            }
+            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-ready-*').Count -eq 3 } 'Slow notification recipients did not start.'
+        }
         if ($mode -like 'explorer-*' -or $mode -like 'stuck-*') {
             $explorer = Start-FixtureProcess $fake '--explorer' $case (Join-Path $case 'fake-explorer')
             Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-window.txt') } 'Fake Explorer did not create its hidden window.'
@@ -602,6 +662,29 @@ if (Test-Path -LiteralPath $order) {
             $owned = [Diagnostics.Process]::GetProcessById($status.shellPid)
             $null = $owned.Handle
             $children.Add($owned)
+            if ($slowRecipients.Count) {
+                $requestClock = [Diagnostics.Stopwatch]::StartNew()
+                [IO.File]::WriteAllText((Join-Path $case 'notification-request'), 'notify')
+                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'notification-started') } 'Settings notification blocked its initiating tick.' 1000
+                Assert ($requestClock.ElapsedMilliseconds -lt 1000) 'Settings notification exceeded its initiating-tick budget.'
+                $heartbeat = (Read-CaelestiaSupervisorStatus $statusPath).utc
+                $responsive = [Diagnostics.Stopwatch]::StartNew()
+                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Settings recipients blocked the heartbeat.' 1800
+                Assert ($responsive.ElapsedMilliseconds -lt 1800) 'Settings notification exceeded the heartbeat budget.'
+                if ($mode -eq 'notification-recovery') {
+                    $clock = [Diagnostics.Stopwatch]::StartNew()
+                    [Caelestia.Takeover.Supervisor]::RecoverActive()
+                    Assert ($watchdog.WaitForExit(1000) -and $clock.ElapsedMilliseconds -lt ($grace + 2500) -and $owned.HasExited) 'Settings recipients blocked recovery.'
+                    Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
+                    [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
+                    foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
+                    [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
+                    Assert ($witness.WaitForExit(2000)) 'Witness did not stop.'
+                    $bystander.Kill()
+                    Write-Output 'PASS settings notification: three slow recipients, advancing heartbeat and bounded recovery.'
+                    continue
+                }
+            }
             if ($explorer) {
                 Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-entered') } 'Supervisor did not call the fake window.'
                 $heartbeat = $status.utc
@@ -754,10 +837,23 @@ if (Test-Path -LiteralPath $order) {
             [IO.File]::WriteAllText((Join-Path $case 'fake-stop'), 'stop')
             Assert ($explorer.WaitForExit(2000)) 'Fake Explorer did not stop.'
         }
+        if ($slowRecipients.Count) {
+            Assert ($clock.ElapsedMilliseconds -lt ($grace + 6000)) 'Settings recipients blocked Quit.'
+            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
+            [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
+            foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
+        }
         Write-Output "PASS supervisor $mode`: owned-child shutdown, restore, unrelated-process safety and session release."
     }
 } catch {
     Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
+    if ($statusPath -and (Test-Path -LiteralPath $statusPath)) { Get-Content -LiteralPath $statusPath }
+    if ($case) {
+        foreach ($log in @('watchdog.out', 'watchdog.err', 'quit.err')) {
+            $path = Join-Path $case $log
+            if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path }
+        }
+    }
     throw
 } finally {
     # On an assertion failure let the isolated owner reap its child too, even

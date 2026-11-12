@@ -108,6 +108,39 @@ namespace Caelestia.Takeover {
             return true;
         }
     }
+    // Same 100 ms caller budget as AppBar/region work, with one owned worker.
+    // Coalesce requests, but replay after an in-flight send so restore cannot
+    // lose its notification. The worker never writes registry or snapshot data.
+    public sealed class BoundedNotification {
+        readonly object gate = new object();
+        Thread worker;
+        Action pending;
+        public void Request(Action notify) {
+            Thread current;
+            lock (gate) {
+                pending = notify;
+                if (worker == null) {
+                    worker = new Thread(delegate() {
+                        while (true) {
+                            Action action;
+                            lock (gate) {
+                                action = pending;
+                                pending = null;
+                                if (action == null) { worker = null; return; }
+                            }
+                            // Notification is advisory. The synchronous registry
+                            // write remains authoritative even if Explorer exits.
+                            try { action(); } catch (Exception) {}
+                        }
+                    });
+                    worker.IsBackground = true;
+                    worker.Start();
+                }
+                current = worker;
+            }
+            current.Join(100);
+        }
+    }
     // Null DataReceived marks EOF after all preceding callbacks have returned.
     // Per-child state remains valid even if a deadline expires before EOF.
     public sealed class LogDrain {
@@ -418,6 +451,16 @@ namespace Caelestia.Takeover {
         const uint SwpNoZOrder = 0x0004, SwpNoActivate = 0x0010, SwpNoOwnerZOrder = 0x0200, SwpAsyncWindowPos = 0x4000;
 
         const string ExplorerAdvanced = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
+        static readonly BoundedNotification settingsNotification = new BoundedNotification();
+        public static void NotifyTraySettings() {
+            settingsNotification.Request(delegate {
+                // Keep the marshaled string alive until the native send returns,
+                // even after the supervisor stops waiting. Do not use PostMessage
+                // or SendNotifyMessage with a pointer-valued asynchronous payload.
+                UIntPtr ignored;
+                SendMessageTimeout(new IntPtr(0xFFFF), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);
+            });
+        }
         static int? ReadMultiMonitorTaskbar() {
             using (var key = Registry.CurrentUser.OpenSubKey(ExplorerAdvanced)) {
                 var value = key == null ? null : key.GetValue("MMTaskbarEnabled");
@@ -429,10 +472,8 @@ namespace Caelestia.Takeover {
                 if (value.HasValue) key.SetValue("MMTaskbarEnabled", value.Value, RegistryValueKind.DWord);
                 else key.DeleteValue("MMTaskbarEnabled", false);
             }
-            // Settings broadcasts the same notification; Explorer then creates or
-            // destroys the secondary taskbars without restarting.
-            UIntPtr ignored;
-            SendMessageTimeout(new IntPtr(0xFFFF), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);
+            // Preserve Settings' notification semantics, outside the message pump.
+            NotifyTraySettings();
         }
         // Explorer replaces a secondary taskbar's window region while it re-lays
         // the taskbar out after a display mode change (for example an HDR
