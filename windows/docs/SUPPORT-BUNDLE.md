@@ -47,6 +47,53 @@ allowlisted architecture environment token are read locally. No driver/device
 enumeration, WMI, network access or permission prompt runs automatically.
 Display-driver version is unavailable unless supplied in the offline snapshot.
 
+## Crash diagnostics and privacy
+
+The shipped Windows backend has local crash handling enabled. The supervisor
+sets `QS_DISABLE_CRASH_RELAUNCH=1`, so the handler keeps diagnostic writes and
+window cleanup without opening a reporter window or starting a replacement
+process. It does not upload files or contact a network service.
+
+Crash files are under
+`%LOCALAPPDATA%\quickshell\cache\crashes\<instance-id>`, outside the separate
+Caelestia profile. The dump is `<instance-id>-<launch-time-ms>.dmp`. Its
+`MINIDUMP_TYPE` is `MiniDumpWithDataSegs | MiniDumpWithThreadInfo`, `0x1001`.
+It includes process memory such as thread stacks and loaded-module data
+sections, not a full heap image. A dump can contain secrets and personal data.
+Dumps cannot be redacted. File sizes depend on process state and have no byte
+cap. A failed write can leave a partial or empty file.
+
+Except on stack overflow, the handler also attempts to write `report.txt` and
+copy the encoded detailed log to `log.qslog.log`. The report contains build,
+OS and GPU information, the crash reason and selected Qt/Quickshell environment
+variables. Those environment values can contain secrets. Existing log
+redaction remains in place, but it does not sanitize process memory or all
+report content. The files inherit the cache directory's permissions and are
+not encrypted by Caelestia.
+
+The next handler-enabled start keeps the newest three recognized crash sets,
+with their reports and log copies. A fourth can remain until the next start.
+The handler preserves locked files, symlinks, junctions and unknown content, so
+retention is best effort, not a strict storage-size limit. Unsupervised smoke,
+fixtures and benchmarks set `QS_DISABLE_CRASH_HANDLER=1`; they neither write
+these diagnostics nor run this retention cleanup.
+
+`Export-CaelestiaSupport.ps1` always excludes dumps, crash reports and raw logs.
+Its fixed-field JSON format has no attachment or dump opt-in switch. If a
+maintainer needs a dump, choose that individual `.dmp` file manually and attach
+it only after explicit consent, preferably through an agreed private channel.
+Do not attach the whole cache directory or post it publicly. The normal support
+JSON does not imply consent to share memory. Review text reports and logs
+separately; a sanitized text file does not make its associated dump safe.
+
+Uninstall preserves this shared directory, even with profile removal. Unlike
+the exclusively owned Caelestia profile cache, it may contain another
+Quickshell configuration's diagnostics and has no per-install ownership marker.
+Remove individual unneeded sets manually after the relevant configuration has
+stopped. Delete the entire `crashes` directory only if you intend to remove
+every configuration's crash history. A profile-preserving uninstall removes
+neither the profile cache nor shared crash diagnostics.
+
 ## Version 1 schema
 
 The normative field shape is

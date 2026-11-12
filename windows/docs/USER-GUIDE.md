@@ -170,6 +170,14 @@ its Start-menu launch and switch-back entries, the optional desktop shortcut, it
 autostart entry and its Apps & features entry, and preserves the profile by
 default. `-Purge` also removes the recorded profile.
 
+The shared Quickshell crash directory,
+`%LOCALAPPDATA%\quickshell\cache\crashes`, is outside that profile and remains
+even with `-Purge`. Other Quickshell configurations may use it, and its reports
+do not prove which installation owns a dump. Profile removal deletes the owned
+profile's cache, not this shared cache. Remove unneeded crash files manually.
+See [Crash diagnostics and privacy](SUPPORT-BUNDLE.md#crash-diagnostics-and-privacy)
+before sharing or deleting them.
+
 Windows update trust data under `%LOCALAPPDATA%\caelestia-update-trust` is always
 kept, including with `-Purge`. The client records the newest signed update
 metadata it has accepted there so a rollback or a reinstall cannot roll update
@@ -851,6 +859,25 @@ On Linux, StatusNotifierItem (`SNI`) apps send icon pixmaps and semantic `dbusme
   ```powershell
   powershell -NoProfile -File .\windows\scripts\Get-DesktopState.ps1
   ```
+
+### Crash dumps
+
+The installed backend writes crash dumps, reports and copied logs locally under
+`%LOCALAPPDATA%\quickshell\cache\crashes\<instance-id>`. A dump contains process
+memory and cannot be redacted. Caelestia does not upload it, open a crash-report
+window or launch a second shell from its handler when supervised. The supervisor
+alone applies the configured restart policy.
+
+The next handler-enabled start keeps the newest three recognized crash sets,
+including their reports and log copies. A fourth set can remain until then.
+Files have no byte-size cap; locked files and unknown contents can exceed the
+count limit. Ordinary logs keep their existing redaction rules. Reports can
+contain environment values that those log rules do not sanitize.
+
+Support export excludes dumps, reports and raw logs. Review the
+[privacy and manual-sharing instructions](SUPPORT-BUNDLE.md#crash-diagnostics-and-privacy)
+before attaching any crash file. Smoke, QML fixtures and benchmarks disable the
+entire handler, so they do not create or prune this shared crash cache.
 
 ### How to quit or restart Caelestia
 

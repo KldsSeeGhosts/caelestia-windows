@@ -51,6 +51,12 @@ receive Microsoft servicing independently of Caelestia. See
 [Microsoft's deployment guidance](https://learn.microsoft.com/en-us/cpp/windows/deployment-in-visual-cpp?view=msvc-170#central-deployment).
 Qt and the project's own DLLs remain included.
 
+Crash handling is static code in `qs.exe` and uses Windows' inbox `dbghelp.dll`.
+There is no separate crash-reporter executable or additional DLL to package.
+Do not add a copy of the system `dbghelp.dll` to the release payload. Diagnostic
+files are runtime user data, not release payload or support-bundle attachments.
+See [Crash diagnostics and privacy](SUPPORT-BUNDLE.md#crash-diagnostics-and-privacy).
+
 ## Trust, signing and unsigned previews
 
 The [code signing policy](CODE-SIGNING-POLICY.md) describes the intended stable

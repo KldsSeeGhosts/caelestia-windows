@@ -126,6 +126,36 @@ function run(f, input, extra = []) {
 }
 function input(providers = {}) { return { schema: 'caelestia-support-input', version: 1, providers }; }
 
+test('default export excludes dump memory, crash reports and copied logs', () => {
+    const f = fixture();
+    const memory = 'SYNTHETIC_DUMP_MEMORY_' + crypto.randomBytes(32).toString('hex');
+    const profile = path.join(f.dir, 'profile');
+    const local = path.join(f.dir, 'localappdata');
+    const crashes = path.join(local, 'quickshell', 'cache', 'crashes', 'fixture');
+    fs.mkdirSync(crashes, { recursive: true });
+    fs.mkdirSync(path.join(profile, 'cache', 'crashes'), { recursive: true });
+    f.record.profile = profile;
+    writeJson(path.join(f.prefix, 'install.json'), f.record);
+    const files = ['fixture-123.dmp', 'report.txt', 'log.qslog.log'].map(name => path.join(crashes, name));
+    files.push(path.join(profile, 'cache', 'crashes', 'profile.dmp'));
+    for (const file of files) fs.writeFileSync(file, memory);
+    f.release.crashReports = files;
+    f.release.dumpMemory = memory;
+    writeJson(path.join(f.prefix, 'release-manifest.json'), f.release);
+    f.env = { ...process.env, LOCALAPPDATA: local };
+    const snapshot = input();
+    snapshot.crashReports = files;
+    snapshot.dumpMemory = memory;
+    run(f, snapshot);
+    const output = fs.readFileSync(f.file, 'utf8');
+    assert.ok(!output.includes(memory), 'dump memory leaked');
+    for (const file of files) {
+        assert.ok(!output.includes(file), 'crash path leaked');
+        assert.equal(fs.readFileSync(file, 'utf8'), memory, 'export changed diagnostics');
+    }
+    assert.deepEqual(fs.readdirSync(f.dir).filter(name => name.endsWith('.dmp') || name.endsWith('.zip')), []);
+});
+
 test('installed-layout metadata projection excludes profile/log/content canaries', () => {
     const f = fixture();
     const before = crypto.createHash('sha256').update(fs.readFileSync(path.join(f.prefix, 'install.json'))).digest('hex');

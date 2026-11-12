@@ -168,6 +168,9 @@ if ($Purge -and (Test-Path -LiteralPath $profile)) {
 }
 Write-Output "Uninstalled Caelestia: $Prefix"
 if (-not $Purge) { Write-Output "Kept profile: $profile" }
+# This cache is shared by all Quickshell configurations, not exclusively owned
+# by the recorded profile. Even -Purge cannot prove which crash sets are ours.
+Write-Output 'Kept shared Quickshell crash diagnostics: %LOCALAPPDATA%\quickshell\cache\crashes (remove manually if no longer needed)'
 # This mirrors the documented retention rule in Caelestia-Update.ps1: the state
 # is deliberately outside the installation and profile so a rollback or a purge
 # cannot erase update revocation/freshness highwater.
