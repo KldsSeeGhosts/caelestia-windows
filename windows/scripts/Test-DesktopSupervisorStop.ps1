@@ -44,14 +44,22 @@ try {
     $source = Replace-Exactly $source `
         'return @"Local\CaelestiaDesktopTakeover-" + Process.GetCurrentProcess().SessionId;' `
         ('return @"' + $mutexName + '";')
-    # Region identity checks accept only our qs.exe fixture in this copy.
-    # Real Explorer is excluded even if a fixture accidentally enumerates it.
+    # Accept only qs.exe inside this disposable root, never the live shell
+    # which also owns a Shell_TrayWnd and has the same process name.
     $source = Replace-Exactly $source `
         'return String.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);' `
-        'return String.Equals(process.ProcessName, "qs", StringComparison.OrdinalIgnoreCase);'
+        ('return String.Equals(process.ProcessName, "qs", StringComparison.OrdinalIgnoreCase) && process.MainModule.FileName.StartsWith(@"' + $root + '\", StringComparison.OrdinalIgnoreCase);')
     $source = Replace-Exactly $source `
         '(name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd");' `
         'Explorer(owner);'
+    # Keep the production cleanup order, replacing only the desktop mutation.
+    # The real owner-filtered parked-window rescue still follows this marker.
+    $source = Replace-Exactly $source `
+        'if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline);' `
+        'File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "desktop\n");'
+    $source = Replace-Exactly $source `
+        'finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); }' `
+        'finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "rescue\n"); }'
     # Exercise a real cross-process blocked call through the production bound.
     # The HWND comes only from this test's hidden fake, never window discovery.
     $source = Replace-Exactly $source 'public sealed class Supervisor : NativeWindow, IDisposable {' @'
@@ -78,6 +86,83 @@ public static class HungExplorerFixture {
     }
 }
 public sealed class Supervisor : NativeWindow, IDisposable {
+'@
+    $source += @'
+
+namespace Caelestia.Takeover {
+    public static class TaskbarEventFixture {
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string name, string title);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+        public static void Verify(string directory, uint owner, uint decoyOwner) {
+            var fake = new IntPtr(Int64.Parse(File.ReadAllText(Path.Combine(directory, "taskbar-ready"))));
+            var decoy = new IntPtr(Int64.Parse(File.ReadAllText(Path.Combine(directory, "decoy-ready"))));
+            uint fakePid, decoyPid;
+            GetWindowThreadProcessId(fake, out fakePid);
+            GetWindowThreadProcessId(decoy, out decoyPid);
+            if (fakePid != owner || decoyPid != decoyOwner
+                || !SetWindowPos(fake, decoy, 0, 0, 0, 0, 0x13))
+                throw new Exception("Could not order the two verified fixture windows.");
+            // Do not reorder any live windows. Among our two fixtures, require
+            // the decoy before the accepted owner in the actual class lookup.
+            uint firstOwner = 0;
+            var candidate = IntPtr.Zero;
+            while ((candidate = FindWindowEx(IntPtr.Zero, candidate, "Shell_TrayWnd", null)) != IntPtr.Zero) {
+                uint pid; GetWindowThreadProcessId(candidate, out pid);
+                if (pid == owner || pid == decoyOwner) { firstOwner = pid; break; }
+            }
+            if (firstOwner != decoyOwner) throw new Exception("Decoy did not precede the fake Explorer taskbar.");
+            var real = Native.ExplorerTaskbar();
+            uint actual;
+            GetWindowThreadProcessId(real, out actual);
+            if (actual != owner || Native.ExplorerTaskbarOwner() != owner)
+                throw new Exception("Explorer lookup selected the decoy.");
+            var actions = new List<TaskbarAction>();
+            var policy = new TaskbarShowPolicy(Stopwatch.Frequency);
+            var handler = new TaskbarShowHandler(policy, Native.EventTaskbar, Native.HideObserved, actions.Add);
+            Native.WinEventCallback callback = delegate(IntPtr hook, uint type, IntPtr window, int obj, int child, uint thread, uint time) {
+                handler.Handle(owner, window, obj, child, Stopwatch.GetTimestamp());
+            };
+            var binding = new TaskbarHookBinding(delegate(uint pid) { return Native.HookShows(pid, callback); }, Native.UnhookShows);
+            using (binding) {
+                binding.Refresh(owner, false);
+                if (binding.Owner != owner) throw new Exception("Fake taskbar show hook failed.");
+                // No timer or audit runs here. Both shows must reach the real
+                // WinEvent callback and the production show-to-hide handler.
+                for (int pass = 0; pass < 2; pass++) {
+                    actions.Clear();
+                    File.WriteAllText(Path.Combine(directory, "taskbar-show-" + pass), "show");
+                    var clock = Stopwatch.StartNew();
+                    while (!actions.Exists(a => a.Operation == "hide") && clock.ElapsedMilliseconds < 2000) {
+                        Application.DoEvents(); Thread.Sleep(5);
+                    }
+                    var hidden = actions.Find(a => a.Operation == "hide");
+                    if (hidden == null || hidden.Source != "event" || !hidden.ShowToHideMilliseconds.HasValue
+                        || hidden.ShowToHideMilliseconds >= 2000)
+                        throw new Exception("Taskbar re-show was not re-hidden by the event before the audit.");
+                    while (Native.EventTaskbar(real, owner).Visible && clock.ElapsedMilliseconds < 2000) {
+                        Application.DoEvents(); Thread.Sleep(5);
+                    }
+                    if (Native.EventTaskbar(real, owner).Visible) throw new Exception("Posted hide did not take effect.");
+                }
+            }
+            GC.KeepAlive(callback);
+            var bar = new Bar { Handle = real.ToInt64(), Owner = owner, Visible = true };
+            policy.Reset();
+            policy.RememberHide(bar, 0);
+            bool entered;
+            for (int i = 1; i <= 12; i++) {
+                long now = i * Stopwatch.Frequency / 100;
+                if (policy.AllowImmediate(bar, now, out entered)) policy.RememberHide(bar, now);
+            }
+            if (!policy.PollingRequired(Stopwatch.Frequency) || policy.PollingRequired(6 * Stopwatch.Frequency))
+                throw new Exception("Fight-loop polling fallback changed.");
+        }
+    }
+}
 '@
     $boundary = [regex]::Match($source, '(?m)^                if \(!child.HasExited\) \{\r?$').Value
     $source = Replace-Exactly $source ($boundary + "`n") ("                if (isolatedTest) HungExplorerFixture.Reconcile(launch.WorkingDirectory);`n" + $boundary + "`n")
@@ -145,9 +230,48 @@ public sealed class HungExplorerWindow : NativeWindow, IDisposable {
     }
     public void Dispose() { DestroyHandle(); }
 }
+public sealed class FakeTaskbarWindow : IDisposable {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern ushort RegisterClass(ref WindowClass value);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr DefWindowProc(IntPtr window, uint message, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr CreateWindowEx(uint extended, string name, string title, uint style,
+        int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
+    [DllImport("user32.dll")] static extern bool DestroyWindow(IntPtr window);
+    delegate IntPtr WindowProc(IntPtr window, uint message, IntPtr w, IntPtr l);
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct WindowClass {
+        public uint Style; public WindowProc Proc; public int ClassExtra, WindowExtra;
+        public IntPtr Instance, Icon, Cursor, Background;
+        public string Menu, Name;
+    }
+    readonly WindowProc proc = DefWindowProc;
+    readonly IntPtr window;
+    public FakeTaskbarWindow(string ready) {
+        var wc = new WindowClass { Proc = proc, Name = "Shell_TrayWnd", Instance = GetModuleHandle(null) };
+        if (RegisterClass(ref wc) == 0) throw new Exception("Fake taskbar class registration failed.");
+        window = CreateWindowEx(0x08000080, "Shell_TrayWnd", ready, 0x80000000,
+            -30000, -30000, 100, 20, IntPtr.Zero, IntPtr.Zero, wc.Instance, IntPtr.Zero);
+        if (window == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        File.WriteAllText(ready, window.ToInt64().ToString());
+    }
+    public void Show() { ShowWindowAsync(window, 8); }
+    public void Dispose() { DestroyWindow(window); GC.KeepAlive(proc); }
+}
 public static class SupervisorStopFixture {
     [STAThread] public static int Main(string[] args) {
         if (args[0] == "--bystander") { Thread.Sleep(60000); return 0; }
+        if (args[0] == "--taskbar" || args[0] == "--decoy") {
+            using (var window = new FakeTaskbarWindow(args[0].Substring(2) + "-ready")) {
+                int pass = 0;
+                while (!File.Exists("taskbars-stop")) {
+                    if (args[0] == "--taskbar" && File.Exists("taskbar-show-" + pass)) { window.Show(); pass++; }
+                    Application.DoEvents(); Thread.Sleep(5);
+                }
+            }
+            return 0;
+        }
         if (args[0] == "--explorer") {
             using (var window = new HungExplorerWindow()) {
                 while (!File.Exists("fake-stop")) { Application.DoEvents(); Thread.Sleep(25); }
@@ -170,6 +294,7 @@ public static class SupervisorStopFixture {
         if (args[0] == "--child") {
             File.AppendAllText(Path.Combine(prefix, "child-starts.txt"), "start\n");
             if (mode == "crash") return 7;
+            if (mode == "clean") return 0;
             while (true) {
                 if (mode == "normal" && File.Exists(Path.Combine(prefix, "quit-called.txt"))) {
                     Thread.Sleep(700);
@@ -185,7 +310,22 @@ public static class SupervisorStopFixture {
     }
 }
 '@
-    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'crash', 'explorer-hung', 'explorer-retry', 'stuck-quit', 'stuck-start')) {
+    $taskbars = Join-Path $root 'taskbars'
+    [IO.Directory]::CreateDirectory($taskbars) | Out-Null
+    $decoyExe = Join-Path $root 'decoy.exe'
+    Copy-Item -LiteralPath $fake -Destination $decoyExe
+    $decoy = Start-FixtureProcess $decoyExe '--decoy' $taskbars (Join-Path $taskbars 'decoy')
+    Wait-Until { Test-Path -LiteralPath (Join-Path $taskbars 'decoy-ready') } 'Decoy taskbar did not start.'
+    $taskbar = Start-FixtureProcess $fake '--taskbar' $taskbars (Join-Path $taskbars 'taskbar')
+    Wait-Until {
+        if ($taskbar.HasExited) { throw ('Fake taskbar exited: ' + [IO.File]::ReadAllText((Join-Path $taskbars 'taskbar.err'))) }
+        Test-Path -LiteralPath (Join-Path $taskbars 'taskbar-ready')
+    } 'Fake taskbar did not start.'
+    [Caelestia.Takeover.TaskbarEventFixture]::Verify($taskbars, $taskbar.Id, $decoy.Id)
+    [IO.File]::WriteAllText((Join-Path $taskbars 'taskbars-stop'), 'stop')
+    Assert ($taskbar.WaitForExit(2000) -and $decoy.WaitForExit(2000)) 'Fake taskbars did not stop.'
+    Write-Output 'PASS taskbar events: owner-checked lookup skips a first-in-order decoy; real show events re-hide twice without an audit; fight-loop fallback remains bounded.'
+    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'stuck-quit', 'stuck-start')) {
         $case = Join-Path $root $mode
         $prefix = Join-Path $case 'prefix'
         $profile = Join-Path $case 'profile'
@@ -198,6 +338,18 @@ public static class SupervisorStopFixture {
         # not cwd. It does not load the real banner or desktop implementation.
         @'
 param($StateDirectory, $Command)
+$order = Join-Path $StateDirectory 'restore-order.txt'
+if (Test-Path -LiteralPath $order) {
+    $lines = @(Get-Content -LiteralPath $order)
+    if ($lines.Count -lt 2 -or $lines[-2] -ne 'desktop' -or $lines[-1] -ne 'rescue') {
+        throw 'Banner work started before desktop and parked-window restoration.'
+    }
+    Add-Content -LiteralPath $order -Value 'banner'
+    # Deliberately slow work begins only after the desktop has returned.
+    Start-Sleep -Milliseconds 300
+} elseif ((Get-Content -LiteralPath (Join-Path $StateDirectory 'watchdog.json') -Raw | ConvertFrom-Json).phase -eq 'restoring') {
+    throw 'Banner work started without desktop restoration.'
+}
 [IO.File]::WriteAllText((Join-Path $StateDirectory 'banner-recovered.txt'), [Environment]::CurrentDirectory)
 '@ | Set-Content -LiteralPath (Join-Path $prefix 'Banner-Suppression.ps1') -Encoding UTF8
         '{}' | Set-Content -LiteralPath (Join-Path $state 'banner-suppression.json') -Encoding UTF8
@@ -222,7 +374,12 @@ param($StateDirectory, $Command)
             ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
             $case (Join-Path $case 'watchdog')
         $watchdogs.Add($watchdog)
-        if ($mode -eq 'crash') {
+        if ($mode -eq 'clean') {
+            Assert ($watchdog.WaitForExit(15000) -and $watchdog.ExitCode -eq 0) 'Unrequested clean exit did not finish.'
+            $status = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($status.phase -eq 'clean-exit' -and $status.quickCrashes -eq 0) 'Clean exit changed the restart policy.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 1) 'Clean exit restarted the child.'
+        } elseif ($mode -eq 'crash') {
             Assert ($watchdog.WaitForExit(15000)) 'Unrequested crash recovery did not finish.'
             $status = Read-CaelestiaSupervisorStatus $statusPath
             Assert ($status.phase -eq 'crash-give-up' -and $status.quickCrashes -eq 3 -and $watchdog.ExitCode -eq 7) 'Crash restart policy changed.'
@@ -369,6 +526,8 @@ param($StateDirectory, $Command)
         Assert (Test-Path -LiteralPath (Join-Path $state 'desktop-before.json')) 'Supervisor did not persist its restore snapshot.'
         Assert (Test-CaelestiaSamePath (Get-Content -LiteralPath (Join-Path $state 'banner-recovered.txt') -Raw) $case) 'Banner recovery did not find the helper beside qs.exe or use the launch cwd.'
         Assert (-not (Test-Path -LiteralPath (Join-Path $state 'banner-recovery.log'))) 'Banner recovery failed with cwd outside the payload.'
+        $order = @(Get-Content -LiteralPath (Join-Path $state 'restore-order.txt'))
+        Assert (($order -join ',') -match '^(desktop,rescue,banner)(,desktop,rescue,banner)*$') 'Desktop, parked-window and banner recovery order changed.'
         Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Exited supervisor still owns the disposable profile.'
         $mutex = [Threading.Mutex]::new($false, $mutexName)
         try {

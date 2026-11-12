@@ -42,6 +42,8 @@ $null = $process.Handle
 # The child starts only after snapshot persistence and takeover ownership. The
 # watchdog reports "starting" at once, then "running" after banner recovery
 # (up to 45 s) and shell launch, so allow that bound plus startup.
+# This pre-takeover replay is separate from exit's "restoring" phase, which
+# returns the desktop first and retains ownership through banner recovery.
 $deadline = [DateTime]::UtcNow.AddSeconds(75)
 $statusPath = Join-Path $StateDirectory 'watchdog.json'
 $phase = ''
