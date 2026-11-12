@@ -164,8 +164,21 @@ ShellRoot {
     }
 
     // IPC selects this installation; tiling retains its separate opt-in.
+    Connections {
+        target: Glazier
+        function reportSupervisorPause(): void {
+            console.info(Glazier.quitPending || Glazier.reloadCallback
+                ? "CAELESTIA_SHELL_PAUSED" : "CAELESTIA_SHELL_ACTIVE");
+        }
+        function onQuitPendingChanged(): void { reportSupervisorPause(); }
+        function onReloadCallbackChanged(): void { reportSupervisorPause(); }
+    }
+
     IpcHandler {
         target: "shell"
+        // IpcHandler invokes QML on the GUI thread. A transport worker or a
+        // native worker must never echo this on behalf of a stalled GUI.
+        function supervisorProbe(nonce: string): string { return nonce; }
         function quit(): bool {
             // Acceptance is not completion; captureHostState reports refusal
             // or asynchronous close failure while the shell remains alive.

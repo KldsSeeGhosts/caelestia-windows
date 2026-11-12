@@ -397,7 +397,7 @@ if ($Smoke) {
 } else {
     $supervised = & (Join-Path $PSScriptRoot 'Start-DesktopShell.ps1') -StartInfo $info `
         -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
-        -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
+        -ConfigPath $supervisorConfig -InstallPrefix $Prefix -StdoutPath $stdoutPath -StderrPath $stderrPath
     $process = $supervised.Watchdog
     # Takeover readiness can include fullscreen-occluded panels without frames.
     # Preserve the pre-takeover launcher contract: strict IPC readiness failure

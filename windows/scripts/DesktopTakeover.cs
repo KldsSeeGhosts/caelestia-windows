@@ -13,7 +13,8 @@ using Microsoft.Win32;
 namespace Caelestia.Takeover {
     public sealed class Launch {
         public string Executable, Arguments, WorkingDirectory, ConfigPath, StateDirectory;
-        public string StdoutPath, StderrPath;
+        public string StdoutPath, StderrPath, InstallLockKey;
+        public bool RestartFrozenShell = true;
         public bool RestoreWorkAreas;
         public Dictionary<string, string> Environment = new Dictionary<string, string>();
         // Isolated test supervisors rescue only windows of these processes.
@@ -996,9 +997,147 @@ namespace Caelestia.Takeover {
         static readonly System.Text.RegularExpressions.Regex record = new System.Text.RegularExpressions.Regex(
             @"^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*INFO qml: " + Marker + "$");
         int ready;
+        int paused;
+        int pauseGeneration;
         public bool Ready { get { return Interlocked.CompareExchange(ref ready, 0, 0) != 0; } }
+        public bool Paused { get { return Interlocked.CompareExchange(ref paused, 0, 0) != 0; } }
+        public int PauseGeneration { get { return Interlocked.CompareExchange(ref pauseGeneration, 0, 0); } }
         public void Observe(string line) {
             if (line != null && record.IsMatch(line)) Interlocked.Exchange(ref ready, 1);
+            if (line != null && pauseRecord.IsMatch(line)) {
+                // Publish the reset before making a resume eligible again.
+                Interlocked.Increment(ref pauseGeneration);
+                Interlocked.Exchange(ref paused, line.EndsWith("_PAUSED", StringComparison.Ordinal) ? 1 : 0);
+            }
+        }
+        static readonly System.Text.RegularExpressions.Regex pauseRecord = new System.Text.RegularExpressions.Regex(
+            @"^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*INFO qml: CAELESTIA_SHELL_(?:PAUSED|ACTIVE)$");
+    }
+
+    // Milliseconds come from QPC, never wall time. Only an exact, current nonce
+    // can arm/reset detection. Unsupported older shells remain unarmed forever.
+    public sealed class ShellLiveness {
+        public const int ProbeIntervalMs = 15000;
+        public const int ProbeTimeoutMs = 5000;
+        public const int FreezeWindowMs = 120000;
+        public const int RequiredMisses = 6;
+        public const int MaxTickGapMs = 5000;
+        long lastTick, nextProbe, deadline, firstMiss;
+        public string Nonce { get; private set; }
+        public bool Armed { get; private set; }
+        public bool Frozen { get; private set; }
+        public int Misses { get; private set; }
+        public void Reset(long now) {
+            Nonce = null; Misses = 0; Frozen = false;
+            firstMiss = 0; nextProbe = now + ProbeIntervalMs; lastTick = now;
+        }
+        public bool Advance(long now, bool eligible) {
+            if (!eligible || lastTick == 0 || now < lastTick || now - lastTick > MaxTickGapMs) {
+                Reset(now);
+                return false;
+            }
+            lastTick = now;
+            return true;
+        }
+        public bool Due(long now) { return Nonce == null && now >= nextProbe; }
+        public string Issue(long now) {
+            Nonce = Guid.NewGuid().ToString("N");
+            deadline = now + ProbeTimeoutMs; nextProbe = now + ProbeIntervalMs;
+            return Nonce;
+        }
+        public bool Accept(string reply) {
+            if (Nonce == null || reply != Nonce) return false;
+            Armed = true; Frozen = false; Misses = 0; firstMiss = 0; Nonce = null;
+            return true;
+        }
+        public void Expire(long now) {
+            if (Nonce == null || now < deadline) return;
+            Nonce = null;
+            if (!Armed) return;
+            if (Misses++ == 0) firstMiss = now;
+            Frozen = Misses >= RequiredMisses && now - firstMiss >= FreezeWindowMs;
+        }
+    }
+
+    static class SupervisorSession {
+        [DllImport("wtsapi32.dll")] public static extern bool WTSRegisterSessionNotification(IntPtr window, uint flags);
+        [DllImport("wtsapi32.dll")] public static extern bool WTSUnRegisterSessionNotification(IntPtr window);
+        [DllImport("wtsapi32.dll")] static extern bool WTSQuerySessionInformation(
+            IntPtr server, int session, int infoClass, out IntPtr buffer, out int bytes);
+        [DllImport("wtsapi32.dll")] static extern void WTSFreeMemory(IntPtr buffer);
+        public static bool Unlocked() {
+            IntPtr buffer; int bytes;
+            // WTSINFOEX level 1 has an aligned union at offset 8. Its first
+            // fields are SessionId, SessionState, SessionFlags. Win11 uses
+            // flags 0 for locked and 1 for unlocked. Unknown state fails safe.
+            if (!WTSQuerySessionInformation(IntPtr.Zero, Process.GetCurrentProcess().SessionId, 25, out buffer, out bytes))
+                return false;
+            try { return bytes >= 20 && Marshal.ReadInt32(buffer) == 1
+                    && Marshal.ReadInt32(buffer, 12) == 0 && Marshal.ReadInt32(buffer, 16) == 1; }
+            finally { WTSFreeMemory(buffer); }
+        }
+        public static bool Updating(string key) {
+            if (String.IsNullOrEmpty(key)) return false;
+            foreach (var scope in new[] { @"Global\", @"Local\" }) {
+                try {
+                    using (var mutex = Mutex.OpenExisting(scope + "CaelestiaInstall-" + key)) {
+                        bool acquired;
+                        try { acquired = mutex.WaitOne(0); }
+                        catch (AbandonedMutexException) { acquired = true; }
+                        if (!acquired) return true;
+                        mutex.ReleaseMutex();
+                    }
+                } catch (WaitHandleCannotBeOpenedException) {}
+                  catch (UnauthorizedAccessException) { return true; }
+            }
+            return false;
+        }
+    }
+
+    // Probe clients must die even when forced recovery kills the supervisor
+    // before Dispose can run. Only probes are assigned to the job, and its
+    // handle is never inherited by those clients.
+    sealed class ProbeJob : IDisposable {
+        [StructLayout(LayoutKind.Sequential)]
+        struct BasicLimits {
+            public long ProcessTime, JobTime;
+            public uint Flags;
+            public UIntPtr MinimumWorkingSet, MaximumWorkingSet;
+            public uint ActiveProcesses;
+            public UIntPtr Affinity;
+            public uint Priority, Scheduling;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        struct IoCounters { public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes; }
+        [StructLayout(LayoutKind.Sequential)]
+        struct ExtendedLimits {
+            public BasicLimits Basic;
+            public IoCounters Io;
+            public UIntPtr ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory;
+        }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr CreateJobObject(IntPtr security, string name);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref ExtendedLimits limits, uint size);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+        IntPtr handle;
+        public ProbeJob() {
+            handle = CreateJobObject(IntPtr.Zero, null);
+            if (handle == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+            var limits = new ExtendedLimits { Basic = new BasicLimits { Flags = 0x2000 } };
+            if (!SetInformationJobObject(handle, 9, ref limits, (uint)Marshal.SizeOf(typeof(ExtendedLimits)))) {
+                int error = Marshal.GetLastWin32Error();
+                Dispose();
+                throw new System.ComponentModel.Win32Exception(error);
+            }
+        }
+        public void Own(Process process) {
+            if (!AssignProcessToJobObject(handle, process.Handle)) throw new System.ComponentModel.Win32Exception();
+        }
+        public void Dispose() {
+            if (handle != IntPtr.Zero) { CloseHandle(handle); handle = IntPtr.Zero; }
         }
     }
 
@@ -1026,6 +1165,13 @@ namespace Caelestia.Takeover {
         readonly Func<int, bool> rescueFilter;
         Process child;
         ShellReadiness childReadiness;
+        ShellLiveness liveness = new ShellLiveness();
+        Process probe;
+        ProbeJob probeJob;
+        System.Threading.Tasks.Task<string> probeOutput;
+        bool probeExpired, frozenTermination, sessionPaused, powerPaused, endingSession;
+        int lastPauseGeneration;
+        string lastUnhealthyReason;
         bool childBecameReady, waitingReady, takeover, tookOver, taskbarRestorePending;
         long readyDeadline, takeoverGraceDeadline;
         LogDrain childDrain;
@@ -1078,7 +1224,10 @@ namespace Caelestia.Takeover {
             }
         }
         public static int Run(string specPath, bool hide, bool restart, bool invisible) {
-            return RunCore(specPath, hide, restart, invisible, MutexName, EventName, false, 0);
+            return Run(specPath, hide, restart, invisible, true);
+        }
+        public static int Run(string specPath, bool hide, bool restart, bool invisible, bool restartFrozenShell) {
+            return RunCore(specPath, hide, restart, invisible, MutexName, EventName, false, 0, restartFrozenShell);
         }
         // Used only by the non-desktop regression harness. Its unique names
         // cannot acquire or signal the real session supervisor.
@@ -1093,7 +1242,7 @@ namespace Caelestia.Takeover {
             return RunCore(specPath, false, true, false, name, name + "-Recovery", true, logDelayMs);
         }
         static int RunCore(string specPath, bool hide, bool restart, bool invisible,
-            string mutexName, string eventName, bool isolatedTest, int testLogDelayMs) {
+            string mutexName, string eventName, bool isolatedTest, int testLogDelayMs, bool? restartFrozenShell = null) {
             using (var mutex = new System.Threading.Mutex(false, mutexName)) {
                 bool acquired;
                 try { acquired = mutex.WaitOne(0); }
@@ -1101,6 +1250,7 @@ namespace Caelestia.Takeover {
                 if (!acquired) throw new InvalidOperationException("A desktop supervisor already owns this Windows session.");
                 try {
                     var launch = new JavaScriptSerializer().Deserialize<Launch>(File.ReadAllText(specPath));
+                    if (restartFrozenShell.HasValue) launch.RestartFrozenShell = restartFrozenShell.Value;
                     // An isolated supervisor must not be blocked by the live
                     // shell's tiler guard, so it uses its own unheld name.
                     string tilerMutex = isolatedTest ? mutexName + "-Tiling" : Native.TilingMutex;
@@ -1155,6 +1305,7 @@ namespace Caelestia.Takeover {
             // A hidden top-level window receives Explorer's broadcast. A
             // message-only HWND would not receive TaskbarCreated.
             CreateHandle(new CreateParams { Caption = "Caelestia desktop watchdog", Style = unchecked((int)0x80000000) });
+            if (!isolatedTest) SupervisorSession.WTSRegisterSessionNotification(Handle, 0);
             timer.Interval = 250;
             timer.Tick += Tick;
             timer.Start();
@@ -1310,6 +1461,24 @@ namespace Caelestia.Takeover {
             nextTaskbarAudit = DateTime.UtcNow.AddSeconds(5);
         }
         protected override void WndProc(ref Message message) {
+            if (message.Msg == 0x02B1) { // WM_WTSSESSION_CHANGE
+                int reason = message.WParam.ToInt32();
+                sessionPaused = reason == 7 || reason == 6 || reason == 4; // lock, logoff, disconnect
+                liveness.Reset(MonotonicMilliseconds());
+                CancelProbe();
+            }
+            if (message.Msg == 0x0218) { // WM_POWERBROADCAST
+                int reason = message.WParam.ToInt32();
+                if (reason == 4) powerPaused = true; // suspend
+                if (reason == 7 || reason == 18) powerPaused = false; // resume
+                liveness.Reset(MonotonicMilliseconds());
+                CancelProbe();
+            }
+            if (message.Msg == 0x0011 || message.Msg == 0x0016) { // session shutdown
+                endingSession = message.Msg == 0x0011 || message.WParam != IntPtr.Zero;
+                liveness.Reset(MonotonicMilliseconds());
+                CancelProbe();
+            }
             // WM_SETTINGCHANGE and WM_DISPLAYCHANGE also cover work-area,
             // taskbar preference and monitor topology changes.
             if ((message.Msg == taskbarCreated || message.Msg == 0x001A || message.Msg == 0x007E)
@@ -1370,6 +1539,9 @@ namespace Caelestia.Takeover {
                     quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
                     forcedChildTermination = forcedChildTermination,
                     shellReady = childBecameReady, taskbarTakenOver = takeover,
+                    livenessSupported = liveness.Armed, shellFrozen = liveness.Frozen,
+                    livenessMisses = liveness.Misses, restartFrozenShell = launch.RestartFrozenShell,
+                    lastUnhealthyReason = lastUnhealthyReason,
                     // Tells Start this owner refreshes utc while alive. Older
                     // supervisors wrote it once, so staleness says nothing there.
                     heartbeat = true,
@@ -1380,6 +1552,11 @@ namespace Caelestia.Takeover {
             });
         }
         void Start() {
+            CancelProbe();
+            liveness = new ShellLiveness();
+            liveness.Reset(MonotonicMilliseconds());
+            frozenTermination = false;
+            lastPauseGeneration = 0;
             var info = new ProcessStartInfo(launch.Executable, launch.Arguments) {
                 WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false, CreateNoWindow = true
             };
@@ -1454,6 +1631,79 @@ namespace Caelestia.Takeover {
             SupervisorSafety.Log(delegate { lock (logLock) { if (!drain.Retired) File.AppendAllText(path, line + Environment.NewLine); } });
         }
         static void Retire(LogDrain drain) { lock (logLock) drain.Retired = true; }
+        static long MonotonicMilliseconds() {
+            return (long)(Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency);
+        }
+        void CancelProbe() {
+            if (probe == null) return;
+            try {
+                if (!probe.HasExited && !probeExpired) probe.Kill();
+                probeExpired = true;
+                if (probe.HasExited) {
+                    probe.Dispose(); probe = null; probeOutput = null;
+                }
+            } catch (InvalidOperationException) {}
+              catch (System.ComponentModel.Win32Exception) {}
+        }
+        void MaintainLiveness() {
+            long now = MonotonicMilliseconds();
+            int generation = childReadiness.PauseGeneration;
+            if (generation != lastPauseGeneration) {
+                lastPauseGeneration = generation;
+                liveness.Reset(now);
+                CancelProbe();
+            }
+            bool eligible = childBecameReady && !childReadiness.Paused && !sessionPaused && !powerPaused
+                && !endingSession && (isolatedTest || SupervisorSession.Unlocked())
+                && !SupervisorSession.Updating(launch.InstallLockKey);
+            if (!liveness.Advance(now, eligible)) {
+                CancelProbe();
+                if (statusPhase == "frozen") Status("running", child.Id);
+                return;
+            }
+            if (probe != null && !probeExpired && probe.HasExited && probeOutput.IsCompleted) {
+                if (probe.ExitCode == 0 && !probeOutput.IsFaulted && !probeOutput.IsCanceled)
+                    liveness.Accept(probeOutput.Result.Trim());
+            }
+            liveness.Expire(now);
+            if (liveness.Nonce == null) CancelProbe();
+            if (liveness.Frozen) {
+                lastUnhealthyReason = "gui-unresponsive";
+                Status("frozen", child.Id);
+                if (launch.RestartFrozenShell) {
+                    // Reuse the dead-child drain, restoration, limits and backoff.
+                    // A frozen lifetime exceeds the ordinary quick-crash window,
+                    // so explicitly count it rather than resetting that limit.
+                    frozenTermination = true;
+                    child.Kill();
+                    BeginDrain();
+                    return;
+                }
+            } else if (statusPhase == "frozen") Status("running", child.Id);
+            if (probe != null || !liveness.Due(now)) return;
+            string nonce = liveness.Issue(now);
+            var info = new ProcessStartInfo(launch.Executable,
+                "ipc --pid " + child.Id + " call shell supervisorProbe " + nonce) {
+                WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false,
+                CreateNoWindow = true, RedirectStandardOutput = true
+            };
+            foreach (var entry in launch.Environment) info.EnvironmentVariables[entry.Key] = entry.Value;
+            // An IPC launch failure is not evidence about the GUI event loop.
+            var candidate = new Process { StartInfo = info };
+            try {
+                if (probeJob == null) probeJob = new ProbeJob();
+                candidate.Start();
+                probeJob.Own(candidate);
+                probe = candidate; probeExpired = false;
+                probeOutput = candidate.StandardOutput.ReadToEndAsync();
+            } catch (Exception error) {
+                try { if (candidate.Id != 0 && !candidate.HasExited) candidate.Kill(); }
+                catch (InvalidOperationException) {}
+                candidate.Dispose();
+                if (!(error is System.ComponentModel.Win32Exception || error is InvalidOperationException)) throw;
+                liveness.Reset(now);
+            }
+        }
         void Tick(object sender, EventArgs args) {
             try {
                 // Refresh even during intentional backoff and snapshot retries.
@@ -1465,6 +1715,8 @@ namespace Caelestia.Takeover {
                 }
                 if (!recovering && recovery.WaitOne(0)) {
                     recovering = true;
+                    liveness.Reset(MonotonicMilliseconds());
+                    CancelProbe();
                     stopDeadline = Stopwatch.GetTimestamp() + ChildExitGraceMs * Stopwatch.Frequency / 1000;
                 }
                 if (child == null) {
@@ -1525,6 +1777,8 @@ namespace Caelestia.Takeover {
                             return;
                         }
                     }
+                    MaintainLiveness();
+                    if (frozenTermination) return;
                     // The show hook handles re-shows immediately. Audit only
                     // every five seconds unless its existing fight-loop policy
                     // explicitly falls back to polling for five seconds.
@@ -1534,6 +1788,7 @@ namespace Caelestia.Takeover {
                     return;
                 }
                 showHook.Dispose();
+                CancelProbe();
                 showPolicy.Reset();
                 if (takeover && takeoverGraceDeadline == 0)
                     takeoverGraceDeadline = Stopwatch.GetTimestamp() + RestartTakeoverGraceMs * Stopwatch.Frequency / 1000;
@@ -1546,7 +1801,7 @@ namespace Caelestia.Takeover {
                 // A very short-lived child can draw and exit between ticks.
                 // Drain first so a final readiness record is not lost.
                 childBecameReady |= childReadiness.Ready;
-                int code = child.ExitCode;
+                int code = frozenTermination ? 1 : child.ExitCode;
                 // A zero exit before the first frame is a failed start, for
                 // example a duplicate instance that bows out. A shell that
                 // outlived the readiness deadline was alive and usable without
@@ -1562,7 +1817,7 @@ namespace Caelestia.Takeover {
                 Status("restoring", 0);
                 // Decide the outcome first, so the desktop work matches it and
                 // always precedes a potentially slow banner replay.
-                if (code != 0) quickCrashes = failedStart || (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
+                if (code != 0) quickCrashes = frozenTermination || failedStart || (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
                 bool terminal = code == 0 || !restart || quickCrashes >= 3;
                 int delay = terminal ? 0 : RestartPolicy.DelaySeconds(quickCrashes);
                 try {
@@ -1628,6 +1883,9 @@ namespace Caelestia.Takeover {
             if (done) return;
             done = true;
             timer.Stop(); timer.Dispose();
+            CancelProbe();
+            if (probeJob != null) probeJob.Dispose();
+            if (!isolatedTest) SupervisorSession.WTSUnRegisterSessionNotification(Handle);
             showHook.Dispose();
             // On helper failure do not leave an unsupervised shell reserving
             // space. Normal clean exit reaches here after qs has exited.

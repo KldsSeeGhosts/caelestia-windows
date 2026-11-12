@@ -157,7 +157,7 @@ function Get-CaelestiaSupervisors([string]$ProfileRoot) {
     foreach ($file in @(Get-ChildItem -Path (Join-Path $ProfileRoot 'runtime\supervisor-*\watchdog.json') -ErrorAction SilentlyContinue)) {
         $status = $null
         try { $status = Read-CaelestiaSupervisorStatus $file.FullName } catch { continue }
-        if (-not $status -or $status.phase -notin @('starting', 'waiting-ready', 'running', 'restart-backoff', 'restoring')) { continue }
+        if (-not $status -or $status.phase -notin @('starting', 'waiting-ready', 'running', 'frozen', 'restart-backoff', 'restoring')) { continue }
         $id = if ($status.watchdogPid) { $status.watchdogPid } else { $status.pid }
         if (-not $id) { continue }
         $process = Get-Process -Id $id -ErrorAction SilentlyContinue
