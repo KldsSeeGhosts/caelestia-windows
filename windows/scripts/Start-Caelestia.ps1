@@ -387,6 +387,9 @@ if ($Smoke) {
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
     $info.EnvironmentVariables['QS_DISABLE_CRASH_HANDLER'] = '1'
+    # This direct path never hides Explorer's taskbar, so the shell must not
+    # filter its taskbar shortcuts even when the caller's environment does.
+    $info.EnvironmentVariables.Remove('QS_WINDOWS_TASKBAR_SHORTCUT_FILTER')
     $process = [Diagnostics.Process]::Start($info)
     $outTask = $process.StandardOutput.ReadToEndAsync()
     $errTask = $process.StandardError.ReadToEndAsync()

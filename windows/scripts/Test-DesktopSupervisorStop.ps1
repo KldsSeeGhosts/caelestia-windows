@@ -184,6 +184,19 @@ namespace Caelestia.Takeover {
         'Write-Output "{}"'
     [IO.File]::WriteAllText((Join-Path $scripts 'Restore-Desktop.ps1'), $restore)
     Add-Type -Path (Join-Path $scripts 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    # The supervisor owns both switches. The shell filters Explorer's taskbar
+    # shortcuts only while this supervisor hides the taskbar, and only the
+    # shell's own crash relaunch is off. An inherited value never applies.
+    foreach ($hide in @($false, $true)) {
+        $variables = New-Object Collections.Specialized.StringDictionary
+        $variables['QS_WINDOWS_TASKBAR_SHORTCUT_FILTER'] = '1'
+        $variables['QS_DISABLE_CRASH_HANDLER'] = '1'
+        [Caelestia.Takeover.LaunchEnvironment]::Apply($variables, $hide)
+        Assert ($variables['QS_DISABLE_CRASH_RELAUNCH'] -eq '1') 'Supervised launch no longer disables the shell crash relaunch.'
+        Assert ($null -eq $variables['QS_DISABLE_CRASH_HANDLER']) 'Supervised launch still disables the whole crash handler.'
+        Assert ((($variables['QS_WINDOWS_TASKBAR_SHORTCUT_FILTER'] -eq '1')) -eq $hide) 'Taskbar shortcut filter does not follow the hidden taskbar.'
+    }
+    Write-Output 'PASS launch environment: taskbar shortcut filter only while the taskbar is hidden; only the shell crash relaunch is disabled.'
     $grace = [Caelestia.Takeover.Supervisor]::ChildExitGraceMs
     Assert ($grace + 45000 + 2000 + 1000 -lt [Caelestia.Takeover.Supervisor]::RecoveryBoundMs) 'Child grace consumes the restore budget.'
 

@@ -237,9 +237,10 @@ whether Explorer's composition-hosted taskbar obeys it. Region hit testing,
 composed pixels, and reapplication must be checked live.
 
 Win and Win+T navigation of an invisible taskbar is no longer left to Explorer:
-the separate shortcut suppression below consumes Win+T and the other taskbar
-chords in both suppression modes. If keyboard focus or pointer input is
-captured, stop the experiment; do not interpret it as acceptance.
+the shell's keyboard hook, described under shortcut suppression below, consumes
+Win+T and the other taskbar chords in both suppression modes. If keyboard focus
+or pointer input is captured, stop the experiment; do not interpret it as
+acceptance.
 
 Each HWND's original region is recorded in `desktop-before.json` before
 mutation, including taskbars discovered later. Recovery verifies the HWND,
@@ -265,49 +266,37 @@ crash recovery. Do not run the probe concurrently with the supervisor.
 
 ### Taskbar shortcut suppression
 
-While `hideTaskbar` is true, in either suppression mode, the supervisor consumes
-the Explorer taskbar shortcuts that would otherwise reveal, focus or invoke a
-hidden taskbar: Win+T, Win+Shift+T, Win+B, Win+0..9, Win+Shift+0..9,
-Win+Ctrl+0..9, Win+Alt+0..9 and Win+Alt+Enter. Matching requires the exact
-modifiers, so Win+A, Win+N, Win+L and other Windows chords are unchanged. A lone
-Win tap still opens the Caelestia launcher. Microsoft also documents
-Win+Ctrl+Shift+0..9 (launch the pinned app as administrator); that combined
-variant is outside this exact-modifier set and is not consumed.
+While `hideTaskbar` is true, in either suppression mode, the shell's own
+low-level keyboard hook consumes the Explorer taskbar shortcuts that would
+otherwise reveal, focus or invoke a hidden taskbar: Win+T, Win+Shift+T, Win+B,
+Win+0..9, Win+Shift+0..9, Win+Ctrl+0..9, Win+Alt+0..9 and Win+Alt+Enter.
+Matching requires the exact modifiers, so Win+A, Win+N, Win+L and other Windows
+chords are unchanged. A lone Win tap still opens the Caelestia launcher.
+Microsoft also documents Win+Ctrl+Shift+0..9 (launch the pinned app as
+administrator); that combined variant is outside this exact-modifier set and is
+not consumed.
 
-The hook owns a dedicated background thread with its own message loop. That
-thread only runs the callback; it never performs disk I/O, waits on supervisor
-work or logs. The supervisor UI thread records `shortcut-hook-installed`,
-`shortcut-hook-failed` or `shortcut-hook-timeout` in `taskbar-actions.jsonl`.
-The install attempt finishes before the shell child starts. On timeout the
-supervisor cancels the attempt and joins its thread before starting the child
-without shortcut suppression. If an install call is already in progress,
-joining can take longer than the timeout. The next child start retries. Windows
-calls the most recently installed low-level hook first, so the shell's own hook,
-installed later, still sees each chord first and clears its lone-Super tap
-candidate; the supervisor hook then consumes the event before Explorer receives
-it. A later reinstall is only attempted before a new child starts, never while
-the shell is running, because that would reverse the chain order. The hook is
-active only while the supervised shell process runs; it is deactivated on exit
-and stopped and joined during cleanup. It never runs when `hideTaskbar` is
-false.
+The supervisor sets `QS_WINDOWS_TASKBAR_SHORTCUT_FILTER=1` on the shell child
+only while it hides the taskbar, and removes an inherited value otherwise, so a
+visible taskbar keeps its shortcuts. The filter is part of the shell's existing
+hook, not a second hook in the supervisor: every keystroke passes through one
+low-level hook and there is no install order to preserve. The variable is read
+once for the shell's process lifetime, so changing `hideTaskbar` takes effect on
+the next shell start.
 
-After a consumed chord, the supervisor attempts the same masking convention
-qs.exe uses: an unassigned 0xE8 key tap followed by a replay of the Win key-up,
-all tagged with qs.exe's `0x5153484B` injection marker. The physical Win-up is
-swallowed only if all three events were inserted. If insertion fails or is
-partial, the physical Win-up passes through to avoid leaving Win logically
-pressed; Start may open in that fallback. The shell and supervisor hooks ignore
-events carrying that marker.
-Injected or remapped chords, for example from PowerToys, are consumed too
-unless they carry the marker, so they cannot bypass suppression. The callback
-does no I/O and performs at most six key-state queries, including the second-Win
-check.
+A configured bind keeps priority over the filter: a hook-backed or registered
+bind on one of these chords still runs, and an empty bind map leaves the filter
+running. After a consumed chord the hook masks the Windows key release the same
+way it does for its own Super chords: an unassigned 0xE8 key tap followed by a
+replayed Win key-up, tagged with the `0x5153484B` injection marker. The physical
+Win-up is swallowed only when the replay succeeded; a failed or partial replay
+lets it pass through so Win is never left logically down. Injected or remapped
+chords, for example from PowerToys, are consumed too unless they carry that
+marker.
 
-This is the supervisor's existing C# helper, not a newly built native binary,
-and it leaves the shell keybind map unchanged. A default keybind entry is not
-used: the shell hook runs whenever the shell runs, so a default bind would also
-swallow these chords with `hideTaskbar: false`, and the keybind map has no
-no-op action.
+The filter needs no entry in `keybinds.json` and adds no default bind. With
+`hideTaskbar: false` the shell hook does not consume these chords and Explorer
+handles them as usual.
 
 When enabled, an Explorer-process WinEvent show hook supplements the existing
 250 ms reconciliation timer. After twelve shows on the same Explorer-owned
@@ -316,7 +305,7 @@ it pauses event-driven hiding and region reapplication for five seconds while
 the timer continues to reconcile both.
 Separate, slower relayouts and shows on different windows do not share a count.
 The supervisor's `taskbar-actions.jsonl` records show observations, hide calls,
-WinEvent and shortcut-hook installation/failure and event-backoff transitions.
+WinEvent hook installation/failure and event-backoff transitions.
 `Source` distinguishes event callbacks from timer polling and initial/broadcast
 reconciliation.
 `MonotonicTicks` and `TickFrequency` use `Stopwatch`; a hide's
