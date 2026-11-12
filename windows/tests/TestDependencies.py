@@ -267,6 +267,16 @@ class Dependencies(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, "hash does not match"):
                 deps.verify_advisory_result(drifted, self.inventory, self.exceptions, cargo_lock_sha, now=now)
 
+    def test_lock_digest_is_the_same_for_lf_and_crlf_checkouts(self):
+        # The advisory job runs on Linux (LF) and the publisher on Windows
+        # (CRLF under autocrlf). Both must produce one lockfile identity.
+        with tempfile.TemporaryDirectory() as directory:
+            lf, crlf = Path(directory) / "lf.lock", Path(directory) / "crlf.lock"
+            lf.write_bytes(b"version = 4\n\n[[package]]\nname = \"a\"\n")
+            crlf.write_bytes(b"version = 4\r\n\r\n[[package]]\r\nname = \"a\"\r\n")
+            self.assertEqual(deps.lock_digest(lf), deps.lock_digest(crlf))
+            self.assertEqual(deps.lock_digest(lf), deps.sha(lf.read_bytes()))
+
 
 if __name__ == "__main__":
     unittest.main()

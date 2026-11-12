@@ -209,7 +209,7 @@ def verify_current_advisory(github, shell, work, *, now=None):
     exceptions = deps.read(shell / deps.EXCEPTIONS)
     now = now or utc()
     deps.validate_exceptions(exceptions, inventory, today=now.date())
-    cargo_lock_sha = digest(shell / "windows/capture/Cargo.lock")
+    cargo_lock_sha = deps.lock_digest(shell / "windows/capture/Cargo.lock")
     expected_inventory_sha = deps.inventory_digest(inventory)
     expected_exceptions_sha = deps.sha(json.dumps(exceptions, sort_keys=True).encode("utf-8"))
     runs = github.pages(

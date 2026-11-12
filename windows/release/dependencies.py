@@ -244,6 +244,12 @@ def safe_path(value):
 ADVISORY_FRESHNESS_DAYS = 7
 
 
+def lock_digest(path):
+    """Hash canonical LF bytes: the advisory job checks out LF on Linux and the
+    publisher checks out CRLF on Windows, and both must name the same lockfile."""
+    return sha(Path(path).read_bytes().replace(b"\r\n", b"\n"))
+
+
 def inventory_digest(inventory):
     return sha(json.dumps(inventory, sort_keys=True).encode("utf-8"))
 
@@ -456,7 +462,7 @@ def main():
     elif args.command == "verify-advisory":
         require(inventory == generate_inventory(previous=inventory), "Inventory drift")
         exceptions = read(ROOT / EXCEPTIONS)
-        cargo_lock_sha = sha((ROOT / "windows/capture/Cargo.lock").read_bytes())
+        cargo_lock_sha = lock_digest(ROOT / "windows/capture/Cargo.lock")
         verify_advisory_result(read(args.input), inventory, exceptions, cargo_lock_sha)
     else:
         require(inventory == generate_inventory(previous=inventory), "Inventory drift")
@@ -484,7 +490,7 @@ def main():
         else:
             check_audit(report, exceptions, inventory, result.returncode)
             if args.receipt_output:
-                cargo_lock_sha = sha(lock.read_bytes())
+                cargo_lock_sha = lock_digest(lock)
                 write(args.receipt_output, advisory_receipt(report, exceptions, inventory, cargo_lock_sha))
     print(f"PASS dependency {args.command}")
 
