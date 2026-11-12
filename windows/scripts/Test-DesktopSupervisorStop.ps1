@@ -43,6 +43,32 @@ try {
     $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs'))
     Assert ($source.Contains('public const int ReadyTimeoutMs = 20000;')) 'Production first-frame budget changed.'
     $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 5000;'
+    # Assert production thresholds before shortening only time in the fixture.
+    foreach ($pair in @(
+        @('ProbeIntervalMs = 60000', 'ProbeIntervalMs = 300'),
+        @('RetryIntervalMs = 15000', 'RetryIntervalMs = 300'),
+        @('ProbeTimeoutMs = 5000', 'ProbeTimeoutMs = 200'),
+        @('FreezeWindowMs = 120000', 'FreezeWindowMs = 2000')
+    )) {
+        $source = Replace-Exactly $source $pair[0] $pair[1]
+    }
+    Assert ($source.Contains('RequiredMisses = 6') -and $source.Contains('MaxTickGapMs = 5000')) 'Production freeze safeguards changed.'
+    $source = Replace-Exactly $source `
+        'return (long)(Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency);' `
+        'return (long)(Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency) + (File.Exists("clock-gap") ? 6000 : 0);'
+    $source = Replace-Exactly $source 'if (!liveness.Advance(now, eligible)) {' @'
+if (!liveness.Advance(now, eligible)) {
+                if (File.Exists(Path.Combine(launch.WorkingDirectory, "clock-gap")))
+                    File.WriteAllText(Path.Combine(launch.WorkingDirectory, "gap-seen"), "reset");
+'@
+    # Never broadcast to the desktop, even on the worker. Send to exactly the
+    # three hidden fixture recipients instead, preserving serial timeout cost.
+    $source = Replace-Exactly $source `
+        'SendMessageTimeout(new IntPtr(0xFFFF), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);' @'
+foreach (var path in Directory.GetFiles(Environment.CurrentDirectory, "slow-ready-*")) {
+                    SendMessageTimeout(new IntPtr(Int64.Parse(File.ReadAllText(path))), 0x001A, UIntPtr.Zero, "TraySettings", 0x0002, 3000, out ignored);
+                }
+'@
     # Exercise the real hide/region paths against our owner-filtered fake
     # taskbars. Replace registry suppression and restoration, never touch the
     # real taskbar, Explorer settings or session AppBars.
@@ -89,6 +115,12 @@ public static class HungExplorerFixture {
     static extern uint GetWindowThreadProcessId(IntPtr window, out uint owner);
     static readonly BoundedExplorerCall call = new BoundedExplorerCall();
     public static void Reconcile(string directory) {
+        if (File.Exists(Path.Combine(directory, "notification-request")) &&
+            Directory.GetFiles(directory, "slow-ready-*").Length == 3 &&
+            !File.Exists(Path.Combine(directory, "notification-started"))) {
+            Native.NotifyTraySettings();
+            File.WriteAllText(Path.Combine(directory, "notification-started"), "started");
+        }
         string path = Path.Combine(directory, "fake-window.txt");
         if (!File.Exists(path)) return;
         IntPtr window = new IntPtr(Int64.Parse(File.ReadAllText(path)));
@@ -110,6 +142,55 @@ public sealed class Supervisor : NativeWindow, IDisposable {
 
 namespace Caelestia.Takeover {
     public static class TaskbarEventFixture {
+        public static void VerifyLiveness() {
+            var policy = new ShellLiveness();
+            long now = 100;
+            policy.Reset(now);
+            // A shell that never supported the probe cannot freeze.
+            for (int i = 0; i < 20; i++) {
+                now += ShellLiveness.ProbeIntervalMs;
+                policy.Advance(now, true); policy.Issue(now);
+                now += ShellLiveness.ProbeTimeoutMs;
+                policy.Advance(now, true); policy.Expire(now);
+            }
+            if (policy.Armed || policy.Frozen || policy.Misses != 0) throw new Exception("Legacy shell armed detection.");
+            string nonce = policy.Issue(now);
+            if (policy.Accept("wrong") || !policy.Accept(nonce)) throw new Exception("Nonce matching failed.");
+            policy.Issue(now);
+            now += ShellLiveness.ProbeTimeoutMs;
+            policy.Advance(now, true); policy.Expire(now);
+            if (policy.Misses != 1) throw new Exception("Armed timeout was not counted.");
+            // A paused session, no readiness or shutdown must clear all misses.
+            policy.Advance(++now, false);
+            if (policy.Misses != 0 || policy.Frozen || policy.Nonce != null) throw new Exception("Pause carried a miss.");
+            nonce = policy.Issue(now);
+            now += ShellLiveness.MaxTickGapMs + 1;
+            if (policy.Advance(now, true) || policy.Misses != 0 || policy.Accept(nonce))
+                throw new Exception("Suspend retained a probe or accepted a stale reply.");
+            for (int i = 0; i < 5; i++) {
+                now += ShellLiveness.ProbeIntervalMs;
+                policy.Advance(now, true); policy.Issue(now);
+                now += ShellLiveness.ProbeTimeoutMs;
+                policy.Advance(now, true); policy.Expire(now);
+            }
+            if (policy.Frozen) throw new Exception("Fewer than six misses froze a child.");
+            nonce = policy.Issue(now);
+            if (!policy.Accept(nonce) || policy.Misses != 0 || policy.Frozen) throw new Exception("Recovering shell did not reset misses.");
+        }
+        public static void VerifyNotification() {
+            var notification = new BoundedNotification();
+            using (var entered = new ManualResetEvent(false))
+            using (var release = new ManualResetEvent(false))
+            using (var restored = new ManualResetEvent(false)) {
+                var clock = Stopwatch.StartNew();
+                notification.Request(delegate { entered.Set(); release.WaitOne(); });
+                if (!entered.WaitOne(1000)) throw new Exception("Notification did not start.");
+                notification.Request(delegate { restored.Set(); });
+                if (clock.ElapsedMilliseconds > 500) throw new Exception("Notification caller exceeded its budget.");
+                release.Set();
+                if (!restored.WaitOne(1000)) throw new Exception("In-flight notification lost restore.");
+            }
+        }
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
         public static bool Visible(string directory) {
             var bar = Read(directory);
@@ -214,7 +295,7 @@ namespace Caelestia.Takeover {
     [IO.File]::WriteAllText((Join-Path $scripts 'DesktopTakeover.cs'), $source)
     $watch = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Watch-DesktopShell.ps1'))
     $watch = Replace-Exactly $watch `
-        '[Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash, ($suppression -ceq ''invisible''))' `
+        '[Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash, ($suppression -ceq ''invisible''), $restartFrozenShell)' `
         ('[Caelestia.Takeover.Supervisor]::RunIsolatedTest([IO.Path]::GetFullPath($LaunchSpec), "' + $token + '")')
     [IO.File]::WriteAllText((Join-Path $scripts 'Watch-DesktopShell.ps1'), $watch)
     $restore = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Restore-Desktop.ps1'))
@@ -224,6 +305,9 @@ namespace Caelestia.Takeover {
         'Write-Output "{}"'
     [IO.File]::WriteAllText((Join-Path $scripts 'Restore-Desktop.ps1'), $restore)
     Add-Type -Path (Join-Path $scripts 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    [Caelestia.Takeover.TaskbarEventFixture]::VerifyNotification()
+    [Caelestia.Takeover.TaskbarEventFixture]::VerifyLiveness()
+    Write-Output 'PASS liveness policy: unsupported shell, exact nonce, six-miss floor, pause, suspend gap, stale reply and recovery reset.'
     # The supervisor owns both switches. The shell filters Explorer's taskbar
     # shortcuts only while this supervisor hides the taskbar, and only the
     # shell's own crash relaunch is off. An inherited value never applies.
@@ -288,6 +372,24 @@ public sealed class HungExplorerWindow : NativeWindow, IDisposable {
     }
     public void Dispose() { DestroyHandle(); }
 }
+public sealed class SlowSettingsWindow : NativeWindow, IDisposable {
+    readonly string number;
+    public SlowSettingsWindow(string number) {
+        this.number = number;
+        CreateHandle(new CreateParams { Caption = "hidden settings fixture", Style = unchecked((int)0x80000000), ExStyle = 0x08000080 });
+        File.WriteAllText("slow-ready-" + number, Handle.ToInt64().ToString());
+    }
+    protected override void WndProc(ref Message message) {
+        if (message.Msg == 0x001A) {
+            if (Marshal.PtrToStringUni(message.LParam) != "TraySettings") throw new Exception("Notification payload lifetime lost.");
+            File.WriteAllText("slow-entered-" + number, "entered");
+            Thread.Sleep(2500);
+            File.WriteAllText("slow-returned-" + number, "returned");
+        }
+        base.WndProc(ref message);
+    }
+    public void Dispose() { DestroyHandle(); }
+}
 public sealed class FakeTaskbarWindow : IDisposable {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string name);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern ushort RegisterClass(ref WindowClass value);
@@ -319,6 +421,12 @@ public sealed class FakeTaskbarWindow : IDisposable {
 }
 public static class SupervisorStopFixture {
     [STAThread] public static int Main(string[] args) {
+        if (args[0] == "--slow") {
+            using (var window = new SlowSettingsWindow(args[1])) {
+                while (!File.Exists("slow-stop")) { Application.DoEvents(); Thread.Sleep(5); }
+            }
+            return 0;
+        }
         if (args[0] == "--bystander") { Thread.Sleep(60000); return 0; }
         if (args[0] == "--taskbar" || args[0] == "--decoy") {
             using (var window = new FakeTaskbarWindow(args[0].Substring(2) + "-ready")) {
@@ -360,7 +468,29 @@ public static class SupervisorStopFixture {
             }
             if (mode == "crash") return 7;
             if (mode == "clean" || mode == "early-clean") return 0;
+            // Only this STA message-pump timer may echo a probe. The process
+            // stays alive while "stall" prevents pumping, just like a frozen GUI.
+            var guiProbe = new System.Windows.Forms.Timer { Interval = 10 };
+            guiProbe.Tick += delegate {
+                foreach (string request in Directory.GetFiles(".", "probe-*")) {
+                    string nonce = File.ReadAllText(request);
+                    File.WriteAllText("reply-" + nonce, nonce);
+                    File.Delete(request);
+                }
+            };
+            if (mode.StartsWith("liveness-") && mode != "liveness-legacy") guiProbe.Start();
             while (true) {
+                if (!File.Exists("stall")) Application.DoEvents();
+                if (File.Exists("pause-shell")) {
+                    Console.WriteLine("  INFO qml: CAELESTIA_SHELL_PAUSED");
+                    Console.Out.Flush();
+                    File.Delete("pause-shell");
+                }
+                if (File.Exists("resume-shell")) {
+                    Console.WriteLine("  INFO qml: CAELESTIA_SHELL_ACTIVE");
+                    Console.Out.Flush();
+                    File.Delete("resume-shell");
+                }
                 if (!reported && File.Exists("ready-" + attempt)) {
                     Console.WriteLine("2026-11-11 12:00:00.000  INFO qml: CAELESTIA_SHELL_READY");
                     Console.Out.Flush();
@@ -380,6 +510,13 @@ public static class SupervisorStopFixture {
                 }
                 Thread.Sleep(25);
             }
+        }
+        if (args.Length >= 2 && args[args.Length - 2] == "supervisorProbe") {
+            string nonce = args[args.Length - 1];
+            File.WriteAllText("probe-" + nonce, nonce);
+            while (!File.Exists("reply-" + nonce)) Thread.Sleep(10);
+            Console.WriteLine(File.ReadAllText("reply-" + nonce));
+            return 0;
         }
         if (args[args.Length - 1] != "quit") return 9;
         File.WriteAllText(Path.Combine(prefix, "quit-called.txt"), "accepted");
@@ -532,7 +669,9 @@ public static class SupervisorStopFixture {
         Assert ($taskbar.WaitForExit(2000)) 'Readiness taskbar did not stop.'
         Write-Output "PASS readiness $mode`: first-frame/status gate, taskbar visibility and bounded failure/recovery."
     }
-    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'stuck-quit', 'stuck-start')) {
+    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'notification-quit', 'notification-recovery',
+        'liveness-frozen', 'liveness-stall', 'liveness-legacy', 'liveness-suspend', 'liveness-quit', 'liveness-disabled', 'liveness-pause', 'liveness-update',
+        'stuck-quit', 'stuck-start')) {
         $case = Join-Path $root $mode
         $prefix = Join-Path $case 'prefix'
         $profile = Join-Path $case 'profile'
@@ -568,6 +707,13 @@ if (Test-Path -LiteralPath $order) {
         $witness = Start-FixtureProcess $fake '--witness' $case (Join-Path $case 'witness')
         Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-ready') } 'Hidden restore witness did not start.'
         $explorer = $null
+        $slowRecipients = @()
+        if ($mode -like 'notification-*') {
+            foreach ($number in 1..3) {
+                $slowRecipients += Start-FixtureProcess $fake ("--slow " + $number) $case (Join-Path $case ("slow-" + $number))
+            }
+            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-ready-*').Count -eq 3 } 'Slow notification recipients did not start.'
+        }
         if ($mode -like 'explorer-*' -or $mode -like 'stuck-*') {
             $explorer = Start-FixtureProcess $fake '--explorer' $case (Join-Path $case 'fake-explorer')
             Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-window.txt') } 'Fake Explorer did not create its hidden window.'
@@ -576,6 +722,8 @@ if (Test-Path -LiteralPath $order) {
         @{
             Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
             StateDirectory = $state; Environment = @{ CAELESTIA_STATE_DIR = $state }; TestWindowOwners = @($witness.Id)
+            RestartFrozenShell = ($mode -ne 'liveness-disabled')
+            InstallLockKey = $token
             StdoutPath = (Join-Path $state 'shell.out'); StderrPath = (Join-Path $state 'shell.err')
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
         $statusPath = Join-Path $state 'watchdog.json'
@@ -602,6 +750,88 @@ if (Test-Path -LiteralPath $order) {
             $owned = [Diagnostics.Process]::GetProcessById($status.shellPid)
             $null = $owned.Handle
             $children.Add($owned)
+            if ($mode -like 'liveness-*') {
+                if ($mode -eq 'liveness-legacy') {
+                    Start-Sleep -Milliseconds 4500
+                    $s = Read-CaelestiaSupervisorStatus $statusPath
+                    Assert (-not $s.livenessSupported -and -not $s.shellFrozen -and $s.shellPid -eq $owned.Id) 'Legacy shell was judged frozen.'
+                } else {
+                    Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessSupported } 'GUI probe never armed.'
+                    [IO.File]::WriteAllText((Join-Path $case 'stall'), 'stall')
+                    $freezeClock = [Diagnostics.Stopwatch]::StartNew()
+                    if ($mode -in @('liveness-frozen', 'liveness-disabled')) {
+                        if ($mode -eq 'liveness-frozen') {
+                            Wait-Until {
+                                $s = Read-CaelestiaSupervisorStatus $statusPath
+                                $s.phase -eq 'running' -and $s.shellPid -ne $owned.Id
+                            } 'Frozen GUI child was not recovered.' 6500
+                            $s = Read-CaelestiaSupervisorStatus $statusPath
+                            Assert ($owned.HasExited -and $freezeClock.ElapsedMilliseconds -lt 6500) 'Frozen recovery exceeded the fixture bound.'
+                            Assert ($s.lastUnhealthyReason -eq 'gui-unresponsive' -and $s.quickCrashes -eq 1) 'Frozen recovery bypassed status or restart accounting.'
+                            $owned = [Diagnostics.Process]::GetProcessById($s.shellPid)
+                            $null = $owned.Handle
+                            $children.Add($owned)
+                        } else {
+                            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).shellFrozen } 'Disabled automatic restart disabled detection too.' 6500
+                            $s = Read-CaelestiaSupervisorStatus $statusPath
+                            Assert ($s.phase -eq 'frozen' -and -not $owned.HasExited -and $s.shellPid -eq $owned.Id) 'Disabled frozen restart killed the child.'
+                        }
+                    } elseif ($mode -ne 'liveness-quit') {
+                        $updateLock = $null
+                        try {
+                            if ($mode -eq 'liveness-update') {
+                                $updateLock = [Threading.Mutex]::new($true, ('Local\CaelestiaInstall-' + $token))
+                                Start-Sleep -Milliseconds 4500
+                            } elseif ($mode -eq 'liveness-pause') {
+                                [IO.File]::WriteAllText((Join-Path $case 'pause-shell'), 'pause')
+                                Start-Sleep -Milliseconds 4500
+                            } elseif ($mode -eq 'liveness-suspend') {
+                                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'Suspend fixture had no pending misses.'
+                                [IO.File]::WriteAllText((Join-Path $case 'clock-gap'), 'gap')
+                                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'gap-seen') } 'Suspend gap did not reset the policy.' 1000
+                                Start-Sleep -Milliseconds 500
+                            } else { Start-Sleep -Milliseconds 1000 }
+                            Assert (-not $owned.HasExited -and (Read-CaelestiaSupervisorStatus $statusPath).shellPid -eq $owned.Id) 'Recoverable or excluded stall restarted the child.'
+                            Remove-Item -LiteralPath (Join-Path $case 'stall')
+                            [IO.File]::WriteAllText((Join-Path $case 'resume-shell'), 'resume')
+                        } finally {
+                            if ($updateLock) { $updateLock.ReleaseMutex(); $updateLock.Dispose() }
+                        }
+                        Wait-Until {
+                            $s = Read-CaelestiaSupervisorStatus $statusPath
+                            $s.livenessMisses -eq 0 -and $s.phase -eq 'running'
+                        } 'Recovered GUI did not clear the miss window.'
+                        Start-Sleep -Milliseconds 3000
+                        Assert (-not $owned.HasExited) 'Recovered GUI restarted after its reply.'
+                    } else {
+                        Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'probe-*').Count -gt 0 } 'Quit fixture had no pending GUI probe.'
+                    }
+                }
+                Write-Output "PASS $mode`: GUI-thread probe, conservative recovery or exclusion."
+            }
+            if ($slowRecipients.Count) {
+                $requestClock = [Diagnostics.Stopwatch]::StartNew()
+                [IO.File]::WriteAllText((Join-Path $case 'notification-request'), 'notify')
+                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'notification-started') } 'Settings notification blocked its initiating tick.' 1000
+                Assert ($requestClock.ElapsedMilliseconds -lt 1000) 'Settings notification exceeded its initiating-tick budget.'
+                $heartbeat = (Read-CaelestiaSupervisorStatus $statusPath).utc
+                $responsive = [Diagnostics.Stopwatch]::StartNew()
+                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Settings recipients blocked the heartbeat.' 1800
+                Assert ($responsive.ElapsedMilliseconds -lt 1800) 'Settings notification exceeded the heartbeat budget.'
+                if ($mode -eq 'notification-recovery') {
+                    $clock = [Diagnostics.Stopwatch]::StartNew()
+                    [Caelestia.Takeover.Supervisor]::RecoverActive()
+                    Assert ($watchdog.WaitForExit(1000) -and $clock.ElapsedMilliseconds -lt ($grace + 2500) -and $owned.HasExited) 'Settings recipients blocked recovery.'
+                    Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
+                    [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
+                    foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
+                    [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
+                    Assert ($witness.WaitForExit(2000)) 'Witness did not stop.'
+                    $bystander.Kill()
+                    Write-Output 'PASS settings notification: three slow recipients, advancing heartbeat and bounded recovery.'
+                    continue
+                }
+            }
             if ($explorer) {
                 Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-entered') } 'Supervisor did not call the fake window.'
                 $heartbeat = $status.utc
@@ -632,6 +862,28 @@ if (Test-Path -LiteralPath $order) {
                     $children.Add($owned)
                 }
                 if ($mode -like 'stuck-*') {
+                    # Retain an owned IPC client before freezing the owner.
+                    # Closing the owner's probe job must reap it even though
+                    # forced recovery cannot execute Supervisor.Dispose.
+                    $probeCapture = @{ Process = $null }
+                    Wait-Until {
+                        $candidate = @(Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + $watchdog.Id) |
+                            Where-Object { $_.CommandLine -like '* call shell supervisorProbe *' })
+                        if ($candidate.Count) {
+                            try {
+                                $pending = [Diagnostics.Process]::GetProcessById($candidate[0].ProcessId)
+                                $null = $pending.Handle
+                                if (-not $pending.HasExited -and $pending.Path -eq (Join-Path $prefix 'qs.exe')) {
+                                    $probeCapture.Process = $pending
+                                    return $true
+                                }
+                                $pending.Dispose()
+                            } catch [ArgumentException] {}
+                        }
+                        return $false
+                    } 'Stuck supervisor fixture did not retain a pending probe.'
+                    $pendingProbe = $probeCapture.Process
+                    $children.Add($pendingProbe)
                     [IO.File]::WriteAllText((Join-Path $case 'block-supervisor'), 'block')
                     Start-Sleep -Milliseconds 600
                     $supervisor = @(Get-CaelestiaSupervisors $profile)[0]
@@ -679,6 +931,7 @@ if (Test-Path -LiteralPath $order) {
                         Assert (Test-Path -LiteralPath (Join-Path $scripts 'fixture-restored')) 'Forced Quit skipped emergency snapshot restoration.'
                     }
                     Assert ($clock.ElapsedMilliseconds -lt 12000 -and $watchdog.HasExited -and $owned.HasExited) 'Stuck supervisor recovery exceeded its bound or left its child.'
+                    Assert ($pendingProbe.WaitForExit(2000)) 'Forced supervisor stop orphaned its IPC probe.'
                     Assert (-not $bystander.HasExited -and -not $witness.HasExited) 'Forced recovery killed a bystander.'
                     Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Forced recovery left profile ownership.'
                     [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
@@ -727,7 +980,7 @@ if (Test-Path -LiteralPath $order) {
                 Assert ((Get-Content -LiteralPath $forceLog -Raw).Trim() -ceq 'forced child termination after requested stop grace expired') 'Forced termination diagnostic was missing or contained unexpected data.'
                 Assert ($clock.ElapsedMilliseconds -ge $grace) 'Hung child was killed before its exit grace.'
             }
-            $expectedStarts = if ($mode -eq 'explorer-hung') { 2 } else { 1 }
+            $expectedStarts = if ($mode -in @('explorer-hung', 'liveness-frozen')) { 2 } else { 1 }
             Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq $expectedStarts) 'Intentional stop restarted the child.'
         }
         Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-restored') } 'Supervisor did not restore its hidden parked-window fixture.'
@@ -754,10 +1007,23 @@ if (Test-Path -LiteralPath $order) {
             [IO.File]::WriteAllText((Join-Path $case 'fake-stop'), 'stop')
             Assert ($explorer.WaitForExit(2000)) 'Fake Explorer did not stop.'
         }
+        if ($slowRecipients.Count) {
+            Assert ($clock.ElapsedMilliseconds -lt ($grace + 6000)) 'Settings recipients blocked Quit.'
+            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
+            [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
+            foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
+        }
         Write-Output "PASS supervisor $mode`: owned-child shutdown, restore, unrelated-process safety and session release."
     }
 } catch {
     Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
+    if ($statusPath -and (Test-Path -LiteralPath $statusPath)) { Get-Content -LiteralPath $statusPath }
+    if ($case) {
+        foreach ($log in @('watchdog.out', 'watchdog.err', 'quit.err')) {
+            $path = Join-Path $case $log
+            if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path }
+        }
+    }
     throw
 } finally {
     # On an assertion failure let the isolated owner reap its child too, even

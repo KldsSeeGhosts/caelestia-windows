@@ -13,6 +13,7 @@ $spec = Get-Content -LiteralPath $LaunchSpec -Raw | ConvertFrom-Json
 $hideTaskbar = $false
 $restartOnCrash = $true
 $suppression = 'hide'
+$restartFrozenShell = $true
 if ($spec.ConfigPath -and (Test-Path -LiteralPath $spec.ConfigPath)) {
     $config = Get-Content -LiteralPath $spec.ConfigPath -Raw | ConvertFrom-Json
     foreach ($setting in @('hideTaskbar', 'restartOnCrash')) {
@@ -29,4 +30,14 @@ if ($spec.ConfigPath -and (Test-Path -LiteralPath $spec.ConfigPath)) {
         }
     }
 }
-exit [Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash, ($suppression -ceq 'invisible'))
+if ($spec.ConfigPath) {
+    $shellConfigPath = Join-Path (Split-Path -Parent $spec.ConfigPath) 'shell.json'
+    if (Test-Path -LiteralPath $shellConfigPath) {
+        $shellConfig = Get-Content -LiteralPath $shellConfigPath -Raw | ConvertFrom-Json
+        if ($shellConfig.windows -and $shellConfig.windows.PSObject.Properties['restartFrozenShell']) {
+            if ($shellConfig.windows.restartFrozenShell -isnot [bool]) { throw 'windows.restartFrozenShell must be a JSON boolean.' }
+            $restartFrozenShell = $shellConfig.windows.restartFrozenShell
+        }
+    }
+}
+exit [Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash, ($suppression -ceq 'invisible'), $restartFrozenShell)

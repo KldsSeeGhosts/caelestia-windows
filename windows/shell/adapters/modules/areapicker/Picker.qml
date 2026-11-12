@@ -26,7 +26,7 @@ import "../../utils/FileUrls.js" as FileUrls
 // - Releasing a selection opens the editor over it (Editor.qml) and saves
 //   nothing. Copy and Save in the editor export the composed item, the frozen
 //   view plus the annotation layer, with CUtils.saveItem. Save writes
-//   Pictures\Screenshots and Copy hands the image to Clipboard.copyImageFile.
+//   Pictures\Screenshots and Copy waits for ClipboardWriter.writeFinished.
 MouseArea {
     id: root
 

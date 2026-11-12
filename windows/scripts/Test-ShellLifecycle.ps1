@@ -259,6 +259,41 @@ if ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helper-phase') -Raw).Tri
     $oldChild.Observe('  INFO qml: CAELESTIA_SHELL_NOT_READY')
     if (-not $oldChild.Ready) { throw 'A reload-style dip reset process readiness.' }
     Write-Output 'PASS readiness records: exact content-free QML info records, per-child latch, reload stability.'
+    $oldChild.Observe('  INFO qml: CAELESTIA_SHELL_PAUSED')
+    $oldChild.Observe('  INFO qml: CAELESTIA_SHELL_ACTIVE')
+    if ($oldChild.Paused -or $oldChild.PauseGeneration -ne 2) {
+        throw 'A pause/resume between supervisor ticks lost its reset generation.'
+    }
+    $oldChild.Observe('  WARN qml: CAELESTIA_SHELL_PAUSED')
+    if ($oldChild.Paused -or $oldChild.PauseGeneration -ne 2) { throw 'Non-control text paused liveness.' }
+    Write-Output 'PASS liveness pause records: exact controls retain a reset across a pause/resume between ticks.'
+    # Execute only the real configuration reader, not Add-Type or Run. No
+    # supervisor, IPC client, desktop operation or installed profile is used.
+    $watchSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Watch-DesktopShell.ps1'))
+    $configStart = $watchSource.IndexOf('$spec = Get-Content')
+    $configEnd = $watchSource.IndexOf('exit [Caelestia.Takeover.Supervisor]::Run(')
+    if ($configStart -lt 0 -or $configEnd -le $configStart) { throw 'Watchdog config-only fixture boundary changed.' }
+    $readConfig = [scriptblock]::Create('$LaunchSpec = $args[0]' + "`n" +
+        $watchSource.Substring($configStart, $configEnd - $configStart) + "`n" + '$restartFrozenShell')
+    $configRoot = Join-Path $root 'supervisor-config'
+    [IO.Directory]::CreateDirectory($configRoot) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $configRoot 'windows.json'), '{}')
+    $configSpec = Join-Path $configRoot 'launch.json'
+    @{ ConfigPath = (Join-Path $configRoot 'windows.json') } | ConvertTo-Json |
+        Set-Content -LiteralPath $configSpec -Encoding UTF8
+    foreach ($case in @(@('{}', $true), @('{"windows":{"restartFrozenShell":true}}', $true),
+        @('{"windows":{"restartFrozenShell":false}}', $false))) {
+        [IO.File]::WriteAllText((Join-Path $configRoot 'shell.json'), $case[0])
+        if ((& $readConfig $configSpec) -ne $case[1]) { throw 'Frozen restart did not follow shell.json or its default.' }
+    }
+    [IO.File]::WriteAllText((Join-Path $configRoot 'shell.json'), '{"windows":{"restartFrozenShell":"false"}}')
+    $rejected = $false
+    try { $null = & $readConfig $configSpec } catch {
+        if ($_.Exception.Message -ne 'windows.restartFrozenShell must be a JSON boolean.') { throw }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw 'Frozen restart accepted a non-boolean setting.' }
+    Write-Output 'PASS frozen restart config: default, true, false and non-boolean rejection in the production reader.'
 
     # Run the actual startup phase consumer against a disposable process
     # boundary. No watchdog, Qt process, desktop ownership or IPC is started.

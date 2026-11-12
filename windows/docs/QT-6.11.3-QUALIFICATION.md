@@ -47,6 +47,33 @@ The original C++ lyrics service is absent from the portable Windows build.
 Qt source and notice inclusion is conservative. It does not establish that
 optional Qt modules or every embedded third party ships in the product.
 
+### CVE-2026-116337 review (2026-11-12)
+
+On 2026-11-09 Qt published
+[CVE-2026-116337](https://www.qt.io/blog/security-issue-cve-2026-116337?hsLang=en)
+and listed it on the
+[Qt known vulnerabilities wiki](https://wiki.qt.io/List_of_known_vulnerabilities_in_Qt_products):
+uncontrolled resource consumption in Qt Network HTTP response handling
+(CWE-770, vendor CVSS 4.0 score 0.6 Low). The advisory and wiki list Qt 4.5.0
+through 6.8.10 or 6.12.1 as affected, identify Qt 6.8.10 and 6.12.1 as fixed
+releases, and publish Qt 6.11 patches
+(`CVE-2026-116337-qtbase-6.11-0001.diff`,
+`CVE-2026-116337-qtbase-6.11-0002.diff`, and Qt code review changes 783685 and
+783686) for bounding HTTP response status-line and header accumulation.
+
+Because this package ships official Qt 6.11.3 binaries (`Qt6Network.dll`) and
+`Requests` uses `QNetworkAccessManager` (with staged weather requests as the
+Windows caller, plus `XMLHttpRequest` in optional quota requests), Qt 6.11.3 is
+affected and unpatched. The owner decision is not to rebuild Qt from source in
+this round. `windows/release/advisory-exceptions.json` records `CVE-2026-116337`
+as `accepted-mitigated` at low severity, backed by application-level limits in
+`Requests::get` (1 MiB decompressed body cap, 30 s total wall-clock deadline,
+15 s inactivity timeout, and 5 redirects), with a revisit date of 2026-12-10
+or the first qualified Qt runtime containing the fix, whichever comes first. Note
+that application-layer response limits bound body size and total transfer time,
+while the upstream Qt 6.11 patches bound unterminated status lines and response
+headers inside `QHttpNetworkReply` before headers complete.
+
 ## Source, notice and payload review
 
 `windows/toolchain/review_qt_sources.py` reproduces the bounded review data

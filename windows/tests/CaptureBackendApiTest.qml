@@ -1,6 +1,9 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Windows as Native
+import qs.modules.areapicker
+import qs.services
 
 // Pin smoke for #71. It confirms the two backend APIs the shell's capture
 // design relies on are reachable from QML: PanelWindow.excludeFromCapture and
@@ -11,6 +14,19 @@ ShellRoot {
     id: root
 
     property int assertions: 0
+
+    // Construct the actual staged screenshot graph with its native dependency,
+    // unlike capture action fixtures. Do not open a picker or invoke a writer.
+    // Stage-ShellPrototype also rejects all legacy singleton references across
+    // the production QML tree, with an empty explicit allowlist.
+    AreaPicker {
+        id: picker
+        interactionEnabled: false
+    }
+    Thumbnails {
+        id: thumbnails
+        interactionEnabled: false
+    }
 
     function check(condition, message): void {
         if (!condition)
@@ -40,6 +56,11 @@ ShellRoot {
 
     function run(): void {
         try {
+            check(picker.clipboard === Native.ClipboardWriter, "production picker uses the write-only singleton");
+            check(thumbnails.clipboard === Native.ClipboardWriter, "production thumbnails use the write-only singleton");
+            check(CaptureUi.picker === picker && CaptureUi.thumbnails === thumbnails, "production screenshot graph registers both components");
+            check(!picker.opened && picker.windows.length === 0 && thumbnails.windows.length === 0, "construction opens no capture windows");
+            check(picker.copyOperation === 0 && thumbnails.entries.length === 0, "construction submits no clipboard operations");
             check(panel.excludeFromCapture === false, "excludeFromCapture must default to false");
             let changes = 0;
             panel.excludeFromCaptureChanged.connect(() => changes++);

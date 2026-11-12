@@ -172,6 +172,7 @@
     }
   },
   "windows": {
+    "restartFrozenShell": true,
     "clipboard": {
       "enabled": true
     },

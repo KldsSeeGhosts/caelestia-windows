@@ -18,6 +18,15 @@ target_link_libraries(caelestia-core PUBLIC caelestia-util)
 # Bake the shell version in so CUtils can expose it without spawning a process
 target_compile_definitions(caelestia-core PRIVATE CAELESTIA_VERSION="${VERSION}")
 
+if(CAELESTIA_WINDOWS_TESTS)
+    find_package(Qt6 REQUIRED COMPONENTS ZlibPrivate)
+    add_executable(requests-tests test/requests_test.cpp requests.cpp requests.hpp)
+    target_include_directories(requests-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(requests-tests PRIVATE Qt::Core Qt::Qml Qt::Network Qt::Test Qt6::ZlibPrivate)
+    add_test(NAME requests COMMAND requests-tests)
+    set_tests_properties(requests PROPERTIES TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Node macros expand to Q_OBJECT, automoc can't see it otherwise
 list(APPEND CMAKE_AUTOMOC_MACRO_NAMES
     SETTINGS_NODE SETTINGS_NODE_NO_CTOR SETTINGS_LIST_TYPE SETTINGS_SINGLETON_DECL

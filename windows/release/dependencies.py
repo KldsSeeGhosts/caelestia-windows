@@ -184,13 +184,17 @@ def validate_exceptions(document, inventory, today=None):
         require(entry["component"] in components, f"Unknown exception component: {key}")
         require(entry["reviewedVersion"] == components[entry["component"]]["version"],
                 f"Exception requires version review: {key}")
-        require(entry["applicability"] in {"patched", "not-affected", "accepted-temporary", "absent"},
+        require(entry["applicability"] in {
+            "patched", "not-affected", "accepted-temporary", "accepted-mitigated", "absent"},
                 f"Unknown exception applicability: {key}")
         if entry["applicability"] == "absent":
             require(components[entry["component"]]["classification"] == "optional",
                     f"Installed component cannot use absent exception: {key}")
         if entry["applicability"] == "patched":
             require(bool(entry["patchedVersions"]), f"Missing patched versions: {key}")
+        if entry["applicability"] == "accepted-mitigated":
+            require(bool(entry.get("mitigation", "").strip()), f"Missing exception mitigation: {key}")
+            require("patchedVersions" not in entry, f"Mitigated exception must not claim patched versions: {key}")
     return document["exceptions"]
 
 
