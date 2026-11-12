@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import qs.services
 import qs.modules.drawers
 
@@ -16,6 +17,21 @@ ShellRoot {
     }
     readonly property bool hasFullscreen: content.hasFullscreen
     readonly property bool hasFullscreenOnNormalWs: content.hasFullscreenOnNormalWs
+    // No actual window is shown. Feed the production occlusion policy to the
+    // production readiness component through a placed, visible-shaped facade.
+    property QtObject readinessScope: QtObject {
+        property bool firstFrame: false
+        property QtObject window: QtObject {
+            property bool backingWindowVisible: true
+            property int width: 1920
+            property int height: 1080
+            readonly property bool takeoverOccluded: content.takeoverOccluded
+        }
+    }
+    property ShellReadiness takeoverReadiness: ShellReadiness {
+        screenCount: 1
+        scopes: [readinessScope]
+    }
 
     property QtObject monitorA: QtObject {
         property var activeWorkspace: normal
@@ -121,8 +137,18 @@ ShellRoot {
             check(!hasFullscreen && !toastFullscreen, "no occluder, no toplevel fullscreen");
             monitorB.lastIpcObject = {specialWorkspace: {name: ""}, fullscreenOccluder: true};
             check(hasFullscreen && hasFullscreenOnNormalWs && toastFullscreen, "occluder alone is fullscreen on B");
+            check(content.takeoverOccluded, "backend fullscreen verdict does not count its lowered Top panel");
+            check(takeoverReadiness.takeoverReady && !takeoverReadiness.ready,
+                "occluded panel without frames must allow takeover but not change strict IPC readiness");
+            content.WlrLayershell.layer = WlrLayer.Overlay;
+            check(!content.takeoverOccluded && !takeoverReadiness.takeoverReady,
+                "overlay panel incorrectly bypasses first frames");
+            content.WlrLayershell.layer = WlrLayer.Top;
+            check(takeoverReadiness.takeoverReady && !takeoverReadiness.ready,
+                "lowered Top panel did not resume takeover-only readiness");
             monitor = monitorA;
             check(!hasFullscreen, "B's occluder does not hide A");
+            check(!takeoverReadiness.takeoverReady, "B's fullscreen allowed takeover without a frame on A");
             monitorB.lastIpcObject = {specialWorkspace: {name: ""}, fullscreenOccluder: false};
             monitor = monitorB;
             check(!hasFullscreen && !toastFullscreen, "occluder gone");

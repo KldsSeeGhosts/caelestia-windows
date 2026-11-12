@@ -49,6 +49,11 @@ ShellRoot {
     readonly property var shellScreens: smoke && smokeScreenIndex >= 0
         ? Quickshell.screens.filter((screen, index) => index === smokeScreenIndex)
         : Quickshell.screens
+    ShellReadiness {
+        id: readiness
+        screenCount: root.shellScreens.length
+        scopes: drawers.instances
+    }
     settings.watchFiles: false
     ThemeTokens {}
 
@@ -251,10 +256,7 @@ ShellRoot {
         return {
             lifecycle: {
                 generation: root.generation,
-                ready: root.shellScreens.length > 0
-                    && drawers.instances.length === root.shellScreens.length
-                    && drawers.instances.every(scope => scope.firstFrame && scope.window.backingWindowVisible
-                        && scope.window.width > 0 && scope.window.height > 0)
+                ready: readiness.ready
             },
             smoke: root.smoke,
             smokeComplete: root.smoke && smokeCheck.step >= 5,

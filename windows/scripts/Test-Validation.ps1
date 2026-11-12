@@ -288,7 +288,7 @@ try {
         } else {
             @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications',
               'Test-CaptureBackendApi', 'Test-CapturePicker', 'Test-CaptureThumbnail', 'Test-CaptureRecording', 'Test-DragPreview', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-IdleWork', 'Test-LauncherHoverClose',
-              'Test-NexusWindow', 'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers',
+              'Test-NexusWindow', 'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers', 'Test-ShellReadiness',
               'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
               'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-WindowsHoverRegions',
