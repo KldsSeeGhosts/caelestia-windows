@@ -23,6 +23,25 @@
       "revisitDate": "2027-02-10",
       "source": "https://www.qt.io/blog/security-advisory-cve-2026-96432",
       "reason": "Reviewed in windows/docs/QT-6.11.3-QUALIFICATION.md. Qt Network ships, including the networking used by QML XMLHttpRequest. The advisory identifies 6.11.3 as fixed. This is a servicing review, not proof of application exploitability."
+    },
+    {
+      "id": "CVE-2026-116337",
+      "component": "qt",
+      "reviewedVersion": "6.11.3",
+      "applicability": "accepted-mitigated",
+      "affectedVersions": ["from Qt 4.5.0 to Qt 6.8.10 or Qt 6.12.1 (6.11.3 is unpatched)"],
+      "fixedVersions": ["6.8.10", "6.12.1"],
+      "patches": [
+        "https://download.qt.io/official_releases/qt/6.11/CVE-2026-116337-qtbase-6.11-0001.diff",
+        "https://download.qt.io/official_releases/qt/6.11/CVE-2026-116337-qtbase-6.11-0002.diff",
+        "https://codereview.qt-project.org/c/qt%2Fqtbase/+/783685",
+        "https://codereview.qt-project.org/c/qt%2Fqtbase/+/783686"
+      ],
+      "owner": "KldsSeeGhosts",
+      "revisitDate": "2026-12-10",
+      "source": "https://www.qt.io/blog/security-issue-cve-2026-116337?hsLang=en",
+      "mitigation": "Caelestia Requests::get bounds HTTP responses to 1 MiB decompressed body size, a 30 s wall-clock deadline, a 15 s inactivity timeout, and 5 redirects.",
+      "reason": "Reviewed in windows/docs/QT-6.11.3-QUALIFICATION.md. Qt 6.11.3 official binaries ship Qt6Network.dll and Requests uses QNetworkAccessManager, so 6.11.3 is affected and unpatched (CWE-770, vendor CVSS 4.0 score 0.6 Low). Accepted at low severity without rebuilding Qt from source, mitigated by Requests::get limits until 2026-12-10 or the first qualified Qt runtime containing the fix."
     }
   ]
 }
