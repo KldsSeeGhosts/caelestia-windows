@@ -101,6 +101,17 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     }
 }
 $hashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Destination 'sources.json') -Encoding UTF8
+    # The inherited history singleton must never be constructed by the shell.
+    # Check the staged tree, not only adapters: upstream files also reach it.
+    # No production QML currently has an exception.
+    $legacyClipboardAllowlist = @()
+    foreach ($qmlFile in @(Get-ChildItem -LiteralPath $Destination -Recurse -Filter '*.qml' -File)) {
+        $relativeQml = $qmlFile.FullName.Substring($Destination.Length + 1).Replace('\', '/')
+        if ($relativeQml -in $legacyClipboardAllowlist) { continue }
+        if ([IO.File]::ReadAllText($qmlFile.FullName) -match '\b(?:Native|Quickshell\.Windows)\.Clipboard\b') {
+            throw "Staged QML references the legacy clipboard singleton: $relativeQml"
+        }
+    }
     # A qmldir that names a file the map never copied is how a live install
     # can start, then fail to load (IdleHold.qml after ).
     foreach ($qmldir in @(Get-ChildItem -LiteralPath $Destination -Recurse -Filter qmldir -File)) {

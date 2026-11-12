@@ -48,12 +48,20 @@ ShellRoot {
     property QtObject clipboardRecorder: QtObject {
         property var copied: []
         property bool result: true
+        property string error: "set-failed"
+        property bool autoFinish: true
+        signal writeFinished(int id, bool ok, string error)
         property bool existedAtCall: false
-        function copyImageFile(path: string): bool {
+        function copyImageFile(path: string): int {
             copied = copied.concat([path]);
             existedAtCall = WindowsFiles.isFile(path);
             shot.source = "file:///" + path.split("\\").join("/");
-            return result;
+            const id = copied.length;
+            const ok = result;
+            const code = ok ? "" : error;
+            if (autoFinish)
+                Qt.callLater(() => writeFinished(id, ok, code));
+            return id;
         }
     }
 
@@ -482,9 +490,13 @@ ShellRoot {
 
         // A copy the clipboard refuses is reported.
         clipboardRecorder.result = false;
-        check(thumbs.copyEntry(copy) === false && toastWith("could not be copied") !== "", "a refused copy is reported");
-        clipboardRecorder.result = true;
-        saveFailureStep();
+        thumbs.copyEntry(copy);
+        check(copy.copyOperation > 0 && !copy.copied, "an operation id is not success");
+        Qt.callLater(() => step(() => {
+            check(copy.copyFailed && !copy.copied && toastWith("could not be copied") !== "", "a refused copy is reported asynchronously");
+            clipboardRecorder.result = true;
+            saveFailureStep();
+        }));
     }
 
     function saveFailureStep(): void {
@@ -1316,6 +1328,62 @@ ShellRoot {
     }
 
     function finalStep(): void {
+        asyncCopyCases(0);
+    }
+
+    readonly property var writeErrors: ["read-failed", "decode-failed", "allocation-failed", "clipboard-busy", "set-failed"]
+
+    function asyncCopyCases(index: int): void {
+        check(thumbs.addSaved(info(), savedPath), "entry for async copy");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        clipboardRecorder.result = false;
+        clipboardRecorder.error = writeErrors[index];
+        thumbs.copyEntry(entry);
+        check(entry.copyOperation > 0 && !entry.copied, "no synchronous success");
+        Qt.callLater(() => step(() => {
+            check(entry.copyFailed && !entry.copied && !entry.copyOperation && thumbs.entries.includes(entry), writeErrors[index] + " keeps the entry");
+            check(cardFor(entry).paused, "failure pauses dismissal for retry/save");
+            clipboardRecorder.result = true;
+            thumbs.copyEntry(entry);
+            Qt.callLater(() => step(() => {
+                check(entry.copied && !entry.copyFailed && !entry.copyOperation, "retry confirms success asynchronously");
+                thumbs.finish(entry);
+                if (index + 1 < writeErrors.length)
+                    asyncCopyCases(index + 1);
+                else
+                    asyncCopyTimeout();
+            }));
+        }));
+    }
+
+    function asyncCopyTimeout(): void {
+        clipboardRecorder.autoFinish = false;
+        thumbs.copyTimeout = 30;
+        check(thumbs.addSaved(info(), savedPath), "entry for missing result");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        thumbs.copyEntry(entry);
+        const stale = entry.copyOperation;
+        thumbs.close(entry);
+        Qt.callLater(() => step(() => {
+            clipboardRecorder.writeFinished(stale, true, "");
+            check(!thumbs.entries.includes(entry) || !entry.copied, "a closed entry ignores late success");
+            thumbs.finish(entry);
+            check(thumbs.addSaved(info(), savedPath), "new entry");
+            const next = thumbs.entries[thumbs.entries.length - 1];
+            thumbs.copyEntry(next);
+            const current = next.copyOperation;
+            clipboardRecorder.writeFinished(stale, true, "");
+            check(next.copyOperation === current && !next.copied, "old result cannot finish a new entry");
+            later(150, () => step(() => {
+                check(!next.copyOperation && next.copyFailed && !next.copied && thumbs.entries.includes(next), "missing result keeps entry for retry/save");
+                clipboardRecorder.writeFinished(current, true, "");
+                check(!next.copied, "success after timeout is ignored");
+                cleanupFinal();
+            }));
+        }));
+    }
+
+    function cleanupFinal(): void {
         thumbs.closeAll();
         later(1500, () => step(() => {
             check(thumbs.entries.length === 0 && panels().length === 0, "everything is closed");

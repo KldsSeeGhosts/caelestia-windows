@@ -74,7 +74,7 @@ Rules for every control the tool draws:
 
 - **Export:** `CUtils.saveItem(item, url, rect)` (`plugin/src/Caelestia/cutils.cpp:32-79`). The item is the editor's composed item (frozen image plus annotation layer), at the native pixel scale.
 - **Gate:** phase 2 must prove that `grabToImage` reads back a Windows `ScreencopyView` (a D3D11 texture) correctly. If not, the backend adds `ScreencopyView.saveFrame(path, rect)`, and the editor composes the strokes over the saved frame.
-- **Clipboard:** `Clipboard.copyImageFile(path)` writes CF_DIB only. The current tool writes PNG and DIB. Adding PNG is a backend follow-up, not a blocker.
+- **Clipboard:** `ClipboardWriter.copyImageFile(path)` returns an operation id. The picker and thumbnails wait for `writeFinished(id, ok, error)` before reporting a copy. Failure or a bounded timeout keeps the editor or thumbnail available for retry or save and shows an error, with no success toast. Session and operation guards ignore late results. The hand-over file is deleted after the call reads it; a separate pending preview survives until completion or invalidation. The shell never constructs the legacy history singleton. The writer writes CF_DIB only. The current tool writes PNG and DIB. Adding PNG is a backend follow-up, not a blocker.
 - **Files:** the default save directory is Pictures\Screenshots, then Pictures. Names use the current `filename_format` default, with " (n)" numbering. The clipboard hand-over image goes in the OS temp directory as `caelestia-clipboard-<UUID>.png`, not `/tmp`. The picker deletes only its own file, and a crash in the middle of a save can leave one file behind.
 
 ### Editor

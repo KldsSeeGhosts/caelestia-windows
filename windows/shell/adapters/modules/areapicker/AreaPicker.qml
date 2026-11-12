@@ -12,6 +12,7 @@ import qs.services
 import qs.utils
 import "CaptureLogic.js" as Logic
 import "RecordingLogic.js" as Recording
+import "../../utils/FileUrls.js" as FileUrls
 
 // Windows adaptation of upstream modules/areapicker/AreaPicker.qml.
 //
@@ -79,7 +80,11 @@ Scope {
     property string activeTemp: ""
     // Needs a local file path. Fixtures replace it with a recorder so that no
     // test writes the real clipboard.
-    property var clipboard: Native.Clipboard
+    property var clipboard: Native.ClipboardWriter
+    property int copyOperation
+    property int copySession
+    property var copyInfo: null
+    property string copyPreview: ""
     // Shows the finished capture. Thumbnails.qml registers itself with CaptureUi;
     // fixtures replace it, and without one no thumbnail is shown.
     property var thumbnails: CaptureUi.thumbnails
@@ -115,6 +120,12 @@ Scope {
     function invalidate(): void {
         session++;
         saving = false;
+        copyOperation = 0;
+        copyInfo = null;
+        if (copyPreview) {
+            removeTemp(copyPreview);
+            copyPreview = "";
+        }
         if (activeTemp) {
             removeTemp(activeTemp);
             activeTemp = "";
@@ -216,26 +227,42 @@ Scope {
         cancel();
     }
 
-    // copyImageFile reads the whole file before it returns, then decodes and
-    // writes the clipboard later with no completion result. A true return
-    // therefore means the copy was started. A write that lands after its session
-    // ended deletes its own file and copies nothing.
-    // The thumbnail copies the file before it is deleted below, because the
-    // hand-over file does not outlive this call.
+    // The writer reads the hand-over file before returning an operation id.
+    // Keep a separate preview until writeFinished confirms success. Neither a
+    // queued write nor a failed write is a finished capture.
     function copyFinished(started: int, path: string, info = null): void {
         if (started !== session) {
             removeTemp(path);
             return;
         }
-        const accepted = clipboard.copyImageFile(path);
-        if (accepted && thumbnails && info)
-            thumbnails.addCopy(info, path);
+        if (thumbnails && thumbnails.enabled && info) {
+            copyPreview = CUtils.newCaptureTempPath().split("\\").join("/");
+            if (copyPreview && !CUtils.copyFile(FileUrls.fromLocalPath(path), FileUrls.fromLocalPath(copyPreview), true)) {
+                removeTemp(copyPreview);
+                copyPreview = "";
+            }
+        }
+        copySession = started;
+        copyInfo = info;
+        saving = true;
+        copyOperation = clipboard.copyImageFile(path);
         removeTemp(path);
         activeTemp = "";
-        if (accepted)
-            cancel();
-        else
-            saveFailed(started, Tr.tr("The image could not be copied."));
+    }
+
+    Connections {
+        target: root.clipboard
+        function onWriteFinished(id: int, ok: bool, error: string): void {
+            if (!root.copyOperation || id !== root.copyOperation || root.copySession !== root.session || !root.opened || root.closing)
+                return;
+            if (!ok) {
+                root.saveFailed(root.copySession, Tr.tr("The image could not be copied."));
+                return;
+            }
+            if (root.thumbnails && root.copyInfo && root.copyPreview)
+                root.thumbnails.addCopy(root.copyInfo, root.copyPreview);
+            root.cancel();
+        }
     }
 
     // An export that failed is reported and ends, but the editor stays open with
@@ -261,7 +288,8 @@ Scope {
     Timer {
         interval: root.saveTimeout
         running: root.saving && root.opened
-        onTriggered: root.saveFailed(root.session, Tr.tr("Saving the screenshot timed out."))
+        onTriggered: root.saveFailed(root.session, root.copyOperation
+            ? Tr.tr("Copying the screenshot timed out.") : Tr.tr("Saving the screenshot timed out."))
     }
 
     // Each ScreencopyView reports here. The tint appears only when every screen
@@ -290,6 +318,8 @@ Scope {
             CaptureUi.picker = null;
         if (activeTemp)
             removeTemp(activeTemp);
+        if (copyPreview)
+            removeTemp(copyPreview);
     }
 
     LazyLoader {

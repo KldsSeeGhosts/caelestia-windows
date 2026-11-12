@@ -43,7 +43,7 @@ Item {
     // The owner sets this on the entry for as long as the system drag runs. The
     // card then keeps its timeout still, as it does under the pointer.
     readonly property bool dragging: entry.dragging === true
-    readonly property bool paused: hovered || dragging || owner.suspended
+    readonly property bool paused: hovered || dragging || owner.suspended || !!entry.copyOperation || entry.copyFailed === true
     // Milliseconds of timeout used so far. Only unpaused time counts.
     property real elapsed
 
