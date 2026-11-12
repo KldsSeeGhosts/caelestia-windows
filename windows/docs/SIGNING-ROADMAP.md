@@ -7,8 +7,8 @@ Authenticode publisher signature.
 
 Design note for a signing pipeline that can produce a signed stable release.
 Nothing in this document is implemented. The development channel stays unsigned;
-only stable releases will be signed, and only after this work lands and the
-owner's SignPath application is accepted.
+only stable releases will be signed, and only after this work lands and my
+SignPath application is accepted.
 
 The standalone verifier in
 [Test-AuthenticodeSignatures.ps1](../scripts/Test-AuthenticodeSignatures.ps1)
@@ -124,7 +124,7 @@ Signing may start only when all of these are true:
 - This roadmap's stable assembly contract, trust boundary, receipt and metadata
   refresh are implemented and reviewed.
 - Every signed PE has the required `VERSIONINFO`.
-- The owner's SignPath Foundation application is accepted, the project and
+- My SignPath Foundation application is accepted, the project and
   signing policy exist, and manual approval is enforced.
 - The artifact configuration is registered from the reviewed draft, and the
   registered copy matches the repository copy.

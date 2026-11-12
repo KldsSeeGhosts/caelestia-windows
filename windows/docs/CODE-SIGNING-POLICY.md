@@ -27,7 +27,7 @@ and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
 | --- | --- | --- | --- |
 | Development | `vX.Y.Z-development` | No | Eligible green `main` pushes publish history-derived plain versions. |
 | Preview | `vX.Y.Z-preview` | No | Promotion of identical tested development artifacts. Historical `v0.1.0-preview.2` keeps its original tag. |
-| Stable | `vMAJOR.MINOR.PATCH`, `MAJOR >= 1` | Intended | The owner's decision is that stable releases will be signed through SignPath Foundation once the pipeline exists. No stable release exists today. |
+| Stable | `vMAJOR.MINOR.PATCH`, `MAJOR >= 1` | Intended | My plan is that stable releases will be signed through SignPath Foundation once the pipeline exists. No stable release exists today. |
 
 The table describes this project's own publisher signature. Deployed Qt DLLs
 carry Qt's signature in every channel; that is a vendor signature, not one from
@@ -106,20 +106,20 @@ There is no signing pipeline. In particular:
 
 The requirements for a real pipeline are listed in
 [SIGNING-ROADMAP.md](SIGNING-ROADMAP.md). Signing activates only after that work
-is done, the owner's SignPath application is accepted and the service is
+is done, my SignPath application is accepted and the service is
 configured.
 
 ## Team roles
 
 SignPath Foundation requires the project team to name the people behind three
-roles. The project has a single maintainer today, who holds all three. The
-owner keeps this list current as contributors join.
+roles. I am the sole maintainer today and hold all three, and I'll keep
+this list current as contributors join.
 
 | Role | Who | Responsibility |
 | --- | --- | --- |
 | Authors | [KldsSeeGhosts](https://github.com/KldsSeeGhosts); repository [CODEOWNERS](../../.github/CODEOWNERS) | May change source and build scripts without an additional review. |
 | Reviewers | [KldsSeeGhosts](https://github.com/KldsSeeGhosts) | Reviews every proposed change from someone who is not a committer. |
-| Approvers | [KldsSeeGhosts](https://github.com/KldsSeeGhosts) | Decides whether a specific release may be signed. The owner is the single approver. |
+| Approvers | [KldsSeeGhosts](https://github.com/KldsSeeGhosts) | Decides whether a specific release may be signed. I am the single approver. |
 
 Every signing request would need a manual approval. The approver would confirm
 that the request belongs to the exact tested stable release, that the workflow
