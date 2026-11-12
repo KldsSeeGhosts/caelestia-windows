@@ -395,6 +395,7 @@
   "windows/shell/adapters/services/WallpaperFolderService.qml": "services/WallpaperFolderService.qml",
   "windows/shell/adapters/services/WallpaperProvenance.qml": "services/WallpaperProvenance.qml",
   "windows/shell/adapters/services/Wallpapers.qml": "services/Wallpapers.qml",
+  "windows/shell/adapters/services/WallpaperCompletion.qml": "services/WallpaperCompletion.qml",
   "windows/shell/adapters/utils/Paths.qml": "utils/Paths.qml",
   "windows/shell/adapters/utils/FileUrls.js": "utils/FileUrls.js",
   "windows/shell/adapters/utils/RecordingDate.js": "utils/RecordingDate.js",

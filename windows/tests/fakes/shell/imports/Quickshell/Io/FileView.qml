@@ -15,11 +15,7 @@ QtObject {
     property string cachedText: ""
     property string pendingText: ""
     property bool prepared: false
-    // True while a load or save signal is being delivered. The native view
-    // still holds its operation while these run, so a write issued from the
-    // handler loses its own completion.
-    property bool deliveringLoad: false
-    property bool emittingSaved: false
+    property bool writeFailed: false
     signal loaded()
     signal loadFailed(var error)
     signal fileChanged()
@@ -42,17 +38,18 @@ QtObject {
     }
     function deliverLoad(): void {
         prepared = true;
-        deliveringLoad = true;
         if (Files.unreadable[path]) {
+            writeFailed = true;
             loadFailed(3);
         } else if (Object.prototype.hasOwnProperty.call(Files.contents, path)) {
+            writeFailed = false;
             cachedText = String(Files.contents[path] ?? "");
             loaded();
         } else {
+            writeFailed = true;
             cachedText = "";
             loadFailed(2);
         }
-        deliveringLoad = false;
     }
     function setText(text): void {
         if (!path)
@@ -60,18 +57,8 @@ QtObject {
         const value = String(text);
         // The native writer drops a value it already holds: state.data after
         // a successful load/save, or the write waiting to run.
-        if (cachedText === value || pendingText === value)
+        if (!writeFailed && (cachedText === value || pendingText === value))
             return;
-        if (deliveringLoad || emittingSaved) {
-            // The writer still runs, but operationFinished no longer belongs
-            // to the view, so neither saved() nor saveFailed() arrives.
-            if (!Files.saveFailures[path]) {
-                Files.contents[path] = value;
-                cachedText = value;
-            }
-            Files.droppedWrites++;
-            return;
-        }
         if (blockWrites) {
             Files.writeRequests++;
             Files.deliverWrite(root, value);

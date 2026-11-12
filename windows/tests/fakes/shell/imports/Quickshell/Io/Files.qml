@@ -7,18 +7,15 @@ QtObject {
     property var unreadable: ({})
     // Paths whose next write must fail, with the FileViewError value to emit.
     property var saveFailures: ({})
-    // Paths whose atomic commit fails without an error. The pinned backend
-    // logs the failed commit and still emits saved(), leaving the destination
-    // unchanged (backend issue #28). The attempted bytes stay cached.
+    // Paths whose atomic commit fails. The destination and cached committed
+    // bytes stay unchanged, and FileView emits saveFailed, never saved.
     property var commitFailures: ({})
     // When set, setText queues completion instead of delivering saved() from
     // inside the call. The native view writes on a worker thread and reports
     // later; tests pump it with flushWrites().
     property bool asyncWrites: false
     property var pendingWrites: []
-    // A write issued from inside a load/save callback loses its completion in
-    // the native view: the operation runs, but saved() is never delivered.
-    // Counted so a regression can assert that a deferred write was not dropped.
+    // The pinned backend detaches operations before completion callbacks.
     property int droppedWrites: 0
     // Counts writes handed to a FileView, including failed and retried ones.
     property int writeRequests: 0
@@ -54,29 +51,15 @@ QtObject {
     function deliverWrite(view, text): void {
         view.pendingText = "";
         const value = String(text);
-        if (saveFailures[view.path]) {
-            // The native view keeps the attempted bytes cached even when the
-            // write fails, so an identical setText() is dropped.
-            view.cachedText = value;
-            view.saveFailed(saveFailures[view.path]);
-            return;
-        }
-        if (commitFailures[view.path]) {
-            // QSaveFile::commit() failed, but no error is set: saved() is
-            // emitted and the destination is unchanged.
-            view.cachedText = value;
-            view.emittingSaved = true;
-            view.saved();
-            view.emittingSaved = false;
-            if (view.watchChanges)
-                view.fileChanged();
+        if (saveFailures[view.path] || commitFailures[view.path]) {
+            view.writeFailed = true;
+            view.saveFailed(saveFailures[view.path] || 1);
             return;
         }
         contents[view.path] = value;
         view.cachedText = value;
-        view.emittingSaved = true;
+        view.writeFailed = false;
         view.saved();
-        view.emittingSaved = false;
         if (view.watchChanges)
             view.fileChanged();
     }

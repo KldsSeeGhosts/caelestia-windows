@@ -6,8 +6,8 @@ import qs.services
 import qs.utils
 
 // A failed pick-record write must not be treated as a saved choice. The
-// proposed text stays pending, an identical retry is attempted, saved() plus
-// an independent read-back confirms it, and a persistent failure stays visible
+// proposed text stays pending, an identical retry is attempted, saved()
+// confirms it, and a persistent failure stays visible
 // instead of silently dropping the user's wallpaper.
 QtObject {
     id: root
@@ -151,10 +151,8 @@ QtObject {
                 "the recovered rewrite dropped the profile-wide pick");
             check(Files.writeRequests >= 4, "the failed work was not retried");
 
-            // saved() is emitted even when the atomic commit fails on the
-            // pinned backend (issue #28). The read-back must reject that, and
-            // the retry must write again even though the writer cached the
-            // attempted bytes.
+            // A failed atomic commit emits saveFailed, not saved. The same
+            // writer must attempt an identical retry.
             Files.commitFailures[root.recordPath] = true;
             check(Wallpapers.setWallpaper("C:/walls/third.jpg", {name: "secondary"}),
                 "the commit-failure pick was rejected");
@@ -181,6 +179,17 @@ QtObject {
             check(record().monitors["secondary-id"] === "C:/walls/third.jpg",
                 "the commit retry was not written");
 
+            // Advance the proposal while a save is in flight. Its saved
+            // callback starts the next write directly on the same FileView.
+            check(Wallpapers.setWallpaper("C:/walls/other.jpg"), "the first queued pick failed");
+            check(Wallpapers.setWallpaper("C:/walls/picked.jpg"), "the newer queued pick failed");
+            Files.flushWrites();
+            check(Wallpapers.sourceRecordWriting, "saved did not start the newer write");
+            check(record().wallpaper === "C:/walls/other.jpg", "the first save lost its own text");
+            Files.flushWrites();
+            check(record().wallpaper === "C:/walls/picked.jpg", "the follow-on save was lost");
+            check(Wallpapers.sourceRecordConfirmed === Wallpapers.sourceRecordPending,
+                "the follow-on save was not confirmed");
             console.log("CAELESTIA_WALLPAPER_RECORD_RETRY_PASS " + assertions);
             Qt.quit();
         });

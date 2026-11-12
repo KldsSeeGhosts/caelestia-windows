@@ -54,6 +54,8 @@ $fixtures = @(
         marker = 'CAELESTIA_WALLPAPER_PROVENANCE'; minimum = 8 },
     [ordered]@{ name = 'wallpaper-record-retry'; source = 'windows/tests/WallpaperRecordRetryTest.qml'
         marker = 'CAELESTIA_WALLPAPER_RECORD_RETRY'; minimum = 25 },
+    [ordered]@{ name = 'wallpaper-completion'; source = 'windows/tests/WallpaperCompletionTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_COMPLETION'; minimum = 64 },
     [ordered]@{ name = 'wallpaper-invalid-record'; source = 'windows/tests/WallpaperInvalidRecordTest.qml'
         marker = 'CAELESTIA_WALLPAPER_INVALID'; minimum = 12 },
     [ordered]@{ name = 'wallpaper-future-record'; source = 'windows/tests/WallpaperFutureRecordTest.qml'

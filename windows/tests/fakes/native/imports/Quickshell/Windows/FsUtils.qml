@@ -6,6 +6,7 @@ QtObject {
     property int requests: 0
     property int makePathCalls: 0
     signal listDirFinished(int request, string path, var entries)
+    function canonicalPath(path): string { return String(path).replace(/\\/g, "/"); }
     function classify(path): string {
         const value = String(path).replace(/\\/g, "/");
         if (existingDirs.includes(value))
