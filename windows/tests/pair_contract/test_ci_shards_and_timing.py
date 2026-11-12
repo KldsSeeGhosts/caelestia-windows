@@ -17,7 +17,8 @@ class CiShardsAndTiming(unittest.TestCase):
         shell = source.split("@('Test-AccessibilityLauncher'", 1)[1].split("\n        }", 1)[0]
         self.assertIn("'Test-IdleWork'", shell)
         self.assertIn("'Test-NexusWindow'", shell)
-        self.assertEqual(28, 1 + len(re.findall(r"'Test-[A-Za-z0-9]+'", shell)))
+        self.assertIn("'Test-ShellReadiness'", shell)
+        self.assertEqual(29, 1 + len(re.findall(r"'Test-[A-Za-z0-9]+'", shell)))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="ci-diagnostics-",

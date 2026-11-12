@@ -399,7 +399,8 @@ if ($Smoke) {
         -StateDirectory (Join-Path $profile ('runtime\supervisor-' + [guid]::NewGuid().ToString('N'))) `
         -ConfigPath $supervisorConfig -StdoutPath $stdoutPath -StderrPath $stderrPath
     $process = $supervised.Watchdog
-    Wait-CaelestiaReady $Prefix
+    # The supervisor now reports running only after every monitor has drawn.
+    # Restart's in-process reload still uses generation-aware IPC readiness.
     Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
 }
 if (-not $Smoke -and -not $Wait) { return }

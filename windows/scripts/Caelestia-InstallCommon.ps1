@@ -140,7 +140,8 @@ function Stop-CaelestiaHosts([string]$Prefix, [string]$VersionRoot = '', [int]$T
 }
 
 # Live desktop supervisors recorded under the profile. A supervisor in
-# starting or restart-backoff has no qs.exe, but still owns the prefix files.
+# Starting can be waiting for first frames or still have no qs.exe, as can
+# restart-backoff. Both phases still own the prefix files.
 function Read-CaelestiaSupervisorStatus([string]$Path) {
     for ($attempt = 0; ; $attempt++) {
         try { return ([IO.File]::ReadAllText($Path) | ConvertFrom-Json) }
@@ -239,7 +240,8 @@ function Stop-CaelestiaSupervisor($Supervisor, [int]$RecoveryTimeoutMs = 60000) 
 
 function Repair-CaelestiaStaleSupervisors([string]$ProfileRoot) {
     foreach ($supervisor in @(Get-CaelestiaSupervisors $ProfileRoot)) {
-        # Starting includes the existing 45 s banner recovery. Running owners
+        # Starting includes 45 s banner recovery and up to 20 s for first frames,
+        # within the launcher's 75 s allowance. Running owners
         # publish a heartbeat every second. Allow several missed beats before
         # taking over. A supervisor from before heartbeats wrote utc once, so
         # its age proves nothing; leave it alone.
@@ -1305,7 +1307,9 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
         for ($attempt = 0; $attempt -lt 2; $attempt++) {
             try {
                 Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
-                Wait-CaelestiaReady $Prefix -LegacyReady:$LegacyReady -TaskName $taskName
+                # Scheduled activation includes the launcher's banner replay
+                # and first-frame gate, not only the child's 20 s render budget.
+                Wait-CaelestiaReady $Prefix -TimeoutSeconds 75 -LegacyReady:$LegacyReady -TaskName $taskName
                 return
             } catch {
                 $launchError = $_

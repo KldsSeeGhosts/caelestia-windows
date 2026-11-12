@@ -45,7 +45,8 @@ try {
         function Start-ScheduledTask { [CmdletBinding()] param([string]$TaskName) }
         function Stop-ScheduledTask { [CmdletBinding()] param([string]$TaskName) throw 'fixture cleanup failure' }
         function Wait-CaelestiaReady {
-            [CmdletBinding()] param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName)
+            [CmdletBinding()] param([string]$Prefix, [int]$TimeoutSeconds, [switch]$LegacyReady, [string]$TaskName)
+            if ($TimeoutSeconds -ne 75) { throw 'Scheduled startup lost its full launcher budget.' }
             $script:waits++
             throw 'fixture launch failure'
         }
@@ -153,6 +154,73 @@ public static class LifecycleIpcFixture {
         if ([Caelestia.Takeover.RestartPolicy]::DelaySeconds($case[0]) -ne $case[1]) { throw 'Unexpected crash backoff.' }
     }
     Write-Output 'PASS crash policy: immediate first recovery, bounded subsequent backoff.'
+    foreach ($line in @('  INFO qml: CAELESTIA_SHELL_READY',
+        '2026-11-11 12:00:00.000  INFO qml: CAELESTIA_SHELL_READY')) {
+        $readiness = [Caelestia.Takeover.ShellReadiness]::new()
+        $readiness.Observe($line)
+        if (-not $readiness.Ready) { throw 'Native QML readiness record was rejected.' }
+    }
+    $readiness = [Caelestia.Takeover.ShellReadiness]::new()
+    foreach ($line in @('private CAELESTIA_SHELL_READY', '  INFO qml: "CAELESTIA_SHELL_READY"',
+        '  INFO qml: CAELESTIA_SHELL_READY private', '  WARN qml: CAELESTIA_SHELL_READY',
+        '  INFO other: CAELESTIA_SHELL_READY', '  INFO qml: CAELESTIA_SHELL_NOT_READY')) {
+        $readiness.Observe($line)
+        if ($readiness.Ready) { throw 'User text or a non-readiness log record was accepted.' }
+    }
+    $oldChild = [Caelestia.Takeover.ShellReadiness]::new()
+    $oldChild.Observe('  INFO qml: CAELESTIA_SHELL_READY')
+    if ($readiness.Ready) { throw 'An old child made its replacement ready.' }
+    $oldChild.Observe('  INFO qml: CAELESTIA_SHELL_NOT_READY')
+    if (-not $oldChild.Ready) { throw 'A reload-style dip reset process readiness.' }
+    Write-Output 'PASS readiness records: exact content-free QML info records, per-child latch, reload stability.'
+
+    # Run the actual startup phase consumer against a disposable process
+    # boundary. No watchdog, Qt process, desktop ownership or IPC is started.
+    & {
+        $startupScripts = Join-Path $root 'startup-consumer'
+        [IO.Directory]::CreateDirectory($startupScripts) | Out-Null
+        $startupSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Start-DesktopShell.ps1'))
+        if (-not $startupSource.Contains('AddSeconds(75)')) { throw 'Launcher lost its 75 s startup allowance.' }
+        [IO.File]::WriteAllText((Join-Path $startupScripts 'Start-DesktopShell.ps1'), $startupSource.Replace('AddSeconds(75)', 'AddSeconds(1)'))
+        @'
+function Get-WindowsPowerShellPath { 'fixture.exe' }
+function Stop-CaelestiaSupervisor($Supervisor) { $consumer.Recovered = $true }
+function Read-CaelestiaSupervisorStatus($Path) { [pscustomobject]@{ phase = 'recovered' } }
+'@ | Set-Content -LiteralPath (Join-Path $startupScripts 'Caelestia-InstallCommon.ps1') -Encoding UTF8
+        function Start-Process {
+            param($FilePath, $ArgumentList, $WindowStyle, [switch]$PassThru, $WorkingDirectory, $RedirectStandardOutput, $RedirectStandardError)
+            [IO.File]::WriteAllText((Join-Path $StateDirectory 'watchdog.json'), '{}')
+            [pscustomobject]@{ Handle = 0; HasExited = $false; Id = 1 }
+        }
+        function Get-Content {
+            param($LiteralPath, [switch]$Raw)
+            $index = [Math]::Min($consumer.Calls, $consumer.Phases.Count - 1)
+            $consumer.Calls++
+            '{"phase":"' + $consumer.Phases[$index] + '"}'
+        }
+        $info = New-Object Diagnostics.ProcessStartInfo
+        $info.FileName = 'fixture.exe'
+        $info.WorkingDirectory = $root
+        foreach ($outcome in @('running', 'clean-exit', 'crash-give-up', 'restore-pending', 'timeout')) {
+            $caseState = Join-Path $startupScripts $outcome
+            $consumer = [pscustomobject]@{
+                Phases = @('starting', 'restart-backoff', $(if ($outcome -eq 'timeout') { 'starting' } else { $outcome }))
+                Calls = 0; Recovered = $false
+            }
+            $succeeded = $false
+            try {
+                $null = & (Join-Path $startupScripts 'Start-DesktopShell.ps1') -StartInfo $info -StateDirectory $caseState
+                $succeeded = $true
+            } catch {
+                if ($_.Exception.Message -notmatch 'Desktop watchdog (stopped during startup|did not reach)') { throw }
+            }
+            if ($succeeded -ne ($outcome -eq 'running') -or $consumer.Calls -lt 3) {
+                throw "Startup consumer accepted a non-ready phase or failed running: $outcome."
+            }
+            if ($consumer.Recovered -ne ($outcome -eq 'timeout')) { throw 'Launcher deadline bypassed bounded recovery.' }
+        }
+    }
+    Write-Output 'PASS startup consumer: starting/backoff wait, only running succeeds, terminal failures reject, deadline recovers.'
     # Exercise real filesystem rollback, with only launch/process discovery
     # replaced. These fixtures never own a session supervisor or desktop.
     & {

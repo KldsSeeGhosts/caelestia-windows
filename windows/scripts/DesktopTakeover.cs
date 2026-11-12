@@ -935,14 +935,29 @@ namespace Caelestia.Takeover {
         // The child inherits this supervisor's environment, so every switch is
         // set or removed here and an inherited value never applies.
         // The shell's own keyboard hook filters Explorer's taskbar shortcuts
-        // only while this supervisor hides the taskbar. The supervisor owns the
-        // restart, so a crash keeps its minidump and desktop cleanup and skips
+        // when this supervisor is configured to hide the taskbar. This backend
+        // switch is read once per process, including its readiness wait. The
+        // supervisor owns the restart, so a crash keeps its minidump and desktop cleanup and skips
         // only the shell's own relaunch.
         public static void Apply(System.Collections.Specialized.StringDictionary variables, bool hide) {
             variables.Remove(DisableCrashHandler);
             variables[DisableCrashRelaunch] = "1";
             variables.Remove(TaskbarShortcutFilter);
             if (hide) variables[TaskbarShortcutFilter] = "1";
+        }
+    }
+
+    // Each redirected child owns a separate latch. A late EOF/log callback from
+    // an exited child cannot make its replacement ready. Only a complete,
+    // content-free QML info record is accepted, never a substring of user text.
+    public sealed class ShellReadiness {
+        public const string Marker = "CAELESTIA_SHELL_READY";
+        static readonly System.Text.RegularExpressions.Regex record = new System.Text.RegularExpressions.Regex(
+            @"^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*INFO qml: " + Marker + "$");
+        int ready;
+        public bool Ready { get { return Interlocked.CompareExchange(ref ready, 0, 0) != 0; } }
+        public void Observe(string line) {
+            if (line != null && record.IsMatch(line)) Interlocked.Exchange(ref ready, 1);
         }
     }
 
@@ -969,6 +984,9 @@ namespace Caelestia.Takeover {
         readonly List<int> rescueOwners;
         readonly Func<int, bool> rescueFilter;
         Process child;
+        ShellReadiness childReadiness;
+        bool childBecameReady, readinessTimedOut, takeover, tookOver, taskbarRestorePending;
+        long readyDeadline, takeoverGraceDeadline;
         LogDrain childDrain;
         long drainDeadline;
         long stopDeadline;
@@ -997,6 +1015,10 @@ namespace Caelestia.Takeover {
         // Leave room for the 45 s banner restore, 2 s log drain and cleanup
         // within RecoveryBoundMs. Only an explicit recovery starts this clock.
         public const int ChildExitGraceMs = 5000;
+        // Provisioning happens before launch. Match Wait-CaelestiaReady's
+        // first-frame budget and fit 45 s banner replay + 20 s within 75 s.
+        public const int ReadyTimeoutMs = 20000;
+        public const int RestartTakeoverGraceMs = 2000;
         public static void RecoverActive() {
             RecoverActive(RecoveryBoundMs);
         }
@@ -1081,7 +1103,6 @@ namespace Caelestia.Takeover {
             startup = new StartupPersistence(delegate {
                 SaveSnapshot();
                 RetireBaseline(adoptedBaseline);
-                if (hide) Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
             }, LogPersistFailure, 60);
             Native.RecordAction = delegate(TaskbarAction action) {
                 SupervisorSafety.Log(delegate {
@@ -1240,6 +1261,7 @@ namespace Caelestia.Takeover {
             if (invisible) foreach (var bar in Native.Taskbars()) Reconcile(bar);
         }
         void MaintainTaskbars(bool recordUnchanged) {
+            if (!takeover) return;
             RefreshShowHook(false);
             Native.Hide(recordUnchanged);
             SuppressRegions();
@@ -1249,7 +1271,7 @@ namespace Caelestia.Takeover {
             // WM_SETTINGCHANGE and WM_DISPLAYCHANGE also cover work-area,
             // taskbar preference and monitor topology changes.
             if ((message.Msg == taskbarCreated || message.Msg == 0x001A || message.Msg == 0x007E)
-                && child != null && !child.HasExited && hide) {
+                && child != null && !child.HasExited && takeover) {
                 // Quickshell's tray hook also sends TaskbarCreated to re-announce
                 // icons. Rebind only when Explorer's process actually changed.
                 try {
@@ -1283,7 +1305,7 @@ namespace Caelestia.Takeover {
             // This is the callback-delivery timestamp, not the actual show time.
             long ticks = Stopwatch.GetTimestamp();
             try {
-                if (done || !hide || child == null || child.HasExited || !showHook.Matches(hook)) return;
+                if (done || !takeover || child == null || child.HasExited || !showHook.Matches(hook)) return;
                 showHandler.Handle(showHook.Owner, window, objectId, childId, ticks);
             } catch (Exception error) {
                 // Do not let a persistence failure escape an unmanaged callback
@@ -1305,6 +1327,7 @@ namespace Caelestia.Takeover {
                 var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
                     quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
                     forcedChildTermination = forcedChildTermination,
+                    shellReady = childBecameReady, taskbarTakenOver = takeover,
                     // Tells Start this owner refreshes utc while alive. Older
                     // supervisors wrote it once, so staleness says nothing there.
                     heartbeat = true,
@@ -1315,9 +1338,6 @@ namespace Caelestia.Takeover {
             });
         }
         void Start() {
-            // Child-exit recovery returned Explorer's secondary-taskbar setting
-            // too. Reapply the existing takeover setting on every restart.
-            if (hide) Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
             var info = new ProcessStartInfo(launch.Executable, launch.Arguments) {
                 WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false, CreateNoWindow = true
             };
@@ -1327,25 +1347,34 @@ namespace Caelestia.Takeover {
             // Only this supervisor decides these child switches, and only one
             // keyboard hook filters taskbar shortcuts: the shell's own.
             LaunchEnvironment.Apply(info.EnvironmentVariables, hide);
-            info.RedirectStandardOutput = !String.IsNullOrEmpty(launch.StdoutPath);
+            // Readiness uses the existing async log pipe even without a log
+            // destination. No IPC client or wait runs on the message pump.
+            info.RedirectStandardOutput = true;
             info.RedirectStandardError = !String.IsNullOrEmpty(launch.StderrPath);
             var process = new Process { StartInfo = info };
             var drain = new LogDrain(info.RedirectStandardOutput, info.RedirectStandardError);
+            var readiness = new ShellReadiness();
             if (info.RedirectStandardOutput)
                 process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) {
                     if (e.Data == null) drain.EndStream();
-                    else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StdoutPath, e.Data, drain); }
+                    else {
+                        readiness.Observe(e.Data); // Before best-effort log I/O or drain delay.
+                        if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs);
+                        Append(launch.StdoutPath, e.Data, drain);
+                    }
                 };
             if (info.RedirectStandardError)
                 process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) {
                     if (e.Data == null) drain.EndStream();
                     else { if (testLogDelayMs > 0) Thread.Sleep(testLogDelayMs); Append(launch.StderrPath, e.Data, drain); }
                 };
-            // Snapshot is durable and the supervisor owns restoration before
-            // the child can register its AppBars. Retain the post-start pass.
-            if (hide) MaintainTaskbars(true);
+            // Snapshot is durable before the child can register AppBars, but
+            // Explorer remains untouched until every monitor has drawn.
             process.Start();
             child = process;
+            childReadiness = readiness;
+            childBecameReady = readinessTimedOut = false;
+            forcedChildTermination = false;
             childDrain = drain;
             drainDeadline = 0;
             ownedPid = child.Id;
@@ -1353,11 +1382,33 @@ namespace Caelestia.Takeover {
             if (info.RedirectStandardOutput) child.BeginOutputReadLine();
             if (info.RedirectStandardError) child.BeginErrorReadLine();
             started = DateTime.UtcNow;
-            if (hide) MaintainTaskbars(true);
-            Status("running", child.Id);
+            readyDeadline = Stopwatch.GetTimestamp() + ReadyTimeoutMs * Stopwatch.Frequency / 1000;
+            Status("starting", child.Id);
+        }
+        void TakeOver() {
+            takeoverGraceDeadline = 0;
+            taskbarRestorePending = false;
+            if (!hide) return;
+            // Includes secondary suppression, regions, show hook and audit.
+            if (!takeover) {
+                tookOver = takeover = true;
+                Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
+            }
+            MaintainTaskbars(true);
+        }
+        void ReleaseTakeover() {
+            if (!takeover && !taskbarRestorePending) return;
+            takeover = false;
+            showHook.Dispose();
+            showPolicy.Reset();
+            // The replacement may already have live AppBars. Never remove
+            // those, restore its work areas or rescue its parked windows here.
+            if (!isolatedTest) Native.RestoreOwned(saved, -1, false, true);
+            taskbarRestorePending = Native.ExplorerWorkDeferred;
         }
         static readonly object logLock = new object();
         static void Append(string path, string line, LogDrain drain) {
+            if (String.IsNullOrEmpty(path)) return;
             SupervisorSafety.Log(delegate { lock (logLock) { if (!drain.Retired) File.AppendAllText(path, line + Environment.NewLine); } });
         }
         static void Retire(LogDrain drain) { lock (logLock) drain.Retired = true; }
@@ -1396,12 +1447,8 @@ namespace Caelestia.Takeover {
                         if (forcedChildTermination && Stopwatch.GetTimestamp() >= drainDeadline) Finish("recovered", 0);
                         return;
                     }
-                    // The show hook handles re-shows immediately. Audit only
-                    // every five seconds unless its existing fight-loop policy
-                    // explicitly falls back to polling for five seconds.
-                    if (hide && (DateTime.UtcNow >= nextTaskbarAudit
-                        || showPolicy.PollingRequired(Stopwatch.GetTimestamp())))
-                        MaintainTaskbars(false);
+                    // Missing baseline flags and dead-child AppBar cleanup
+                    // must keep retrying while the replacement is starting.
                     if (!isolatedTest && DateTime.UtcNow >= nextExplorerRetry) {
                         nextExplorerRetry = DateTime.UtcNow.AddSeconds(1);
                         if (Native.CaptureMissingTaskbarFlags(saved)) {
@@ -1413,26 +1460,68 @@ namespace Caelestia.Takeover {
                             }
                         }
                         Native.RetryStaleAppBars();
+                        if (taskbarRestorePending) ReleaseTakeover();
                     }
+                    if (!childBecameReady) {
+                        long now = Stopwatch.GetTimestamp();
+                        if (childReadiness.Ready && !readinessTimedOut) {
+                            childBecameReady = true;
+                            TakeOver();
+                            Status("running", child.Id);
+                        } else {
+                            if (takeover && takeoverGraceDeadline != 0 && now >= takeoverGraceDeadline) {
+                                ReleaseTakeover();
+                                Status("starting", child.Id);
+                            }
+                            if (!readinessTimedOut && now >= readyDeadline) {
+                                readinessTimedOut = true;
+                                ReleaseTakeover();
+                                child.Kill(); // Retained owned process, as in bounded stop.
+                                forcedChildTermination = true;
+                                BeginDrain();
+                                SupervisorSafety.Log(delegate {
+                                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                                        "shell readiness timed out" + Environment.NewLine);
+                                });
+                            }
+                            return;
+                        }
+                    }
+                    // The show hook handles re-shows immediately. Audit only
+                    // every five seconds unless its existing fight-loop policy
+                    // explicitly falls back to polling for five seconds.
+                    if (takeover && (DateTime.UtcNow >= nextTaskbarAudit
+                        || showPolicy.PollingRequired(Stopwatch.GetTimestamp())))
+                        MaintainTaskbars(false);
                     return;
                 }
                 showHook.Dispose();
                 showPolicy.Reset();
+                if (takeover && takeoverGraceDeadline == 0)
+                    takeoverGraceDeadline = Stopwatch.GetTimestamp() + RestartTakeoverGraceMs * Stopwatch.Frequency / 1000;
+                if (takeover && Stopwatch.GetTimestamp() >= takeoverGraceDeadline) ReleaseTakeover();
                 BeginDrain();
                 // Keep pumping the UI and recovery event while waiting for
                 // both EOF callbacks, but never wait beyond the shared deadline.
                 if (!childDrain.Complete && Stopwatch.GetTimestamp() < drainDeadline) return;
                 if (recovering) { Finish("recovered", 0); return; }
+                // A very short-lived child can draw and exit between ticks.
+                // Drain first so a final readiness record is not lost.
+                childBecameReady |= childReadiness.Ready && !readinessTimedOut;
                 int code = child.ExitCode;
+                // Even a zero exit before first frame is a failed start.
+                bool failedStart = !childBecameReady;
+                if ((failedStart && code == 0) || readinessTimedOut) code = 1;
                 // Past EOF or the deadline: drop any stalled tail so it cannot
                 // interleave with a restarted child's log.
                 Retire(childDrain);
                 child.Dispose(); child = null;
                 childDrain = null;
+                childBecameReady = false;
                 Status("restoring", 0);
                 // Decide the outcome first, so the desktop work matches it and
                 // always precedes a potentially slow banner replay.
-                if (code != 0) quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
+                if (code != 0) quickCrashes = failedStart || (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
                 bool terminal = code == 0 || !restart || quickCrashes >= 3;
                 int delay = terminal ? 0 : RestartPolicy.DelaySeconds(quickCrashes);
                 try {
@@ -1442,7 +1531,13 @@ namespace Caelestia.Takeover {
                     // show the taskbar only while backing off. An immediate
                     // restart keeps it hidden and leaves parked windows to the
                     // new shell, so one crash does not flash the taskbar.
-                    else if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, delay != 0 && hide);
+                    else if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, false);
+                    if (!terminal && delay != 0) ReleaseTakeover();
+                    // Banner replay can block for 45 s. Such a restart cannot
+                    // be immediate, so return Explorer before entering it.
+                    string bannerState;
+                    if (!terminal && launch.Environment.TryGetValue("CAELESTIA_STATE_DIR", out bannerState)
+                        && File.Exists(Path.Combine(bannerState, "banner-suppression.json"))) ReleaseTakeover();
                 } finally { RestoreBanners(); }
                 if (terminal) {
                     childCleanupComplete = true;
@@ -1481,7 +1576,9 @@ namespace Caelestia.Takeover {
         }
         bool OwnsRescuedWindow(int pid) { return rescueOwners.Contains(pid); }
         void RestoreDesktop() {
-            try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline); }
+            takeover = false;
+            childBecameReady = false;
+            try { if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, tookOver || adoptedUncleanBaseline); }
             // No shell is left to run TilingManager::rescueParked, so the
             // windows it parked must come back before banner recovery.
             finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); }

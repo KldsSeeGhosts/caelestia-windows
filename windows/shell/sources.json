@@ -1,4 +1,5 @@
 {
+  "windows/shell/ShellReadiness.qml": "ShellReadiness.qml",
   "assets/bongocat.gif": "assets/bongocat.gif",
   "assets/dino.png": "assets/dino.png",
   "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf": "assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf",

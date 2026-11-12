@@ -41,6 +41,20 @@ try {
     # restoration. Launcher IPC, Tick/Dispose and process discovery stay real.
     # Fail closed before executing a copy if any injection no longer matches.
     $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs'))
+    Assert ($source.Contains('public const int ReadyTimeoutMs = 20000;')) 'Production first-frame budget changed.'
+    $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 5000;'
+    # Exercise the real hide/region paths against our owner-filtered fake
+    # taskbars. Replace registry suppression and restoration, never touch the
+    # real taskbar, Explorer settings or session AppBars.
+    $source = Replace-Exactly $source `
+        'return RunCore(specPath, false, true, false, name, name + "-Recovery", true, logDelayMs);' `
+        'return RunCore(specPath, true, true, true, name, name + "-Recovery", true, logDelayMs);'
+    $source = Replace-Exactly $source 'Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);' `
+        'File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "secondary\n");'
+    $source = Replace-Exactly $source 'Native.Hide(recordUnchanged);' `
+        'File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "hide\n"); Native.Hide(recordUnchanged);'
+    $source = Replace-Exactly $source 'if (!isolatedTest) Native.RestoreOwned(saved, -1, false, true);' `
+        'TaskbarEventFixture.Restore(launch.WorkingDirectory, saved); File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "release\n");'
     $source = Replace-Exactly $source `
         'return @"Local\CaelestiaDesktopTakeover-" + Process.GetCurrentProcess().SessionId;' `
         ('return @"' + $mutexName + '";')
@@ -55,12 +69,12 @@ try {
     # Keep the production cleanup order, replacing only the desktop mutation.
     # The real owner-filtered parked-window rescue still follows this marker.
     $source = Replace-Exactly $source `
-        'if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline);' `
-        'File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "desktop\n");'
+        'if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, tookOver || adoptedUncleanBaseline);' `
+        'if (tookOver) TaskbarEventFixture.Restore(launch.WorkingDirectory, saved); File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "desktop\n");'
     # A crash that restarts releases only the dead shell's AppBars: no full
     # desktop restore and no parked-window rescue before the new shell.
     $source = Replace-Exactly $source `
-        'else if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, delay != 0 && hide);' `
+        'else if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, false);' `
         'else File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "appbars\n");'
     $source = Replace-Exactly $source `
         'finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); }' `
@@ -96,6 +110,32 @@ public sealed class Supervisor : NativeWindow, IDisposable {
 
 namespace Caelestia.Takeover {
     public static class TaskbarEventFixture {
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
+        public static bool Visible(string directory) {
+            var bar = Read(directory);
+            return bar != null && Native.EventTaskbar(new IntPtr(bar.Handle), bar.Owner).Visible;
+        }
+        public static bool HasRegion(string directory) {
+            var region = Native.CaptureRegion(Read(directory));
+            if (region == null) throw new Exception("Fake taskbar region could not be captured.");
+            return region.RegionData != null;
+        }
+        static Bar Read(string directory) {
+            string path = Path.Combine(directory, "taskbar-ready");
+            if (!File.Exists(path)) return null;
+            var window = new IntPtr(Int64.Parse(File.ReadAllText(path)));
+            uint owner; GetWindowThreadProcessId(window, out owner);
+            // Native.ExplorerTaskbarOwner uses the disposable-path identity
+            // check injected above. Refuse any HWND outside this fixture.
+            if (owner == 0 || Native.ExplorerTaskbarOwner() != owner) throw new Exception("Unowned fake taskbar.");
+            return new Bar { Handle = window.ToInt64(), Owner = owner };
+        }
+        public static void Restore(string directory, Snapshot saved) {
+            var bar = Read(directory);
+            if (bar == null) return;
+            foreach (var region in saved.Regions) Native.RestoreRegion(region);
+            ShowWindowAsync(new IntPtr(bar.Handle), 8);
+        }
         [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
         static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string name, string title);
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -311,9 +351,28 @@ public static class SupervisorStopFixture {
         string mode = File.ReadAllText(Path.Combine(prefix, "mode.txt"));
         if (args[0] == "--child") {
             File.AppendAllText(Path.Combine(prefix, "child-starts.txt"), "start\n");
+            int attempt = File.ReadAllLines(Path.Combine(prefix, "child-starts.txt")).Length;
+            bool reported = false;
+            if (mode != "controlled" && mode != "never-ready" && mode != "early-clean") {
+                Console.WriteLine("  INFO qml: CAELESTIA_SHELL_READY");
+                Console.Out.Flush();
+                reported = true;
+            }
             if (mode == "crash") return 7;
-            if (mode == "clean") return 0;
+            if (mode == "clean" || mode == "early-clean") return 0;
             while (true) {
+                if (!reported && File.Exists("ready-" + attempt)) {
+                    Console.WriteLine("2026-11-11 12:00:00.000  INFO qml: CAELESTIA_SHELL_READY");
+                    Console.Out.Flush();
+                    reported = true;
+                }
+                if (File.Exists("exit-" + attempt)) return 7;
+                if (File.Exists("reload-dip")) {
+                    Console.WriteLine("  INFO qml: CAELESTIA_SHELL_NOT_READY");
+                    Console.Out.Flush();
+                    File.Delete("reload-dip");
+                    File.WriteAllText("dip-seen", "dip");
+                }
                 if (mode == "normal" && File.Exists(Path.Combine(prefix, "quit-called.txt"))) {
                     Thread.Sleep(700);
                     File.WriteAllText(Path.Combine(prefix, "normal-exit.txt"), "clean");
@@ -343,6 +402,104 @@ public static class SupervisorStopFixture {
     [IO.File]::WriteAllText((Join-Path $taskbars 'taskbars-stop'), 'stop')
     Assert ($taskbar.WaitForExit(2000) -and $decoy.WaitForExit(2000)) 'Fake taskbars did not stop.'
     Write-Output 'PASS taskbar events: owner-checked lookup skips a first-in-order decoy; real show events re-hide twice without an audit; fight-loop fallback remains bounded.'
+    # Production Tick, async pipe parsing, status publication, event upkeep and
+    # crash policy run unchanged. Only desktop targets and the render deadline
+    # are isolated above. A real offscreen fake taskbar checks actual visibility.
+    foreach ($mode in @('controlled', 'never-ready', 'early-clean')) {
+        $case = Join-Path $root ('readiness-' + $mode)
+        $prefix = Join-Path $case 'prefix'
+        $state = Join-Path $case 'state'
+        [IO.Directory]::CreateDirectory($prefix) | Out-Null
+        [IO.Directory]::CreateDirectory($state) | Out-Null
+        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
+        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
+        $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar')
+        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'taskbar-ready') } 'Readiness taskbar did not start.'
+        [IO.File]::WriteAllText((Join-Path $case 'taskbar-show-0'), 'show')
+        Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Readiness taskbar did not show.'
+        $spec = Join-Path $state 'launch.json'
+        @{
+            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
+            StateDirectory = $state; Environment = @{}
+            # No stdout destination proves readiness still drains when logging
+            # is disabled. Other cases exercise the normal persisted log path.
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
+        $statusPath = Join-Path $state 'watchdog.json'
+        $actions = Join-Path $state 'takeover-actions.txt'
+        $watchdog = Start-FixtureProcess $powershell `
+            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
+            $case (Join-Path $case 'watchdog')
+        $watchdogs.Add($watchdog)
+        if ($mode -eq 'controlled') {
+            Wait-Until {
+                try {
+                    $s = Read-CaelestiaSupervisorStatus $statusPath
+                    $s.phase -eq 'starting' -and $s.shellPid -gt 0
+                } catch { $false }
+            } 'Cold child did not publish starting.'
+            $owned = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
+            $null = $owned.Handle
+            $children.Add($owned)
+            Assert (-not (Test-Path -LiteralPath $actions)) 'Takeover changed Explorer before readiness.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Taskbar hidden before readiness.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Invisible region applied before readiness.'
+            # A slow first frame is not a fixed startup sleep.
+            Start-Sleep -Milliseconds 1200
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'starting') 'Slow start reported running.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'First frame did not publish running.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready taskbar not hidden.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Ready taskbar did not get its invisible region.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($s.shellReady -and $s.taskbarTakenOver) 'Running status lacks readiness/takeover.'
+            [IO.File]::WriteAllText((Join-Path $case 'reload-dip'), 'dip')
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'dip-seen') } 'Reload dip not emitted.'
+            Start-Sleep -Milliseconds 2300
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running') 'Reload dropped the process readiness latch.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Reload flashed the taskbar.'
+            Assert ((Get-Content -LiteralPath $actions -Raw) -notmatch 'release') 'Reload released takeover.'
+            $restartClock = [Diagnostics.Stopwatch]::StartNew()
+            [IO.File]::WriteAllText((Join-Path $case 'exit-1'), 'crash')
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'starting' -and $s.quickCrashes -eq 1 -and $s.shellPid -gt 0
+            } 'Immediate restart did not wait for its own first frame.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Immediate restart flashed Explorer.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Slow restart did not return Explorer after grace.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Restart grace returned a taskbar with its invisible region still applied.'
+            Assert ($restartClock.ElapsedMilliseconds -ge 2000 -and $restartClock.ElapsedMilliseconds -lt 3500) 'Restart takeover grace was not two seconds plus a pump tick/cleanup allowance.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($s.phase -eq 'starting' -and -not $s.taskbarTakenOver -and -not $s.shellReady) 'Slow restart status is not starting/visible.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-2'), 'draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Replacement did not become ready.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready replacement did not retake Explorer.'
+            [IO.File]::WriteAllText((Join-Path $case 'exit-2'), 'crash')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'restart-backoff' } 'Second quick crash did not back off.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Backoff did not return Explorer.'
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'starting' -and $s.quickCrashes -eq 2
+            } 'Backoff replacement did not publish starting.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Backoff replacement hid Explorer before ready.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-3'), 'draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Backoff replacement did not report running.'
+            $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
+            try { $null = $event.Set() } finally { $event.Dispose() }
+            Assert ($watchdog.WaitForExit(12000)) 'Controlled child did not stop within bounded recovery.'
+        } else {
+            Assert ($watchdog.WaitForExit(25000)) 'Never-ready child did not exhaust the bounded failed-start policy.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($s.phase -eq 'crash-give-up' -and $s.quickCrashes -eq 3 -and $watchdog.ExitCode -ne 0) 'Unready start was accepted or skipped crash policy.'
+            Assert (-not (Test-Path -LiteralPath $actions)) 'Never-ready child changed taskbars.'
+            Assert (-not $s.shellReady -and -not $s.taskbarTakenOver) 'Failed start status claims readiness/takeover.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 3) 'Failed start did not use existing retry count.'
+        }
+        Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Terminal stop failed to restore the original taskbar.'
+        Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Terminal stop changed the original taskbar region.'
+        [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
+        Assert ($taskbar.WaitForExit(2000)) 'Readiness taskbar did not stop.'
+        Write-Output "PASS readiness $mode`: first-frame/status gate, taskbar visibility and bounded failure/recovery."
+    }
     foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'stuck-quit', 'stuck-start')) {
         $case = Join-Path $root $mode
         $prefix = Join-Path $case 'prefix'
@@ -567,6 +724,9 @@ if (Test-Path -LiteralPath $order) {
         }
         Write-Output "PASS supervisor $mode`: owned-child shutdown, restore, unrelated-process safety and session release."
     }
+} catch {
+    Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
+    throw
 } finally {
     # On an assertion failure let the isolated owner reap its child too, even
     # if the failure happened before the test captured that child's handle.

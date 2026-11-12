@@ -59,8 +59,9 @@ preparation, normal starts and repairs, so two provisioners never write at once
 and a published generation is never modified. Only then does it quit,
 atomically select the prepared version and launch through an on-demand,
 non-elevated interactive scheduled task. Provisioning is reported as its own
-phase; the 20 s activation readiness budget measures only the new shell
-starting, so a cold venv or slow download cannot trigger a rollback. If
+phase; activation allows 75 s for launcher setup, including up to 45 s for
+banner recovery and 20 s per child for first frames. Provisioning finishes
+before activation, so a cold venv or slow download cannot trigger a rollback. If
 provisioning fails, the install continues, the shell starts on its fixed
 palette and `scheme-runtime.log` records the fallback. A responsive IPC endpoint
 and first frame from every drawer are required before success. Failed
@@ -206,9 +207,22 @@ records its durable snapshot/status under `runtime/supervisor-<id>/`.
 Quickshell also retains native instance bookkeeping under
 `%LOCALAPPDATA%\quickshell`.
 
-Taskbar hiding is opt-in. The watchdog retries the first crash immediately,
-retaining taskbar suppression during that retry. Repeated quick crashes use
-bounded backoff and give up after three failures. The watchdog
+Taskbar hiding is opt-in. On startup, Explorer stays unchanged until every
+monitor's shell window has presented a frame. The content-free stdout record
+`CAELESTIA_SHELL_READY` uses the same predicate as IPC `lifecycle.ready`.
+`watchdog.json` stays `starting` until then and becomes `running` only after
+readiness and takeover. A child that cannot draw within 20 s is stopped and
+counts as a failed start.
+
+The watchdog retries the first crash immediately, retaining taskbar suppression
+for at most two seconds while waiting for the replacement's first frames.
+After that grace, Explorer returns until the replacement is ready. Backoff
+returns Explorer too. Pending banner recovery also returns Explorer before its
+potentially slow replay. Repeated quick crashes use bounded backoff and give up
+after three failures. Readiness is latched per child process, so soft QML reloads
+do not flash Explorer while new QML scopes wait for first frames. It does not
+detect an alive shell that freezes after drawing. A separate content-free
+heartbeat record could extend this channel later. The watchdog
 restores its owned desktop changes on exit, and never starts a second tiler.
 `Restore-Desktop.ps1` is the emergency recovery command; restarting Explorer
 requires its separate explicit flag.
@@ -277,8 +291,9 @@ administrator); that combined variant is outside this exact-modifier set and is
 not consumed.
 
 The supervisor sets `QS_WINDOWS_TASKBAR_SHORTCUT_FILTER=1` on the shell child
-only while it hides the taskbar, and removes an inherited value otherwise, so a
-visible taskbar keeps its shortcuts. The filter is part of the shell's existing
+when `hideTaskbar` is configured, and removes an inherited value otherwise.
+This process-lifetime filter also applies during the short startup overlap and
+while a slow replacement temporarily returns Explorer. The filter is part of the shell's existing
 hook, not a second hook in the supervisor: every keystroke passes through one
 low-level hook and there is no install order to preserve. The variable is read
 once for the shell's process lifetime, so changing `hideTaskbar` takes effect on
