@@ -231,20 +231,23 @@ potentially slow replay. Repeated quick crashes use bounded backoff and give up
 after three failures. Readiness is latched per child process, so soft QML reloads
 do not flash Explorer while new QML scopes wait for first frames.
 
-After readiness, the watchdog sends a nonce through GUI-thread IPC every 15 s,
-allowing 5 s for a reply. Detection arms only after the first exact reply.
-At least six consecutive misses spanning 120 s report `phase: frozen` and
-`shellFrozen: true`. A continuously frozen, previously responsive shell is
-normally detected in about 140 s, with a 150 s allowance for timer scheduling. A successful
-reply clears the miss window. Sleep/resume, session lock/disconnect, shutdown,
-QML reload, an install/update lock and supervisor scheduling gaps over 5 s clear
-the window too. Older shells that never answer remain unarmed.
+After readiness, the watchdog sends a nonce through GUI-thread IPC once a
+minute, allowing 5 s for a reply. After a missed reply it probes every 15 s.
+Detection arms only after the first exact reply. At least six consecutive
+misses spanning 120 s report `phase: frozen` and `shellFrozen: true`. A
+continuously frozen, previously responsive shell is detected about two to three
+minutes after its last reply. A successful reply clears the miss window.
+Sleep/resume, session lock/disconnect, shutdown, QML reload and supervisor
+scheduling gaps over 5 s clear the window too. A held install/update lock
+cancels a freeze at the moment it would be declared. Older shells that never
+answer remain unarmed.
 
 Set `windows.restartFrozenShell` to `false` in `config/shell.json` before the
 next launch to keep detection/status without automatic termination. The default
-is `true`. Automatic recovery uses the crash cleanup/backoff path and counts
-each frozen termination toward the three-failure limit even after a long
-process lifetime. `watchdog.json` also reports `livenessSupported`,
+is `true`. Automatic recovery uses the crash cleanup/backoff path. A frozen
+termination counts toward the three-failure limit when the shell froze within
+10 minutes of starting. A freeze after a longer lifetime resets that count.
+`watchdog.json` also reports `livenessSupported`,
 `livenessMisses`, `restartFrozenShell` and `lastUnhealthyReason`.
 The watchdog restores its owned desktop changes on exit, and never starts a second tiler.
 `Restore-Desktop.ps1` is the emergency recovery command; restarting Explorer

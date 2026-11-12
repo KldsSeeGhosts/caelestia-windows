@@ -1017,7 +1017,10 @@ namespace Caelestia.Takeover {
     // Milliseconds come from QPC, never wall time. Only an exact, current nonce
     // can arm/reset detection. Unsupported older shells remain unarmed forever.
     public sealed class ShellLiveness {
-        public const int ProbeIntervalMs = 15000;
+        // A healthy shell is probed once a minute, because each probe starts
+        // an IPC client process. Probes tighten only after a miss.
+        public const int ProbeIntervalMs = 60000;
+        public const int RetryIntervalMs = 15000;
         public const int ProbeTimeoutMs = 5000;
         public const int FreezeWindowMs = 120000;
         public const int RequiredMisses = 6;
@@ -1055,6 +1058,7 @@ namespace Caelestia.Takeover {
             Nonce = null;
             if (!Armed) return;
             if (Misses++ == 0) firstMiss = now;
+            nextProbe = Math.Min(nextProbe, deadline - ProbeTimeoutMs + RetryIntervalMs);
             Frozen = Misses >= RequiredMisses && now - firstMiss >= FreezeWindowMs;
         }
     }
@@ -1654,8 +1658,7 @@ namespace Caelestia.Takeover {
                 CancelProbe();
             }
             bool eligible = childBecameReady && !childReadiness.Paused && !sessionPaused && !powerPaused
-                && !endingSession && (isolatedTest || SupervisorSession.Unlocked())
-                && !SupervisorSession.Updating(launch.InstallLockKey);
+                && !endingSession;
             if (!liveness.Advance(now, eligible)) {
                 CancelProbe();
                 if (statusPhase == "frozen") Status("running", child.Id);
@@ -1667,13 +1670,19 @@ namespace Caelestia.Takeover {
             }
             liveness.Expire(now);
             if (liveness.Nonce == null) CancelProbe();
+            // Testing the install lock acquires it for an instant, which could
+            // make a starting installer see it as held. Test it only here, at
+            // the single moment a freeze would otherwise be declared.
+            if (liveness.Frozen && SupervisorSession.Updating(launch.InstallLockKey)) {
+                liveness.Reset(now);
+                CancelProbe();
+                return;
+            }
             if (liveness.Frozen) {
                 lastUnhealthyReason = "gui-unresponsive";
                 Status("frozen", child.Id);
                 if (launch.RestartFrozenShell) {
                     // Reuse the dead-child drain, restoration, limits and backoff.
-                    // A frozen lifetime exceeds the ordinary quick-crash window,
-                    // so explicitly count it rather than resetting that limit.
                     frozenTermination = true;
                     child.Kill();
                     BeginDrain();
@@ -1681,6 +1690,9 @@ namespace Caelestia.Takeover {
                 }
             } else if (statusPhase == "frozen") Status("running", child.Id);
             if (probe != null || !liveness.Due(now)) return;
+            // Session notifications cover lock and unlock. This query covers a
+            // supervisor that started in a locked or disconnected session.
+            if (!isolatedTest && !SupervisorSession.Unlocked()) { liveness.Reset(now); return; }
             string nonce = liveness.Issue(now);
             var info = new ProcessStartInfo(launch.Executable,
                 "ipc --pid " + child.Id + " call shell supervisorProbe " + nonce) {
@@ -1817,7 +1829,11 @@ namespace Caelestia.Takeover {
                 Status("restoring", 0);
                 // Decide the outcome first, so the desktop work matches it and
                 // always precedes a potentially slow banner replay.
-                if (code != 0) quickCrashes = frozenTermination || failedStart || (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
+                // A freeze takes minutes to detect, so it gets a longer window
+                // than a crash. Freezes spread over days must not add up to a
+                // permanent stop.
+                double lifetime = (DateTime.UtcNow - started).TotalSeconds;
+                if (code != 0) quickCrashes = failedStart || lifetime < (frozenTermination ? 600 : 30) ? quickCrashes + 1 : 0;
                 bool terminal = code == 0 || !restart || quickCrashes >= 3;
                 int delay = terminal ? 0 : RestartPolicy.DelaySeconds(quickCrashes);
                 try {

@@ -45,7 +45,8 @@ try {
     $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 5000;'
     # Assert production thresholds before shortening only time in the fixture.
     foreach ($pair in @(
-        @('ProbeIntervalMs = 15000', 'ProbeIntervalMs = 300'),
+        @('ProbeIntervalMs = 60000', 'ProbeIntervalMs = 300'),
+        @('RetryIntervalMs = 15000', 'RetryIntervalMs = 300'),
         @('ProbeTimeoutMs = 5000', 'ProbeTimeoutMs = 200'),
         @('FreezeWindowMs = 120000', 'FreezeWindowMs = 2000')
     )) {
