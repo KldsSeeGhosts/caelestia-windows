@@ -266,7 +266,7 @@ instances", because the running shell's path is the version directory.
 | Chord | Delivered by |
 | --- | --- |
 | No Windows key, for example `Ctrl+Alt+C` | `RegisterHotKey`, falling back to the hook if Windows refuses it |
-| With the Windows key (default) | The keyboard hook. It consumes the chord before the desktop supervisor and does nothing while an elevated app has the foreground |
+| With the Windows key (default) | The keyboard hook. It does nothing while an elevated app has the foreground |
 | With the Windows key and `"register": true` | `RegisterHotKey`, falling back to the hook if Windows refuses it |
 | Lone modifier tap or hold | The keyboard hook |
 
@@ -278,7 +278,7 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 
 - The hook still injects a masking key tap while the Windows key is down, so the Start menu stays closed when the key is released.
 - The bind also fires while an elevated app has the foreground, as chords without the Windows key already do.
-- The setting is ignored, and the hook keeps the chord, for the taskbar shortcuts the desktop supervisor consumes when `windows.hideTaskbar` is on (the chords in the note below), because Windows would never deliver them. The log records `Ignoring register for ...`.
+- For the taskbar shortcuts in the note below, `"register": true` is ignored while `windows.hideTaskbar` is off: the hook delivers the bind instead, so it cannot raise its window, and the log records `Ignoring register for ...`. With `windows.hideTaskbar` on, the shell owns the filter for those chords, so a bind on one of them wins and `register: true` is honoured as usual.
 - If several binds share one chord, the chord is registered when any of them sets it.
 
 ## Shipped default keys
@@ -312,13 +312,13 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | Lock Windows | `Super+L` | `rundll32.exe user32.dll,LockWorkStation` |
 
 > [!NOTE]
-> Explorer taskbar shortcuts are not keybind entries. While
-> `windows.hideTaskbar` is true, the desktop supervisor consumes Win+T,
-> Win+Shift+T, Win+B, Win+digit, Win+Shift+digit, Win+Ctrl+digit,
-> Win+Alt+digit and Win+Alt+Enter with a low-level hook so they cannot reveal
-> the hidden taskbar. They cannot be changed in `keybinds.json`; a lone Super
-> tap and Super+L are unchanged. Injected or remapped versions of these chords
-> are consumed too, unless they carry the shell/supervisor mask signature.
+> While `windows.hideTaskbar` is true, the shell's keyboard hook consumes
+> Explorer's taskbar shortcuts Win+T, Win+Shift+T, Win+B, Win+digit,
+> Win+Shift+digit, Win+Ctrl+digit, Win+Alt+digit and Win+Alt+Enter with a
+> low-level hook so they cannot reveal the hidden taskbar. A lone Super tap and
+> Super+L are unchanged. Injected or remapped versions of these chords are
+> consumed too, unless they carry the shell's mask signature. The filter needs
+> no keybind entry, but a bind on one of these chords still wins over it.
 
 
 ### 2. `"dispatch"` — run a window or workspace dispatcher
