@@ -95,9 +95,12 @@ class Dependencies(unittest.TestCase):
             deps.release_sbom(package, coverage, self.inventory)
 
     def test_unreceipted_zip_file_fails(self):
-        package, coverage = self.fixture(extra="payload/unknown.dll")
-        with self.assertRaisesRegex(ValueError, "Unknown packaged file"):
-            deps.release_sbom(package, coverage, self.inventory)
+        # Enabling crash handling uses inbox dbghelp.dll, not a new payload.
+        for name in ("unknown.dll", "dbghelp.dll"):
+            with self.subTest(name=name):
+                package, coverage = self.fixture(extra="payload/" + name)
+                with self.assertRaisesRegex(ValueError, "Unknown packaged file"):
+                    deps.release_sbom(package, coverage, self.inventory)
 
     def test_tampered_payload_and_receipt_fail(self):
         package, coverage = self.fixture()

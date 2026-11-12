@@ -1092,6 +1092,8 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert ($switchText -notmatch 'Remove-ItemProperty') 'Switch back still removes the Run entry itself.'
     $purgeText = Get-CaelestiaPurgePromptText (Join-Path $root 'profile')
     Assert ($purgeText -match 'caelestia-update-trust' -and $purgeText -match 'kept') 'The uninstall dialog does not explain update-trust retention.'
+    Assert ($purgeText.Contains('%LOCALAPPDATA%\quickshell\cache\crashes') -and
+        $purgeText -match 'kept either way' -and $purgeText -match 'cannot be redacted') 'The uninstall dialog does not explain shared crash-cache retention and memory privacy.'
     Assert ($purgeText -match 'No \(default\)') 'The uninstall dialog does not default to keeping settings.'
     Write-Output 'PASS integration entries: the launch, switch-back and Apps & features entries are created and described.'
 

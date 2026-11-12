@@ -130,8 +130,10 @@ The script:
 1. Runs `Test-Environment.ps1 -Json -Strict` in the development environment and
    checks that the backend and M3Shapes worktrees are clean and match the source
    manifest.
-2. Builds the pinned backend's `qs.exe` with crash handling and backend tests
-   disabled. This does not execute the shell or enable autostart.
+2. Builds the pinned backend's `qs.exe` with crash handling enabled and backend
+   tests disabled. The supervisor disables only the handler's relaunch, keeping
+   local dumps and window cleanup. Unsupervised smoke, fixtures and benchmarks
+   disable the whole handler. This does not execute the shell or enable autostart.
 3. Builds the pinned external `windows/deps/m3shapes` plugin and installs the
    `M3Shapes` QML module (its `m3shapes.dll`, plugin DLL, `qmldir` and type
    information) into the build directory's `install/qml`.

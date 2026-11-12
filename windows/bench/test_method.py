@@ -149,6 +149,7 @@ class Analysis(unittest.TestCase):
             env = m.environment(Path("qt"), Path("build"), Path("stage"), "idle", 0)
         self.assertEqual("offscreen", env["QT_QPA_PLATFORM"])
         self.assertEqual("software", env["QT_QUICK_BACKEND"])
+        self.assertEqual("1", env["QS_DISABLE_CRASH_HANDLER"])
         self.assertNotIn("CAELESTIA_WINDOWS_AUDIO_CONTROLS", env)
         self.assertNotIn("QS_TRANSITION_TRACE", env)
         self.assertIn("stage", env["CAELESTIA_PROFILE_ROOT"])

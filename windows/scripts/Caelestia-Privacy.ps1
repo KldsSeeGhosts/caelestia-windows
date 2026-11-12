@@ -2,6 +2,10 @@
 # verdicts and baselines. A record is not a machine dump. Serialise it with
 # known roots and personal paths replaced by stable placeholders, and verify the
 # result never carries a home path or the account name.
+# This text-only scrubber cannot redact minidumps. The backend keeps local
+# process-memory dumps under %LOCALAPPDATA%\quickshell\cache\crashes, outside
+# the owned Caelestia profile. Never pass binary dumps through these functions
+# or treat a scrubbed log as proof that an associated dump is safe to share.
 #
 # Dot-source this file, then call Initialize-CaelestiaPrivacy with the caller's
 # own roots, for example @{ from = $repoRoot; to = '<repo>' }.

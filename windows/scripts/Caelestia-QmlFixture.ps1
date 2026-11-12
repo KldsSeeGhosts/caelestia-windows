@@ -134,7 +134,6 @@ function Invoke-QmlFixture {
         $info.EnvironmentVariables['XDG_STATE_HOME'] = "$profile\state"
         $info.EnvironmentVariables['XDG_DATA_HOME'] = "$profile\data"
         $info.EnvironmentVariables['XDG_CACHE_HOME'] = "$profile\cache"
-        $info.EnvironmentVariables['QS_DISABLE_CRASH_HANDLER'] = '1'
         $info.EnvironmentVariables['QS_WINDOWS_TRAY_HOOK'] = '0'
         $info.EnvironmentVariables['QS_WINDOWS_BLUR'] = '0'
     }
@@ -146,6 +145,9 @@ function Invoke-QmlFixture {
     foreach ($key in $Environment.Keys) {
         $info.EnvironmentVariables[$key] = [string]$Environment[$key]
     }
+    # Every fixture is unsupervised, including UseQuickshell without ShellFixture.
+    # Never create diagnostics in the user's shared Quickshell cache or relaunch.
+    $info.EnvironmentVariables['QS_DISABLE_CRASH_HANDLER'] = '1'
     $info.EnvironmentVariables['QT_FORCE_STDERR_LOGGING'] = '1'
     if ($ShellFixture) {
         $info.EnvironmentVariables['QML_IMPORT_PATH'] = "$run\imports;$stage\imports;$nativeQml;$QtPrefix\qml"

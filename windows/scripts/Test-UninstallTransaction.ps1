@@ -196,6 +196,8 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     Copy-CaelestiaRootEntries $prefix (Join-Path $prefix 'versions\v2')
     Write-CaelestiaProfileOwner $profile $prefix 'erm629-fixture' $true
     Write-FixtureText (Join-Path $profile 'config\sentinel.txt') 'owned profile content'
+    Write-FixtureText (Join-Path $profile 'cache\sentinel.txt') 'owned cache content'
+    Write-FixtureText (Join-Path $case 'localappdata\quickshell\cache\crashes\other\other-123.dmp') 'shared crash content'
     Write-FixtureText (Join-Path $profile 'state\update-operation.json') '{"schema":1,"phase":"fixture"}'
     Write-FixtureText (Join-Path $case 'unrelated-profile\sentinel.txt') 'unrelated profile content'
     # Prefix-derived per-user entries, simulated as data. The fixture boundary
@@ -331,7 +333,9 @@ function Assert-Uninstalled([string]$Case, [bool]$Purge) {
     Assert ($ownedTasks.Count -eq 0) 'Owned maintenance tasks were left behind.'
     Assert (@(Get-ChildItem -LiteralPath (Join-Path $Case 'integration') -Force).Count -eq 0) 'Integration not removed.'
     Assert ((Test-Path -LiteralPath (Join-Path $Case 'profile')) -eq (-not $Purge)) 'Purge/profile preservation mismatch.'
+    Assert ([IO.File]::ReadAllText((Join-Path $Case 'localappdata\quickshell\cache\crashes\other\other-123.dmp')) -eq 'shared crash content') 'Uninstall removed shared Quickshell diagnostics outside its owned profile.'
     if (-not $Purge) {
+        Assert ([IO.File]::ReadAllText((Join-Path $Case 'profile\cache\sentinel.txt')) -eq 'owned cache content') 'Profile-preserving uninstall modified its cache.'
         Assert ([IO.File]::ReadAllText((Join-Path $Case 'profile\config\sentinel.txt')) -eq 'owned profile content') 'Kept profile modified.'
     }
     Assert ([IO.File]::ReadAllText((Join-Path $Case 'unrelated-profile\sentinel.txt')) -eq 'unrelated profile content') 'Unrelated profile modified.'

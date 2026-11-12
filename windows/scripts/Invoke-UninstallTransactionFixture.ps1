@@ -17,6 +17,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $env:CAELESTIA_FIXTURE_CASE = $CaseRoot
+$env:LOCALAPPDATA = Join-Path $CaseRoot 'localappdata'
 $env:CAELESTIA_FIXTURE_OPERATION = $Operation
 $env:CAELESTIA_FIXTURE_CONTROL = $Control
 $env:CAELESTIA_FIXTURE_PREFIX = Join-Path $CaseRoot 'prefix'

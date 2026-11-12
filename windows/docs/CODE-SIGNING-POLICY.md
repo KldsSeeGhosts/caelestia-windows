@@ -242,11 +242,9 @@ are separate from the automatic and opt-in shell requests in the table above.
 | Click a link in an expanded notification | The link from the notification body, as supplied by the app that posted it. The shell does not fetch it and uploads nothing. | `modules/notifications/Notification.qml:483`, `modules/sidebar/Notif.qml:148` |
 | Open a single-line HTTP or HTTPS clipboard item | The clipboard text exactly as copied. The shell does not preview or fetch it. | `plugin/src/Caelestia/Windows/Clipboard/windowsclipboardworker.cpp:1197`, `windows/services/clipboard/ClipboardHistory.qml:157` |
 | Open release notes or the manual download link on the Updates page | A GitHub release-tag or releases URL that `UpdatesLogic.js` restricts to this repository. | `windows/shell/adapters/modules/nexus/pages/UpdatesPage.qml:36,404,413` |
-| Open Report in the Quickshell crash reporter | The upstream issue-template URL (`github.com/outfoxxed/quickshell/issues/new?template=crash2.yml`), or `QS_CRASHREPORT_URL` when that environment variable is set. | `windows/deps/quickshell/src/crash/interface.cpp:121` |
 
 The shell also opens local files and folders through the registered Windows
-handler (`windows/shell/adapters/utils/Paths.qml:129,133`; the crash reporter's
-report folder at `interface.cpp:118`), opens `ms-settings:` pages for network,
+handler (`windows/shell/adapters/utils/Paths.qml:129,133`), opens `ms-settings:` pages for network,
 Bluetooth, notifications, clipboard and lock-screen settings, and activates an
 installed app or a `windowsdefender:` URI when a notification is clicked. Those
 targets are on this PC. The clipboard Open action opens images and a temporary
@@ -255,6 +253,15 @@ handler as paths. A `file://server/share/...` item becomes a UNC path, so
 opening it contacts that network server, and Windows may send the user's
 network credentials to it, as Explorer does for any network share. The shell
 does not contact the server unless the user chooses Open on that item.
+
+The upstream Qt Widgets crash reporter and its report-page URL are not compiled
+on Windows. The Windows handler writes local dumps and reports and restores
+tracked window state. Under the supervisor it does not launch a replacement
+process, show a diagnostic window or upload anything. Dumps contain process
+memory and cannot be redacted. See
+[Crash diagnostics and privacy](SUPPORT-BUNDLE.md#crash-diagnostics-and-privacy)
+for the shared cache location, newest-three startup retention and explicit
+manual-sharing boundary.
 
 Ways to avoid or limit the requests:
 

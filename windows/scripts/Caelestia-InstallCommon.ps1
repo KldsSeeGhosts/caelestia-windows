@@ -1988,6 +1988,10 @@ $ProfileRoot
 
 No (default): keep them so a reinstall can reuse them.
 
+Shared Quickshell crash diagnostics in %LOCALAPPDATA%\quickshell\cache\crashes
+are kept either way. They may belong to other configurations. Remove them manually
+if no longer needed; dumps contain process memory and cannot be redacted.
+
 Either way, Windows update trust data in %LOCALAPPDATA%\caelestia-update-trust is kept.
 It records the newest signed update metadata this PC has accepted, so reinstalling
 Caelestia cannot roll update security back to older metadata.

@@ -9,6 +9,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# No dump opt-in exists in this fixed-field JSON exporter. It never collects
+# crash dumps, report.txt or raw logs. See windows/docs/SUPPORT-BUNDLE.md for
+# explicit manual sharing, including the warning that dumps cannot be redacted.
 try { . (Join-Path $PSScriptRoot 'Caelestia-Support.ps1') }
 catch {
     [Console]::Error.WriteLine('Support helper unavailable. Install both packaged support scripts together.')
