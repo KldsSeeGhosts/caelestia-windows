@@ -44,7 +44,6 @@ Singleton {
     property string sourceRecordConfirmed: ""
     property string sourceRecordWritingText: ""
     property bool sourceRecordWriting: false
-    property bool sourceRecordVerifying: false
     property int sourceRecordFailures: 0
     property int sourceRecordRetryInterval: 2000
     property bool sourceRecordDirty: false
@@ -347,23 +346,11 @@ Singleton {
         root.ensureSourceRecordDirectory();
         root.sourceRecordWriting = true;
         root.sourceRecordWritingText = root.sourceRecordPending;
-        // The pinned backend keeps the attempted bytes cached after a failed
-        // write, so an identical setText() is dropped and no completion ever
-        // arrives (backend issue #28). Recreate the writer for every attempt;
-        // the workaround can go when the backend stops caching failed writes.
-        sourceRecordWriter.active = false;
-        sourceRecordWriter.active = true;
-    }
-    function confirmSourceRecord(): void {
-        if (!root.sourceRecordWriting || root.sourceRecordVerifying)
-            return;
-        // saved() alone does not prove the bytes reached disk on this backend:
-        // a failed atomic commit is only logged (backend issue #28). Read the
-        // file back independently before treating the choice as saved.
-        root.sourceRecordVerifying = true;
-        sourceRecord.reload();
+        sourceRecordWriter.setText(root.sourceRecordWritingText);
     }
     function acceptSourceRecord(): void {
+        if (!root.sourceRecordWriting)
+            return;
         // The proposed text can advance while a write is in flight. Confirm
         // only the text that was actually handed to the writer, then write the
         // newer proposal if one exists.
@@ -373,13 +360,10 @@ Singleton {
         root.sourceRecordFailures = 0;
         root.sourceRecordError = "";
         root.sourceRecordDirty = root.sourceRecordPending !== root.sourceRecordConfirmed;
-        // saved() still runs inside FileView's operation completion. A write
-        // issued here would cancel that completion and lose its own saved().
         if (root.sourceRecordDirty)
-            Qt.callLater(root.writeSourceRecord);
+            root.writeSourceRecord();
     }
     function failSourceRecord(error): void {
-        root.sourceRecordVerifying = false;
         root.sourceRecordWritingText = "";
         root.sourceRecordWriting = false;
         root.sourceRecordFailures++;
@@ -612,10 +596,8 @@ Singleton {
     }
 
     // Owned by the shell and never watched: a pick or a saved pick is the only
-    // reader, and reloading our own write has no new decision to make. The
-    // reader and writer are separate views because a save issued from the
-    // read's onLoaded callback would cancel that read and lose the writer's
-    // saved() signal. Atomic writes keep a crash from leaving a partial
+    // reader, and reloading our own write has no new decision to make.
+    // Atomic writes keep a crash from leaving a partial
     // record. Errors stay in a property instead of being logged: a normal
     // fresh start must emit no QML diagnostic.
     FileView {
@@ -625,52 +607,20 @@ Singleton {
         blockLoading: true
         watchChanges: false
         printErrors: false
-        onLoaded: {
-            if (root.sourceRecordVerifying) {
-                // saved() is not proof of the bytes on this backend (issue
-                // #28), so the record is confirmed only after an independent
-                // read returns exactly what the writer was given.
-                root.sourceRecordVerifying = false;
-                if (text() === root.sourceRecordWritingText)
-                    root.acceptSourceRecord();
-                else
-                    root.failSourceRecord("the saved record did not match the file");
-                return;
-            }
-            root.readSourceRecord(text(), false);
-        }
-        onLoadFailed: error => {
-            if (root.sourceRecordVerifying) {
-                root.sourceRecordVerifying = false;
-                root.failSourceRecord("the saved record could not be read back");
-                return;
-            }
-            root.readSourceRecord("", error === FileViewError.FileNotFound);
-        }
+        onLoaded: root.readSourceRecord(text(), false)
+        onLoadFailed: error => root.readSourceRecord("", error === FileViewError.FileNotFound)
     }
 
-    // Recreated for every attempt. A FileView that failed a write caches the
-    // attempted bytes, so reusing it would drop an identical retry (backend
-    // issue #28). This can become a plain FileView when that lands.
-    Loader {
+    FileView {
         id: sourceRecordWriter
 
-        active: false
-        sourceComponent: Component {
-            FileView {
-                path: root.sourceRecordPath
-                preload: false
-                atomicWrites: true
-                watchChanges: false
-                printErrors: false
-                onSaved: root.confirmSourceRecord()
-                onSaveFailed: error => root.failSourceRecord(error)
-            }
-        }
-        onLoaded: {
-            if (root.sourceRecordWriting)
-                item.setText(root.sourceRecordWritingText);
-        }
+        path: root.sourceRecordPath
+        preload: false
+        atomicWrites: true
+        watchChanges: false
+        printErrors: false
+        onSaved: root.acceptSourceRecord()
+        onSaveFailed: error => root.failSourceRecord(error)
     }
 
     Timer {
