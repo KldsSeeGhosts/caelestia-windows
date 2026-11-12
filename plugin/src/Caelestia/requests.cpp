@@ -113,8 +113,22 @@ void invokeError(const QPointer<const Requests>& owner, const QJSValue& onError,
     }
 }
 
+// The owner dies with its QML engine. A callback after that would run script
+// in an engine that is being torn down, so the request ends without one.
+bool dropWithoutOwner(const std::shared_ptr<RequestState>& state) {
+    if (state->owner)
+        return false;
+    state->settled = true;
+    state->body.clear();
+    if (state->deadlineTimer)
+        state->deadlineTimer->stop();
+    if (state->reply)
+        state->reply->deleteLater();
+    return true;
+}
+
 void settleSuccess(const std::shared_ptr<RequestState>& state) {
-    if (state->settled)
+    if (state->settled || dropWithoutOwner(state))
         return;
     state->settled = true;
 
@@ -136,7 +150,7 @@ void settleSuccess(const std::shared_ptr<RequestState>& state) {
 }
 
 void settleError(const std::shared_ptr<RequestState>& state, const QString& reason) {
-    if (state->settled)
+    if (state->settled || dropWithoutOwner(state))
         return;
     state->settled = true;
 
@@ -231,9 +245,7 @@ void Requests::get(const QUrl& url, const QJSValue& onSuccess, const QJSValue& o
     state->onError = onError;
     state->maxBytes = opts.maxBytes;
 
-    // Parent the timer to reply so it cannot outlive the reply, and connect
-    // without a context receiver for destroyed/timeout so destruction of `this`
-    // mid-request still settles the callback exactly once.
+    // Parent the timer to reply so it cannot outlive the reply.
     auto* deadlineTimer = new QTimer(reply);
     deadlineTimer->setSingleShot(true);
     state->deadlineTimer = deadlineTimer;
@@ -294,16 +306,14 @@ void Requests::get(const QUrl& url, const QJSValue& onSuccess, const QJSValue& o
         }
     });
 
+    // Destroying the owner cancels the request without a callback.
     QObject::connect(this, &QObject::destroyed, reply, [state] {
-        if (!state->settled) {
-            abortWithLimit(state, u"Requests object destroyed mid-request"_s);
-        }
-    });
-
-    QObject::connect(reply, &QObject::destroyed, reply, [state] {
-        if (!state->settled) {
-            settleError(state, u"Request cancelled because the reply was destroyed"_s);
-        }
+        if (state->settled)
+            return;
+        state->settled = true;
+        state->body.clear();
+        if (state->reply)
+            state->reply->abort();
     });
 }
 

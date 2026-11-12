@@ -323,7 +323,7 @@ private slots:
         QVERIFY(hops <= 3);
     }
 
-    void destructionMidRequestEmitsSingleError() {
+    void destructionMidRequestCancelsWithoutCallback() {
         QQmlEngine engine;
         auto requests = std::make_unique<Requests>();
         bool connected = false;
@@ -340,13 +340,9 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(connected, 5000);
         requests.reset();
 
-        QTRY_COMPARE_WITH_TIMEOUT(readRecorder(handle).totalCalls(), 1, 5000);
-        QTest::qWait(100);
-
-        const CallbackRecorder rec = readRecorder(handle);
-        QCOMPARE(rec.successCount, 0);
-        QCOMPARE(rec.errorCount, 1);
-        QVERIFY(!rec.error.isEmpty());
+        // The owner is gone, so no script callback may run.
+        QTest::qWait(300);
+        QCOMPARE(readRecorder(handle).totalCalls(), 0);
     }
 };
 
