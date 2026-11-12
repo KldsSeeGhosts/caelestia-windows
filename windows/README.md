@@ -119,7 +119,7 @@ This port has three layers:
 
 1. **The interface is Caelestia.** [Caelestia Shell](https://github.com/caelestia-dots/shell)
    by soramanew and contributors is GPL-3.0. About 69,000 lines of upstream UI
-   are used nearly unchanged. At the maintainer's attribution snapshot, 75
+   are used nearly unchanged. At my attribution snapshot, 75
    upstream files were touched, with about 1,500 lines added and 195 removed.
    The expressive shapes come from soramanew's
    [m3shapes](https://github.com/soramanew/m3shapes), Apache-2.0.
@@ -164,8 +164,8 @@ are MIT. Adapted desktop COM interface definitions come from
 Copyright holders, license files, and installation locations are listed in
 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
-Parts of the Windows port were written with AI assistance under the
-maintainer's direction and review. This describes the port, not the authorship
+Parts of the Windows port were written with AI assistance under my
+direction and review. This describes the port, not the authorship
 of the upstream projects.
 
 ## Toolchain direction

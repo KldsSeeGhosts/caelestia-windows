@@ -65,7 +65,7 @@ packages are unsigned: there is no invented certificate or publisher signature,
 and their first-party executables and scripts carry no Authenticode signature.
 Deployed Qt DLLs keep Qt's signature in every channel.
 
-The owner's decision is that stable releases
+My plan is that stable releases
 (`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation
 once a signing pipeline exists. No release is signed today. The intended signed
 set is the first-party executables and PowerShell scripts in the ZIP. Qt's DLLs

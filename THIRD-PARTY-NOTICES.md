@@ -129,5 +129,5 @@ external application by its respective authors, not bundled with this port.
 
 The port was built with substantial AI assistance: Claude orchestrated the
 work, with GPT, GLM, DeepSeek and Gemini agents implementing parts of it.
-The maintainer directed and reviewed the work. Upstream projects retain their
+I directed and reviewed the work. Upstream projects retain their
 own authorship and copyright.

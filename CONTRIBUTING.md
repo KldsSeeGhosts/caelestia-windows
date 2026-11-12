@@ -2,8 +2,8 @@
 
 AI-assisted and hand-written contributions are both welcome. Contributors are
 responsible for understanding, reviewing and testing what they submit. Parts of
-the Windows port were written with AI assistance under the maintainer's
-direction and review. Describe material AI assistance in your contribution and
+the Windows port were written with AI assistance under my direction and review.
+Describe material AI assistance in your contribution and
 verify generated code, dependencies, attribution and documentation.
 
 Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).

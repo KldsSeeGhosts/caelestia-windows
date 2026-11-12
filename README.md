@@ -85,7 +85,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Ca
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-Development (`v*-dev.*`) and preview (`v*-preview.*`, `v*-rc.*`) releases are unsigned. The owner's decision is that stable releases (`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation once a signing pipeline exists. No release is signed today and no stable release exists. The intended signed set is only the files this project builds: Qt DLLs keep Qt's signature, M3Shapes stays third-party, `qs.exe` remains an unsigned upstream build, and `Install.cmd` and the ZIP are not signed. [CODE-SIGNING-POLICY.md](windows/docs/CODE-SIGNING-POLICY.md) lists the intended artifacts, team roles and privacy statement; [SIGNING-ROADMAP.md](windows/docs/SIGNING-ROADMAP.md) lists the pipeline work that must land first.
+Development (`v*-dev.*`) and preview (`v*-preview.*`, `v*-rc.*`) releases are unsigned. My plan is that stable releases (`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation once a signing pipeline exists. No release is signed today and no stable release exists. The intended signed set is only the files this project builds: Qt DLLs keep Qt's signature, M3Shapes stays third-party, `qs.exe` remains an unsigned upstream build, and `Install.cmd` and the ZIP are not signed. [CODE-SIGNING-POLICY.md](windows/docs/CODE-SIGNING-POLICY.md) lists the intended artifacts, team roles and privacy statement; [SIGNING-ROADMAP.md](windows/docs/SIGNING-ROADMAP.md) lists the pipeline work that must land first.
 
 ## Usage
 
@@ -143,7 +143,7 @@ Almost all of the UI design, QML, and animations come from other people's work. 
 - **[caelestia-quickshell-windows](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows)** (LGPL-3.0) — our maintained fork of `nunreasonable/quickshell` with Caelestia-specific Windows fixes.
 - **Bundled tools, fonts, and notices:** [Windows credits and attribution](windows/README.md#credits-and-attribution) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) list all copyright holders, licenses, and bundled notices.
 
-Parts of the Windows port were written with AI assistance under the maintainer's direction and review. Contributors are responsible for the code and documentation they submit.
+Parts of the Windows port were written with AI assistance under my direction and review. Contributors are responsible for the code and documentation they submit.
 
 ## Documentation
 
