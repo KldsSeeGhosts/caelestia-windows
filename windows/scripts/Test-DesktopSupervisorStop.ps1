@@ -57,6 +57,11 @@ try {
     $source = Replace-Exactly $source `
         'if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, hide || adoptedUncleanBaseline);' `
         'File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "desktop\n");'
+    # A crash that restarts releases only the dead shell's AppBars: no full
+    # desktop restore and no parked-window rescue before the new shell.
+    $source = Replace-Exactly $source `
+        'else if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, delay != 0 && hide);' `
+        'else File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "appbars\n");'
     $source = Replace-Exactly $source `
         'finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); }' `
         'finally { Native.RescueParkedWindows(tilerMutex, rescueFilter); File.AppendAllText(Path.Combine(launch.StateDirectory, "restore-order.txt"), "rescue\n"); }'
@@ -341,7 +346,9 @@ param($StateDirectory, $Command)
 $order = Join-Path $StateDirectory 'restore-order.txt'
 if (Test-Path -LiteralPath $order) {
     $lines = @(Get-Content -LiteralPath $order)
-    if ($lines.Count -lt 2 -or $lines[-2] -ne 'desktop' -or $lines[-1] -ne 'rescue') {
+    $restart = $lines.Count -ge 1 -and $lines[-1] -eq 'appbars'
+    $terminal = $lines.Count -ge 2 -and $lines[-2] -eq 'desktop' -and $lines[-1] -eq 'rescue'
+    if (-not $restart -and -not $terminal) {
         throw 'Banner work started before desktop and parked-window restoration.'
     }
     Add-Content -LiteralPath $order -Value 'banner'
@@ -527,7 +534,7 @@ if (Test-Path -LiteralPath $order) {
         Assert (Test-CaelestiaSamePath (Get-Content -LiteralPath (Join-Path $state 'banner-recovered.txt') -Raw) $case) 'Banner recovery did not find the helper beside qs.exe or use the launch cwd.'
         Assert (-not (Test-Path -LiteralPath (Join-Path $state 'banner-recovery.log'))) 'Banner recovery failed with cwd outside the payload.'
         $order = @(Get-Content -LiteralPath (Join-Path $state 'restore-order.txt'))
-        Assert (($order -join ',') -match '^(desktop,rescue,banner)(,desktop,rescue,banner)*$') 'Desktop, parked-window and banner recovery order changed.'
+        Assert (($order -join ',') -match '^(appbars,banner,)*desktop,rescue,banner$') 'Desktop, parked-window and banner recovery order changed.'
         Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Exited supervisor still owns the disposable profile.'
         $mutex = [Threading.Mutex]::new($false, $mutexName)
         try {

@@ -1771,19 +1771,25 @@ namespace Caelestia.Takeover {
                 child.Dispose(); child = null;
                 childDrain = null;
                 Status("restoring", 0);
-                // Even an immediate restart must return the desktop before a
-                // potentially slow banner replay. Keep the restart delay and
-                // crash counter unchanged.
-                try { RestoreDesktop(); }
-                finally { RestoreBanners(); }
-                childCleanupComplete = true;
-                if (code == 0) { Finish("clean-exit", 0); return; }
-                quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
-                if (!restart || quickCrashes >= 3) { Finish("crash-give-up", code); return; }
-                int delay = RestartPolicy.DelaySeconds(quickCrashes);
-                // A later stop during backoff still retries desktop recovery,
-                // as before. Only terminal child exits skip duplicate cleanup.
-                childCleanupComplete = false;
+                // Decide the outcome first, so the desktop work matches it and
+                // always precedes a potentially slow banner replay.
+                if (code != 0) quickCrashes = (DateTime.UtcNow - started).TotalSeconds < 30 ? quickCrashes + 1 : 0;
+                bool terminal = code == 0 || !restart || quickCrashes >= 3;
+                int delay = terminal ? 0 : RestartPolicy.DelaySeconds(quickCrashes);
+                try {
+                    // The shell is not coming back: return the whole desktop.
+                    if (terminal) RestoreDesktop();
+                    // A restart follows. Release the dead shell's AppBars, and
+                    // show the taskbar only while backing off. An immediate
+                    // restart keeps it hidden and leaves parked windows to the
+                    // new shell, so one crash does not flash the taskbar.
+                    else if (!isolatedTest) Native.RestoreOwned(saved, ownedPid, launch.RestoreWorkAreas, delay != 0 && hide);
+                } finally { RestoreBanners(); }
+                if (terminal) {
+                    childCleanupComplete = true;
+                    Finish(code == 0 ? "clean-exit" : "crash-give-up", code);
+                    return;
+                }
                 nextStart = DateTime.UtcNow.AddSeconds(delay);
                 Status("restart-backoff", 0);
                 // Start in this tick rather than spending another 250 ms with
