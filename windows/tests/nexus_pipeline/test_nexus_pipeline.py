@@ -1287,7 +1287,7 @@ class Pipeline(unittest.TestCase):
         spec.loader.exec_module(deps)
         inventory = deps.read(ROOT / deps.INVENTORY)
         exceptions = deps.read(ROOT / deps.EXCEPTIONS)
-        cargo_lock_sha = n.digest(ROOT / "windows/capture/Cargo.lock")
+        cargo_lock_sha = deps.lock_digest(ROOT / "windows/capture/Cargo.lock")
         now = dt.datetime(2026, 11, 12, 12, 0, 0, tzinfo=dt.timezone.utc)
         report = {
             "database": {"last-commit": "a" * 40, "last-updated": "2026-11-12T00:00:00Z"},
