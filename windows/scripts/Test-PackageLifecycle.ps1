@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 $oldQtPlatform = $env:QT_QPA_PLATFORM
 $env:QT_QPA_PLATFORM = 'offscreen'
 $Package = (Resolve-Path -LiteralPath $Package).Path
+$packageItem = Get-Item -LiteralPath $Package
 $packageHash = (Get-FileHash -LiteralPath $Package -Algorithm SHA256).Hash.ToLowerInvariant()
 $root = Join-Path ([IO.Path]::GetTempPath()) ('cpl-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 if (-not $OutputRoot) { $OutputRoot = $root + '-results' }
@@ -22,7 +23,9 @@ $env:CAELESTIA_TEST_INTEGRATION_ROOT = Join-Path $root 'integration'
 $results = [Collections.Generic.List[object]]::new()
 $receipt = $null
 $manifestHash = ''
-$previousHash = if ($PreviousPackage) { (Get-FileHash -LiteralPath $PreviousPackage).Hash } else { '' }
+$previousName = if ($PreviousPackage) { [IO.Path]::GetFileName($PreviousPackage) } else { $null }
+$previousSize = if ($PreviousPackage) { [long](Get-Item -LiteralPath $PreviousPackage).Length } else { $null }
+$previousHash = if ($PreviousPackage) { (Get-FileHash -LiteralPath $PreviousPackage -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
 
 function Assert-True($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Invoke-Case([string]$Name, [scriptblock]$Action) {
@@ -311,6 +314,47 @@ try {
         & "$prefix\Uninstall-Caelestia.ps1" -Prefix $prefix -Purge -NoDialogs
         Assert-True (-not (Test-Path $prefix) -and -not (Test-Path $profile)) 'Owned purge left managed directories.'
     }
+    $receiptCases = @($results.ToArray() | ForEach-Object {
+        [ordered]@{
+            case = $_.case
+            outcome = $_.outcome
+            seconds = $_.seconds
+        }
+    })
+    $previousIdentity = if ($PreviousPackage) {
+        [ordered]@{
+            mode = 'previous-zip'
+            name = $previousName
+            size = $previousSize
+            sha256 = $previousHash
+            synthesized = $false
+            statement = "Update transaction tested against previous package ZIP $previousName ($previousHash)."
+        }
+    } else {
+        [ordered]@{
+            mode = 'synthesized-older-metadata-same-payload'
+            name = $null
+            size = $null
+            sha256 = $null
+            synthesized = $true
+            statement = 'Previous state was synthesized as older installed metadata (appVersion 0.0.0) over the same verified payload bytes; no separate historical package was tested.'
+        }
+    }
+    $sanitizedReceipt = [ordered]@{
+        schema = 'caelestia-package-lifecycle-receipt'
+        version = 1
+        package = [ordered]@{
+            name = $packageItem.Name
+            size = [long]$packageItem.Length
+            sha256 = $packageHash
+        }
+        manifestSha256 = $manifestHash.ToLowerInvariant()
+        previousPackage = $previousIdentity
+        qualification = 'component-offscreen-and-data-only-not-windows11-acceptance'
+        serverTransactionFixture = [bool]$ServerTransactionFixture
+        cases = $receiptCases
+    }
+    $sanitizedReceipt | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath "$OutputRoot\package-lifecycle-receipt.json" -Encoding UTF8
 } finally {
     if ($registry -and (Test-Path -LiteralPath $registry)) {
         Assert-True ($registry -like 'HKCU:\Software\CaelestiaWindowsTests\*') 'Unsafe registry cleanup.'

@@ -35,7 +35,8 @@ REQUIRED_JOBS = FAST_SHARDS | {
 EVIDENCE = {"pair-result.json", "candidate-result.json", "pair-request.json", "integration-stages.json",
             "services-summary.json", "shell-summary.json", "portable.xml", "integration.xml",
             "plugins.xml", "native-build.json", "project-source.zip", "supplier-source.zip",
-            "component-inventory.json", "source-assets-inventory.json", "manifest.sha256"}
+            "component-inventory.json", "source-assets-inventory.json", "manifest.sha256",
+            "release.cdx.json", "package-lifecycle-receipt.json"}
 require, read, digest = candidate.require, candidate.read, candidate.digest
 
 
@@ -178,6 +179,87 @@ class GitHub:
         environment.pop("NEXUS_SIGNING_KEY", None)
         checked_run(["gh", "release", "upload", tag, str(path), "--repo", REPO],
                     timeout=600, env=environment)
+
+    def download_artifact(self, artifact_id, destination):
+        args = ["gh", "api", "--hostname", "github.com", f"repos/{REPO}/actions/artifacts/{artifact_id}/zip"]
+        no_links(destination)
+        result = subprocess.run(args, capture_output=True, timeout=120)
+        if result.returncode:
+            error = result.stderr.decode(errors="replace")
+            if "HTTP 401" in error or "HTTP 403" in error:
+                raise PermissionError("GitHub authorization denied; owner setup required.")
+            raise ValueError("advisory-artifact-download-refused")
+        Path(destination).write_bytes(result.stdout)
+
+
+def load_dependencies_module(shell):
+    import importlib.util
+    path = Path(shell) / "windows/release/dependencies.py"
+    spec = importlib.util.spec_from_file_location("caelestia_release_dependencies", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_current_advisory(github, shell, work, *, now=None):
+    shell, work = Path(shell), Path(work)
+    deps = load_dependencies_module(shell)
+    inventory = deps.read(shell / deps.INVENTORY)
+    require(inventory == deps.generate_inventory(root=shell, previous=inventory), "advisory-inventory-drift")
+    exceptions = deps.read(shell / deps.EXCEPTIONS)
+    now = now or utc()
+    deps.validate_exceptions(exceptions, inventory, today=now.date())
+    cargo_lock_sha = digest(shell / "windows/capture/Cargo.lock")
+    expected_inventory_sha = deps.inventory_digest(inventory)
+    expected_exceptions_sha = deps.sha(json.dumps(exceptions, sort_keys=True).encode("utf-8"))
+    runs = github.pages(
+        f"repos/{REPO}/actions/workflows/dependency-advisories.yml/runs?branch=main&status=completed&per_page=30",
+        "workflow_runs",
+    )
+    stale_or_mismatch = False
+    for run in runs:
+        if (run.get("path") != ".github/workflows/dependency-advisories.yml"
+                or run.get("head_branch") != "main"
+                or run.get("event") not in ("push", "schedule", "workflow_dispatch")
+                or run.get("conclusion") != "success"):
+            continue
+        artifacts = github.pages(f"repos/{REPO}/actions/runs/{run['id']}/artifacts", "artifacts")
+        matching = [row for row in artifacts
+                    if row.get("name") == f"dependency-advisories-{run['id']}"
+                    and row.get("expired") is False]
+        if len(matching) != 1:
+            continue
+        archive_path = work / f"advisory-{run['id']}.zip"
+        if archive_path.exists():
+            archive_path.unlink()
+        github.download_artifact(matching[0]["id"], archive_path)
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                names = set(archive.namelist())
+                if "advisory-result.json" not in names or "cargo-audit.json" not in names:
+                    stale_or_mismatch = True
+                    continue
+                result = json.loads(archive.read("advisory-result.json").decode("utf-8-sig"),
+                                    object_pairs_hook=candidate.object_pairs)
+                report = json.loads(archive.read("cargo-audit.json").decode("utf-8-sig"),
+                                    object_pairs_hook=candidate.object_pairs)
+        except (ValueError, KeyError, UnicodeDecodeError, zipfile.BadZipFile):
+            stale_or_mismatch = True
+            continue
+        if (result.get("inventorySha256") != expected_inventory_sha
+                or result.get("cargoLockSha256") != cargo_lock_sha
+                or result.get("exceptionsSha256") != expected_exceptions_sha):
+            stale_or_mismatch = True
+            continue
+        try:
+            deps.verify_advisory_result(result, inventory, exceptions, cargo_lock_sha, now=now)
+            deps.check_audit(report, exceptions, inventory, 0)
+            return result
+        except ValueError as error:
+            if "stale" in str(error).lower() or "expired" in str(error).lower():
+                require(False, "advisory-result-stale")
+            require(False, "advisory-check-failed")
+    require(False, "advisory-result-stale" if stale_or_mismatch else "advisory-result-missing")
 
 
 def validate_run(github, ctx, artifact=False):
@@ -649,9 +731,11 @@ def publish_pointer(branch, crypto, channel, release, decide, before_first=None)
     raise ValueError("pointer-cas-exhausted")
 
 
-def development(directory, ctx, github, branch, crypto, shell, verify):
+def development(directory, ctx, github, branch, crypto, shell, verify, advisory_check=None):
     doc = verify_candidate_header(directory, ctx)
     validate_run(github, ctx, artifact=True)
+    if advisory_check is not None:
+        advisory_check()
     verify(doc)
     release = doc["release"]
     rows = doc["assets"] + asset_rows(directory, ["candidate.json"])
@@ -688,7 +772,7 @@ def existing_record(github, crypto, keys, tag, channel, expected, directory):
     return crypto.invoke("SignRecord", channel, keys, payload=expected)
 
 
-def promote(directory, build, channel, alias, github, branch, crypto, shell, verify):
+def promote(directory, build, channel, alias, github, branch, crypto, shell, verify, advisory_check=None):
     require(channel in ("preview", "stable") and candidate.VERSION.fullmatch(build), "invalid-promotion-input")
     core = build
     require(alias == build, "promotion-version-mismatch")
@@ -704,6 +788,8 @@ def promote(directory, build, channel, alias, github, branch, crypto, shell, ver
     require(doc["release"] == record["release"] and record["assets"] ==
             doc["assets"] + asset_rows(directory, ["candidate.json"]), "promotion-record-candidate-mismatch")
     validate_run(github, candidate_context(doc))
+    if advisory_check is not None:
+        advisory_check()
     verify(doc)
     require(ancestor(shell, doc["sourceRevision"], pair.git(shell, "rev-parse", "HEAD")), "promotion-not-main-ancestor")
     release = copy.deepcopy(doc["release"])
@@ -804,7 +890,8 @@ def main():
         if args.mode == "development":
             require(args.candidate is not None, "candidate-required")
             verify = lambda doc: verify_payload(shell, args.candidate, work, ctx, validator)
-            result = development(Path(args.candidate), ctx, github, branch, crypto, shell, verify)
+            advisory = lambda: verify_current_advisory(github, shell, work)
+            result = development(Path(args.candidate), ctx, github, branch, crypto, shell, verify, advisory)
         elif args.mode == "promote":
             require(args.build and candidate.VERSION.fullmatch(args.build), "invalid-build-input")
             source = github.api(f"repos/{REPO}/releases/tags/v{args.build}-development")
@@ -825,7 +912,8 @@ def main():
                 asset = next(item for item in source["assets"] if item["name"] == row["name"])
                 github.download(asset, directory / row["name"], row)
             verify = lambda doc: verify_payload(shell, directory, work, candidate_context(doc), validator, historical=True)
-            result = promote(directory, args.build, args.channel, args.alias, github, branch, crypto, shell, verify)
+            advisory = lambda: verify_current_advisory(github, shell, work)
+            result = promote(directory, args.build, args.channel, args.alias, github, branch, crypto, shell, verify, advisory)
         else:
             channels = ("development",) if args.mode == "refresh-development" else ("preview", "stable")
             result = ",".join(channel + ":" + refresh(channel, branch, crypto) for channel in channels)

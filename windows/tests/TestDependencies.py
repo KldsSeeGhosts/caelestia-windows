@@ -238,8 +238,34 @@ class Dependencies(unittest.TestCase):
         build = (ROOT / ".github/workflows/windows-build.yml").read_bytes()
         self.assertEqual(build, (ROOT / "windows/ci/windows-build.yml.template").read_bytes())
         text = build.decode().replace("\r\n", "\n")
-        self.assertGreater(text.index("Generate receipt-bound release SBOM"), text.index("id: candidate\n"))
+        self.assertGreater(text.index("Retain release SBOM and receipt"), text.index("id: candidate\n"))
         self.assertIn("name: release-sbom-${{ github.run_id }}-${{ github.run_attempt }}", text)
+        self.assertIn("--receipt-output", workflow)
+        self.assertIn("advisory-result.json", workflow)
+
+    def test_advisory_receipt_verification_and_freshness_policy(self):
+        report = self.audit_fixture()
+        cargo_lock_sha = deps.sha((ROOT / "windows/capture/Cargo.lock").read_bytes())
+        now = dt.datetime(2026, 11, 12, 12, 0, 0, tzinfo=dt.timezone.utc)
+        receipt = deps.advisory_receipt(report, self.exceptions, self.inventory, cargo_lock_sha, checked_at=now)
+        deps.verify_advisory_result(receipt, self.inventory, self.exceptions, cargo_lock_sha, now=now + dt.timedelta(days=7))
+        # Stale (> 7 days) fails.
+        with self.assertRaisesRegex(ValueError, "stale"):
+            deps.verify_advisory_result(
+                receipt, self.inventory, self.exceptions, cargo_lock_sha,
+                now=now + dt.timedelta(days=7, seconds=1))
+        # Missing or non-pass fails.
+        with self.assertRaisesRegex(ValueError, "missing"):
+            deps.verify_advisory_result(None, self.inventory, self.exceptions, cargo_lock_sha, now=now)
+        bad = dict(receipt, result="fail")
+        with self.assertRaisesRegex(ValueError, "did not pass"):
+            deps.verify_advisory_result(bad, self.inventory, self.exceptions, cargo_lock_sha, now=now)
+        # Inventory, Cargo.lock, or exceptions drift fails.
+        for field in ("inventorySha256", "cargoLockSha256", "exceptionsSha256"):
+            drifted = dict(receipt)
+            drifted[field] = "0" * 64
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "hash does not match"):
+                deps.verify_advisory_result(drifted, self.inventory, self.exceptions, cargo_lock_sha, now=now)
 
 
 if __name__ == "__main__":

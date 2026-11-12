@@ -255,4 +255,48 @@ foreach ($asset in @('project-source', 'supplier-source')) {
     }
 }
 Save-PayloadTiming 'supplier-hashes'
+# Independently verify the release SBOM and sanitized package-lifecycle receipt
+# that ship alongside the release ZIP as release assets.
+$sbomPath = Join-Path $CandidateDirectory 'release.cdx.json'
+$lifecyclePath = Join-Path $CandidateDirectory 'package-lifecycle-receipt.json'
+foreach ($evidenceFile in @($sbomPath, $lifecyclePath)) {
+    if (-not (Test-Path -LiteralPath $evidenceFile -PathType Leaf)) {
+        throw "Missing required release evidence asset: $(Split-Path -Leaf $evidenceFile)"
+    }
+    Assert-CaelestiaNoReparsePoints $evidenceFile
+}
+$sbom = Read-CaelestiaStrictJsonFile $sbomPath 16777216 -AllowUtf8Bom
+if ($sbom.bomFormat -cne 'CycloneDX' -or $sbom.specVersion -cne '1.6' -or
+    $sbom.metadata.component.version -cne $release.buildVersion -or
+    $sbom.metadata.component.hashes[0].content -cne $bundle.sha256) {
+    throw 'Release SBOM does not match candidate release bundle.'
+}
+$lifecycle = Read-CaelestiaStrictJsonFile $lifecyclePath 1048576 -AllowUtf8Bom
+if ($lifecycle.schema -cne 'caelestia-package-lifecycle-receipt' -or $lifecycle.version -ne 1 -or
+    $lifecycle.package.name -cne $bundle.name -or $lifecycle.package.size -ne $bundle.size -or
+    $lifecycle.package.sha256 -cne $bundle.sha256 -or
+    $lifecycle.manifestSha256 -cne $release.manifestSha256 -or
+    $lifecycle.qualification -cne 'component-offscreen-and-data-only-not-windows11-acceptance' -or
+    -not $lifecycle.previousPackage -or -not $lifecycle.previousPackage.statement -or
+    -not $lifecycle.cases -or @($lifecycle.cases | Where-Object { $_.outcome -cne 'pass' }).Count -gt 0) {
+    throw 'Package lifecycle receipt does not match candidate release bundle.'
+}
+if ($lifecycle.previousPackage.synthesized) {
+    if ($lifecycle.previousPackage.mode -cne 'synthesized-older-metadata-same-payload') {
+        throw 'Synthesized previous-package lifecycle statement is invalid.'
+    }
+} else {
+    if (-not $lifecycle.previousPackage.name -or -not ($lifecycle.previousPackage.size -gt 0) -or
+        $lifecycle.previousPackage.sha256 -cnotmatch '^[a-f0-9]{64}$') {
+        throw 'Previous-package lifecycle identity is incomplete.'
+    }
+}
+foreach ($flags in @(Invoke-CaelestiaReleasePrivacyScan -Files @((Get-Item -LiteralPath $sbomPath), (Get-Item -LiteralPath $lifecyclePath)) `
+    -PrivateRoots @($CandidateDirectory, $OutputDirectory, $SourceDataRoot, $env:USERPROFILE) `
+    -ScannerDefinition ${function:Get-ReleaseFilePrivacy}.ToString())) {
+    if ($flags.Sensitive -or $flags.GenericPath) {
+        throw "Release evidence privacy scan refused publication: $(Split-Path -Leaf $flags.FullName)"
+    }
+}
+Save-PayloadTiming 'release-evidence-receipts'
 Write-Output 'NEXUS_PAYLOAD_PASS same-tested-native/source/supplier/notice coverage; no install/native acceptance.'

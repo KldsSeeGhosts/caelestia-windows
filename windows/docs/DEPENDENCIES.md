@@ -27,11 +27,15 @@ Their inventory entries do not mean they are installed in a release ZIP.
 
 ## Release SBOM
 
-After assembly, the candidate job generates a CycloneDX 1.6 JSON and retains it
-with the exact `release.json` in the `release-sbom-<run>-<attempt>` artifact.
-It does not add work to the required "Windows validation" dependency path or
-change the Nexus publication asset contract. Download the SBOM artifact from
-the same candidate run as the release receipt.
+During candidate assembly (`New-NexusCandidate.ps1`), the job generates a
+CycloneDX 1.6 JSON (`release.cdx.json`) and a sanitized package-lifecycle
+receipt (`package-lifecycle-receipt.json`), includes both in the candidate
+asset set so they are sealed, hashed, signed in `release-record.dsse.json`,
+privacy-scanned and uploaded as permanent release assets, and also retains the
+candidate artifacts (`release-sbom-<run>-<attempt>` and
+`package-lifecycle-<run>-<attempt>`). Generating them does not add work to the
+required "Windows validation" dependency path. Download the SBOM and receipt
+from the release assets or from the candidate run.
 
 ```powershell
 python -I -B windows/release/dependencies.py sbom `
@@ -55,8 +59,12 @@ and Qt DLL paths still require review. This option is never used in CI.
 ## Advisory policy
 
 The read-only "Dependency advisories" workflow runs weekly and when dependency
-inputs change. It installs cargo-audit 0.22.2 from a SHA-256-verified crate,
-honours its locked build dependencies, and audits `windows/capture/Cargo.lock`.
+inputs change. It is path-filtered and is not a required pull request check,
+because it does not emit a status on PRs that do not touch dependency inputs.
+It installs cargo-audit 0.22.2 from a SHA-256-verified crate,
+honours its locked build dependencies, and audits `windows/capture/Cargo.lock`,
+writing `cargo-audit.json` and an inventory-bound `advisory-result.json`
+receipt to its `dependency-advisories-<run_id>` artifact.
 No secrets, write permissions or cache saves are used. A scanner failure,
 unavailable or stale advisory database, filtered report, unreviewed finding,
 or expired review fails this separate advisory job. The required offline Unit
@@ -64,6 +72,25 @@ suite verifies inventory consistency and the fail-closed policy with fixtures.
 It does not fetch RustSec data or claim to have run a live security scan.
 The online job also requires the scanner to report RUSTSEC-2022-0008 for a
 controlled `windows` 0.31.0 lock fixture. That fixture is never a product input.
+
+### Release eligibility and freshness limit
+
+Before publishing a development release or promoting a build to preview or
+stable, `nexus_publish.py` checks `verify_current_advisory` against the
+completed `Dependency advisories` workflow runs on `main`:
+
+- An advisory result is reusable only when its retained `advisory-result.json`
+  and `cargo-audit.json` match the exact `component-inventory.json` digest
+  (`inventorySha256`), `windows/capture/Cargo.lock` SHA-256 (`cargoLockSha256`),
+  and `windows/release/advisory-exceptions.json` digest (`exceptionsSha256`).
+- Freshness limit: **7 days** (`ADVISORY_FRESHNESS_DAYS = 7` from `checkedAt`
+  to publication time), and all reviewed entries in `advisory-exceptions.json`
+  must still be unexpired.
+- Missing, failed, mismatched-inventory or stale advisory results refuse
+  publication (`advisory-result-missing` or `advisory-result-stale` /
+  `advisory-check-failed`); absence of a run never implies eligibility.
+- Ordinary pull-request validation is unaffected so PRs outside dependency
+  paths never block on the path-filtered advisory workflow.
 
 Read findings in the retained cargo-audit JSON. Update the affected dependency
 and lockfile first. If a finding does not apply or needs temporary acceptance,

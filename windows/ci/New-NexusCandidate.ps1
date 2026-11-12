@@ -128,6 +128,17 @@ $planPath = Join-Path $privateLogs 'parallel-gates.json'
 $plan | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $planPath -Encoding UTF8
 & $Python -I -B "$PSScriptRoot\nexus_assembly.py" gates --plan $planPath
 if ($LASTEXITCODE -ne 0) { throw 'Independent assembly gates failed.' }
+$sbomOutput = Join-Path $OutputDirectory 'release-sbom'
+[IO.Directory]::CreateDirectory($sbomOutput) | Out-Null
+Invoke-CandidateCommand 'release-sbom' $Python @(
+    '-I', '-B', "$ShellRoot\windows\release\dependencies.py", 'sbom',
+    '--package', $zip, '--coverage', "$coverage\component-inventory.json",
+    '--output', "$sbomOutput\release.cdx.json", '--receipt-output', "$sbomOutput\release.json"
+) 300
+$lifecycleOutput = Join-Path $OutputDirectory 'package-lifecycle-results'
+Invoke-CandidateGate 'package-lifecycle' "$scripts\Test-PackageLifecycle.ps1" @(
+    '-Package', $zip, '-OutputRoot', $lifecycleOutput, '-ServerTransactionFixture'
+) 600
 # VerifyOnly is data-only on Server 2022. No Windows 11 install/graphics or
 # hardware claim is made. No production OS guard bypass is present.
 $out = Join-Path $OutputDirectory 'out'
@@ -136,6 +147,8 @@ Copy-Item -LiteralPath $zip -Destination $out
 Copy-Item -LiteralPath "$assets\project-source.zip", "$assets\supplier-source.zip" -Destination $out
 Copy-Item -LiteralPath "$coverage\component-inventory.json" -Destination $out
 Copy-Item -LiteralPath "$assets\component-inventory.json" -Destination "$out\source-assets-inventory.json"
+Copy-Item -LiteralPath "$sbomOutput\release.cdx.json" -Destination "$out\release.cdx.json"
+Copy-Item -LiteralPath "$lifecycleOutput\package-lifecycle-receipt.json" -Destination "$out\package-lifecycle-receipt.json"
 [IO.File]::WriteAllText("$out\manifest.sha256", ($manifestHash + "  release.json`n"), [Text.Encoding]::ASCII)
 $manifest = Read-CaelestiaStrictJsonFile "$bundle\release.json" 16777216 -AllowUtf8Bom
 $release = [ordered]@{
