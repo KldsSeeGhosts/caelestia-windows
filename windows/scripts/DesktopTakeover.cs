@@ -1506,8 +1506,11 @@ namespace Caelestia.Takeover {
                 // Drain first so a final readiness record is not lost.
                 childBecameReady |= childReadiness.Ready;
                 int code = child.ExitCode;
-                // Even a zero exit before first frame is a failed start.
-                bool failedStart = !childBecameReady;
+                // A zero exit before the first frame is a failed start, for
+                // example a duplicate instance that bows out. A shell that
+                // outlived the readiness deadline was alive and usable without
+                // reporting frames, so its zero exit is the user quitting.
+                bool failedStart = !childBecameReady && !waitingReady;
                 if (failedStart && code == 0) code = 1;
                 // Past EOF or the deadline: drop any stalled tail so it cannot
                 // interleave with a restarted child's log.
