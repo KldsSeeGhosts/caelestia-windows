@@ -123,16 +123,42 @@ class Dependencies(unittest.TestCase):
         self.assertEqual("1.6", deps.release_sbom(package, coverage, changed, historical=True)["specVersion"])
 
     def test_reviewed_exceptions_are_current_and_expiry_is_required(self):
-        deps.validate_exceptions(self.exceptions, self.inventory)
-        changed = copy.deepcopy(self.exceptions)
-        changed["exceptions"][0]["revisitDate"] = "2000-01-01"
+        deps.validate_exceptions(self.exceptions, self.inventory, today=dt.date(2026, 11, 12))
+        for index in range(len(self.exceptions["exceptions"])):
+            changed = copy.deepcopy(self.exceptions)
+            changed["exceptions"][index]["revisitDate"] = "2000-01-01"
+            with self.assertRaisesRegex(ValueError, "Expired exception"):
+                deps.validate_exceptions(changed, self.inventory, today=dt.date(2026, 11, 12))
+        mitigated = next(e for e in self.exceptions["exceptions"] if e["applicability"] == "accepted-mitigated")
+        # Validation fails once the revisit date has passed.
         with self.assertRaisesRegex(ValueError, "Expired exception"):
-            deps.validate_exceptions(changed, self.inventory)
+            deps.validate_exceptions(self.exceptions, self.inventory,
+                                     today=dt.date.fromisoformat(mitigated["revisitDate"]) + dt.timedelta(days=1))
         for field in ("owner", "reason", "source"):
             changed = copy.deepcopy(self.exceptions)
             changed["exceptions"][0][field] = ""
             with self.assertRaisesRegex(ValueError, "Missing exception"):
-                deps.validate_exceptions(changed, self.inventory)
+                deps.validate_exceptions(changed, self.inventory, today=dt.date(2026, 11, 12))
+
+    def test_accepted_mitigated_requires_reason_mitigation_and_must_not_claim_patched(self):
+        mitigated = next(e for e in self.exceptions["exceptions"] if e["id"] == "CVE-2026-116337")
+        self.assertEqual("accepted-mitigated", mitigated["applicability"])
+        self.assertEqual("2026-12-10", mitigated["revisitDate"])
+        changed = copy.deepcopy(self.exceptions)
+        target = next(e for e in changed["exceptions"] if e["id"] == "CVE-2026-116337")
+        target["mitigation"] = ""
+        with self.assertRaisesRegex(ValueError, "Missing exception mitigation"):
+            deps.validate_exceptions(changed, self.inventory, today=dt.date(2026, 11, 12))
+        changed = copy.deepcopy(self.exceptions)
+        target = next(e for e in changed["exceptions"] if e["id"] == "CVE-2026-116337")
+        target["reason"] = ""
+        with self.assertRaisesRegex(ValueError, "Missing exception review information"):
+            deps.validate_exceptions(changed, self.inventory, today=dt.date(2026, 11, 12))
+        changed = copy.deepcopy(self.exceptions)
+        target = next(e for e in changed["exceptions"] if e["id"] == "CVE-2026-116337")
+        target["patchedVersions"] = ["6.11.3"]
+        with self.assertRaisesRegex(ValueError, "must not claim patched"):
+            deps.validate_exceptions(changed, self.inventory, today=dt.date(2026, 11, 12))
 
     def audit_fixture(self, vulnerable=False):
         # Known vulnerable windows 0.31 fixture, not an assertion about the
