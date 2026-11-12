@@ -241,6 +241,64 @@ def safe_path(value):
     return value
 
 
+ADVISORY_FRESHNESS_DAYS = 7
+
+
+def inventory_digest(inventory):
+    return sha(json.dumps(inventory, sort_keys=True).encode("utf-8"))
+
+
+def advisory_receipt(report, exceptions, inventory, cargo_lock_sha256, checked_at=None):
+    checked_at = checked_at or dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=dt.timezone.utc)
+    else:
+        checked_at = checked_at.astimezone(dt.timezone.utc)
+    check_audit(report, exceptions, inventory, 0)
+    db = report["database"]
+    return {
+        "schema": "caelestia-advisory-result",
+        "version": 1,
+        "result": "pass",
+        "checkedAt": checked_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "freshnessDays": ADVISORY_FRESHNESS_DAYS,
+        "inventorySha256": inventory_digest(inventory),
+        "cargoLockSha256": cargo_lock_sha256,
+        "exceptionsSha256": sha(json.dumps(exceptions, sort_keys=True).encode("utf-8")),
+        "databaseCommit": db["last-commit"],
+        "databaseUpdated": db["last-updated"],
+    }
+
+
+def verify_advisory_result(result, inventory, exceptions, cargo_lock_sha256, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=dt.timezone.utc)
+    else:
+        now = now.astimezone(dt.timezone.utc)
+    require(isinstance(result, dict), "Advisory result is missing or malformed")
+    require(result.get("schema") == "caelestia-advisory-result" and result.get("version") == 1,
+            "Unsupported advisory result schema")
+    require(result.get("result") == "pass", "Advisory check did not pass")
+    checked_raw = result.get("checkedAt")
+    require(isinstance(checked_raw, str) and checked_raw.endswith("Z"),
+            "Advisory result timestamp is missing or not UTC")
+    checked_at = dt.datetime.fromisoformat(checked_raw[:-1] + "+00:00")
+    age = now - checked_at
+    require(age >= -dt.timedelta(minutes=5), "Advisory result timestamp is future-dated")
+    require(age <= dt.timedelta(days=ADVISORY_FRESHNESS_DAYS),
+            f"Advisory result is stale (older than {ADVISORY_FRESHNESS_DAYS} days)")
+    require(result.get("inventorySha256") == inventory_digest(inventory),
+            "Advisory result inventory hash does not match candidate dependency inventory")
+    require(result.get("cargoLockSha256") == cargo_lock_sha256,
+            "Advisory result Cargo.lock hash does not match candidate lockfile")
+    require(result.get("exceptionsSha256") == sha(json.dumps(exceptions, sort_keys=True).encode("utf-8")),
+            "Advisory result exceptions hash does not match reviewed exceptions")
+    validate_exceptions(exceptions, inventory, today=now.date())
+    return result
+
+
+
 def release_sbom(package, coverage_path, inventory, historical=False):
     """Use the assembler's existing exact-path coverage, never prefix guesses."""
     coverage = read(coverage_path)
@@ -345,7 +403,7 @@ def release_sbom(package, coverage_path, inventory, historical=False):
                 {"name": "caelestia:sourceRevision", "value": manifest["sourceRevision"]},
                 {"name": "caelestia:release.json:sha256", "value": sha(manifest_bytes)},
                 {"name": "caelestia:coverage:sha256", "value": sha(Path(coverage_path).read_bytes())},
-                {"name": "caelestia:inventory:sha256", "value": sha(json.dumps(inventory, sort_keys=True).encode())},
+                {"name": "caelestia:inventory:sha256", "value": inventory_digest(inventory)},
                 {"name": "caelestia:limitations", "value": inventory["limitations"]},
             ],
         },
@@ -371,9 +429,12 @@ def main():
     audit = sub.add_parser("audit")
     audit.add_argument("--cargo-audit", default="cargo-audit")
     audit.add_argument("--output", type=Path, required=True)
+    audit.add_argument("--receipt-output", type=Path, help="Write inventory-bound advisory receipt JSON")
     fixture = sub.add_parser("scanner-fixture", help="Prove the real scanner detects the controlled vulnerable lock")
     fixture.add_argument("--cargo-audit", default="cargo-audit")
     fixture.add_argument("--output", type=Path, required=True)
+    verify_adv = sub.add_parser("verify-advisory", help="Verify a retained advisory receipt against current inventory")
+    verify_adv.add_argument("--input", type=Path, required=True)
     args = parser.parse_args()
     inventory_path = ROOT / INVENTORY
     inventory = read(inventory_path) if inventory_path.exists() else None
@@ -392,6 +453,11 @@ def main():
             with zipfile.ZipFile(args.package) as archive:
                 receipt = next(n for n in archive.namelist() if n.endswith("/release.json"))
                 args.receipt_output.write_bytes(archive.read(receipt))
+    elif args.command == "verify-advisory":
+        require(inventory == generate_inventory(previous=inventory), "Inventory drift")
+        exceptions = read(ROOT / EXCEPTIONS)
+        cargo_lock_sha = sha((ROOT / "windows/capture/Cargo.lock").read_bytes())
+        verify_advisory_result(read(args.input), inventory, exceptions, cargo_lock_sha)
     else:
         require(inventory == generate_inventory(previous=inventory), "Inventory drift")
         exceptions = read(ROOT / EXCEPTIONS)
@@ -417,6 +483,9 @@ def main():
                 raise ValueError("Controlled vulnerable-version fixture did not trigger the advisory check")
         else:
             check_audit(report, exceptions, inventory, result.returncode)
+            if args.receipt_output:
+                cargo_lock_sha = sha(lock.read_bytes())
+                write(args.receipt_output, advisory_receipt(report, exceptions, inventory, cargo_lock_sha))
     print(f"PASS dependency {args.command}")
 
 

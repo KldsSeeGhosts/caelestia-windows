@@ -357,8 +357,44 @@ class Evidence(unittest.TestCase):
         self.assertEqual(n.GATES, doc["gates"])
         self.assertEqual({row["name"] for row in unsealed["assets"]} | assembly.PUBLIC_EVIDENCE,
                          {row["name"] for row in doc["assets"]})
+        asset_names = {row["name"] for row in doc["assets"]}
+        self.assertIn("release.cdx.json", asset_names)
+        self.assertIn("package-lifecycle-receipt.json", asset_names)
         self.assertFalse((directory / "unsealed.json").exists())
         c.verify_receipt(self.shell, directory, self.validator, self.ctx)
+
+    def test_missing_sbom_or_lifecycle_receipt_fails_seal_and_publication(self):
+        for missing in ("release.cdx.json", "package-lifecycle-receipt.json"):
+            with self.subTest(missing=missing):
+                directory, unsealed = self.unsealed()
+                (directory / missing).unlink()
+                with self.assertRaisesRegex(ValueError, "unsealed-asset-set|candidate-asset-hash-mismatch"):
+                    self.seal(directory)
+                self.assertFalse((directory / "candidate.json").exists())
+                shutil.rmtree(directory)
+
+    def test_payload_gate_rejects_missing_or_tampered_sbom_or_lifecycle_receipt(self):
+        # Verify the actual payload verifier rejects missing SBOM or lifecycle
+        # receipt before publication.
+        directory, doc = self.unsealed()
+        assets = self.root / "source-assets"; assets.mkdir()
+        bundle_name = doc["release"]["bundle"]["name"]
+        bundle_root = doc["release"]["bundle"]["root"]
+        with zipfile.ZipFile(directory / bundle_name, "w") as archive:
+            archive.writestr(bundle_root + "/release.json", "{}")
+        doc["release"]["bundle"]["size"] = (directory / bundle_name).stat().st_size
+        doc["release"]["bundle"]["sha256"] = c.digest(directory / bundle_name)
+        n.write(directory / "unsealed.json", doc)
+        for missing in ("release.cdx.json", "package-lifecycle-receipt.json"):
+            with self.subTest(missing=missing):
+                out_dir = self.root / f"payload-missing-{missing}"
+                result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                    str(ROOT / "windows/ci/Test-NexusCandidatePayload.ps1"),
+                    "-CandidateDirectory", str(directory), "-OutputDirectory", str(out_dir),
+                    "-SourceDataRoot", str(self.shell), "-AssetsRoot", str(assets),
+                    "-Unsealed", "-NativeBuildRoot", str(self.build)],
+                    capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(0, result.returncode)
 
     def test_seal_powershell_entrypoint_has_no_credentials_and_validates_release_metadata(self):
         directory, _ = self.unsealed()
@@ -957,9 +993,19 @@ class Pipeline(unittest.TestCase):
     def test_publish_exact_bytes_and_refuse_published_identity(self):
         directory, doc = self.candidate()
         originals = {row["name"]: (directory / row["name"]).read_bytes() for row in doc["assets"]}
+        self.assertIn("release.cdx.json", originals)
+        self.assertIn("package-lifecycle-receipt.json", originals)
         self.assertEqual("published", self.develop(directory))
         release = self.github.releases[doc["release"]["tag"]]
         self.assertFalse(release["draft"])
+        record_asset = next(asset for asset in release["assets"] if asset["name"] == "release-record.dsse.json")
+        record_payload = self.crypto.invoke("ReadRecord", "development", self.branch.keys,
+                                            document=self.github.bytes[record_asset["id"]])
+        recorded = {row["name"]: row for row in record_payload["assets"]}
+        for evidence_name in ("release.cdx.json", "package-lifecycle-receipt.json"):
+            self.assertIn(evidence_name, recorded)
+            self.assertEqual(len(originals[evidence_name]), recorded[evidence_name]["size"])
+            self.assertEqual(hashlib.sha256(originals[evidence_name]).hexdigest(), recorded[evidence_name]["sha256"])
         for asset in release["assets"]:
             if asset["name"] in originals:
                 self.assertEqual(originals[asset["name"]], self.github.bytes[asset["id"]])
@@ -1220,6 +1266,71 @@ class Pipeline(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):
                         github.download({"id": 7, "size": len(body)}, target, expected)
+
+    def test_missing_sbom_or_lifecycle_receipt_blocks_publication(self):
+        for missing in ("release.cdx.json", "package-lifecycle-receipt.json"):
+            with self.subTest(missing=missing):
+                directory, doc = self.candidate()
+                (directory / missing).unlink()
+                doc["assets"] = [row for row in doc["assets"] if row["name"] != missing]
+                n.write(directory / "candidate.json", doc)
+                with self.assertRaisesRegex(ValueError, "candidate-asset-set"):
+                    self.develop(directory)
+                self.assertFalse(self.github.writes)
+                self.assertFalse(self.branch.writes)
+
+    def test_advisory_eligibility_gate_requires_fresh_matching_result(self):
+        import datetime as dt
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("deps", ROOT / "windows/release/dependencies.py")
+        deps = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(deps)
+        inventory = deps.read(ROOT / deps.INVENTORY)
+        exceptions = deps.read(ROOT / deps.EXCEPTIONS)
+        cargo_lock_sha = n.digest(ROOT / "windows/capture/Cargo.lock")
+        now = dt.datetime(2026, 11, 12, 12, 0, 0, tzinfo=dt.timezone.utc)
+        report = {
+            "database": {"last-commit": "a" * 40, "last-updated": "2026-11-12T00:00:00Z"},
+            "vulnerabilities": {"count": 0, "list": []},
+            "warnings": {},
+        }
+        receipt = deps.advisory_receipt(report, exceptions, inventory, cargo_lock_sha, checked_at=now)
+        class AdvisoryGitHub:
+            def __init__(self, runs, artifacts, blobs):
+                self.runs, self.artifacts, self.blobs = runs, artifacts, blobs
+            def pages(self, path, field):
+                if field == "workflow_runs":
+                    return self.runs
+                if field == "artifacts":
+                    run_id = int(path.split("/actions/runs/")[1].split("/")[0])
+                    return self.artifacts.get(run_id, [])
+                raise AssertionError(path)
+            def download_artifact(self, artifact_id, destination):
+                Path(destination).write_bytes(self.blobs[artifact_id])
+        def make_zip(res, rep):
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w") as zf:
+                zf.writestr("advisory-result.json", json.dumps(res))
+                zf.writestr("cargo-audit.json", json.dumps(rep))
+            return buf.getvalue()
+        run = {"id": 501, "path": ".github/workflows/dependency-advisories.yml",
+               "head_branch": "main", "event": "push", "conclusion": "success"}
+        artifact = {"id": 901, "name": "dependency-advisories-501", "expired": False}
+        # Fresh matching result passes.
+        gh = AdvisoryGitHub([run], {501: [artifact]}, {901: make_zip(receipt, report)})
+        verified = n.verify_current_advisory(gh, ROOT, self.work, now=now + dt.timedelta(days=2))
+        self.assertEqual(receipt["inventorySha256"], verified["inventorySha256"])
+        # Missing result (no runs) fails.
+        with self.assertRaisesRegex(ValueError, "advisory-result-missing"):
+            n.verify_current_advisory(AdvisoryGitHub([], {}, {}), ROOT, self.work, now=now)
+        # Stale (> 7 days) result fails.
+        with self.assertRaisesRegex(ValueError, "advisory-result-stale"):
+            n.verify_current_advisory(gh, ROOT, self.work, now=now + dt.timedelta(days=8))
+        # Mismatched inventory hash fails.
+        mismatched = dict(receipt, inventorySha256="0" * 64)
+        gh_mismatch = AdvisoryGitHub([run], {501: [artifact]}, {901: make_zip(mismatched, report)})
+        with self.assertRaisesRegex(ValueError, "advisory-result-stale"):
+            n.verify_current_advisory(gh_mismatch, ROOT, self.work, now=now)
 
     def test_workflow_boundaries_and_template(self):
         workflow = (ROOT / ".github/workflows/windows-build.yml").read_bytes()

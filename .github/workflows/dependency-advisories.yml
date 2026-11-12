@@ -2,7 +2,8 @@ name: Dependency advisories
 
 on:
   schedule:
-    - cron: '23 9 * * 1'
+    # Daily, so a result is always well inside the 7-day publication limit.
+    - cron: '23 9 * * *'
   pull_request:
     paths:
       - 'windows/capture/Cargo.*'
@@ -52,7 +53,7 @@ jobs:
       - name: Prove scanner detects the controlled vulnerable lock
         run: python -I -B windows/release/dependencies.py scanner-fixture --cargo-audit "$RUNNER_TEMP/audit/bin/cargo-audit" --output "$RUNNER_TEMP/scanner-fixture.json"
       - name: Audit capture resolved graph and apply expiring reviews
-        run: python -I -B windows/release/dependencies.py audit --cargo-audit "$RUNNER_TEMP/audit/bin/cargo-audit" --output "$RUNNER_TEMP/cargo-audit.json"
+        run: python -I -B windows/release/dependencies.py audit --cargo-audit "$RUNNER_TEMP/audit/bin/cargo-audit" --output "$RUNNER_TEMP/cargo-audit.json" --receipt-output "$RUNNER_TEMP/advisory-result.json"
       - name: Retain advisory results
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -61,5 +62,6 @@ jobs:
           path: |
             ${{ runner.temp }}/cargo-audit.json
             ${{ runner.temp }}/scanner-fixture.json
+            ${{ runner.temp }}/advisory-result.json
           if-no-files-found: warn
           retention-days: 14
