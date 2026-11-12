@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory)][Diagnostics.ProcessStartInfo]$StartInfo,
     [Parameter(Mandatory)][string]$StateDirectory,
     [string]$ConfigPath,
+    [string]$InstallPrefix,
     # Set only when this child directly changes work areas outside AppBar.
     [switch]$RestoreWorkAreas,
     [string]$StdoutPath,
@@ -26,6 +27,7 @@ $specPath = Join-Path $StateDirectory 'launch.json'
     Executable = $StartInfo.FileName; Arguments = $StartInfo.Arguments
     WorkingDirectory = $StartInfo.WorkingDirectory; Environment = $childEnvironment
     ConfigPath = $ConfigPath; StateDirectory = $StateDirectory
+    InstallLockKey = $(if ($InstallPrefix) { Get-CaelestiaInstallLockKey $InstallPrefix } else { $null })
     RestoreWorkAreas = $RestoreWorkAreas.IsPresent
     StdoutPath = $StdoutPath; StderrPath = $StderrPath
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $specPath -Encoding UTF8
