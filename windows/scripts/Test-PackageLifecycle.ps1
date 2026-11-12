@@ -318,7 +318,9 @@ try {
         [ordered]@{
             case = $_.case
             outcome = $_.outcome
-            seconds = $_.seconds
+            # Whole milliseconds: the publication gate reads this file with
+            # the strict JSON reader, which rejects fractional numbers.
+            milliseconds = [long][Math]::Round([double]$_.seconds * 1000)
         }
     })
     $previousIdentity = if ($PreviousPackage) {

@@ -2,7 +2,8 @@ name: Dependency advisories
 
 on:
   schedule:
-    - cron: '23 9 * * 1'
+    # Daily, so a result is always well inside the 7-day publication limit.
+    - cron: '23 9 * * *'
   pull_request:
     paths:
       - 'windows/capture/Cargo.*'

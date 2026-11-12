@@ -58,7 +58,7 @@ and Qt DLL paths still require review. This option is never used in CI.
 
 ## Advisory policy
 
-The read-only "Dependency advisories" workflow runs weekly and when dependency
+The read-only "Dependency advisories" workflow runs daily and when dependency
 inputs change. It is path-filtered and is not a required pull request check,
 because it does not emit a status on PRs that do not touch dependency inputs.
 It installs cargo-audit 0.22.2 from a SHA-256-verified crate,
@@ -102,7 +102,7 @@ an actual Cargo finding. Re-review entries when their component version changes.
 Qt has reviewed applicability entries in that same file, based on
 `QT-6.11.3-QUALIFICATION.md` and the linked Qt security advisories. This is a
 manual module/API applicability review, not an automated Qt advisory scanner.
-The weekly expiry check prompts another review. Check Qt's security advisories
+The daily expiry check prompts another review. Check Qt's security advisories
 when servicing Qt and record fixed versions and which shipped APIs apply.
 
 A clean result is not proof of application safety. These checks do not replace
