@@ -84,21 +84,26 @@ Singleton {
     function windowsStatusText(screen): string {
         const status = windowsStatus(screen);
         return status === "pending" ? "Applying wallpaper"
-            : status === "applied" ? "Desktop wallpaper changed"
             : status === "failed" ? "Windows could not apply the wallpaper"
-            : status === "unknown" ? "Windows wallpaper status unknown" : "";
+            : status === "unknown" ? "Windows did not confirm the wallpaper change" : "";
     }
     WallpaperCompletion {
         id: completion
-        onOutcomeChanged: (requestId, outcome) => {
-            if (outcome === "pending")
-                Toaster.toast("Wallpaper", "Applying wallpaper", "wallpaper");
-            else if (outcome === "applied")
-                Toaster.toast("Wallpaper", "Desktop wallpaper changed", "wallpaper");
-            else if (outcome === "failed")
-                Toaster.toast("Wallpaper", "Windows could not apply the wallpaper", "wallpaper");
-            else
-                Toaster.toast("Wallpaper", "Windows wallpaper status unknown", "wallpaper");
+        // One toast per pick, when its outcome is known. The pending state
+        // is shown in Wallpaper & style, not as a second toast.
+        onOutcomeChanged: (requestId, outcome, global) => {
+            if (outcome === "applied") {
+                if (!SchemeGenerator.available)
+                    Toaster.toast("Wallpaper", "Desktop wallpaper changed. Dynamic colours are unavailable.", "wallpaper");
+                else if (global && root.schemeName === "dynamic")
+                    Toaster.toast("Wallpaper", "Desktop wallpaper changed. Generating colours.", "palette");
+                else
+                    Toaster.toast("Wallpaper", "Desktop wallpaper changed.", "wallpaper");
+            } else if (outcome === "failed") {
+                Toaster.toast("Wallpaper", "Windows could not apply the wallpaper.", "wallpaper");
+            } else if (outcome === "unknown") {
+                Toaster.toast("Wallpaper", "Windows did not confirm the wallpaper change.", "wallpaper");
+            }
         }
     }
     // the mounted underlay must retain our own image, not transition

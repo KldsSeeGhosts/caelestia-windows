@@ -17,7 +17,8 @@ QtObject {
     property var checks: []
     property int completionTimeout: 6500
     property var recoveryDelays: [300, 1500, 6500]
-    signal outcomeChanged(int requestId, string outcome)
+    // `global` is true for a pick that addressed every display at once.
+    signal outcomeChanged(int requestId, string outcome, bool global)
 
     function samePath(a, b): bool {
         return String(a).replace(/\\/g, "/").toLowerCase()
@@ -48,7 +49,7 @@ QtObject {
         const outcome = states.some(state => state.outcome === "pending") ? "pending"
             : states.some(state => state.outcome === "failed") ? "failed"
             : states.some(state => state.outcome === "unknown") ? "unknown" : "applied";
-        outcomeChanged(job.id, outcome);
+        outcomeChanged(job.id, outcome, !job.target && !job.nativeTarget);
     }
     function request(path, target): bool {
         const names = {};
@@ -71,7 +72,7 @@ QtObject {
         }
         // Superseded queued work must not mutate Windows later.
         queue = queue.filter(item => currentKeys(item).length > 0).concat([job]);
-        outcomeChanged(job.id, "pending");
+        outcomeChanged(job.id, "pending", !target);
         drain();
         return job.accepted;
     }
@@ -149,12 +150,12 @@ QtObject {
                     publish(key, {recovery: true});
         for (const key of currentKeys(attempt)) {
             // Global provider success means at least one monitor succeeded,
-            // not that every monitor did. Readback can be cached, so it
-            // cannot establish per-target success for a global operation.
+            // not that every monitor did. A display counts as applied when
+            // its readback agrees, and stays unknown when it does not.
             const observed = readTarget(key);
             publish(key, {observed: observed, outcome: uncertain ? "unknown"
                 : !ok ? (attempt.repair ? "unknown" : "failed")
-                : attempt.nativeTarget ? "applied" : "unknown"});
+                : attempt.nativeTarget || samePath(observed, attempt.path) ? "applied" : "unknown"});
         }
         announce(attempt);
         if (uncertain || !currentKeys(attempt).length
@@ -191,6 +192,14 @@ QtObject {
                 continue;
             if (state.outcome === "pending" || (state.outcome === "failed" && !state.recovery))
                 continue;
+            // A settled pick that Windows later replaced (Settings, a
+            // slideshow) is no longer this tracker's request to report on.
+            if (!state.recovery) {
+                const next = Object.assign({}, targets);
+                delete next[key];
+                targets = next;
+                continue;
+            }
             publish(key, {outcome: "unknown"});
             if (!state.recovery || state.repairUsed)
                 continue;

@@ -52,13 +52,13 @@ QtObject {
         check(Wallpapers.windowsTargets["primary-id"].desired === "C:/walls/a.jpg", "desired path missing");
         check(Wallpapers.windowsStatusText(primary) === "Applying wallpaper", "pending wording missing");
         check(Wallpapers.currentForScreen(primary) === "C:/walls/a.jpg", "desired shell image was not shown");
-        check(!Toaster.calls.some(item => item.body === "Desktop wallpaper changed"), "acceptance toasted success");
+        check(Toaster.calls.length === 0, "acceptance toasted before completion");
         Native.Wallpaper.finishLater(latestOperation(), true, 160);
         later(230, afterDelayedSuccess);
     }
     function afterDelayedSuccess(): void {
         check(Wallpapers.windowsTargets["primary-id"].outcome === "applied", "late success was not applied");
-        check(Toaster.calls.some(item => item.body === "Desktop wallpaper changed"), "completion did not toast success");
+        check(Toaster.calls.filter(item => item.body.startsWith("Desktop wallpaper changed")).length === 1, "completion did not toast success once");
         check(Wallpapers.setWallpaper("C:/walls/b.jpg", primary), "late-failure pick was rejected");
         check(Wallpapers.windowsTargets["primary-id"].outcome === "pending", "late failure started as completed");
         Native.Wallpaper.finishLater(latestOperation(), false, 140);
@@ -69,7 +69,7 @@ QtObject {
         check(Wallpapers.windowsTargets["primary-id"].desired === "C:/walls/b.jpg", "failure erased desired image");
         check(Wallpapers.currentForScreen(primary) === "C:/walls/b.jpg", "failure adopted the Windows image");
         check(Native.Wallpaper.screenPaths.primary === "C:/walls/a.jpg", "failure mutated fake OS state");
-        check(Toaster.calls.some(item => item.body === "Windows could not apply the wallpaper"), "late failure was silent");
+        check(Toaster.calls.some(item => item.body === "Windows could not apply the wallpaper."), "late failure was silent");
 
         check(tracker.request("C:/walls/queued-a.jpg", primary), "first queued request failed");
         oldOperation = latestOperation();
@@ -160,8 +160,8 @@ QtObject {
         later(40, afterGlobal);
     }
     function afterGlobal(): void {
-        check(tracker.targets["primary-id"].outcome === "unknown", "partial-capable global result claimed per-target success");
-        check(tracker.targets["secondary-id"].outcome === "unknown", "global result claimed every target applied");
+        check(tracker.targets["primary-id"].outcome === "applied", "global success with a matching readback was not applied");
+        check(tracker.targets["secondary-id"].outcome === "applied", "global success with a matching readback was not applied");
         check(tracker.targets["secondary-id"].observed === "C:/walls/global.jpg", "global readback was not recorded");
         tracker.request("C:/walls/final-primary.jpg", primary);
         Native.Wallpaper.finishLater(latestOperation(), false, 10);
@@ -170,7 +170,7 @@ QtObject {
     function afterIndependentFailure(): void {
         check(state().outcome === "failed", "targeted failure was not recorded");
         check(tracker.targets["secondary-id"].desired === "C:/walls/global.jpg", "primary failure changed secondary desire");
-        check(tracker.targets["secondary-id"].outcome === "unknown", "primary failure changed secondary outcome");
+        check(tracker.targets["secondary-id"].outcome === "applied", "primary failure changed secondary outcome");
         tracker.release(primary);
         check(tracker.targets["primary-id"] === undefined, "engine handoff retained static desired state");
         check(tracker.targets["secondary-id"] !== undefined, "targeted handoff released every monitor");
