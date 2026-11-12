@@ -346,7 +346,7 @@ Hotkey `dispatch` actions invoke the backend `Hyprland.dispatch` directly, bypas
 | `movetoworkspace <target>` | Move a window to the target and follow it; the target accepts every `workspace` form except `special:` |
 | `movetoworkspacesilent <target>` | Move a window to the target without switching |
 | `centerwindow` | Center the active floating window on its monitor's work area; a scrolling-layout tile centers its column, a dwindle/master tile is unchanged |
-| `pin` / `pin on` / `pin off` | Toggle or force an all-desktop pin; needs the pin exports of `VirtualDesktopAccessor.dll`, otherwise it logs an unsupported reason and does nothing |
+| `pin` / `pin on` / `pin off` | Toggle or force an all-desktop pin; the native desktop provider has no pin support, so it logs an unsupported reason and does nothing |
 | `resizeactive <width> <height>` | Resize the active window by pixels or `%` of its current size; `0` keeps an axis unchanged |
 | `resizeactive exact <width> <height>` | Set the size, using the monitor size for `%` values; a `0` axis keeps its current size |
 | `closewindow` / `killactive` | Close active window (`WM_CLOSE`) |

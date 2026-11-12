@@ -162,7 +162,6 @@ its own measurement before a shell commit could rely on it.
 | `windows/deps/quickshell/src/windows/services/notifications/toast_worker.cpp:310` | 10000 ms, 2000 ms active | only when access observation is opted in | WinRT access status read. `mObserve` is off until the service opts in. |
 | `windows/deps/quickshell/src/windows/services/notifications/toast_worker.cpp:98` | 2000 ms | only when mirroring is enabled and the change listener is unavailable | Toast resync. |
 | `windows/deps/quickshell/src/windows/services/systray/host.cpp:214` | 1500 ms | only with `QS_WINDOWS_TRAY_HOOK=brief` | Tray snapshot. |
-| `windows/deps/quickshell/src/windows/taskbar.cpp:516`, `:526` | 250 ms revealed, 2000 ms concealed | only with `hideTaskbar` | Reconciles taskbar visibility. |
 | `windows/deps/quickshell/src/windows/hotkeys.cpp:554` | 15 ms | only while a chord is held | `pollReleases()`. |
 | `windows/deps/quickshell/src/windows/system/network.cpp:26` | 8000 ms | only while the Wi-Fi list is visible | WLAN scan. Started at `:175`. |
 | `windows/deps/quickshell/src/windows/services/pipewire/pw_peak.cpp:15` | 33 ms | only while a peak monitor is enabled | COM peak read. Started at `:52`. |
