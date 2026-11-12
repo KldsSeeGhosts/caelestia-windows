@@ -1,9 +1,6 @@
 # Windows port
 
-Caelestia for Windows runs Caelestia's original shell experience on Windows 11,
-retaining its QML components and motion while adapting platform services. It
-uses the Windows Quickshell backend developed for ii-windows. Hyprland remains a
-Linux Wayland compositor; Windows owns application composition through DWM.
+Caelestia for Windows brings the original [Caelestia Shell](https://github.com/caelestia-dots/shell) desktop experience to Windows 11. It keeps Caelestia's QML components, `M3Shapes` geometry, shaders, and spring curves, while swapping the Linux/Hyprland platform hooks for native Windows APIs through the Windows Quickshell backend originally built for [ii-windows](https://github.com/nunreasonable/ii-windows). Hyprland stays on Linux; on Windows, DWM still owns window compositing.
 
 The production entry point is [`windows/shell/shell.qml`](shell/shell.qml), staged
 through [`windows/shell/sources.json`](shell/sources.json). The install and

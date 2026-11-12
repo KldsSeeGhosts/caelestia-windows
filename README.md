@@ -1,71 +1,122 @@
 # Caelestia for Windows
 
-Windows 11 port of [Caelestia Shell](https://github.com/caelestia-dots/shell), running natively on top of the Windows Quickshell backend (originally developed for [ii-windows](https://github.com/nunreasonable/ii-windows)).
+Caelestia's desktop shell, running natively on Windows 11.
 
-The upstream QtQuick/QML interface, Material 3 Expressive shapes (`M3Shapes`), shaders, and upstream attribution are retained. Windows-specific services, packaging, and documentation live in [`windows/`](windows/README.md); the pinned Quickshell backend and `M3Shapes` module are Git submodules recorded in [`windows/sources.lock.json`](windows/sources.lock.json).
+> [!NOTE]
+> This is an **unofficial** Windows port of [Caelestia Shell](https://github.com/caelestia-dots/shell), built on top of the Windows Quickshell backend first created for [ii-windows](https://github.com/nunreasonable/ii-windows). It is not made or supported by soramanew, the Caelestia contributors, or outfoxxed. Please open Windows issues here rather than on the upstream Linux repos.
+
+## Overview
+
+Caelestia for Windows brings [Caelestia Shell](https://github.com/caelestia-dots/shell) to Windows 11 without WSL, Linux, or a replacement compositor. It keeps Caelestia's original QtQuick/QML components, `M3Shapes` expressive shapes, shaders, and spring animations, while swapping the Linux/Hyprland platform hooks for native Windows APIs through [caelestia-quickshell-windows](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows) (forked from [nunreasonable/quickshell](https://github.com/nunreasonable/quickshell)).
+
+<details>
+  <summary>What is included and how it works on Windows</summary>
+
+- **Left vertical bar and drawers:** Workspace indicators on Windows virtual desktops, active window title, running-apps switcher, system tray icons shared with Explorer, clock, status icons, popouts, notifications, OSDs, and a session menu.
+- **Launcher and dashboard:** Instant search across Windows `AppsFolder` and Start menu shortcuts, command actions (`>`), calculator (`> calc`), wallpaper picker (`> wallpaper`), media controls via Windows GSMTC, calendar, weather, and hardware performance graphs.
+- **Wallpaper and Material You colours:** Caelestia's wallpaper surface and shader transitions, plus dynamic Material You palettes generated from your wallpaper. Wallpaper Engine underlay integration is opt-in.
+- **Built-in DWM tiling (opt-in):** `dwindle`, `master`, and `scrolling` layouts over normal Windows windows, with configurable gaps and per-app rules. Desktop takeover, taskbar hiding, and autostart all stay off until you turn them on.
+- **Native Windows services:** Core Audio, WlanAPI Wi-Fi, WinRT Bluetooth, hardware/software brightness, Windows notification mirroring, in-process virtual desktop COM control (Windows 11 24H2+), and a bundled screen capture helper (`caelestia-capture.exe`).
+
+</details>
 
 ## Install
 
-Caelestia for Windows requires Windows 11 64-bit, a Direct3D 11-capable GPU, and a standard user account. It installs per user under `%LOCALAPPDATA%` and does not require administrator rights.
+Requirements: Windows 11 64-bit (24H2 or newer recommended for virtual desktop switching), a Direct3D 11 GPU, and a standard user account. Everything installs per user under `%LOCALAPPDATA%` with no admin rights required (unless you still need Microsoft's Visual C++ x64 Redistributable).
 
-1. Use a release build when one is available, or [build from source](windows/NATIVE-BUILD.md).
-2. From the repository or release folder, install the per-user runtime:
+<details open>
+  <summary><b>For humans (prebuilt release)</b></summary>
 
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1
-   ```
-
-3. Start it from the Start menu or with:
+1. Grab the latest `*-windows-x64.zip` from [GitHub Releases](https://github.com/KldsSeeGhosts/caelestia-windows/releases).
+2. Unzip the archive, open that folder, and double-click `Install.cmd` (or run `Install-CaelestiaRelease.ps1` in PowerShell).
+   - If Microsoft's **Visual C++ x64 Redistributable** (14.44.35211.0 or newer) is missing, the installer will prompt to download and install it from Microsoft's official link, or you can install it from [aka.ms/vc14/vc_redist.x64.exe](https://aka.ms/vc14/vc_redist.x64.exe).
+3. Launch **Caelestia** from the Start menu, or start it from PowerShell:
 
    ```powershell
    & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
    ```
 
-Autostart is off by default. Add `-Autostart` to the installer to enable it. See [the user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart) for requirements, uninstall, `-Purge`, and migrating from `ksg-shell`.
+- **Defender / SmartScreen note:** Previews are currently unsigned, so Windows SmartScreen or Defender may warn on a new build. Click **More info → Run anyway** only after verifying the release checksum, and check [the user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart) for install, `-Autostart`, `-Restart`, `-Purge`, and troubleshooting.
 
-## Usage
+</details>
 
-The shell installs a left vertical bar, launcher, dashboard, notifications, OSDs, workspaces on Windows virtual desktops, and opt-in window tiling. Desktop takeover, autostart, taskbar changes, and tiling are opt-in. Start the installed launcher; use `-Command Restart`, `-Command Settings`, and `-Command Quit` for the installed instance.
+<details>
+  <summary><b>For AI agents (automated install or source build)</b></summary>
 
-- [User guide](windows/docs/USER-GUIDE.md): first run, what each surface does, and troubleshooting.
-- [Keybinds](windows/docs/KEYBINDS.md): default shortcuts and `keybinds.json`.
-- [Configuration](windows/docs/CONFIGURATION.md): `shell.json`, per-monitor overrides, and tiling.
-- [Windows shell entry](windows/shell/README.md): production entry and install/run commands.
+Use these non-interactive steps when an agent is asked to install or update Caelestia for Windows on a user's machine. Never disable Smart App Control, antivirus, or UAC, and never guess credentials or elevate silently.
 
-## Updating
+**Option A: Install from the latest GitHub Release ZIP**
 
-There is no remote update feed yet. Install a newer build with the same installer. While the shell is running, add `-Restart`: the installer prepares the new version, swaps it in, restarts the shell and rolls back if it fails to start. Without `-Restart`, quit the shell first. The installer keeps the previous payload so you can return to it later. Settings > Updates can roll back to the retained version, and updating a stopped installation preserves your configuration, state, and user data. See the [release checklist](windows/docs/RELEASE-CHECKLIST.md) and [user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart).
+```powershell
+# 1. Fetch the latest release asset URL and download to a temp folder
+$tag = (Invoke-RestMethod 'https://api.github.com/repos/KldsSeeGhosts/caelestia-windows/releases?per_page=1')[0].tag_name
+$ver = $tag -replace '^v', '' -replace '-development$', ''
+$zipUrl = "https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/$tag/caelestia-windows-$ver-windows-x64.zip"
+$tmp = Join-Path $env:TEMP "caelestia-install-$ver"
+New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+Invoke-WebRequest -Uri $zipUrl -OutFile "$tmp\caelestia.zip"
+Expand-Archive -Path "$tmp\caelestia.zip" -DestinationPath $tmp -Force
 
-## Configuration
+# 2. Verify and install per user (pass -Restart if Caelestia is already running)
+$bundle = (Get-ChildItem -Path $tmp -Directory | Select-Object -First 1).FullName
+powershell -NoProfile -ExecutionPolicy Bypass -File "$bundle\Install-CaelestiaRelease.ps1" -NonInteractive
+```
 
-Configuration lives under `%LOCALAPPDATA%\caelestia-windows\config\`:
+If `-NonInteractive` reports a missing Microsoft Visual C++ x64 Redistributable (`14.44.35211.0+`), ask the user to approve UAC and pass `-InstallPrerequisites`, or install from `https://aka.ms/vc14/vc_redist.x64.exe` first.
 
-- `shell.json` for shell, bar, launcher, dashboard, and service settings.
-- `keybinds.json` for shortcuts.
-- `windows.json` for Windows-specific behavior.
-- `monitors\<name>\` for per-monitor overrides.
+**Option B: Build and install from source**
 
-Use [Nexus](windows/docs/USER-GUIDE.md#nexus-settings-windows) for live settings, or edit the JSON files directly. Only add options you want to change; omitted values use built-in defaults.
+```powershell
+git clone --recurse-submodules https://github.com/KldsSeeGhosts/caelestia-windows.git
+cd caelestia-windows
+powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Strict -Json
+# Follow windows/NATIVE-BUILD.md to build into C:\b-caelestia, then:
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -BuildRoot C:\b-caelestia
+```
+
+**Start and verify:**
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
+& "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -Command State
+```
+
+</details>
+
+## Usage and configuration
+
+The bar sits on the left edge of your screen. Workspaces map to Windows virtual desktops, and tiling, taskbar hiding, and desktop takeover only turn on if you ask for them. To control a running instance from PowerShell, pass `-Command Restart`, `-Command Settings`, or `-Command Quit` to `Start-Caelestia.ps1`.
+
+Configuration lives in `%LOCALAPPDATA%\caelestia-windows\config\` (`shell.json`, `keybinds.json`, `windows.json`, and `monitors\<name>\`). You can edit those files directly or change settings live in Nexus (`Settings`).
+
+- [User guide](windows/docs/USER-GUIDE.md) — first run, what every surface does, and troubleshooting
+- [Keybinds](windows/docs/KEYBINDS.md) — default shortcuts and `keybinds.json`
+- [Configuration](windows/docs/CONFIGURATION.md) — `shell.json`, per-monitor overrides, and tiling
+- [Build from source](windows/NATIVE-BUILD.md) — native Windows toolchain (`clang-cl`, Qt 6.11.2, Cargo)
+
+## Credits and attribution
+
+Almost all of the UI design, QML, and animations come from other people's work. This repository connects them and adapts the platform layer for Windows 11.
+
+- **[Caelestia Shell](https://github.com/caelestia-dots/shell)** by [@soramanew](https://github.com/soramanew) and the Caelestia contributors (GPL-3.0) — the shell UI, widgets, motion, and [m3shapes](https://github.com/soramanew/m3shapes) (Apache-2.0), plus [Caelestia CLI](https://github.com/caelestia-dots/cli) for Material You colour generation.
+- **[ii-windows](https://github.com/nunreasonable/ii-windows)** and **[nunreasonable/quickshell](https://github.com/nunreasonable/quickshell)** by [@nunreasonable](https://github.com/nunreasonable) (GPL-3.0 / LGPL-3.0) — the original Windows Quickshell backend that made running QML shells natively on Windows possible, and the porting/packaging reference this project grew out of.
+- **[Quickshell](https://quickshell.outfoxxed.me)** by [@outfoxxed](https://github.com/outfoxxed) and contributors (LGPL-3.0) — the QtQuick shell toolkit underneath everything.
+- **[caelestia-quickshell-windows](https://github.com/KldsSeeGhosts/caelestia-quickshell-windows)** (LGPL-3.0) — our maintained fork of `nunreasonable/quickshell` with Caelestia-specific Windows fixes.
+- **Bundled tools, fonts, and notices:** [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [windows/README.md](windows/README.md#credits-and-attribution) list every copyright holder, license, and bundled component (including `caelestia-capture` / Glazier, Qt 6, Google Sans Flex, Rubik, Cascadia Code / Nerd Fonts, and Material Symbols).
+
+Parts of the Windows port were written with AI assistance under the maintainer's direction and review.
 
 ## FAQ
 
-**Is this Linux Caelestia?** No. It is a Windows 11 port that keeps Caelestia's original QML interface and motion. The preserved upstream README below describes Linux and Hyprland only.
+**Is this Linux Caelestia?** No, this is the Windows 11 port. For Linux and Hyprland, use [caelestia-dots/shell](https://github.com/caelestia-dots/shell).
 
-**Do I need Hyprland, a Linux desktop, or WSL?** No. The shell runs natively on Windows and uses DWM for application composition.
+**Do I need Hyprland, WSL, or admin rights?** No. Everything runs natively on Windows 11 under your user account, and DWM handles window compositing.
 
-**Do I need administrator rights?** No. The install, update, rollback, and uninstall are per user.
-
-**Does it replace Explorer, the taskbar, or my tiler automatically?** No. Desktop takeover and tiling are opt-in, and only one tiling manager may be active. See [troubleshooting](windows/docs/USER-GUIDE.md#troubleshooting).
+**Does it replace Explorer, the taskbar, or my tiler automatically?** No. Desktop takeover, taskbar hiding, and window tiling are all opt-in. If you enable Caelestia's tiler, close other tilers like Komorebi, GlazeWM, or FancyZones first.
 
 **Does it support Windows 10?** No. Windows 11 64-bit is required.
 
-**Where are the logs?** See [where logs live](windows/docs/USER-GUIDE.md#where-logs-live). Redact personal data before sharing logs.
-
-## Credits
-
-The interface is [Caelestia Shell](https://github.com/caelestia-dots/shell) by soramanew and contributors (GPL-3.0). The Windows platform layer comes from the Windows Quickshell work built for [ii-windows](https://github.com/nunreasonable/ii-windows) (LGPL-3.0), with this port's backend fork. Shapes come from [m3shapes](https://github.com/soramanew/m3shapes).
-
-Full copyright holders, licenses, and bundled notices are in [Windows credits and attribution](windows/README.md#credits-and-attribution) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Parts of the Windows port were written with AI assistance under the maintainer's direction and review; contributors remain responsible for the code and documentation they submit.
+**Where are the logs?** See [where logs live](windows/docs/USER-GUIDE.md#where-logs-live). Strip any personal info before sharing them.
 
 ## Documentation
 
