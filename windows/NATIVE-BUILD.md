@@ -22,7 +22,7 @@ installation/banner alone is not sufficient. Missing components fail before
 compilation with the required version and manual installation step.
 No machine PATH, VS installation, Rust default or override is changed by a build.
 The reviewed serviced `cl.exe` and `link.exe` file versions are respectively
-19.44.35229.0 and 14.44.35229.0. A folder with different serviced binaries is
+19.44.35230.0 and 14.44.35230.0. A folder with different serviced binaries is
 not interchangeable. The same VS instance must provide
 `VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt`, currently selecting
 `VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT`. The selected `msvcp140.dll`,

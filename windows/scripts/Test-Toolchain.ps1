@@ -56,8 +56,8 @@ Assert-Rejected { Assert-CaelestiaToolchainReceipt $bad } 'vcRedistVersion'
 # Validly formatted, same-family substitutions must fail too. Checking only
 # version/hash syntax would not enforce the qualified supplier identities.
 foreach ($pair in @(
-    @('vcCompilerFileVersion', '19.44.35230.0'),
-    @('vcLinkerFileVersion', '14.44.35230.0'),
+    @('vcCompilerFileVersion', '19.44.35231.0'),
+    @('vcLinkerFileVersion', '14.44.35231.0'),
     @('rustCommit', ('0' * 40)))) {
     $bad = New-SupportedReceipt
     $bad.($pair[0]) = $pair[1]
@@ -193,8 +193,8 @@ public class Fixture_$id {}
         Assert-Rejected { & $assembler -BuildRoot $testRoot -ValidateToolchainOnly -VCRuntimeRoot $crtRoot } "Unsupported toolchain $name"
     }
     foreach ($pair in @(
-        @('vcCompilerFileVersion', '19.44.35230.0'),
-        @('vcLinkerFileVersion', '14.44.35230.0'),
+        @('vcCompilerFileVersion', '19.44.35231.0'),
+        @('vcLinkerFileVersion', '14.44.35231.0'),
         @('rustCommit', ('0' * 40)))) {
         $build.toolchain = New-SupportedReceipt
         $build.toolchain.($pair[0]) = $pair[1]
