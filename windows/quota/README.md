@@ -173,7 +173,7 @@ endorsed by OpenUsage.
 
 | Source here | Staged as |
 | --- | --- |
-| `modules/quota/{Wrapper,Content,QuotaBar,QuotaBreakdown,QuotaLogo,QuotaMenu,QuotaMeter,QuotaPopover,QuotaPriorityRow,QuotaResets,QuotaSegments,QuotaToolTip,QuotaValueRow}.qml` | `modules/quota/` |
+| `modules/quota/{Wrapper,Content,QuotaBar,QuotaBreakdown,QuotaLogo,QuotaMenu,QuotaMeter,QuotaPopover,QuotaPriorityRow,QuotaProviderRow,QuotaResets,QuotaSegments,QuotaToolTip,QuotaValueRow}.qml` | `modules/quota/` |
 | `modules/quota/QuotaLogic.js` | `modules/quota/QuotaLogic.js` |
 | `services/Quota.qml` | `services/Quota.qml` |
 | `services/QuotaConfig.qml` | `services/QuotaConfig.qml` |
@@ -320,5 +320,7 @@ with that key, including refresh and keepalive.
   `auth-files` listing, Claude grant eligibility and Antigravity buckets still
   need a live check.
 - Public source and packages omit third-party provider brand marks because
-  redistribution permission was not established. QuotaLogo uses its existing
-  two-letter provider-name fallback; layout, quota values and labels are unchanged.
+  redistribution permission was not established. The drawer reads a user's own
+  marks from `<config>\provider-icons\<provider>.svg` (optionally
+  `<provider>-light.svg` for light schemes; `CAELESTIA_PROVIDER_ICONS` names
+  another folder). Without a file, QuotaLogo shows the provider's initials.

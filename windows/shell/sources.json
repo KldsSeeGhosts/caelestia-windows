@@ -204,6 +204,7 @@
   "windows/quota/modules/quota/QuotaMeter.qml": "modules/quota/QuotaMeter.qml",
   "windows/quota/modules/quota/QuotaPopover.qml": "modules/quota/QuotaPopover.qml",
   "windows/quota/modules/quota/QuotaPriorityRow.qml": "modules/quota/QuotaPriorityRow.qml",
+  "windows/quota/modules/quota/QuotaProviderRow.qml": "modules/quota/QuotaProviderRow.qml",
   "windows/quota/modules/quota/QuotaResets.qml": "modules/quota/QuotaResets.qml",
   "windows/quota/modules/quota/QuotaSegments.qml": "modules/quota/QuotaSegments.qml",
   "windows/quota/modules/quota/QuotaToolTip.qml": "modules/quota/QuotaToolTip.qml",

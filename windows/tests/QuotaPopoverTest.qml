@@ -93,8 +93,20 @@ ShellRoot {
         Qt.callLater(() => step(run));
     }
 
+    // All Usage opens on the compact provider rows; the details sit behind them.
     function run(): void {
         input = inputComponent.createObject(win.contentItem);
+        const sections = CUtils.findChildren(content, "quotaAccount");
+        check(sections.length > 0 && sections.every(s => !s.expanded), "accounts start collapsed");
+        check(CUtils.findChildren(content, "quotaDetail").every(d => !d.visible), "the details start hidden");
+        input.wait(50);
+        capture("overview", () => step(details));
+    }
+
+    function details(): void {
+        for (const a of CUtils.findChildren(content, "quotaAccount"))
+            content.toggleAccount(a.modelData.id);
+        check(CUtils.findChildren(content, "quotaDetail").every(d => d.visible), "a row opens its details");
         const popover = item("quotaPopover");
         check(!!popover && !popover.open, "the popover starts closed");
         // The footer band is the same translucent surface as the drawer, so with
@@ -104,8 +116,8 @@ ShellRoot {
               "the footer backing keeps the drawer's transparency");
 
         // (a) A spend row: hover reveals the breakdown after OpenUsage's 400 ms.
-        // Claude's section is second, so scroll it into view first.
-        const yesterday = CUtils.findChildren(content, "quotaValueRow").filter(r => r.label === "Yesterday")[1];
+        // Spend repeats under each account; Claude's first account is third.
+        const yesterday = CUtils.findChildren(content, "quotaValueRow").filter(r => r.label === "Yesterday")[2];
         check(!!yesterday && yesterday.hasDetail, "Claude's Yesterday row has a detail");
         const body = item("quotaBody");
         body.contentY = Math.max(0, yesterday.mapToItem(body.contentItem, 0, 0).y - body.height + 160);

@@ -74,6 +74,59 @@ function accountWindows(account) {
     return orderedWindows(primaryWindows(account)).concat(orderedWindows(scopedWindows(account)));
 }
 
+// The file name (without extension) of a provider's mark in the user's
+// provider-icons folder; aliases share one mark.
+function iconName(provider) {
+    const id = String(provider || "").trim().toLowerCase().replace(/_/g, "-");
+    const aliases = {openai: "codex", anthropic: "claude", "opencode-go": "opencode", xai: "grok", "google-ai": "gemini"};
+    return aliases[id] || id;
+}
+
+// A provider's accent for its All Usage ring, near its own brand colour so a
+// row is recognisable at a glance; "" for providers without one (the row then
+// uses the scheme's primary).
+var ACCENTS = {
+    claude: "#d97757", codex: "#7b93ff", cursor: "#d6d0c4", antigravity: "#ef7fb1",
+    gemini: "#5b8def", vertex: "#5b8def", grok: "#b39dff", zai: "#6f8cff",
+    kimi: "#8a8fff", opencode: "#a7adb5"
+};
+
+function accent(provider) {
+    return ACCENTS[iconName(provider)] || "";
+}
+
+// A provider's summary row in All Usage: its first two main windows (shortest
+// first) as figures. CPA routes a provider's requests to any of its accounts,
+// so each figure is the most any account has left in that window, with that
+// account's reset. The ring shows the lower of the figures, the provider's
+// tighter limit. `ring` is null when no window reports a figure.
+function providerSummary(accounts) {
+    const titles = [];
+    for (const account of accounts || []) {
+        for (const l of orderedWindows(primaryWindows(account))) {
+            if (titles.indexOf(title(l)) < 0)
+                titles.push(title(l));
+        }
+    }
+    const ordered = orderedWindows(titles.map(t => ({title: t}))).map(l => l.title).slice(0, 2);
+    const columns = ordered.map(t => {
+        let best = null;
+        for (const account of accounts || []) {
+            const l = (account.limits || []).find(x => title(x) === t);
+            const left = l ? remaining(l) : null;
+            if (left !== null && (best === null || left > best.remaining))
+                best = {remaining: left, resetsAt: l.resetsAt || ""};
+        }
+        return {
+            title: t, remaining: best ? best.remaining : null, resetsAt: best ? best.resetsAt : "",
+            severity: severity(best ? best.remaining : null)
+        };
+    });
+    const known = columns.filter(c => c.remaining !== null).map(c => c.remaining);
+    const ring = known.length ? Math.min.apply(null, known) : null;
+    return {columns: columns, ring: ring, severity: severity(ring)};
+}
+
 // The Priority board. Every window that is used up goes under Used Up, every
 // other window at warning or worse under Running Out, least left first; used-up
 // windows sort by their reset. Ties keep the drawer order. `noticeOf(account)`
