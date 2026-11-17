@@ -156,3 +156,20 @@ test("reset credits: earliest first, numbered, absolute time, countdown and expi
     assert.equal(call("whenAbsolute", local(2026, 10, 4, 20, 5), now), "today at 8:05 PM");
     assert.equal(call("whenAbsolute", local(2026, 10, 5, 9, 0), now), "tomorrow at 9:00 AM");
 });
+
+test("a provider's summary row: two main windows, the most any account has left, the ring on the tighter one", () => {
+    const s = call("providerSummary", [
+        account("claude", "a", [limit("Weekly", 0.6, later(DAY)), limit("5-hour", 0.9), limit("Opus · Weekly", 0.1)]),
+        account("claude", "b", [limit("5-hour", 0.25, later(2 * HOUR)), limit("Weekly", 0.8)]),
+    ]);
+    assert.deepEqual(s.columns.map(c => c.title), ["5-hour", "Weekly"]);
+    assert.deepEqual(s.columns.map(c => Math.round(c.remaining * 100)), [75, 40]);
+    assert.equal(s.columns[0].resetsAt, later(2 * HOUR), "the reset of the account with the most left");
+    assert.equal(Math.round(s.ring * 100), 40);
+    assert.equal(s.severity, "normal");
+    assert.equal(s.columns[1].severity, "normal");
+    const single = call("providerSummary", [account("zai", "c", [limit("Monthly", 0.95)])]);
+    assert.equal(single.columns.length, 1);
+    assert.equal(single.columns[0].severity, "critical");
+    assert.equal(call("providerSummary", [account("x", "d", [])]).ring, null);
+});

@@ -23,6 +23,9 @@ Singleton {
     readonly property string configDir: (Quickshell.env("CAELESTIA_CONFIG_DIR")
         || ((Quickshell.env("APPDATA") || root.home + "/AppData/Roaming") + "/caelestia")).replace(/\\/g, "/")
     readonly property string quotaConfigPath: Quickshell.env("CAELESTIA_QUOTA_CONFIG") || (root.configDir + "/quota.json")
+    // The user's own provider marks for the drawer (none are shipped).
+    readonly property string providerIconsDir: (Quickshell.env("CAELESTIA_PROVIDER_ICONS")
+        || (root.configDir + "/provider-icons")).replace(/\\/g, "/").replace(/\/+$/, "")
 
     // The Linux overlay read ~/.config/omarchy/cpa-agents.json. The Windows
     // equivalent is the shell profile's config directory; CAELESTIA_CPA_CONFIG

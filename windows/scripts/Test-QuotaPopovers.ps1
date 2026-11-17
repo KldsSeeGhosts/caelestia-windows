@@ -5,7 +5,9 @@ param(
     # Optional: where to copy the fixture screenshots (breakdown, resets, menu).
     [string]$CaptureDir,
     # Optional shell.json for the fixture; the drawer is appearance-independent.
-    [string]$ShellConfig
+    [string]$ShellConfig,
+    # Optional folder of provider marks for the screenshots (none are shipped).
+    [string]$ProviderIcons
 )
 # Offscreen: the real quota Content with synthetic spend and reset credits.
 # Drives OpenUsage's hover details and the "…" menu, and saves fixture
@@ -22,7 +24,8 @@ $stateBefore = @(if (Test-Path -LiteralPath $stateRoot) {
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name quota-popovers -ShellFixture -UseQuickshell `
     -FakeDirectories @('windows/tests/fakes/quota-popovers') `
     -Sources @('windows/tests/QuotaPopoverTest.qml') -FixtureFile 'windows/tests/QuotaPopoverTest.qml' `
-    -Marker CAELESTIA_QUOTA_POPOVER -MinimumAssertions 28 -Keep -ShellConfig $ShellConfig
+    -Marker CAELESTIA_QUOTA_POPOVER -MinimumAssertions 28 -Keep -ShellConfig $ShellConfig `
+    -Environment $(if ($ProviderIcons) { @{ CAELESTIA_PROVIDER_ICONS = [IO.Path]::GetFullPath($ProviderIcons) } } else { @{} })
 $stateAfter = @(if (Test-Path -LiteralPath $stateRoot) {
     Get-ChildItem -LiteralPath $stateRoot -Directory | ForEach-Object Name
 })

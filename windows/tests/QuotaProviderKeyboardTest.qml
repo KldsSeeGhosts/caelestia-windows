@@ -49,30 +49,51 @@ ShellRoot {
         const segments = item("quotaSegments");
         check(segments.height === 28, "segmented control is 28 dp: " + segments.height);
         check(item("quotaSegmentPill").height === 24, "the thumb sits 2 dp inside the track");
-        const meters = CUtils.findChildren(content, "quotaMeter");
-        check(meters.length > 0 && meters.every(m => m.height === 22), "meter rows are 22 dp");
+        // All Usage: one card with a compact row per account, collapsed at first.
+        const providerRows = CUtils.findChildren(content, "quotaProviderRow");
+        check(providerRows.length === 5 && providerRows.every(r => r.height === 64), "one 64 dp row per account: " + providerRows.length);
+        check(CUtils.findChildren(content, "quotaProviderGauge").every(g => g.width === 48 && g.height === 48), "the ring is 48 dp");
+        check(CUtils.findChildren(content, "quotaDetail").every(d => !d.visible), "rows start collapsed");
+        // Codex account "one" has used 40% and 20%: the row reads what is left.
+        const figures = CUtils.findChildren(providerRows[0], "quotaProviderLeft").map(f => f.text);
+        check(figures.join("|") === "60%|80%", "an account's own figures: " + figures.join("|"));
+        check(CUtils.findChildren(providerRows[0], "quotaProviderWindow").map(w => w.text).join("|") === "5-hour|Weekly", "each figure names its window");
+        check(Math.round(providerRows[0].summary.ring * 100) === 60, "the ring shows the tighter window");
+        check(CUtils.findChildren(providerRows[0], "quotaProviderName")[0].text === "Codex", "the row names the provider");
+        check(CUtils.findChildren(providerRows[0], "quotaProviderPlan")[0].text === "Pro · one", "a provider with several accounts names each");
+        check(CUtils.findChildren(providerRows[4], "quotaProviderPlan")[0].text === "GLM", "a single account shows its plan");
+        check(CUtils.findChildren(providerRows[1], "quotaProviderLeft").map(f => f.text).join("|") === "30%|50%", "the second Codex account has its own row");
+        check(Qt.colorEqual(CUtils.findChildren(providerRows[1], "quotaProviderLeft")[0].color, providerRows[1].amber), "30% left turns amber");
+        check(Qt.colorEqual(providerRows[0].accent, "#7b93ff") && Qt.colorEqual(providerRows[2].accent, "#d97757"), "rings take the provider's accent");
+        // Space opens a row and closes it again; the pointer does the same.
+        const accounts = () => CUtils.findChildren(content, "quotaAccount");
+        providerRows[0].forceActiveFocus(Qt.TabFocusReason);
+        input.keyClick(Qt.Key_Space);
+        check(accounts()[0].expanded && !accounts()[1].expanded, "Space opens that account only");
+        input.keyClick(Qt.Key_Return);
+        check(!accounts()[0].expanded, "Return closes it");
+        input.mouseClick(providerRows[0], 20, 30);
+        check(accounts()[0].expanded, "a click opens it");
+        check(accountsRequests === 0, "Return on a row does not open Accounts");
+        input.wait(50);
+
+        const meters = CUtils.findChildren(content, "quotaMeter").filter(m => m.visible);
+        check(meters.length === 2 && meters.every(m => m.height === 22), "the open account shows its meters, 22 dp each");
         const bar = CUtils.findChildren(meters[0], "quotaBar")[0];
         check(bar.height === 9, "the bar slot is 9 dp: " + bar.height);
         check(CUtils.findChildren(bar, "quotaBarFill")[0].height === 8, "the bar is 8 dp");
         const grid = content.grid;
         check(grid.label === 90 && grid.value === 52 && grid.reset === 48 && grid.gap === 8, "OpenUsage's column grid");
         check(near(bar.width, grid.bar), "the bar takes the rest of the row: " + bar.width + " vs " + grid.bar);
-        // Remaining mode: account "one" has used 40% of its 5-hour window, so
-        // the row reads 60% and the bar is 60% full.
         check(CUtils.findChildren(meters[0], "quotaMeterLeft")[0].text === "60%", "All Usage shows the % left");
         check(Math.abs(CUtils.findChildren(bar, "quotaBarFill")[0].width - Math.round(bar.width * 0.6)) <= 1, "the bar fills with the share left");
-        const sections = CUtils.findChildren(content, "quotaSection");
-        const card = CUtils.findChildren(sections[0], "quotaCard")[0];
-        const name = CUtils.findChildren(card, "quotaAccountName")[0];
-        const first = CUtils.findChildren(card, "quotaMeter")[0];
-        check(near(name.mapToItem(card, 0, 0).x, 12), "card padding is 12 at the side");
-        check(near(name.parent.mapToItem(card, 0, 0).y, 8), "card padding is 8 at the top");
-        check(near(name.parent.height, 14) && near(first.mapToItem(card, 0, 0).y, 8 + 14 + 4), "caption 14 dp, 4 dp above the rows");
-        const lastMeter = CUtils.findChildren(card, "quotaMeter").slice(-1)[0];
-        check(near(card.height - (lastMeter.mapToItem(card, 0, 0).y + lastMeter.height), 10), "card padding is 10 at the bottom");
-        check(near(card.mapToItem(sections[0], 0, 0).y, 24 + 4), "24 dp header, 4 dp to the card");
-        check(near(sections[1].mapToItem(content, 0, 0).y - (sections[0].mapToItem(content, 0, 0).y + sections[0].height), 14), "sections are 14 dp apart");
-        check(near(card.radius, 12), "cards have a 12 dp radius");
+        const card = item("quotaCard");
+        const open = accounts()[0];
+        const detail = CUtils.findChildren(open, "quotaDetail")[0];
+        check(near(meters[0].mapToItem(card, 0, 0).x, 12), "the details sit 12 dp in from the card");
+        check(near(detail.mapToItem(open, 0, 0).y, 64), "the details open under the row");
+        check(near(accounts()[1].mapToItem(card, 0, 0).y - (open.mapToItem(card, 0, 0).y + open.height), 2), "rows are 2 dp apart");
+        check(near(card.radius, Tokens.rounding.large), "the card takes the large rounding");
         const more = item("quotaMore");
         check(more.width === 26 && more.height === 26, "the footer button is 26 dp");
         check(item("quotaFooter").height === 34, "footer: divider, 7 dp, 26 dp controls (the margin is the drawer's)");
@@ -85,7 +106,7 @@ ShellRoot {
             check(segments.length === 2, "real content exposes two segments");
             check(CUtils.findChildren(content, "quotaProviderTab").length === 0, "the provider strip is gone");
             check(Quota.usageView === "all", "All Usage is the default");
-            check(CUtils.findChildren(content, "quotaSection").length === 3, "All Usage lists every provider");
+            check(CUtils.findChildren(content, "quotaSection").length === 3, "All Usage groups the accounts by provider");
             checkMetrics();
 
             // Segments: Tab reaches them, focus alone does not switch, each key does.
@@ -126,10 +147,21 @@ ShellRoot {
             segments[1].forceActiveFocus(Qt.TabFocusReason);
             input.keyClick(Qt.Key_Tab);
             check(body.activeFocus, "Tab reaches the scrolling content");
+            const providerRows = CUtils.findChildren(content, "quotaProviderRow");
+            for (const row of providerRows) {
+                input.keyClick(Qt.Key_Tab);
+                check(row.activeFocus, "Tab steps through the provider rows");
+            }
             input.keyClick(Qt.Key_Tab);
             check(more.activeFocus, "Tab reaches the more button");
             input.keyClick(Qt.Key_Tab, Qt.ShiftModifier);
-            check(body.activeFocus, "Shift+Tab returns to the content");
+            check(providerRows[providerRows.length - 1].activeFocus, "Shift+Tab returns to the last row");
+            // Every provider open, so the fixture drawer scrolls.
+            for (const a of CUtils.findChildren(content, "quotaAccount"))
+                if (!a.expanded)
+                    content.toggleAccount(a.modelData.id);
+            body.forceActiveFocus(Qt.TabFocusReason);
+            input.wait(50);
             check(body.contentHeight > body.height, "the fixture drawer scrolls");
             body.contentY = 0;
             input.keyClick(Qt.Key_Down);
