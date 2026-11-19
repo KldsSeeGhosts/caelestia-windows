@@ -475,6 +475,13 @@ QtObject {
         checkEqual(toasts.length, 5, "duplicate address+reason adds no toast");
         checkEqual(service.recentFailureCount, 6, "duplicate failure still recorded");
 
+        // Windows that close before placement finishes (target-vanished) are
+        // recorded for diagnostics but never toast or consume the burst budget.
+        service.handleWindowTilingFailed("2a1b", "target-vanished");
+        checkEqual(toasts.length, 5, "target-vanished never toasts");
+        checkEqual(service.recentFailureCount, 7, "target-vanished still recorded");
+        checkEqual(service.recentFailures[6].reason, "target-vanished", "target-vanished reason recorded");
+
         // --- Recent-failure list cap ------------------------------------------
         for (let i = 0; i < 25; i++)
             service.handleWindowTilingFailed("cap" + i, "min-size");
@@ -494,11 +501,25 @@ QtObject {
         service.backend = burstBackend;
         burstBackend.enabled = true;
         resetToasts();
-        for (const address of ["a1", "a2", "a3", "a4"])
-            service.handleWindowTilingFailed(address, "min-size");
+        const beforeVanishedBurst = service.recentFailureCount;
+        for (const address of ["gone1", "gone2", "gone3", "gone4"])
+            service.handleWindowTilingFailed(address, "target-vanished");
+        checkEqual(toasts.length, 0, "a vanished-window burst does not produce a summary");
+        checkEqual(service.recentFailureCount, Math.min(20, beforeVanishedBurst + 4),
+            "a vanished-window burst keeps the bounded failure list");
+        check(service.recentFailures.slice(-4).every(e => e.reason === "target-vanished"),
+            "all vanished-window outcomes in the burst are recorded");
+
+        service.handleWindowTilingFailed("a1", "min-size");
+        service.handleWindowTilingFailed("a2", "placement-denied");
+        checkEqual(toasts.length, 2, "vanished windows leave both individual toast slots free");
+        checkEqual(toasts[1].title, "Couldn't tile a window", "placement denial still warns");
+        service.handleWindowTilingFailed("gone5", "target-vanished");
+        checkEqual(toasts.length, 2, "another vanished window does not trigger the summary");
+        service.handleWindowTilingFailed("a3", "min-size");
+        service.handleWindowTilingFailed("a4", "min-size");
         checkEqual(toasts.length, 3, "the summary counts toward the three-toast budget");
-        check(toasts[1].title.length > 0, "first two toast individually");
-        check(toasts[2].title.length > 0, "collapse title");
+        checkEqual(toasts[2].title, "Some windows couldn't be tiled", "collapse title");
         checkEqual(toasts[2].message, "", "collapse message");
         checkEqual(toasts[2].icon, "view_quilt", "collapse icon");
         checkEqual(toasts[2].type, 2, "collapse toast is a warning");
@@ -509,9 +530,9 @@ QtObject {
             "suppressed failures are still recorded");
 
         currentTime = 210001;
-        service.handleWindowTilingFailed("a6", "min-size");
+        service.handleWindowTilingFailed("a6", "placement-failed");
         checkEqual(toasts.length, 4, "budget resets after the window passes");
-        check(toasts[3].title.length > 0, "individual toasts resume");
+        checkEqual(toasts[3].title, "Couldn't tile a window", "placement failure still warns");
 
         for (const address of ["a7", "a8", "a9"])
             service.handleWindowTilingFailed(address, "min-size");

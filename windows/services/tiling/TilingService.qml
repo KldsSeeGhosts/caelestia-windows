@@ -33,7 +33,8 @@ import QtQuick
 //   windowTilingFailed(address, reason)
 //                        signal; address is lowercase hex without 0x, matching
 //                        HyprlandToplevel addresses. Reasons: min-size,
-//                        off-target, correction-limit, unresponsive.
+//                        off-target, correction-limit, unresponsive,
+//                        placement-denied, placement-failed, target-vanished.
 //
 // Policy. CAELESTIA_WINDOWS_TILING maps to mode off/observe/interactive
 // (validated here; anything else is `off` with a warning). `off` never
@@ -548,6 +549,11 @@ QtObject {
             time: root.clock()
         }]).slice(-20);
 
+        // The placement target went away. Keep the diagnostic without using
+        // a slot in the toast budget.
+        if (why === "target-vanished")
+            return;
+
         // At most one toast per window address per reason per enabled session.
         const key = addr + "|" + why;
         if (root._notifiedKeys.has(key))
@@ -558,8 +564,8 @@ QtObject {
             root.tr(root._failureText(why)));
     }
 
-    // Since backend  a min-size conflict stays tiled at its larger size and
-    // a slow app keeps its tile, so only off-target and refused placements float.
+    // A min-size conflict stays tiled at its larger size and a slow app keeps
+    // its tile. Only off-target and refused automatic placements float.
     function _failureTitle(reason, name): string {
         switch (reason) {
         case "min-size":

@@ -143,8 +143,7 @@ excluded=<n> gapsIn=<dip> gapsOut=<dip> status=<status>` line at startup.
 ## Fitting-failure explanation
 
 The backend emits `windowTilingFailed(address, reason)` with the address as
-lowercase hex without `0x` (matching `HyprlandToplevel`) and one reason of
-`min-size`, `off-target`, `correction-limit`, `unresponsive`. The service
+lowercase hex without `0x`, matching `HyprlandToplevel`. The service
 records `{address, appClass, title, reason, time}` in a 20-entry list and
 decides toasts on the original surface (`Toaster.toast` with `Toast.Warning`
 or `Toast.Error`, icon `view_quilt`, copy through `Tr.tr`):
@@ -159,11 +158,21 @@ tile; only off-target and refused placements float.
 | `unresponsive` | `<App> is slow to respond` | `It keeps its tile and moves there when it catches up.` |
 | `off-target` | `Couldn't tile <App>` | `It kept moving away from its tile; it was left floating.` |
 | `correction-limit` | `Couldn't tile <App>` | `It didn't fit its tile exactly, so it may leave a gap.` |
+| `placement-denied`, `placement-failed` | `Couldn't tile <App>` | `It could not be placed in its tile.` |
+| `target-vanished` | No toast | The window closed before placement finished. The service still records it. |
 | unknown | `Couldn't tile <App>` | `It could not be placed in its tile.` |
+
+The native backend waits for a newly shown legacy console to take focus
+before automatically tiling it. An explicit tile request can still tile it.
+This does not change how the tiler adopts existing windows on enable or how
+it handles Windows Terminal. If a window hides, minimizes, or becomes
+app-cloaked during placement, the in-flight attempt is canceled without a
+failure. Other virtual desktops keep their normal tiling behavior.
 
 Rate limits: at most one toast per window address per reason per enabled
 session, and at most three toasts per ten seconds. The third toast of a
-burst is the summary `Some windows couldn't be tiled`; later failures in
+burst is the summary `Some windows couldn't be tiled`. Closed targets do not
+count toward the limit or trigger a summary. Later failures in
 that window are recorded without a toast. Each refused enable attempt emits
 exactly one `Tiling is off` error toast: `Add apps to the tiling list to
 turn it on.` (empty allowlist), `This version can't limit tiling to chosen
