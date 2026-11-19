@@ -271,7 +271,10 @@ QtObject {
                 return;
             if (action === "activate") {
                 try {
-                    window.native.activate();
+                    if (typeof window.native.activateFromUserInput === "function")
+                        window.native.activateFromUserInput();
+                    else
+                        window.native.activate();
                 } catch (error) {
                     console.warn("Caelestia: running-app activation could not be dispatched.");
                 }
