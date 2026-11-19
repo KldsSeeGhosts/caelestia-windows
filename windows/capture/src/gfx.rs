@@ -20,15 +20,15 @@ pub struct Gfx {
     hud_family: HSTRING,
     theme: RefCell<Option<crate::theme_tokens::ThemeTokens>>,
     theme_font: RefCell<Option<(HSTRING, Option<IDWriteFontCollection1>)>>,
-    pub round: ID2D1StrokeStyle,
-    pub square: ID2D1StrokeStyle,
+
+
     _loader: IDWriteInMemoryFontFileLoader,
     formats: RefCell<Vec<(u32, i32, bool, IDWriteTextFormat)>>,
     layouts: RefCell<Vec<(String, IDWriteTextFormat, IDWriteTextLayout)>>,
 }
 
 pub const UI_FONT: &str = "Segoe UI";
-/// The Windows 11 system face, used by the editor toolbar when installed.
+/// The Windows 11 system face, used by the recorder when installed.
 const HUD_FONT: &str = "Segoe UI Variable Text";
 
 impl Gfx {
@@ -64,24 +64,6 @@ impl Gfx {
             }
             let hud_family = HSTRING::from(if exists.as_bool() { HUD_FONT } else { UI_FONT });
 
-            let stroke = |cap: D2D1_CAP_STYLE| {
-                ID2D1Factory::CreateStrokeStyle(
-                    &d2d,
-                    &D2D1_STROKE_STYLE_PROPERTIES {
-                        startCap: cap,
-                        endCap: cap,
-                        dashCap: cap,
-                        lineJoin: D2D1_LINE_JOIN_ROUND,
-                        miterLimit: 10.0,
-                        dashStyle: D2D1_DASH_STYLE_SOLID,
-                        dashOffset: 0.0,
-                    },
-                    None,
-                )
-            };
-            let round = stroke(D2D1_CAP_STYLE_ROUND)?;
-            let square = stroke(D2D1_CAP_STYLE_SQUARE)?;
-
             Ok(Self {
                 d2d,
                 dwrite,
@@ -91,8 +73,8 @@ impl Gfx {
                 hud_family,
                 theme: RefCell::new(None),
                 theme_font: RefCell::new(None),
-                round,
-                square,
+
+
                 _loader: loader,
                 formats: RefCell::new(Vec::new()),
                 layouts: RefCell::new(Vec::new()),
@@ -100,7 +82,7 @@ impl Gfx {
         }
     }
 
-    /// Refresh only UI appearance; annotation text retains its original font.
+    /// Refresh recorder colors and fonts.
     pub fn reload_theme(&self, path: &str) {
         let mut theme = crate::theme_tokens::ThemeTokens::load(path);
         let mut font = None;

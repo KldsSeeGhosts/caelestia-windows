@@ -1,5 +1,7 @@
 # Capture in the shell
 
+This records the original rollout. The final cleanup for #71 retired the classic picker/editor and the opt-out described below. See [current capture behavior](../KEYBINDS.md#screenshots-and-recording).
+
 Status: accepted design for #71. The owner approves each phase's final result.
 
 Roles: the orchestrator owns this design and final approval. Sonnet 5.5 implements, and GPT 6.1 Sol reviews each PR.

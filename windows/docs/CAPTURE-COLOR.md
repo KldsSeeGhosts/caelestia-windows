@@ -11,15 +11,15 @@ its release manifest and `windows/sources.lock.json`.
 
 | Route | Owner | Capture path and pixel format | Consumer | Shipped | Output needs |
 | --- | --- | --- | --- | --- | --- |
-| Screenshot (hotkeys, launcher, IPC) | Glazier `--capture` | GDI `BitBlt` into a 32-bit DIB, BGRA (`src/capture.rs`) | PNG and `CF_DIB` (`src/export.rs`) | yes | SDR sRGB |
+| Screenshot (hotkeys, launcher, IPC) | QML area picker | Backend `ScreencopyView`, non-live monitor frame; QML `grabToImage` reads the composition | PNG save or image clipboard | yes | SDR sRGB |
 | Screen recording | Glazier `--record` | WGC monitor, `B8G8R8A8UIntNormalized` (`src/recording_media.rs`) | H.264 MP4, MF `MFVideoFormat_RGB32` | yes | SDR sRGB |
 | Bar active-window preview | Backend `ScreencopyView` | WGC window, SDR frame pool (`src/windows/capture.cpp`) | Shared NT-handle texture, then a Qt Quick D3D11 texture (`src/windows/wayland/screencopy_view.cpp`) | yes | SDR sRGB |
 | `Screenshot` QML singleton | Backend `CaptureThread::grabMonitor` | WGC monitor, SDR frame pool, staging readback to `QImage` | PNG | no shell consumer | SDR sRGB |
 | `ScreenRecorder` QML singleton | Backend `recorder::RegionCapture` | WGC monitor, `B8G8R8A8UIntNormalized` (`src/windows/recorder/region_capture.cpp`) | MP4 | no shell consumer | SDR sRGB |
 | Video wallpaper | Backend `video_wallpaper.cpp` | Media Foundation decode into a shared BGRA8 frame; not screen capture | Qt Quick texture | yes | SDR sRGB |
 
-Glazier owns the picker, editor and recorder; the shell only launches it
-(`windows/shell/adapters/services/Glazier.qml`, `Recorder.qml`). The backend's
+The shell owns screenshot selection, editing and output. The in-tree helper
+owns recording encoding and finalization. The backend's
 `Screenshot` and `ScreenRecorder` singletons are still registered in the
 `Quickshell.Windows` module but no shipped QML references them.
 

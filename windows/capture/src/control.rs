@@ -23,7 +23,6 @@ const LIMIT: usize = 64 * 1024;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
-    Capture,
     Record {
         #[serde(default)]
         fullscreen: bool,
@@ -96,11 +95,19 @@ pub struct Options {
     pub command: Option<Command>,
     /// Overrides config.toml's theme_file for this host.
     pub theme_file: Option<String>,
-    /// Leaves PrintScreen and Win+Shift+S/R to the host shell.
-    pub no_hotkeys: bool,
 }
 
-/// Legacy --capture remains valid. Controls other than record/capture never start a host.
+/// Exactly one recording target is required on both CLI and IPC.
+pub fn recording_target(fullscreen: bool, region: Option<Region>) -> std::result::Result<Option<crate::capture::IRect>, String> {
+    match (fullscreen, region) {
+        (true, None) => Ok(None),
+        (false, Some(region)) => region.checked().map(Some),
+        (true, Some(_)) => Err("Use region or fullscreen, not both".into()),
+        (false, None) => Err("Recording requires a region or fullscreen. Use the Caelestia shell to pick a region.".into()),
+    }
+}
+
+/// Controls other than record never start a host.
 pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Options, String> {
     let mut options = Options::default();
     let mut fullscreen = false;
@@ -119,11 +126,9 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Opti
                 options.theme_file = Some(path);
                 None
             }
-            "--no-hotkeys" => {
-                options.no_hotkeys = true;
-                None
-            }
-            "--capture" => Some(Command::Capture),
+            // Older shell hosts pass this flag; the helper no longer registers hotkeys.
+            "--no-hotkeys" => None,
+            "--capture" => return Err("Use the Caelestia shell's screenshot capture command.".into()),
             "--record" => {
                 Some(Command::Record { fullscreen: false, system_sound: None, mic: None, region: None, ui: true })
             }
@@ -178,12 +183,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Opti
         }
     }
     if matches!(options.command, Some(Command::Record { .. })) {
-        if fullscreen && region.is_some() {
-            return Err("Use region or fullscreen, not both".into());
-        }
-        if !ui && region.is_none() && !fullscreen {
-            return Err("--no-ui requires a region or fullscreen".into());
-        }
+        recording_target(fullscreen, region)?;
         options.command = Some(Command::Record { fullscreen, system_sound: sound, mic, region, ui });
     } else if matches!(options.command, Some(Command::Audio { .. })) && !fullscreen && region.is_none() && ui {
         options.command = Some(Command::Audio { system_sound: sound, mic });
@@ -197,7 +197,6 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> std::result::Result<Opti
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
     Idle,
-    Selecting,
     Ready,
     Recording,
     Paused,
@@ -265,7 +264,7 @@ pub fn phase() -> Phase {
 
 pub fn change(phase: Phase, event: Option<&str>, path: Option<String>, message: Option<String>) {
     STATE.with_borrow_mut(|s| {
-        if phase == Phase::Selecting || phase == Phase::Ready && s.state == Phase::Idle {
+        if phase == Phase::Ready && s.state == Phase::Idle {
             s.elapsed_ms = 0;
         }
         s.change(phase, event.map(|event| (event, path, message)));
@@ -285,7 +284,7 @@ pub fn accepts(phase: Phase, command: &Command) -> bool {
         Command::Audio { .. } => matches!(phase, Phase::Ready | Phase::Recording | Phase::Paused),
         Command::Discard => matches!(phase, Phase::Ready | Phase::Recording | Phase::Paused),
         // Stop is always safe and idempotent. In idle it does absolutely nothing.
-        Command::Stop | Command::Status | Command::Capture => true,
+        Command::Stop | Command::Status => true,
     }
 }
 
@@ -600,7 +599,6 @@ mod tests {
     fn parses_commands_and_audio() {
         assert_eq!(command("").unwrap(), None);
         for (s, expected) in [
-            ("--capture", Command::Capture),
             ("--stop", Command::Stop),
             ("--pause", Command::Pause),
             ("--resume", Command::Resume),
@@ -621,7 +619,7 @@ mod tests {
         for bad in ["--stop --record", "--status --mic on", "--record --mic", "--record --mic yes", "--unknown"] {
             assert!(args(bad).is_err(), "{bad}");
         }
-        let request = Request { version: VERSION, command: command("--record").unwrap().unwrap() };
+        let request = Request { version: VERSION, command: command("--record --fullscreen").unwrap().unwrap() };
         let json = serde_json::to_vec(&request).unwrap();
         assert!(matches!(serde_json::from_slice::<Request>(&json).unwrap().command, Command::Record { .. }));
         assert!(decode(br#"{"version":1,"command":"record","unexpected":true}"#).is_err());
@@ -663,11 +661,10 @@ mod tests {
 
     #[test]
     fn parses_launch_options_before_or_after_the_command() {
-        let options = args("--no-hotkeys --theme-file C:\\theme.json --capture").unwrap();
-        assert_eq!(options.command, Some(Command::Capture));
-        assert!(options.no_hotkeys);
+        let options = args("--no-hotkeys --theme-file C:\\theme.json --status").unwrap();
+        assert_eq!(options.command, Some(Command::Status));
         assert_eq!(options.theme_file.as_deref(), Some(r"C:\theme.json"));
-        assert!(args("--capture --no-hotkeys").unwrap().no_hotkeys);
+        assert_eq!(args("--status --no-hotkeys").unwrap().command, Some(Command::Status));
         assert!(args("--theme-file").is_err());
         assert!(args("--theme-file --capture").is_err());
     }
@@ -676,7 +673,7 @@ mod tests {
     fn status_and_launch_use_the_same_managed_pipe() {
         let before = identity().unwrap().0;
         assert_eq!(command("--status").unwrap(), Some(Command::Status));
-        assert!(args("--no-hotkeys --theme-file C:\\theme.json").unwrap().no_hotkeys);
+        assert!(args("--no-hotkeys --theme-file C:\\theme.json").is_ok());
         assert_eq!(identity().unwrap().0, before);
         assert!(before.starts_with(r"\\.\pipe\Caelestia.Capture.Control.v1."));
         assert!(before.ends_with(&format!(".test-{}", std::process::id())));
@@ -686,7 +683,7 @@ mod tests {
     fn transitions_and_finished_path_only_after_finalizing() {
         let mut s = State::default();
         for phase in
-            [Phase::Selecting, Phase::Ready, Phase::Recording, Phase::Paused, Phase::Recording, Phase::Finalizing]
+            [Phase::Ready, Phase::Recording, Phase::Paused, Phase::Recording, Phase::Finalizing]
         {
             s.change(phase, None);
             assert_eq!(s.state, phase);
@@ -700,13 +697,24 @@ mod tests {
 
     #[test]
     fn stop_never_starts_and_pause_is_explicit() {
-        for phase in [Phase::Idle, Phase::Selecting, Phase::Ready, Phase::Recording, Phase::Paused, Phase::Finalizing] {
+        for phase in [Phase::Idle, Phase::Ready, Phase::Recording, Phase::Paused, Phase::Finalizing] {
             assert!(accepts(phase, &Command::Stop));
             assert_eq!(accepts(phase, &Command::Pause), phase == Phase::Recording);
             assert_eq!(accepts(phase, &Command::Resume), phase == Phase::Paused);
         }
         assert!(crate::host::control(Command::Stop).is_ok());
         assert_eq!(phase(), Phase::Idle);
+        assert!(!crate::recording::exists());
+    }
+
+    #[test]
+    fn retired_picker_commands_do_not_start_capture() {
+        assert!(args("--capture").is_err());
+        assert!(args("--record").is_err());
+        assert!(args("--record --fullscreen --region 0,0,16,16").is_err());
+        assert!(decode(br#"{"version":1,"command":"capture"}"#).is_err());
+        let request = decode(br#"{"version":1,"command":"record"}"#).unwrap();
+        assert!(crate::host::control(request.command).unwrap_err().contains("requires a region or fullscreen"));
         assert!(!crate::recording::exists());
     }
 

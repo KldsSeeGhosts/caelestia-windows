@@ -159,13 +159,6 @@ fn layout(recording: bool, k: f32) -> (D2D_RECT_F, Vec<(Item, D2D_RECT_F)>) {
     (rect(x * k, y * k, w * k, BAR_H * k), items)
 }
 
-/// Where a button sits in a bar window `width` pixels wide.
-#[cfg(test)]
-pub fn button_rect(button: Button, recording: bool, width: i32) -> Option<D2D_RECT_F> {
-    let k = width as f32 / WIDTH;
-    layout(recording, k).1.into_iter().find(|(item, _)| *item == Item::Button(button)).map(|(_, r)| r)
-}
-
 struct Controls {
     ui: bool,
     hwnd: HWND,
@@ -205,11 +198,6 @@ struct ControlsView {
 
 thread_local! {
     static ACTIVE: RefCell<Option<Rc<RefCell<Controls>>>> = const { RefCell::new(None) };
-    static PENDING: RefCell<Option<(IRect, IRect, IRect, f32)>> = const { RefCell::new(None) };
-}
-
-pub fn select(region: IRect, monitor: IRect, work: IRect, k: f32) {
-    PENDING.with_borrow_mut(|p| *p = Some((region, monitor, work, k)));
 }
 
 pub fn exists() -> bool {
@@ -328,45 +316,6 @@ fn configure(sound: Option<bool>, mic: Option<bool>, start: bool) {
     }
 }
 
-pub fn hide(hidden: bool) {
-    if let Some(s) = ACTIVE.with_borrow(Clone::clone) {
-        let Ok(s) = s.try_borrow() else {
-            return;
-        };
-        unsafe {
-            let show = if hidden || !s.ui { SW_HIDE } else { SW_SHOWNOACTIVATE };
-            let _ = ShowWindow(s.hwnd, show);
-            let _ = ShowWindow(s.border, show);
-        }
-    }
-}
-
-pub fn reload_theme(gfx: &Gfx) {
-    let tokens = gfx.theme();
-    if let Some(state) = ACTIVE.with_borrow(Clone::clone) {
-        if let Ok(mut state) = state.try_borrow_mut() {
-            state.palette = tokens.as_ref().map_or_else(Palette::default, |t| t.palette());
-            state.themed = tokens.is_some();
-            state.presented = None;
-            unsafe {
-                let _ = InvalidateRect(Some(state.border), None, false);
-            }
-        }
-    }
-}
-
-pub fn show_pending(gfx: Rc<Gfx>, cfg: Rc<Config>, audio: Option<(Option<bool>, Option<bool>)>) {
-    if let Some((region, monitor, work, k)) = PENDING.with_borrow_mut(Option::take) {
-        if let Err(e) = open(gfx, cfg, region, monitor, work, k) {
-            control::change(Phase::Idle, Some("error"), None, Some(e.message().to_string()));
-            host::notify("Could not prepare recording", &e.message(), None, true);
-        } else if let Some((sound, mic)) = audio {
-            // API-selected regions start after selection; the tray keeps its review step.
-            configure(sound, mic, true);
-        }
-    }
-}
-
 pub fn shutdown() {
     stop();
     // Only application shutdown waits here. Encoding stays on the media thread.
@@ -418,11 +367,11 @@ fn poll() {
                 host::notify("Recording", &text, None, true);
             }
             Event::Finished(result) => {
-                let (gfx, cfg, region, monitor, k) = {
+                let (gfx, cfg, monitor, k) = {
                     let mut s = s.borrow_mut();
                     control::update((s.clock.time(s.now()) / 10_000) as u64, s.audio);
                     s.worker = None;
-                    (s.gfx.clone(), s.cfg.clone(), s.region, s.monitor, s.k)
+                    (s.gfx.clone(), s.cfg.clone(), s.monitor, s.k)
                 };
                 close();
                 match result {
@@ -438,7 +387,7 @@ fn poll() {
                         } else if !cfg.show_thumbnail {
                             host::notify("Recording saved", &done.path.display().to_string(), Some(done.path.clone()), false);
                         }
-                        crate::thumbnail::show_video(gfx, &cfg, &done.poster, done.path, region, monitor, k);
+                        crate::thumbnail::show_video(gfx, &cfg, &done.poster, done.path, monitor, k);
                     }
                     Ok(None) => control::change(Phase::Idle, Some("cancelled"), None, None),
                     Err(e) => {
@@ -464,10 +413,6 @@ fn bar_placement(work: IRect, region: IRect, recording: bool, k: f32) -> (i32, i
     let y = placed.y - (HEIGHT * k - bar_h) / 2.0;
     let tips_below = (work.y + work.h) as f32 - (placed.y + bar_h) >= 34.0 * k;
     (x.round() as i32, y.round() as i32, tips_below)
-}
-
-fn open(gfx: Rc<Gfx>, cfg: Rc<Config>, region: IRect, monitor: IRect, work: IRect, k: f32) -> Result<()> {
-    open_with_ui(gfx, cfg, region, monitor, work, k, true)
 }
 
 fn open_with_ui(

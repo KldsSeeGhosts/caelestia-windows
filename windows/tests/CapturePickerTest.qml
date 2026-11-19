@@ -27,7 +27,6 @@ ShellRoot {
     FontLoader { source: Quickshell.shellPath("assets/material-symbols-rounded/MaterialSymbolsRounded.ttf") }
 
     property int assertions: 0
-    property int classicCalls: 0
     property int dismissCalls: 0
     property bool surfacesHiddenNow: true
     property string saveRoot: (Quickshell.env("CAELESTIA_STATE_DIR") || "").replace(/\\/g, "/") + "/picker-test"
@@ -41,10 +40,6 @@ ShellRoot {
         property bool ready: true
         property string executable: "C:/Caelestia/caelestia-capture.exe"
         property int hiddenTimeout: 2000
-        function capture(): bool {
-            root.classicCalls++;
-            return true;
-        }
         function dismiss(): void { root.dismissCalls++; }
         function surfacesHidden(): bool { return root.surfacesHiddenNow; }
     }
@@ -245,52 +240,19 @@ ShellRoot {
         check(CaptureUi.picker === picker, "the picker registers itself with the router");
         check(Quickshell.screens.length > 0, "the fixture has a screen");
 
-        for (const config of [{}, { capture: {} }]) {
-            GlobalConfig.windows = config;
-            check(CaptureUi.setting === "shell" && CaptureUi.route === "shell", "no setting means shell");
-        }
-
-        // An explicit classic setting keeps the existing tool.
+        // A saved classic preference and a legacy or unread executable override
+        // must not intercept screenshots after the Rust picker was retired.
         GlobalConfig.windows = { capture: { ui: "classic" } };
-        check(CaptureUi.screenshot("open") === true && classicCalls === 1, "classic opens the existing tool");
-        check(!picker.opened && dismissCalls === 0, "classic never touches the picker or dismisses panels itself");
-        for (const name of ["openFreeze", "openClip", "openFreezeClip"])
-            CaptureUi.screenshot(name);
-        check(classicCalls === 4, "every upstream picker name reaches the classic tool");
-
-        GlobalConfig.windows = { capture: { ui: "classic" } };
-        check(CaptureUi.route === "classic", "an explicit classic setting");
-        for (const value of ["Shell", "", 1, true, null]) {
-            GlobalConfig.windows = { capture: { ui: value } };
-            check(CaptureUi.route === "classic", "an unknown setting falls back to classic: " + value);
-        }
-        classicCalls = 0;
-
-        // A legacy glazier.exe override always stays classic.
-        GlobalConfig.windows = {};
         glazier.executable = "C:/Apps/Glazier/glazier.exe";
-        check(CaptureUi.route === "classic", "shell with a legacy override stays classic");
-        CaptureUi.screenshot("open");
-        check(classicCalls === 1 && !picker.opened, "the legacy override gets the classic tool");
-
-        // Until Glazier has read its override file the press is not guessed.
-        glazier.executable = "C:/Caelestia/caelestia-capture.exe";
         glazier.ready = false;
-        check(CaptureUi.route === "classic", "an unread override file means classic");
-        glazier.ready = true;
-
-        // The bundled helper with no saved setting opens the picker.
-        check(CaptureUi.route === "shell", "shell with the bundled helper routes to the picker");
-        check(CaptureUi.shellAvailable, "the picker is available");
+        check(CaptureUi.shellAvailable, "screenshots don't depend on recorder readiness");
         check(CaptureUi.screenshot("bogus") === false, "an unknown picker name is refused");
 
         // Panels are dismissed first. The picker waits until they are hidden.
-        classicCalls = 0;
         surfacesHiddenNow = false;
         check(CaptureUi.screenshot("openFreeze") === true, "the shell route accepts a request");
         check(dismissCalls === 1 && !picker.opened, "panels are dismissed and the picker waits for them");
         check(CaptureUi.screenshot("open") === true && dismissCalls === 1, "a second request while waiting is absorbed");
-        check(classicCalls === 0, "the shell route never starts the classic tool");
         surfacesHiddenNow = true;
         later(300, () => step(openedStep));
     }
@@ -1158,12 +1120,6 @@ ShellRoot {
         picker.interactionEnabled = false;
         check(CaptureUi.screenshot("open") === false && !picker.opened, "no picker while interaction is disabled");
         picker.interactionEnabled = true;
-
-        // Switching back to classic works without a restart.
-        GlobalConfig.windows = { capture: { ui: "classic" } };
-        classicCalls = 0;
-        CaptureUi.screenshot("open");
-        check(classicCalls === 1, "the setting applies live");
 
         asyncCopyCases(0);
     }

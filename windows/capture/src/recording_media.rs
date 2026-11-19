@@ -858,17 +858,6 @@ fn remove_audio(source: &Path, dest: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-pub fn probe_microphone() -> Result<f32> {
-    let _runtime = Runtime::new()?;
-    let mut mic = AudioCapture::new(true)?;
-    let origin = qpc();
-    std::thread::sleep(Duration::from_millis(200));
-    let mut mix = Mixer::new();
-    mic.drain(&mut mix, true, origin, &Clock::default(), false)?;
-    Ok(mix.samples.iter().flatten().fold(0.0f32, |peak, v| peak.max(v.abs())))
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 

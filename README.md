@@ -115,7 +115,7 @@ Configuration files live in `%LOCALAPPDATA%\caelestia-windows\config\`:
 
 Change settings live in [Nexus](windows/docs/USER-GUIDE.md#nexus-settings-windows), or edit the JSON files. Add only the options you want to change. The shell uses built-in defaults for everything else. The [configuration reference](windows/docs/CONFIGURATION.md) lists every option and notes which ones behave differently on Windows.
 
-Screenshots and recording use the shell UI by default. To use the classic Glazier UI, set `"windows": {"capture": {"ui": "classic"}}` in `shell.json`. Explicit saved values stay unchanged.
+The shell owns the screenshot editor and region picker. The bundled capture helper encodes recordings.
 
 ## FAQ
 

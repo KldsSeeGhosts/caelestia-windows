@@ -1390,7 +1390,7 @@ ShellRoot {
             countTemp(left => countDragDirs(dirs => {
                 check(left === 0, "no hand-over or preview file is left in the temp directory: " + left);
                 check(dirs === 0 && thumbs.dragFiles.length === 0, "and no drag file or directory: " + dirs);
-                GlobalConfig.windows = { capture: { ui: "classic" } };
+                GlobalConfig.windows = {};
                 CaptureUi.glazierProvider = Glazier;
                 console.log("CAELESTIA_CAPTURE_THUMBNAIL_PASS " + assertions);
                 Qt.quit();

@@ -40,7 +40,7 @@ Singleton {
     // The classic tool has its own tray, which can start a recording without
     // the shell; keep the slow idle poll for it. CaptureUi clears this on the
     // shell route, where every start passes through pendingStart.
-    property bool externalStarts: true
+    property bool externalStarts: Glazier.hostWindowClass === "GlazierHost" && Glazier.available
     property bool incompatible: false
     readonly property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
     readonly property bool paused: state === "paused"
@@ -233,20 +233,16 @@ Singleton {
     function start(extraArgs = []): bool {
         if (!canStart)
             return false;
-        let region = false;
         let sound = false;
         for (const arg of extraArgs) {
-            if (!/^-[sr]+$/.test(arg)) {
+            if (arg !== "-s") {
                 lastError = "Unsupported recording option: " + arg;
                 return false;
             }
-            region = region || arg.indexOf("r") !== -1;
-            sound = sound || arg.indexOf("s") !== -1;
+            sound = true;
         }
         // Shell-owned host options on every command that can cold-start the host.
-        const args = Glazier.hostOptions().concat(["--record", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
-        if (!region)
-            args.push("--fullscreen");
+        const args = Glazier.hostOptions().concat(["--record", "--fullscreen", "--system-sound", sound ? "on" : "off", "--mic", "off"]);
         if (!Glazier.sendHostCommand(args, executable)) {
             lastError = "Capture host is not ready. Try again.";
             return false;

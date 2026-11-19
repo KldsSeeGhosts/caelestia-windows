@@ -1,5 +1,7 @@
 # Capture color policy on mixed HDR and SDR displays
 
+This records the original capture paths. For the current shell-owned screenshot path, see [Capture color policy](../CAPTURE-COLOR.md).
+
 Status: accepted for the current release candidate.
 The route map, the implemented format policy and the manual check are in
 [CAPTURE-COLOR.md](../CAPTURE-COLOR.md).

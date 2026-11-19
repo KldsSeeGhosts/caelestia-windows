@@ -117,7 +117,7 @@ try {
             $module = $_.BaseName
             $text = Get-Content -LiteralPath $_.FullName -Raw
             foreach ($match in [regex]::Matches($text, '#\[ignore = "([^"]+)"\]\s*fn (\w+)')) {
-                $prefix = if ($module -eq 'desktop_tests') { 'desktop_tests::' } else { $module + '::tests::' }
+                $prefix = $module + '::tests::'
                 $reasons[$prefix + $match.Groups[2].Value] = $match.Groups[1].Value
             }
         }

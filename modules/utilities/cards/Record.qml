@@ -90,7 +90,7 @@ StyledRect {
                         icon: "screenshot_region"
                         text: Tr.tr("Record region")
                         activeText: Tr.trCtx("Region", "recording mode")
-                        onClicked: Recorder.start(["-r"])
+                        onClicked: CaptureUi.record()
                     },
                     MenuItem {
                         icon: "select_to_speak"
@@ -102,7 +102,7 @@ StyledRect {
                         icon: "volume_up"
                         text: Tr.tr("Record region with sound")
                         activeText: Tr.trCtx("Region", "recording mode")
-                        onClicked: Recorder.start(["-sr"])
+                        onClicked: CaptureUi.record(true)
                     }
                 ]
             }
