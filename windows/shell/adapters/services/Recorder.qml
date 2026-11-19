@@ -40,7 +40,7 @@ Singleton {
     // The classic tool has its own tray, which can start a recording without
     // the shell; keep the slow idle poll for it. CaptureUi clears this on the
     // shell route, where every start passes through pendingStart.
-    property bool externalStarts: Glazier.hostWindowClass === "GlazierHost" && Glazier.available
+    property bool externalStarts: permitted && executable !== "" && Glazier.hostClass(executable) === "GlazierHost"
     property bool incompatible: false
     readonly property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
     readonly property bool paused: state === "paused"
