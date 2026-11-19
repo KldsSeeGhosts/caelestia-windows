@@ -29,10 +29,10 @@ function action(state) {
     return state === "recording" ? "pause" : state === "paused" ? "resume" : "record";
 }
 
-function startArgs(region) {
+function startArgs(region, sound = false) {
     if (!region || !["x", "y", "w", "h"].every(key => Number.isInteger(region[key]))
             || region.w < 2 || region.h < 2)
         return null;
     return ["--record", "--region", [region.x, region.y, region.w, region.h].join(","),
-        "--no-ui", "--mic", "off", "--system-sound", "off"];
+        "--no-ui", "--mic", "off", "--system-sound", sound ? "on" : "off"];
 }

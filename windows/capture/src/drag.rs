@@ -1,11 +1,12 @@
-//! OLE copy drag with real files, PNG, DIB and the shell drag-image helper.
+//! OLE copy and drag of recording files with the shell drag-image helper.
 
-use crate::{export, gfx::Gfx};
+use crate::export;
 use std::path::Path;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::Com::*;
 use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
+use windows::Win32::System::Memory::*;
 use windows::Win32::System::Ole::*;
 use windows::Win32::System::SystemServices::*;
 use windows::Win32::UI::Shell::*;
@@ -39,9 +40,17 @@ unsafe fn set_bytes(data: &IDataObject, format: u16, bytes: &[u8]) -> Result<()>
             tymed: TYMED_HGLOBAL.0 as u32,
             ..Default::default()
         };
+        let memory = GlobalAlloc(GMEM_MOVEABLE, bytes.len())?;
+        let target = GlobalLock(memory).cast::<u8>();
+        if target.is_null() {
+            let _ = GlobalFree(Some(memory));
+            return Err(Error::from(E_OUTOFMEMORY));
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), target, bytes.len());
+        let _ = GlobalUnlock(memory);
         let mut medium = STGMEDIUM {
             tymed: TYMED_HGLOBAL.0 as u32,
-            u: STGMEDIUM_0 { hGlobal: export::global_copy(&[bytes])? },
+            u: STGMEDIUM_0 { hGlobal: memory },
             ..Default::default()
         };
         if let Err(e) = data.SetData(&fmt, &medium, true) {
@@ -63,20 +72,13 @@ fn file_drop(path: &Path) -> Vec<u8> {
     bytes
 }
 
-pub fn start(gfx: &Gfx, path: &Path, preview: &export::Image) -> Result<()> {
+pub fn start(path: &Path, preview: &export::Image) -> Result<()> {
     let path = std::path::absolute(path).map_err(|e| Error::new(E_FAIL, e.to_string()))?;
-    let video = path.extension().is_some_and(|s| s.eq_ignore_ascii_case("mp4"));
     unsafe {
         // The shell object supports auxiliary formats that the drag-image helper
         // sets, and duplicates media correctly when a target requests them.
         let data: IDataObject = SHCreateDataObject(None, None, None::<&IDataObject>)?;
         set_bytes(&data, CF_HDROP.0, &file_drop(&path))?;
-        if !video {
-            let png = std::fs::read(&path).map_err(|e| Error::new(E_FAIL, e.to_string()))?;
-            let image = export::decode_png_bytes(gfx, &png)?;
-            set_bytes(&data, RegisterClipboardFormatW(w!("PNG")) as u16, &png)?;
-            set_bytes(&data, CF_DIB.0, &export::dib_bytes(&image))?;
-        }
         set_bytes(
             &data,
             RegisterClipboardFormatW(w!("Preferred DropEffect")) as u16,
@@ -144,7 +146,7 @@ mod tests {
 
     #[test]
     fn hdrop_is_unicode_and_double_terminated() {
-        let bytes = file_drop(Path::new("C:\\shots\\日本.png"));
+        let bytes = file_drop(Path::new("C:\\recordings\\日本.mp4"));
         let header = unsafe { std::ptr::read_unaligned(bytes.as_ptr().cast::<DROPFILES>()) };
         assert_eq!(header.pFiles as usize, size_of::<DROPFILES>());
         assert!(header.fWide.as_bool());
@@ -158,7 +160,7 @@ mod tests {
             OleInitialize(None).unwrap();
             {
                 let data: IDataObject = SHCreateDataObject(None, None, None::<&IDataObject>).unwrap();
-                for format in [CF_HDROP.0, CF_DIB.0, RegisterClipboardFormatW(w!("PNG")) as u16] {
+                for format in [CF_HDROP.0, RegisterClipboardFormatW(w!("Preferred DropEffect")) as u16] {
                     set_bytes(&data, format, b"test payload").unwrap();
                     let fmt = FORMATETC {
                         cfFormat: format,
@@ -180,7 +182,7 @@ mod tests {
                 while formats.Next(&mut fmt, None) == S_OK {
                     count += 1;
                 }
-                assert!(count >= 3);
+                assert!(count >= 2);
             }
             OleUninitialize();
         }

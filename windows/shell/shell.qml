@@ -73,7 +73,7 @@ ShellRoot {
         interactionEnabled: !root.smoke
     }
 
-    // The QML screenshot picker behind windows.capture.ui = "shell". It makes
+    // The screenshot picker makes
     // no window until CaptureUi opens it, and smoke never opens it.
     AreaPicker {
         interactionEnabled: !root.smoke

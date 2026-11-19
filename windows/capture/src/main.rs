@@ -3,18 +3,13 @@
 mod capture;
 mod config;
 mod control;
-#[cfg(test)]
-mod desktop_tests;
 mod drag;
 mod export;
 mod gfx;
 mod host;
-mod hotkey;
-mod overlay;
 mod placement;
 mod recording;
 mod recording_media;
-mod strokes;
 mod theme;
 mod theme_tokens;
 mod thumbnail;

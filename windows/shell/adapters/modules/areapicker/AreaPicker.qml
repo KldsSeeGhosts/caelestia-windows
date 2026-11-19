@@ -18,9 +18,8 @@ import "../../utils/FileUrls.js" as FileUrls
 //
 // Upstream registers the `picker` IPC target and four shortcuts here. On
 // Windows those names stay with services/Glazier.qml and daemons/Shortcuts.qml,
-// and every one of them reaches this scope through CaptureUi.screenshot(), which
-// picks the classic tool or this picker from `windows.capture.ui`. This file
-// keeps upstream's structure: a loader holds one overlay window per screen.
+// and every one reaches this scope through CaptureUi.screenshot(). As upstream,
+// a loader holds one overlay window per screen.
 //
 // Differences from upstream:
 // - Each window is excluded from capture, so the frozen frame holds the
@@ -44,6 +43,7 @@ Scope {
     property bool closing
     property bool saving
     property bool recordingMode
+    property bool recordingSound
     property var recorder: Recorder
     // Screen name to ScreencopyView.hasContent, and whether all of them have it.
     property var ready: ({})
@@ -92,7 +92,7 @@ Scope {
     readonly property var screenNames: screenList.map(screen => screen.name)
     readonly property var windows: loader.item ? loader.item.instances : []
 
-    function open(recording = false): bool {
+    function open(recording = false, sound = false): bool {
         if (!interactionEnabled)
             return false;
         if (opened)
@@ -101,6 +101,7 @@ Scope {
         closing = false;
         saving = false;
         recordingMode = recording;
+        recordingSound = sound;
         endEditing();
         ready = ({});
         allReady = false;
@@ -137,7 +138,7 @@ Scope {
     function startEditing(picker: var, plan: var): void {
         if (recordingMode) {
             const region = Recording.region(plan.logical, picker.geometry, picker.dpr);
-            if (region && recorder.startRegion(region, Recording.startArgs(region)))
+            if (region && recorder.startRegion(region, Recording.startArgs(region, recordingSound)))
                 finishClose();
             else if (region) {
                 Toaster.toast(Tr.tr("Recording failed"), recorder.status, "screen_record", Toast.Error);

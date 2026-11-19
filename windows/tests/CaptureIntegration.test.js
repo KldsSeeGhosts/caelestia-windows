@@ -29,7 +29,7 @@ check(context.hostClass("C:/legacy/glazier.exe") === "GlazierHost", "legacy over
 check(context.ensureLifecycle(context.bundledPath), "first-party acquire accepted");
 check(context.acquired[1] === "CaelestiaCaptureHost", "native registry receives first-party class");
 check(context.acquired[2].join("|") === "--no-hotkeys|--theme-file|C:/synthetic/theme.json", "launch stays compatible");
-check(context.sendHostCommand(["--record"], "C:/legacy/glazier.exe"), "legacy command accepted");
+check(context.sendHostCommand(["--record", "--fullscreen"], "C:/legacy/glazier.exe"), "legacy recorder command accepted");
 check(context.acquired[0] === "C:/legacy/glazier.exe" && context.acquired[1] === "GlazierHost",
     "recorder override uses that executable's class, not stale bundled identity");
 check(context.resolvePath(context.bundledPath, "C:/legacy/glazier.exe", () => true) === context.bundledPath,

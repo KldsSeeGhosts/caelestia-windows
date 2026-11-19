@@ -10,7 +10,7 @@ import qs.utils
 
 // Windows: first-party Caelestia capture ships with the shell. The shell resolves the bundled
 // executable, launches its tray host and owns the capture/record hotkeys;
-// Glazier owns the picker, editor and recorder. Never read the executable as data.
+// The shell owns the picker and editor; the helper owns recording. Never read the executable as data.
 Singleton {
     id: root
 
@@ -40,10 +40,6 @@ Singleton {
     // Dismissal waits for the shell surfaces' own visible signals. The timeout
     // reports "not ready" and never captures over shell UI.
     property int hiddenTimeout: 2000
-    property string pendingPath: ""
-    property var pendingArgs: []
-    property string pendingLabel: "Screenshot"
-    property var watchedSurfaces: []
     readonly property bool ownedHost: hostLifecycle.snapshot.owned ?? false
     // True only after this shell session's process creates the host. Its journal
     // began after the shell did, so Recorder treats that host's first response as
@@ -121,108 +117,11 @@ Singleton {
         }
         return true;
     }
-    function watchSignal(item, name): void {
-        if (!item)
-            return;
-        const signal = item[name];
-        if (!signal || typeof signal.connect !== "function")
-            return;
-        for (const entry of watchedSurfaces)
-            if (entry.item === item && entry.name === name)
-                return;
-        watchedSurfaces.push({ item: item, name: name, signal: signal });
-        signal.connect(surfaceChanged);
-    }
-    function watchSurface(item): void {
-        watchSignal(item, "visibleChanged");
-    }
-    function watchSurfaces(): void {
-        for (const screen of screenProvider.screens) {
-            const components = stateProvider.componentsFor(screen);
-            const panels = components?.panels;
-            if (panels) {
-                for (const name of panelNames)
-                    watchSurface(panels[name]);
-                watchSurface(panels.popoutsWrapper);
-            }
-            watchSignal(components?.bar, "trayExpandedChanged");
-            watchSignal(components?.bar, "traySettledChanged");
-        }
-    }
-    function unwatchSurfaces(): void {
-        for (const entry of watchedSurfaces) {
-            try {
-                entry.signal.disconnect(surfaceChanged);
-            } catch (_) {}
-        }
-        watchedSurfaces = [];
-    }
-    function surfaceChanged(): void {
-        checkHidden();
-    }
-    function checkHidden(): void {
-        if (pendingPath && surfacesHidden())
-            launchPending();
-    }
-    function launchPending(): void {
-        if (!pendingPath)
-            return;
-        const path = pendingPath;
-        const args = pendingArgs;
-        pendingPath = "";
-        pendingArgs = [];
-        hiddenTimer.stop();
-        unwatchSurfaces();
-        // Native ownership verification gates the detached forwarding client.
-        if (!sendHostCommand(args, path))
-            Toaster.toast(pendingLabel, "Capture host is not ready. " + (hostState.error || hostState.state), "screenshot_region");
-    }
-    function reportNotReady(): void {
-        if (!pendingPath)
-            return;
-        const label = pendingLabel;
-        pendingPath = "";
-        pendingArgs = [];
-        unwatchSurfaces();
-        Toaster.toast(label, "Caelestia capture is not ready. The shell is still on screen.", label === "Screenshot" ? "screenshot_region" : "screen_record");
-    }
-    function begin(label, args, icon): bool {
-        if (!ready) {
-            Toaster.toast(label, "Caelestia capture is still starting. Try again.", icon);
-            return false;
-        }
-        refresh();
-        if (!available) {
-            Toaster.toast(label, "Caelestia capture is unavailable.", icon);
-            return false;
-        }
-        if (Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1" || pendingPath)
-            return false;
-        pendingPath = executable;
-        pendingArgs = args;
-        pendingLabel = label;
-        dismiss();
-        watchSurfaces();
-        // Panels that were already hidden need no signal; surfaceChanged runs
-        // the same check when the closing animation actually finishes.
-        if (surfacesHidden()) {
-            launchPending();
-            return true;
-        }
-        hiddenTimer.restart();
-        return true;
-    }
     // Every invocation that can cold-start a host carries the shell-owned
     // options, so a host started by a command (e.g. after the user quit Glazier
     // from its tray) never re-registers its own hotkeys or drops the theme.
     function hostOptions(): var {
         return ["--no-hotkeys", "--theme-file", themeFile];
-    }
-    function capture(): bool {
-        return begin("Screenshot", hostOptions().concat(["--capture"]), "screenshot_region");
-    }
-    function record(): bool {
-        return begin("Record screen", hostOptions().concat(["--record"]), "screen_record");
     }
     function ensureLifecycle(path): bool {
         if (!path)
@@ -308,11 +207,6 @@ Singleton {
         }
         onFileChanged: reload()
     }
-    Timer {
-        id: hiddenTimer
-        interval: root.hiddenTimeout
-        onTriggered: root.reportNotReady()
-    }
     CaptureHost {
         id: hostLifecycle
         onReloadReady: ok => {
@@ -331,12 +225,11 @@ Singleton {
                 console.warn("CAELESTIA_CAPTURE_CLOSE refused or failed:", root.hostState.error);
         }
     }
-    // The IPC names stay here. CaptureUi picks the classic tool (capture()
-    // above) or the QML picker from windows.capture.ui.
+    // Preserve the screenshot and picker IPC names.
     IpcHandler {
         target: "screenshot"
         function capture(): bool { return CaptureUi.screenshot("open"); }
-        function isAvailable(): bool { return CaptureUi.route === "shell" ? CaptureUi.shellAvailable : root.available; }
+        function isAvailable(): bool { return CaptureUi.shellAvailable; }
     }
     IpcHandler {
         target: "picker"
@@ -344,6 +237,6 @@ Singleton {
         function openFreeze(): void { CaptureUi.screenshot("openFreeze"); }
         function openClip(): void { CaptureUi.screenshot("openClip"); }
         function openFreezeClip(): void { CaptureUi.screenshot("openFreezeClip"); }
-        function isAvailable(): bool { return CaptureUi.route === "shell" ? CaptureUi.shellAvailable : root.available; }
+        function isAvailable(): bool { return CaptureUi.shellAvailable; }
     }
 }

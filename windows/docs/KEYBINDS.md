@@ -90,8 +90,8 @@ Available Caelestia global shortcut names:
 | Shortcut `name` | Description | Source component |
 | --- | --- | --- |
 | `caelestia:nexus` | Open the Nexus settings window | `daemons/Shortcuts.qml` |
-| `caelestia:screenshot` | Glazier screenshot picker and editor | `daemons/Shortcuts.qml` |
-| `caelestia:screenshotFreeze` | Glazier screenshot (frozen picker variant) | `daemons/Shortcuts.qml` |
+| `caelestia:screenshot` | Shell screenshot picker and editor | `daemons/Shortcuts.qml` |
+| `caelestia:screenshotFreeze` | Shell screenshot picker | `daemons/Shortcuts.qml` |
 | `caelestia:record` | Start or stop a recording | `daemons/Shortcuts.qml` |
 | `caelestia:launcher` | Toggle launcher (fires on release unless interrupted) | `daemons/Shortcuts.qml` |
 | `caelestia:launcherInterrupt` | Interrupt lone-Super launcher tap | `daemons/Shortcuts.qml` |
@@ -114,13 +114,12 @@ All handlers in the table are staged in production, plus `caelestia:volumeUp`, `
 
 ### Screenshots and recording
 
-The shell draws the screenshot picker, editor and recording controls by default.
-The bundled Caelestia Capture helper, maintained from Glazier, encodes recordings
-and provides the classic UI opt-out. The installer places `caelestia-capture.exe`
+The shell draws the screenshot picker, editor and region recording controls.
+The bundled Caelestia Capture helper, maintained from Glazier, encodes recordings.
+The installer places `caelestia-capture.exe`
 beside `qs.exe` in the versioned payload, so an update or rollback keeps the
 matching shell and helper together. The shell starts the helper with the profile's
-`state\caelestia\theme-tokens.json`, and passes `--no-hotkeys` so exactly one
-owner handles each chord.
+`state\caelestia\theme-tokens.json`. The helper registers no capture hotkeys.
 
 The shell binds the same chords Glazier used:
 
@@ -140,30 +139,20 @@ name is already used.
 
 The launcher also offers **Screenshot** and **Record screen**. IPC callers can
 use `screenshot capture` or the upstream `picker open`, `openFreeze`,
-`openClip`, and `openFreezeClip` functions. All use the configured capture UI
-and open its frozen picker and editor.
+`openClip`, and `openFreezeClip` functions. All open the shell's frozen picker and editor.
 
 #### Shell screenshot picker
 
-`windows.capture.ui` in `shell.json` chooses the screenshot and recording interface:
-`"classic"` starts Glazier as described above, and `"shell"` (the default) opens
-a picker drawn by the shell itself. Every entry point follows the setting: the
-`PrintScreen` and `Win+Shift+S` chords, the launcher Screenshot action, IPC
-`screenshot capture` and the `picker` functions. Launcher Record and the record
-shortcut follow the same setting. A `glazier.exe` override in `glazier.json`
-always uses the classic tool. Explicit saved values stay unchanged.
-
-To opt out of the shell UI:
-
-```json
-{"windows":{"capture":{"ui":"classic"}}}
-```
+The separate Rust picker and editor are retired. Saved `windows.capture.ui`
+values are ignored, and a `glazier.exe` override cannot intercept screenshots.
+Launcher Record, the recording shortcut and the Utilities region modes all use
+the shell picker.
 
 The picker freezes every screen first, then lets you drag a region, click a
 window to select it, or click where no window is to select the whole monitor.
 Esc or a right click cancels. Releasing the mouse opens the editor over the
 selection and saves nothing. The `open`, `openFreeze`, `openClip` and
-`openFreezeClip` names all do this, as the classic tool treats them alike. The
+`openFreezeClip` names all do this. The
 selection cannot span monitors, and the picker always freezes the screen.
 
 The editor has Pencil (`P`), Highlighter (`H`), Line (`L`), Arrow (`A`),
@@ -213,8 +202,8 @@ absolute path in `%LOCALAPPDATA%\caelestia-windows\config\glazier.json`:
 
 The bundled executable is preferred when present; there is no separate
 `%LOCALAPPDATA%\Programs\Glazier` install location. If the bundled executable is
-missing, Screenshot and Record screen report that Glazier is unavailable and
-nothing else changes.
+missing, screenshots still work. Region recording requires a helper that
+supports explicit regions and `--no-ui`.
 
 Standalone Glazier still reads `%APPDATA%\Glazier\config.toml`. The shell's
 launch options do not modify that file.

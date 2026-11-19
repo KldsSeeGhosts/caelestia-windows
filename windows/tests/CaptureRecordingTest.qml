@@ -10,12 +10,8 @@ ShellRoot {
     id: root
     Tokens.screen: Quickshell.screens[0]?.name ?? ""
     property int assertions: 0
-    property QtObject classic: QtObject {
-        property bool ready: true
-        property string executable: "C:/test/caelestia-capture.exe"
+    property QtObject dismissal: QtObject {
         property int hiddenTimeout: 100
-        property int calls: 0
-        function record() { calls++; return true; }
         function dismiss() {}
         function surfacesHidden() { return true; }
     }
@@ -23,7 +19,8 @@ ShellRoot {
         property bool interactionEnabled: true
         property bool opened: false
         property bool mode: false
-        function open(recording) { opened = true; mode = recording; }
+        property bool sound: false
+        function open(recording, systemSound) { opened = true; mode = recording; sound = systemSound; }
     }
     property QtObject recorder: QtObject {
         property string state: "idle"
@@ -33,7 +30,8 @@ ShellRoot {
         property bool running: ["recording", "paused", "finalizing"].indexOf(state) !== -1
         property var shellRegion: null
         property string lastCommand: ""
-        function startRegion(region) { shellRegion = region; state = "recording"; return true; }
+        property var startArgs: []
+        function startRegion(region, args) { shellRegion = region; startArgs = args; state = "recording"; return true; }
         function togglePause() { lastCommand = state === "paused" ? "--resume" : "--pause"; state = state === "paused" ? "recording" : "paused"; }
         function stop() { lastCommand = "--stop"; state = "finalizing"; }
         function discard() { lastCommand = "--discard"; state = "finalizing"; }
@@ -76,25 +74,19 @@ ShellRoot {
     }
     Component.onCompleted: Qt.callLater(() => {
         try {
-            CaptureUi.glazierProvider = classic;
+            CaptureUi.glazierProvider = dismissal;
             CaptureUi.picker = picker;
             GlobalConfig.windows = { capture: { ui: "classic" } };
-            check(CaptureUi.record() && classic.calls === 1 && !picker.opened, "classic recording");
-            GlobalConfig.windows = { capture: { ui: "shell" } };
-            classic.executable = "C:/legacy/glazier.exe";
-            check(CaptureUi.record() && classic.calls === 2 && !picker.opened, "legacy recording");
-            classic.executable = "C:/test/caelestia-capture.exe";
-            GlobalConfig.windows = {};
-            check(CaptureUi.setting === "shell" && CaptureUi.route === "shell", "recording defaults to shell");
-            check(CaptureUi.record() && picker.opened && picker.mode && classic.calls === 2, "default shell recording");
+            check(CaptureUi.record() && picker.opened && picker.mode && !picker.sound, "saved classic setting still uses the shell picker");
             picker.opened = false;
-            GlobalConfig.windows = { capture: { ui: "shell" } };
-            check(CaptureUi.record() && picker.opened && picker.mode && classic.calls === 2, "shell region picker");
+            check(CaptureUi.record(true) && picker.opened && picker.mode && picker.sound, "region recording carries the audio choice");
             area.recordingMode = true;
+            area.recordingSound = picker.sound;
             const screen = { x: -2560, y: 120, width: 1600, height: 900 };
             area.startEditing({ geometry: screen, dpr: 1.5 }, { logical: { x: 10, y: 20, width: 101, height: 61 } });
             check(recorder.shellRegion.x === -2545 && recorder.shellRegion.y === 150, "physical monitor offset");
             check(recorder.shellRegion.w === 152 && recorder.shellRegion.h === 92, "even physical dimensions");
+            check(recorder.startArgs.join(" ").includes("--no-ui --mic off --system-sound on"), "helper starts without its own UI and with sound");
             check(!area.editing && !area.opened, "record does not open the editor");
             check(bar.primaryAction === "pause" && recorder.state === "recording", "recording controls");
             recorder.elapsed = 69.8;

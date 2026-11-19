@@ -23,16 +23,6 @@ fn axis(value: f32, low: f32, high: f32, hard_low: f32, hard_high: f32) -> f32 {
     }
 }
 
-/// Keeps a `w` by `h` surface inside `work`, preferring `margin` on each edge.
-pub fn clamp(work: IRect, x: f32, y: f32, w: f32, h: f32, margin: f32) -> (f32, f32) {
-    let (left, top) = (work.x as f32, work.y as f32);
-    let (right, bottom) = (left + work.w as f32, top + work.h as f32);
-    (
-        axis(x, left + margin, right - margin - w, left, right - w),
-        axis(y, top + margin, bottom - margin - h, top, bottom - h),
-    )
-}
-
 /// Places a `w` by `h` surface around `region` in `work`.
 ///
 /// Below the selection when it fits, then above, and otherwise just inside the

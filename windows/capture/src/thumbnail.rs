@@ -1,15 +1,14 @@
-//! Nonactivating, layered export previews. Only scaled pixels and a path persist.
+//! Nonactivating, layered recording previews. Only scaled pixels and a path persist.
 
 use crate::capture::IRect;
 use crate::config::Config;
 use crate::export::{self, Image};
 use crate::gfx::{Gfx, icon, rect, wide};
 use crate::{drag, host, theme};
-use std::cell::{Cell, RefCell};
-use std::path::{Path, PathBuf};
+use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Direct2D::Common::*;
 use windows::Win32::Graphics::Direct2D::*;
@@ -27,7 +26,6 @@ const ANIMATION: f32 = 0.20;
 
 thread_local! {
     static WINDOWS: RefCell<Vec<HWND>> = const { RefCell::new(Vec::new()) };
-    static HIDDEN: Cell<bool> = const { Cell::new(false) };
 }
 
 struct Thumbnail {
@@ -37,9 +35,6 @@ struct Thumbnail {
     themed: bool,
     preview: Image,
     path: PathBuf,
-    saved: bool,
-    video: bool,
-    origin: IRect,
     work: IRect,
     k: f32,
     size: (i32, i32),
@@ -63,67 +58,10 @@ struct Thumbnail {
 enum Action {
     Reopen,
     Copy,
-    Save,
     Reveal,
     Close,
     Drag,
     Destroy,
-}
-
-fn cache_dir() -> PathBuf {
-    std::env::temp_dir().join("Glazier-thumbnails")
-}
-
-fn temp_name(pid: u32, time: u128, id: u64) -> String {
-    format!("glazier-{pid}-{time}-{id}.png")
-}
-
-fn owned_name(name: &str) -> bool {
-    let Some(stem) = name.strip_prefix("glazier-").and_then(|s| s.strip_suffix(".png")) else {
-        return false;
-    };
-    let parts: Vec<_> = stem.split('-').collect();
-    parts.len() == 3 && parts.iter().all(|s| !s.is_empty() && s.bytes().all(|c| c.is_ascii_digit()))
-}
-
-fn cleanup_dir(dir: &Path) {
-    if let Ok(files) = std::fs::read_dir(dir) {
-        for file in files.flatten() {
-            if owned_name(&file.file_name().to_string_lossy()) && file.file_type().is_ok_and(|t| t.is_file()) {
-                let _ = std::fs::remove_file(file.path());
-            }
-        }
-    }
-    let _ = std::fs::remove_dir(dir);
-}
-
-/// Called after acquiring the single-instance mutex, and again on clean exit.
-pub fn cleanup() {
-    cleanup_dir(&cache_dir());
-}
-
-fn write_temp(png: &[u8]) -> Result<PathBuf> {
-    use std::io::Write;
-    static ID: AtomicU64 = AtomicU64::new(0);
-    let dir = cache_dir();
-    std::fs::create_dir_all(&dir).map_err(io_error)?;
-    let name = temp_name(
-        std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos(),
-        ID.fetch_add(1, Ordering::Relaxed),
-    );
-    let path = dir.join(name);
-    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(io_error)?;
-    if let Err(e) = file.write_all(png) {
-        drop(file);
-        let _ = std::fs::remove_file(&path);
-        return Err(io_error(e));
-    }
-    Ok(path)
-}
-
-fn io_error(e: std::io::Error) -> Error {
-    Error::new(E_FAIL, e.to_string())
 }
 
 /// Newest first in this calculation; the newest preview sits at the bottom.
@@ -151,16 +89,6 @@ fn expired(elapsed: Duration, delta: Duration, paused: bool, seconds: u64) -> (D
     (elapsed, seconds != 0 && elapsed >= Duration::from_secs(seconds))
 }
 
-/// Original screen position when it fits, otherwise centered on that monitor.
-/// Large images retain their original pixels, with offscreen edges clipped.
-pub fn reopen_region(origin: IRect, work: IRect, width: u32, height: u32) -> IRect {
-    let (w, h) = (width as i32, height as i32);
-    let fits = w <= work.w && h <= work.h;
-    let x = if fits { origin.x.clamp(work.x, work.x + work.w - w) } else { work.x + (work.w - w) / 2 };
-    let y = if fits { origin.y.clamp(work.y, work.y + work.h - h) } else { work.y + (work.h - h) / 2 };
-    IRect { x, y, w, h }
-}
-
 fn windows() -> Vec<HWND> {
     WINDOWS.with_borrow(|w| w.clone())
 }
@@ -173,19 +101,6 @@ fn state(hwnd: HWND) -> Option<Rc<RefCell<Thumbnail>>> {
         }
         Rc::increment_strong_count(ptr);
         Some(Rc::from_raw(ptr))
-    }
-}
-
-pub fn is_dragging() -> bool {
-    windows().into_iter().any(|h| state(h).is_some_and(|s| s.try_borrow().is_ok_and(|s| s.dragging)))
-}
-
-pub fn hide(hidden: bool) {
-    HIDDEN.set(hidden);
-    for hwnd in windows() {
-        unsafe {
-            let _ = ShowWindow(hwnd, if hidden { SW_HIDE } else { SW_SHOWNOACTIVATE });
-        }
     }
 }
 
@@ -222,21 +137,11 @@ pub fn shutdown() {
             let _ = DestroyWindow(hwnd);
         }
     }
-    cleanup();
 }
 
-pub fn show(gfx: Rc<Gfx>, cfg: &Config, img: &Image, png: &[u8], saved: Option<PathBuf>, origin: IRect, monitor: IRect, k: f32) {
-    if !cfg.show_thumbnail {
-        return;
-    }
-    if let Err(e) = open(gfx, cfg, img, png, saved, origin, monitor, k, false) {
-        host::notify("Could not show thumbnail", &e.message(), None, true);
-    }
-}
-
-pub fn show_video(gfx: Rc<Gfx>, cfg: &Config, poster: &Image, path: PathBuf, origin: IRect, monitor: IRect, k: f32) {
+pub fn show_video(gfx: Rc<Gfx>, cfg: &Config, poster: &Image, path: PathBuf, monitor: IRect, k: f32) {
     if cfg.show_thumbnail {
-        if let Err(e) = open(gfx, cfg, poster, &[], Some(path), origin, monitor, k, true) {
+        if let Err(e) = open(gfx, cfg, poster, path, monitor, k) {
             host::notify("Could not show recording preview", &e.message(), None, true);
         }
     }
@@ -246,12 +151,9 @@ fn open(
     gfx: Rc<Gfx>,
     cfg: &Config,
     img: &Image,
-    png: &[u8],
-    saved: Option<PathBuf>,
-    origin: IRect,
+    path: PathBuf,
     monitor: IRect,
     k: f32,
-    video: bool,
 ) -> Result<()> {
     unsafe {
         let mon = MonitorFromRect(
@@ -273,11 +175,6 @@ fn open(
             (img.width as f32 * factor).round().max(1.0) as u32,
             (img.height as f32 * factor).round().max(1.0) as u32,
         )?;
-        let saved_file = saved.is_some();
-        let path = match saved {
-            Some(path) => path,
-            None => write_temp(png)?,
-        };
         let instance: HINSTANCE = GetModuleHandleW(None)?.into();
         static REGISTER: std::sync::Once = std::sync::Once::new();
         REGISTER.call_once(|| {
@@ -293,7 +190,7 @@ fn open(
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
             CLASS,
-            if video { w!("Caelestia capture recording preview") } else { w!("Caelestia capture thumbnail") },
+            w!("Caelestia capture recording preview"),
             WS_POPUP,
             work.x + work.w,
             work.y + work.h - height,
@@ -315,9 +212,6 @@ fn open(
             themed,
             preview,
             path,
-            saved: saved_file,
-            video,
-            origin,
             work,
             k,
             size: (width, height),
@@ -337,8 +231,7 @@ fn open(
             presented: None,
         }));
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(s.clone()) as isize);
-        // Display affinity is defense in depth; the host also hides every
-        // preview and flushes DWM before freezing the desktop.
+        // Keep the recording preview out of future captures.
         let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
         let old = WINDOWS.with_borrow_mut(|w| {
             w.push(hwnd);
@@ -353,9 +246,7 @@ fn open(
             let _ = DestroyWindow(hwnd);
             return Err(e);
         }
-        if !HIDDEN.get() {
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        }
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         SetTimer(Some(hwnd), 1, 16, None);
         Ok(())
     }
@@ -439,12 +330,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                             return None;
                         }
                         Some(match b {
-                            Some(0) if s.video => Action::Reveal,
-                            Some(1) if s.video => Action::Copy,
-                            Some(2) if s.video => Action::Close,
-                            Some(0) => Action::Copy,
-                            Some(1) => Action::Save,
-                            Some(2) => Action::Reveal,
+                            Some(0) => Action::Reveal,
+                            Some(1) => Action::Copy,
                             Some(_) => Action::Close,
                             None => Action::Reopen,
                         })
@@ -460,7 +347,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                 _ => return DefWindowProcW(hwnd, msg, wp, lp),
             }
         };
-        // OLE, WIC and the editor can pump nested messages. No RefCell borrow or
+        // OLE and WIC can pump nested messages. No RefCell borrow or
         // collection borrow survives an action that calls into those systems.
         if let Some(action) = action {
             perform(s, action);
@@ -474,9 +361,9 @@ fn perform(s: Rc<RefCell<Thumbnail>>, action: Action) {
         s.borrow_mut().closing.get_or_insert_with(Instant::now);
         return;
     }
-    let (hwnd, gfx, path, origin, work, saved, video) = {
+    let (hwnd, path) = {
         let s = s.borrow();
-        (s.hwnd, s.gfx.clone(), s.path.clone(), s.origin, s.work, s.saved, s.video)
+        (s.hwnd, s.path.clone())
     };
     if matches!(action, Action::Destroy) {
         unsafe {
@@ -503,35 +390,15 @@ fn perform(s: Rc<RefCell<Thumbnail>>, action: Action) {
                     let s = s.borrow();
                     Image { width: s.preview.width, height: s.preview.height, pixels: s.preview.pixels.clone() }
                 };
-                let result = drag::start(&gfx, &path, &preview);
+                let result = drag::start(&path, &preview);
                 let mut s = s.borrow_mut();
                 s.dragging = false;
                 s.last_tick = Instant::now();
                 result?;
             }
-            Action::Reopen if video => host::open_video(&path)?,
-            Action::Reopen => host::reopen(&path, origin, work)?,
-            Action::Copy if video => drag::copy_file(&path)?,
-            Action::Copy => {
-                let png = std::fs::read(&path).map_err(io_error)?;
-                let img = export::decode_png_bytes(&gfx, &png)?;
-                export::copy_to_clipboard(host::hwnd(), &img, &png)?;
-            }
-            Action::Save | Action::Reveal => {
-                let dest = if saved {
-                    path
-                } else {
-                    let png = std::fs::read(path).map_err(io_error)?;
-                    let dest = host::save_thumbnail(&png).map_err(|e| Error::new(E_FAIL, e))?;
-                    let mut s = s.borrow_mut();
-                    s.path = dest.clone();
-                    s.saved = true;
-                    dest
-                };
-                if matches!(action, Action::Reveal) {
-                    host::reveal(&dest);
-                }
-            }
+            Action::Reopen => host::open_video(&path)?,
+            Action::Copy => drag::copy_file(&path)?,
+            Action::Reveal => host::reveal(&path),
             _ => {}
         }
         Ok(())
@@ -551,7 +418,7 @@ fn perform(s: Rc<RefCell<Thumbnail>>, action: Action) {
 impl Thumbnail {
     fn hit(&self, x: i32, y: i32) -> Option<usize> {
         let k = self.k;
-        let width = if self.video { 96.0 } else { 128.0 };
+        let width = 96.0;
         let left = self.size.0 as f32 / 2.0 - width / 2.0 * k;
         let top = self.size.1 as f32 - 42.0 * k;
         (self.hover && y as f32 >= top && (y as f32) < top + 30.0 * k && x as f32 >= left && (x as f32) < left + width * k)
@@ -568,8 +435,7 @@ impl Thumbnail {
             let _ = GetCursorPos(&mut pt);
             let _ = GetWindowRect(self.hwnd, &mut r);
         }
-        let hover = !HIDDEN.get()
-            && pt.x >= r.left
+        let hover = pt.x >= r.left
             && pt.x < r.right
             && pt.y >= r.top
             && pt.y < r.bottom
@@ -584,7 +450,7 @@ impl Thumbnail {
         let (elapsed, dismiss) = expired(
             self.elapsed,
             delta,
-            hover || self.dragging || self.busy || self.press.is_some() || HIDDEN.get(),
+            hover || self.dragging || self.busy || self.press.is_some(),
             self.seconds,
         );
         self.elapsed = elapsed;
@@ -692,7 +558,7 @@ impl Thumbnail {
             rt.DrawBitmap(&bitmap, Some(&dest), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None);
             if self.hover {
                 let font = self.gfx.icon_format(17.0 * k)?;
-                let width = if self.video { 96.0 } else { 128.0 };
+                let width = 96.0;
                 let left = w as f32 / 2.0 - width / 2.0 * k;
                 let top = h as f32 - 42.0 * k;
                 brush.SetColor(&self.palette.surface_variant);
@@ -704,8 +570,7 @@ impl Thumbnail {
                     },
                     &brush,
                 );
-                let glyphs: &[&str] =
-                    if self.video { &["folder", "copy", "x"] } else { &["copy", "device-floppy", "folder", "x"] };
+                let glyphs = ["folder", "copy", "x"];
                 for (i, glyph) in glyphs.iter().enumerate() {
                     let r = rect(left + i as f32 * 32.0 * k, top, 30.0 * k, 30.0 * k);
                     if self.button == Some(i) {
@@ -741,11 +606,7 @@ impl Thumbnail {
                     rt.FillRoundedRectangle(&D2D1_ROUNDED_RECT { rect: r, radiusX: radius, radiusY: radius }, &brush);
                     brush.SetColor(&self.palette.on_surface);
                     rt.DrawText(
-                        &wide(if self.video {
-                            ["Show in folder", "Copy", "Close"][i]
-                        } else {
-                            ["Copy", "Save", "Show in folder", "Close"][i]
-                        }),
+                        &wide(["Show in folder", "Copy", "Close"][i]),
                         &font,
                         &r,
                         &brush,
@@ -793,37 +654,10 @@ mod tests {
     }
 
     #[test]
-    fn reopen_clamps_and_centers_without_resampling() {
-        let work = IRect { x: 100, y: 50, w: 800, h: 600 };
-        let origin = IRect { x: 850, y: 600, w: 200, h: 100 };
-        assert_eq!(reopen_region(origin, work, 200, 100), IRect { x: 700, y: 550, w: 200, h: 100 });
-        assert_eq!(reopen_region(origin, work, 1000, 800), IRect { x: 0, y: -50, w: 1000, h: 800 });
-    }
-
-    #[test]
     fn dismissal_counts_only_unpaused_time_and_zero_never_expires() {
         let five = Duration::from_secs(5);
         assert_eq!(expired(five, Duration::from_secs(20), true, 6), (five, false));
         assert_eq!(expired(five, Duration::from_secs(1), false, 6), (Duration::from_secs(6), true));
         assert!(!expired(five, Duration::from_secs(999), false, 0).1);
-    }
-
-    #[test]
-    fn temp_names_are_unique_and_cleanup_preserves_foreign_files() {
-        let a = temp_name(1, 42, 0);
-        let b = temp_name(1, 42, 1);
-        assert_ne!(a, b);
-        assert!(owned_name(&a));
-        assert!(!owned_name("glazier-../../photo.png"));
-        assert!(!owned_name("photo.png"));
-        let dir = std::env::temp_dir().join(format!("glazier-thumbnail-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(&a), b"stale").unwrap();
-        std::fs::write(dir.join("keep.txt"), b"foreign").unwrap();
-        cleanup_dir(&dir);
-        assert!(!dir.join(a).exists());
-        assert!(dir.join("keep.txt").exists());
-        std::fs::remove_file(dir.join("keep.txt")).unwrap();
-        std::fs::remove_dir(dir).unwrap();
     }
 }

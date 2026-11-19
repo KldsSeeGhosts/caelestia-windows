@@ -32,7 +32,7 @@ separately stops any
 `caelestia-capture.exe` or legacy `glazier.exe` under `<prefix>\versions\` before a payload swap, retirement or
 uninstall. Those full-stop and supervisor paths retain separate acceptance;
 the lifecycle fixture does not establish their recording safety. Clean tray
-Quit stays stopped until an explicit capture. Crashes allow three recovery
+Quit stays stopped until an explicit recording request. Crashes allow three recovery
 launches beyond cold start, reset after a 60-second verified runtime window.
 See [capture-host-lifecycle.md](docs/decisions/capture-host-lifecycle.md) for
 retry, timeout, ownership and protocol-v1 limits.
@@ -42,29 +42,17 @@ panels (`autoCollapse` is false there) and waits for the tray's height animation
 to finish before launching the capture. As with the panels, a timeout reports
 "not ready" and never captures over visible shell UI.
 
-The upstream Recorder contract remains `running`, `paused`, `elapsed`, `refCount`,
-`start(extraArgs)`, `stop()`, `togglePause()`. Upstream modes map as follows:
+The Utilities card offers fullscreen and region recording, with or without
+system sound. Fullscreen uses the monitor containing the pointer. The shell's
+picker handles both region modes, the launcher action and the shortcut. A
+selection starts recording automatically. The microphone starts off for these
+modes; the recording controls can change either audio source.
 
-| Upstream flags | Glazier |
-| --- | --- |
-| none | Full current monitor, no audio |
-| `-r` | Region picker, no audio |
-| `-s` | Full current monitor, system sound |
-| `-sr` | Region picker, system sound |
-
-The microphone is explicitly off for these four modes. Glazier's own controls
-can change either audio source. A selected region begins recording automatically;
-Glazier's tray/hotkey review behavior is unchanged. Full current monitor means the
-monitor containing the pointer, with Glazier's existing even-pixel H.264 crop.
-
-With `windows.capture.ui: "shell"`, launcher Record and the record shortcut use
-the QML region picker. The default is `"shell"`; an explicit `"classic"` setting
-or a legacy `glazier.exe` override keeps the classic flow. Existing saved values
-stay unchanged. The helper receives `--region x,y,w,h`
-and `--no-ui`, equivalent to protocol-v1 `record.region` and `record.ui: false`.
-The region uses physical virtual-desktop pixels. Only local monitor offsets
-scale by DPR, and the helper crops the region to even dimensions.
-
+The helper receives `--region x,y,w,h` and `--no-ui` for shell region recording,
+equivalent to protocol-v1 `record.region` and `record.ui: false`. The region
+uses physical virtual-desktop pixels. Only local monitor offsets scale by DPR,
+and the helper crops the region to even dimensions. Legacy `glazier.exe`
+overrides do not restore the retired picker.
 The shell draws an excluded border and controls. Pause/resume, Stop, Mic,
 Sound and Discard use the helper's control protocol. Additive v1 `audio` and
 `discard` commands expose the existing worker actions. Neither command starts
@@ -96,8 +84,7 @@ that initial observation, or a compatible stopped-host response, because v1
 events have no timestamp to distinguish an older failure from a new attempt.
 Once observed, a stopped or replaced host's first-response errors are fresh,
 even without a pending Start. So are the first-response errors of a host this
-shell session created itself (`Glazier.launchedHost`). Forwarding a screenshot
-or recording command to a host that is already running does not create that
+shell session created itself (`Glazier.launchedHost`). Forwarding a recording command to a host that is already running does not create that
 host, and only an adopted, pre-existing host is baselined. Recording errors and the 15 s Start timeout
 survive valid idle polls and connection recovery; a new Start, `started` event
 or confirmed recording clears them. Transient connection errors clear on a

@@ -138,42 +138,6 @@ impl ThemeTokens {
         Self::parse(&read_bounded(file)?)
     }
 
-    /// Resolve semantic roles into the editor's existing HUD fields.
-    pub fn hud(&self) -> crate::theme::Hud {
-        use crate::theme::{Hud, rgb, with_alpha};
-        let colour = |s: &str| rgb(parse_colour(s).expect("validated theme colour"));
-        let c = &self.colours;
-        let surface = colour(&c.surface_container);
-        let foreground = colour(&c.on_surface);
-        let variant = colour(&c.on_surface_variant);
-        let primary = colour(&c.primary);
-        let outline = colour(&c.outline);
-        let error = colour(&c.error);
-        Hud {
-            tint: with_alpha(surface, 0.88),
-            solid: surface,
-            edge: with_alpha(outline, 0.6),
-            highlight: with_alpha(foreground, 0.07),
-            fg: foreground,
-            fg2: variant,
-            hover: with_alpha(colour(&c.surface_container_highest), 0.8),
-            divider: with_alpha(outline, 0.5),
-            selected: colour(&c.secondary_container),
-            on_selected: foreground,
-            action: primary,
-            on_action: colour(&c.on_primary),
-            track: colour(&c.surface_container_high),
-            thumb: primary,
-            on_thumb: colour(&c.on_primary),
-            danger: error,
-            danger_fill: with_alpha(error, 0.15),
-            shadow: if self.mode == "light" { 0.55 } else { 1.0 },
-            radius_small: self.radii.small,
-            radius_large: self.radii.large,
-            radius_tooltip: self.radii.small,
-        }
-    }
-
     pub fn palette(&self) -> crate::theme::Palette {
         use crate::theme::{Palette, rgb};
         let colour = |s: &str| rgb(parse_colour(s).expect("validated theme colour"));
@@ -231,10 +195,10 @@ pub(crate) mod tests {
         assert_eq!(parse_colour(&theme.colours.primary), Some(0x123456));
         assert_eq!(parse_colour("abcdef"), Some(0xabcdef));
         assert_eq!(theme.radii.normal, 12.0);
-        let hud = theme.hud();
-        assert_eq!(hud.action, crate::theme::rgb(0x123456));
-        assert_eq!(hud.on_action, crate::theme::rgb(0x654321));
-        assert_eq!(hud.solid, crate::theme::rgb(0x030405));
+        let palette = theme.palette();
+        assert_eq!(palette.primary, crate::theme::rgb(0x123456));
+        assert_eq!(palette.on_primary, crate::theme::rgb(0x654321));
+        assert_eq!(palette.surface, crate::theme::rgb(0x030405));
     }
 
     #[test]
