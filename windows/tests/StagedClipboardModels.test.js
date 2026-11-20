@@ -117,7 +117,10 @@ test("clipboard file search matches labels and file lines past the display cap",
         "file://remote-host/share/skip.txt",
         "file:///E:/encoded%20name.txt"
     ].join("\n");
-    const rows = model.displayRows([entry("deep", fileText)], "deep-secret", 60);
+    const { context, counter } = loadWithParseCounter();
+    context.displayRows([entry("deep", fileText)], "", 60);
+    assert.equal(counter.calls, 0, "without a search, never parse URLs beyond the preview cap");
+    const rows = model.displayRows([entry("deep", fileText)], "2 files", 60);
     assert.equal(rows.length, 1, "a file label past the cap must still match search");
     assert.equal(rows[0].itemId, "deep");
 

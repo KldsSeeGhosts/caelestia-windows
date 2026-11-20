@@ -277,16 +277,16 @@ function displayRows(history, query, limit) {
         const original = normalizeEntry(values[i]);
         if (!original)
             continue;
-        const entry = cappedEntry(original);
-        // Parse the visible URI list once per row and reuse it for the title,
-        // subtitle, preview and full text below. Search needs the uncapped
-        // text, so it keeps its own list only when capping actually cut text.
-        const paths = filePaths(entry);
-        const searchPaths = entry === original ? paths : filePaths(original);
         // Bound rendering, not searching: matches beyond the preview limit
         // must still find the original clipboard entry.
-        if (needle && searchableText(original, searchPaths).toLowerCase().indexOf(needle) < 0)
-            continue;
+        let searchPaths;
+        if (needle) {
+            searchPaths = filePaths(original);
+            if (searchableText(original, searchPaths).toLowerCase().indexOf(needle) < 0)
+                continue;
+        }
+        const entry = cappedEntry(original);
+        const paths = searchPaths && entry === original ? searchPaths : filePaths(entry);
 
         const isFile = paths.length > 0;
         const isImage = entry.type === "image";
