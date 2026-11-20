@@ -10,6 +10,7 @@ $root = Resolve-CaelestiaDirectory (Join-Path $env:TEMP ('caelestia-version-test
 # names (for example a non-system volume with 8.3 disabled).
 $shortRoot = Join-Path $env:TEMP ('cvt-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 [IO.Directory]::CreateDirectory($shortRoot) | Out-Null
+$shortRoot = Resolve-CaelestiaDirectory $shortRoot
 $script:registryTestId = [guid]::NewGuid().ToString('N')
 $script:registryTestRoot = 'HKCU:\Software\CaelestiaWindowsTests\' + $script:registryTestId
 # Exercise the real registry operations, but never Windows' live startup key or
@@ -1294,17 +1295,17 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     # deterministically on every machine, not skipped when this host resolves a
     # different candidate.
     $defaultPrefix = 'C:\Users\' + ('a' * 20) + '\AppData\Local\Programs\caelestia-windows'
+    $pinnedMsiHost = 'C:\Program Files\PowerShell\7\pwsh.exe'
+    $pinnedStoreHost = 'C:\Users\TwentyCharUserNameXX\AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
     $savedPowerShellPath = ${function:Get-CaelestiaPowerShellPath}
     try {
-        $msiHost = 'C:\Program Files\PowerShell\7\pwsh.exe'
-        ${function:Get-CaelestiaPowerShellPath} = { return $msiHost }
+        ${function:Get-CaelestiaPowerShellPath} = { return $pinnedMsiHost }
         $defaultLaunch = Get-CaelestiaLaunchCommand $defaultPrefix 'start'
         Assert ($defaultLaunch.CommandLine.Length -le 260) ('The default-prefix launch command is {0} characters under the MSI host; a Run value allows 260.' -f $defaultLaunch.CommandLine.Length)
         $defaultRun = Get-CaelestiaAutostartValue $defaultPrefix
         Assert ($defaultRun -and $defaultRun.Length -le 260) 'The default-prefix Run value exceeds 260 characters under the MSI host.'
 
-        $storeHost = 'C:\Users\' + ('a' * 20) + '\AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
-        ${function:Get-CaelestiaPowerShellPath} = { return $storeHost }
+        ${function:Get-CaelestiaPowerShellPath} = { return $pinnedStoreHost }
         $storeFailed = $false
         $storeText = ''
         try { $null = Get-CaelestiaAutostartValue $defaultPrefix } catch { $storeFailed = $true; $storeText = $_.Exception.Message }
@@ -1379,9 +1380,12 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
     # root scripts and every entry untouched. A late refusal during integration
     # must also roll back to the previous version without rebuilding the
     # refused command. Shortening is disabled for this scenario so it runs on
-    # every volume; the filesystem-dependent shortening test above is separate.
+    # every volume. Pin the host to a Store alias so the command exceeds the
+    # limit even on machines whose real PowerShell path is the shorter MSI path.
     $savedShortPath = ${function:Get-CaelestiaShortPath}
+    $savedPowerShellPath = ${function:Get-CaelestiaPowerShellPath}
     ${function:Get-CaelestiaShortPath} = { param([string]$Path) return '' }
+    ${function:Get-CaelestiaPowerShellPath} = { return $pinnedStoreHost }
     try {
         $preflightNameLength = 80 - $shortRoot.Length - 1
         if ($preflightNameLength -lt 4) {
@@ -1412,10 +1416,10 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
                 -Value '1.0.0' -Force | Out-Null
             try {
                 $beforeVersions = @(Get-ChildItem -LiteralPath (Join-Path $preflightPrefix 'versions') -Directory).Count
-                $failed = $false
+                $failureText = ''
                 try { $null = Install-CaelestiaVersion $preflightPrefix (New-Payload $preflightPrefix 'pf-b') }
-                catch { $failed = $true }
-                Assert $failed 'A Run value that exceeds 260 characters was accepted during activation.'
+                catch { $failureText = $_.Exception.Message }
+                Assert ($failureText -match '260 characters') "Expected a Run-value length refusal before activation; got: $failureText"
                 Assert ((Read-CaelestiaInstall $preflightPrefix).current -eq $preflightA) 'A refused Run value changed the selected version.'
                 Assert (@(Get-ChildItem -LiteralPath (Join-Path $preflightPrefix 'versions') -Directory).Count -eq $beforeVersions) 'A refused Run value published a version.'
                 $keptRun = Get-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
@@ -1430,12 +1434,11 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
                 $preflightB = (Read-CaelestiaInstall $preflightPrefix).current
                 New-ItemProperty -Path $preflightRunKey -Name $preflightIntegration.RunName -PropertyType String `
                     -Value $oldFormatRun -Force | Out-Null
-                $failed = $false
                 $failureText = ''
                 try {
                     Complete-CaelestiaInstallIntegration $preflightPrefix (Join-Path $preflightPrefix "versions\$preflightB") -Previous $preflightA
-                } catch { $failed = $true; $failureText = $_.Exception.Message }
-                Assert $failed 'A Run value that exceeds 260 characters was accepted during integration.'
+                } catch { $failureText = $_.Exception.Message }
+                Assert ($failureText -match '260 characters') "Expected a Run-value length refusal during integration; got: $failureText"
                 Assert ($failureText -notmatch 'Rollback to') 'A late Run-value refusal failed its rollback.'
                 Assert ((Read-CaelestiaInstall $preflightPrefix).current -eq $preflightA) 'A late Run-value refusal left the replacement selected.'
                 $keptRun = Get-ItemProperty -LiteralPath $preflightRunKey -Name $preflightIntegration.RunName -ErrorAction SilentlyContinue
@@ -1488,6 +1491,7 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
         }
     } finally {
         Set-Item -Path function:Get-CaelestiaShortPath -Value $savedShortPath
+        Set-Item -Path function:Get-CaelestiaPowerShellPath -Value $savedPowerShellPath
     }
 
     # Regression: TEMP itself can be an 8.3 short path (hosted runners use
@@ -1784,8 +1788,6 @@ $bound = $PSBoundParameters
     $savedShortPath3 = ${function:Get-CaelestiaShortPath}
     $savedPwsh3 = ${function:Get-CaelestiaPowerShellPath}
     ${function:Get-CaelestiaShortPath} = { param([string]$Path) return '' }
-    $pinnedStoreHost = 'C:\Users\TwentyCharUserNameXX\AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
-    $pinnedMsiHost = 'C:\Program Files\PowerShell\7\pwsh.exe'
     try {
         $rbPad = [Math]::Max(4, 80 - $shortRoot.Length - 4)
         $rbPreflightPrefix = Join-Path $shortRoot ('rp-' + ('x' * $rbPad))
