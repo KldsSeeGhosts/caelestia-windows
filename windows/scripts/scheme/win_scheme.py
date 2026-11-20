@@ -130,70 +130,39 @@ def _hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _thumbnail(image: Path, digest: str | None = None) -> Path:
+def _thumbnail(image: Path) -> Path:
     """Match the upstream thumbnail: 128x128 fit, nearest resample, JPEG."""
-    cache = wallpapers_cache_dir / (digest or _hash(image))
+    cache = wallpapers_cache_dir / _hash(image)
     thumb = cache / "thumbnail.jpg"
     if not thumb.exists():
         with Image.open(image) as img:
             img.seek(0)  # WE previews can be animated GIF/WebP. Sample frame 0.
-            if img.format == "JPEG":
-                # thumbnail() would call draft(), which asks the JPEG decoder
-                # for a reduced image and crops it. Those pixels differ from a
-                # full decode, so decode first and resize the decoded frame.
-                img.load()
-                if max(img.size) > 128:
-                    scale = 128 / max(img.size)
-                    img = img.resize(
-                        (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
-                        Image.Resampling.NEAREST,
-                    )
-                rgb = img if img.mode == "RGB" else img.convert("RGB")
-            else:
-                try:
-                    # Downsample in the decoded mode first, then convert the
-                    # small result. NEAREST copies whole source pixels, so
-                    # converting afterwards picks identical colours to
-                    # converting the full source first, without holding a
-                    # full-size RGB copy.
-                    img.thumbnail((128, 128), Image.Resampling.NEAREST)
-                    rgb = img if img.mode == "RGB" else img.convert("RGB")
-                except (OSError, ValueError, TypeError, NotImplementedError):
-                    # An exotic mode can refuse in-place resize; fall back to
-                    # the legacy order so decoding can never regress.
-                    img.seek(0)
-                    rgb = img.convert("RGB")
-                    rgb.thumbnail((128, 128), Image.Resampling.NEAREST)
+            img.load()
+            try:
+                # NEAREST selects whole pixels. Convert only those pixels,
+                # keeping Pillow's original aspect rounding. Disable draft
+                # decoding: a reduced JPEG decode would change the palette.
+                img.thumbnail((128, 128), Image.Resampling.NEAREST, reducing_gap=None)
+            except (ValueError, NotImplementedError):
+                img = img.convert("RGB")
+                img.thumbnail((128, 128), Image.Resampling.NEAREST)
+            rgb = img if img.mode == "RGB" else img.convert("RGB")
             thumb.parent.mkdir(parents=True, exist_ok=True)
             rgb.save(thumb, "JPEG")
     return thumb
 
 
-def _seed_wallpaper(image: Path, digest: str | None = None) -> None:
+def _seed_wallpaper(thumb: Path) -> None:
     """Write the regular-file state the dynamic scheme generator reads.
 
     Upstream uses symlinks for ``current`` and ``thumbnail.jpg``. Windows only
     allows symlinks with extra privileges, so the bridge writes ordinary files:
     the generator only needs ``thumbnail.jpg`` to compute the palette.
     """
-    thumb = _thumbnail(image, digest)
     wallpaper_thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
     if wallpaper_thumbnail_path.is_symlink():
         wallpaper_thumbnail_path.unlink()
     shutil.copyfile(thumb, wallpaper_thumbnail_path)
-
-
-def _smart_options(image: Path, digest: str | None = None) -> dict[str, str]:
-    from caelestia.utils.wallpaper import get_smart_opts
-
-    # Feed the same decoded still frame to smart luminance analysis as to the
-    # quantizer. Some image-analysis libraries do not accept animated inputs.
-    with Image.open(image) as img:
-        animated = getattr(img, "is_animated", False)
-    # Hash the source once per request: the thumbnail cache dir, the smart
-    # cache dir and the seeded thumbnail all key on the same digest.
-    digest = digest or _hash(image)
-    return get_smart_opts(_thumbnail(image, digest) if animated else image, wallpapers_cache_dir / digest)
 
 
 def _validated(name: str, flavour: str | None, mode: str | None, variant: str | None, fallback_variant: str) -> tuple[str, str, str, str]:
@@ -303,9 +272,11 @@ def _current_wallpaper() -> Path | None:
     return path if path.is_file() else None
 
 
-def _wallpaper_options(image: Path, current: Scheme, mode: str | None, variant: str | None, smart: bool, digest: str | None = None) -> tuple[str, str]:
+def _wallpaper_options(thumb: Path, current: Scheme, mode: str | None, variant: str | None, smart: bool) -> tuple[str, str]:
     if smart and not mode and not variant:
-        options = _smart_options(image, digest)
+        from caelestia.utils.wallpaper import get_smart_opts
+        # The same cached first frame feeds both smart mode and quantization.
+        options = get_smart_opts(thumb, thumb.parent)
         mode = options.get("mode")
         variant = options.get("variant")
     return mode or current.mode, variant or current.variant
@@ -320,10 +291,10 @@ def _wallpaper_file(image: Path) -> Path:
 
 def apply_wallpaper(image: Path, flavour: str | None, mode: str | None, variant: str | None, smart: bool) -> Scheme:
     image = _wallpaper_file(image)
-    digest = _hash(image)
-    _seed_wallpaper(image, digest)
+    thumb = _thumbnail(image)
+    _seed_wallpaper(thumb)
     current = get_scheme()
-    mode, variant = _wallpaper_options(image, current, mode, variant, smart, digest)
+    mode, variant = _wallpaper_options(thumb, current, mode, variant, smart)
     scheme = _save_scheme("dynamic", flavour or current.flavour, mode, variant)
     # Do not mark an image as the saved palette's source until it generated
     # successfully. Both state files live beside the seeded thumbnail.
@@ -343,14 +314,14 @@ def preview_wallpaper(image: Path, smart: bool) -> dict:
     from caelestia.utils.material import get_colours_for_image
 
     image = _wallpaper_file(image)
-    digest = _hash(image)
+    thumb = _thumbnail(image)
     # get_scheme() can create a default scheme. Preview only reads committed
     # state and uses per-image caches; it never seeds the active thumbnail.
     current = Scheme(_read_scheme_state())
-    mode, variant = _wallpaper_options(image, current, None, None, smart, digest)
+    mode, variant = _wallpaper_options(thumb, current, None, None, smart)
     name, flavour, mode, variant = _validated("dynamic", current.flavour, mode, variant, current.variant)
     scheme = Scheme({"name": name, "flavour": flavour, "mode": mode, "variant": variant, "colours": {}})
-    scheme._colours = get_colours_for_image(_thumbnail(image, digest), scheme)
+    scheme._colours = get_colours_for_image(thumb, scheme)
     return {"ok": True, **_palette_data(scheme)}
 
 

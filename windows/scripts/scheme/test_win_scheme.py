@@ -106,6 +106,11 @@ class ThumbnailTests(unittest.TestCase):
         base.save(rgb_jpeg, "JPEG", quality=95)
         cases["rgb.jpg"] = rgb_jpeg
 
+        # 128 * 637 / 900 rounds up; truncating the short side changes the JPEG.
+        portrait = self.directory / "portrait.jpg"
+        base.crop((0, 0, 900, 637)).transpose(Image.Transpose.ROTATE_90).save(portrait)
+        cases["portrait.jpg"] = portrait
+
         cmyk_jpeg = self.directory / "cmyk.jpg"
         base.convert("CMYK").save(cmyk_jpeg, "JPEG", quality=95)
         cases["cmyk.jpg"] = cmyk_jpeg
