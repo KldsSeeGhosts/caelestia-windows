@@ -71,8 +71,6 @@ Item {
             const currentItem = list.currentList?.currentItem;
             if (currentItem) {
                 if (list.showWallpapers) {
-                    if (false && currentItem.modelData.path !== Wallpapers.actualCurrent)
-                        Wallpapers.previewColourLock = true;
                     Wallpapers.setWallpaper(currentItem.modelData.path, Wallpapers.defaultPickerTarget(root.QsWindow.window?.screen));
                     root.screenState.launcher = false;
                 } else if (text.startsWith(GlobalConfig.launcher.actionPrefix)) {
@@ -122,6 +120,10 @@ Item {
             function onSessionChanged(): void {
                 if (!root.screenState.session)
                     search.forceActiveFocus();
+            }
+            function onLauncherChanged(): void {
+                if (!root.screenState.launcher && list.showWallpapers)
+                    Wallpapers.stopPreview();
             }
 
             target: root.screenState

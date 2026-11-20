@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
 import Caelestia.Config
 import qs.components.misc
 import qs.services
@@ -7,11 +8,7 @@ import qs.modules.nexus
 
 // Windows adaptation of daemons/Shortcuts.qml.
 //
-// The original daemon resolves the active screen through Hypr.focusedMonitor.
-// The combined Windows host has no Hyprland connection, so it addresses the
-// screen selected by the prototype host instead. The shortcut names are
-// unchanged; defaults/windows/keybinds.json binds them to the Caelestia
-// defaults and remains overridable from the shell configuration directory.
+// Resolve a shortcut's screen at dispatch time, like the Windows tiler.
 //
 // `caelestia:nexus` is registered exactly as upstream registers it: a detached
 // Nexus FloatingWindow through modules/nexus/WindowFactory.qml. The Windows
@@ -24,10 +21,13 @@ Scope {
     // Windows: instantiate the picker IPC adapter even before the launcher opens.
     readonly property bool glazierAvailable: Glazier.available
 
-    readonly property var screenState: {
-        const screen = ShellState.shellRoot?.selectedScreen
-            ?? Quickshell.screens.find(s => Hypr.monitorFor(s) === Hypr.focusedMonitor)
-            ?? Quickshell.screens[0];
+    function screenState(): var {
+        const screens = Quickshell.screens;
+        const cursor = Native.Input.cursorScreenForFocus();
+        const focused = Hypr.focusedMonitor;
+        const screen = (cursor ? screens.find(s => s.name === cursor) : null)
+            ?? (focused ? screens.find(s => Hypr.monitorFor(s) === focused) : null)
+            ?? screens[0];
         return screen ? ShellState.forScreen(screen) : null;
     }
 
@@ -70,8 +70,7 @@ Scope {
         }
     }
 
-    function logState(name: string): void {
-        const state = root.screenState;
+    function logState(name: string, state): void {
         console.log(`CAELESTIA_SHORTCUT name=${name} launcher=${state?.launcher ?? false}`
             + ` dashboard=${state?.dashboard ?? false} session=${state?.session ?? false}`
             + ` sidebar=${state?.sidebar ?? false} utilities=${state?.utilities ?? false}`
@@ -91,12 +90,12 @@ Scope {
         name: "showall"
         description: "Toggle launcher, dashboard and osd"
         onPressed: {
-            const state = root.screenState;
+            const state = root.screenState();
             if (!state)
                 return;
             const value = !(state.launcher || state.dashboard || state.osd || state.utilities);
             state.launcher = state.dashboard = state.osd = state.utilities = value;
-            root.logState("showall");
+            root.logState("showall", state);
         }
     }
 
@@ -104,11 +103,11 @@ Scope {
         name: "dashboard"
         description: "Toggle dashboard"
         onPressed: {
-            const state = root.screenState;
+            const state = root.screenState();
             if (!state)
                 return;
             state.dashboard = !state.dashboard;
-            root.logState("dashboard");
+            root.logState("dashboard", state);
         }
     }
 
@@ -116,11 +115,11 @@ Scope {
         name: "session"
         description: "Toggle session menu"
         onPressed: {
-            const state = root.screenState;
+            const state = root.screenState();
             if (!state)
                 return;
             state.session = !state.session;
-            root.logState("session");
+            root.logState("session", state);
         }
     }
 
@@ -129,11 +128,11 @@ Scope {
         description: "Toggle launcher"
         onPressed: root.launcherInterrupted = false
         onReleased: {
-            const state = root.screenState;
+            const state = root.screenState();
             if (!root.launcherInterrupted && state)
                 state.launcher = !state.launcher;
             root.launcherInterrupted = false;
-            root.logState("launcher");
+            root.logState("launcher", state);
         }
     }
 
@@ -147,11 +146,11 @@ Scope {
         name: "sidebar"
         description: "Toggle sidebar"
         onPressed: {
-            const state = root.screenState;
+            const state = root.screenState();
             if (!state || !Config.sidebar.enabled)
                 return;
             state.sidebar = !state.sidebar;
-            root.logState("sidebar");
+            root.logState("sidebar", state);
         }
     }
 
@@ -159,11 +158,11 @@ Scope {
         name: "utilities"
         description: "Toggle utilities"
         onPressed: {
-            const state = root.screenState;
+            const state = root.screenState();
             if (!state)
                 return;
             state.utilities = !state.utilities;
-            root.logState("utilities");
+            root.logState("utilities", state);
         }
     }
 }

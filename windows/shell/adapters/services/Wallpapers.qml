@@ -63,18 +63,37 @@ Singleton {
     readonly property string handbackWallpaper: usableFile(lastGoodFile) ? lastGoodFile : fallback
     readonly property string actualCurrent: WallpaperEngine.enabled && WallpaperEngine.running && WallpaperEngine.current?.path
         ? WallpaperEngine.current.path : fileCurrent
-    // Image consumers (mode/variant generation and the desktop) need the
-    // preview, while launcher selection needs the project.json identity. The
-    // ownership claim, not the bare process, decides which image is visible:
+    // Image consumers need the preview, while launcher selection needs the
+    // project.json identity. The ownership claim decides the fallback image:
     // after a genuine handback the engine still runs but the shell shows its
     // own wallpaper again, and the source change repaints the desktop.
     readonly property string currentImage: externalWallpaperActive && !WallpaperEngine.desktopHandedBack
         && WallpaperEngine.current?.preview
         ? WallpaperEngine.current.preview
         : visibleOwnSource()
+    // The shell has one palette. A display-specific pick can change it without
+    // changing the shared wallpaper or any of the other displays.
+    property string paletteScreenId: ""
+    // An existing profile can reserve the desktop for a running engine even
+    // when integration is off. That safety guard alone is not a colour source.
+    readonly property bool engineSuppliesPalette: externalWallpaperActive
+        && (WallpaperEngine.enabled || WallpaperEngine.underlayActive)
+    property var guardedPaletteFiles: ({})
+    readonly property string paletteImage: {
+        if (engineSuppliesPalette)
+            return currentImage;
+        if (!WallpaperEngine.desktopHandedBack) {
+            const files = externalWallpaperActive ? guardedPaletteFiles : screenFiles;
+            const image = files[paletteScreenId];
+            if (image && usableFile(image))
+                return image;
+        }
+        return visibleOwnSource();
+    }
     property bool showPreview: false
     property string previewPath
     property string previewScreenId: ""
+    property int previewRevision: 0
     // Only local, verified images live here. Engine previews never replace
     // a display's retained underlay. Keys are opaque physical-target digests.
     property var screenFiles: ({})
@@ -108,8 +127,7 @@ Singleton {
     }
     // the mounted underlay must retain our own image, not transition
     // to an engine preview as soon as process/config discovery changes.
-    // currentImage still supplies that preview to palette generation; it is
-    // not proof that the external renderer has presented anything.
+    // The retained layer does not depend on which image supplies the palette.
     readonly property string current: externalWallpaperActive ? handbackWallpaper
         : showPreview ? previewPath : currentImage
     // WallpaperEngine.ownsDesktop keeps the physical claim even for a running
@@ -162,14 +180,13 @@ Singleton {
             : activeSource === "both" ? [...engine, ...files] : files;
         return raw.map(normalize).filter(entry => entry !== null);
     }
-    property bool previewColourLock: false
     // Single owner of wallpaper-derived colours: Wallpaper Engine quitting or
     // relaunching, a Windows wallpaper change and the picker all move
-    // currentImage. The bridge records the image each scheme was generated from
+    // paletteImage. The bridge records the image each scheme was generated from
     // beside scheme.json, so comparing against it survives restarts and covers
     // every generation path (picker, mode and variant). The scheme name comes
     // from scheme.json too: referencing Colours here would close a singleton
-    // cycle, because Colours uses Wallpapers.currentImage.
+    // cycle, because Colours uses Wallpapers.paletteImage.
     readonly property string schemeStatePath: `${Paths.state}/scheme.json`
     readonly property string schemeSourcePath: `${Paths.state}/wallpaper/path.txt`
     property string schemeName: ""
@@ -188,7 +205,11 @@ Singleton {
         root.maybeResolve();
         reload();
     }
-    onCurrentImageChanged: applyPalette(false)
+    onPaletteImageChanged: applyPalette(false)
+    onSchemeNameChanged: {
+        if (showPreview)
+            schedulePreviewColours();
+    }
     // The record decides between a saved wallpaper and the bundled default,
     // and the default must be decided even when the optional colour runtime
     // never writes scheme.json. Resolution therefore runs at completion;
@@ -510,24 +531,39 @@ Singleton {
     // An existing profile reads each display's Windows wallpaper, as every
     // build before this change did. One display's pick never imports the other
     // displays' older images because each display is read independently.
-    function refreshScreenFiles(): void {
+    function refreshScreenFiles(followChange): void {
         if (!root.sourceInitialized)
             return;
-        if (externalWallpaperActive || WallpaperEngine.desktopHandedBack)
+        if (engineSuppliesPalette || WallpaperEngine.desktopHandedBack)
             return;
         if (root.sourceFresh) {
             root.refreshFreshScreenFiles();
             return;
         }
+        // Read the local palette inputs even under an unconfirmed engine
+        // claim, without importing them into the retained desktop underlay.
+        const previous = externalWallpaperActive ? guardedPaletteFiles : screenFiles;
         const next = {};
+        let changed = "";
         for (const screen of Quickshell.screens) {
             const id = Native.Wallpaper.screenTargetId(screen.name);
             if (!id)
                 continue;
-            const file = Native.Wallpaper.currentWallpaperForScreen(screen.name).replace(/\\/g, "/");
-            next[id] = root.usableFile(file) ? file : screenFiles[id] || handbackWallpaper;
+            // Registry notification can precede the async native setter's
+            // completion. Keep showing the user's pending pick in that gap.
+            const pending = completion.targets[id];
+            const file = pending?.outcome === "pending" ? pending.desired
+                : Native.Wallpaper.currentWallpaperForScreen(screen.name).replace(/\\/g, "/");
+            next[id] = root.usableFile(file) ? file : previous[id] || handbackWallpaper;
+            if (!changed && followChange && previous[id] && !Paths.samePath(previous[id], next[id]))
+                changed = id;
         }
-        screenFiles = next;
+        if (externalWallpaperActive)
+            guardedPaletteFiles = next;
+        else
+            screenFiles = next;
+        if (changed)
+            paletteScreenId = changed;
     }
     function currentForScreen(screen): string {
         if (!screen)
@@ -566,19 +602,22 @@ Singleton {
         function onScreensChanged(): void { root.refreshScreenFiles(); }
     }
     function applyPalette(force): void {
-        if (!sourceInitialized || !SchemeGenerator.available || schemeName !== "dynamic" || currentImage === "")
+        if (!sourceInitialized || !SchemeGenerator.available || schemeName !== "dynamic" || paletteImage === "")
             return;
         // Wallpaper Engine discovery can briefly report the Windows wallpaper
         // at startup; wait for it and the persisted state before comparing.
         if (!schemeStateReady || !WallpaperEngine.snapshotReady)
             return;
-        if (!force && Paths.samePath(currentImage, schemeSource))
+        const requested = SchemeGenerator.wallpaperRequest();
+        const smart = GlobalConfig.services.smartScheme;
+        if (requested ? Paths.samePath(paletteImage, requested.path) && smart === requested.smart
+                : !force && Paths.samePath(paletteImage, schemeSource))
             return;
         console.debug("CAELESTIA_PALETTE_TIMING stage=palette_request ts=" + Date.now() + (force ? " force=1" : ""));
-        SchemeGenerator.applyWallpaper(currentImage, GlobalConfig.services.smartScheme);
+        SchemeGenerator.applyWallpaper(paletteImage, smart);
     }
 
-    // Loading scheme state never regenerates: only a currentImage change, the
+    // Loading scheme state never regenerates: only a paletteImage change, the
     // smart-scheme toggle or an explicit user action does, so a scheme write
     // can not trigger another one.
     function setSchemeName(json: string): void {
@@ -660,7 +699,14 @@ Singleton {
 
     Connections {
         target: SchemeGenerator
-        function onSchemeChanged(): void { root.reloadSchemeState(); }
+        function onSchemeChanged(data): void {
+            // Use the acknowledged source even if a FileView read has not
+            // caught up yet. In particular, A -> B -> A must not skip A by
+            // comparing it to the cached source that preceded B.
+            root.schemeName = String(data.name ?? "");
+            root.schemeSource = String(data.source ?? "");
+            root.schemeNameLoaded = root.schemeSourceLoaded = true;
+        }
         function onSchemeListChanged(): void { root.reloadSchemeState(); }
     }
 
@@ -679,7 +725,11 @@ Singleton {
     }
     Connections {
         target: GlobalConfig.services
-        function onSmartSchemeChanged(): void { root.applyPalette(true); }
+        function onSmartSchemeChanged(): void {
+            root.applyPalette(true);
+            if (root.showPreview)
+                root.schedulePreviewColours();
+        }
     }
 
     // Paths.wallsdir can change once after startup, when the background probe
@@ -742,13 +792,15 @@ Singleton {
     // A listed cloud placeholder is not local: previewing its path hydrates it.
     function preview(path, screen): void {
         const listed = list.find(entry => entry && Paths.samePath(entry.path, String(path ?? "")));
-        if (listed && listed.onDisk === false) {
+        const image = listed?.engine ? listed.preview : path;
+        if (!image || listed?.onDisk === false) {
             stopPreview();
             return;
         }
-        previewPath = path;
+        previewPath = image;
         previewScreenId = screen ? Native.Wallpaper.screenTargetId(screen.name) : "";
         showPreview = true;
+        schedulePreviewColours();
     }
     function previewEntry(entry, screen): void {
         if (!entry || entry.onDisk === false) {
@@ -757,7 +809,25 @@ Singleton {
         }
         preview(entry.path, screen);
     }
-    function stopPreview(): void { showPreview = false; }
+    function schedulePreviewColours(): void {
+        previewRevision++;
+        previewColoursDelay.stop();
+        SchemeGenerator.cancelPreview();
+        if (showPreview && schemeName === "dynamic" && SchemeGenerator.available && usableFile(previewPath))
+            previewColoursDelay.start();
+    }
+    function stopPreview(): void {
+        if (!showPreview)
+            return;
+        showPreview = false;
+        schedulePreviewColours();
+    }
+    Timer {
+        id: previewColoursDelay
+        interval: 75
+        onTriggered: SchemeGenerator.previewWallpaper(String(root.previewPath).replace(/^file:\/\/\//, ""),
+            GlobalConfig.services.smartScheme, root.previewRevision)
+    }
     function setWallpaper(path, screen): bool {
         if (!controlsEnabled) {
             // Every caller closes its picker or sub-page right after this call,
@@ -786,10 +856,16 @@ Singleton {
         root.markOpened(local);
         if (target) {
             screenFiles = Object.assign({}, screenFiles, {[target.targetId]: local});
+            if (externalWallpaperActive)
+                guardedPaletteFiles = Object.assign({}, guardedPaletteFiles, {[target.targetId]: local});
+            paletteScreenId = target.targetId;
             root.adoptPickedScreen(target.targetId, local);
         } else {
-            screenFiles = {};
             root.adoptPickedFile(local);
+            paletteScreenId = "";
+            guardedPaletteFiles = {};
+            if (!root.sourceFresh)
+                screenFiles = {};
         }
         stopPreview();
         return completion.request(local, target);
@@ -821,9 +897,12 @@ Singleton {
             // adoptPickedFile and are kept, including intentional black ones.
             if (WallpaperEngine.desktopHandedBack || !root.sourceInitialized)
                 return;
+            if (completion.active?.operation === "setWallpaper")
+                return;
             const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
+            const globalChanged = !Paths.samePath(root.fileCurrent, next || root.fallback);
             root.fileCurrent = next || root.fallback;
-            root.refreshScreenFiles();
+            root.refreshScreenFiles(!globalChanged);
         }
     }
     NativeDialogs.FileDialog {

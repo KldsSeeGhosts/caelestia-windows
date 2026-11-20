@@ -123,12 +123,12 @@ QtObject {
     readonly property Binding _activeBorder: Binding {
         target: Tiling
         property: "activeBorderColour"
-        value: root.blend(Colours.palette.m3primary, Colours.palette.m3surface, 230 / 255)
+        value: root.blend(Colours.current.m3primary, Colours.current.m3surface, 230 / 255)
     }
     readonly property Binding _inactiveBorder: Binding {
         target: Tiling
         property: "inactiveBorderColour"
-        value: root.blend(Colours.palette.m3onSurfaceVariant, Colours.palette.m3surface, 17 / 255)
+        value: root.blend(Colours.current.m3onSurfaceVariant, Colours.current.m3surface, 17 / 255)
     }
 
     // Use accepted native state, including after a stale lease rejects a write.

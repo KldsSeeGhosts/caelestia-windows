@@ -128,10 +128,16 @@ PageBase {
                 onToggled: GlobalConfig.appearance.transparency.enabled = checked
             }
             ToggleRow {
-                last: true
                 text: Tr.tr("Dark theme")
-                checked: !Colours.light
+                checked: !Colours.currentLight
                 onToggled: Colours.setMode(checked ? "dark" : "light")
+            }
+            ToggleRow {
+                last: true
+                text: Tr.tr("Tint backgrounds")
+                subtext: Tr.tr("Use more of the wallpaper colour in dynamic themes")
+                checked: Colours.tintWallpaperSurfaces
+                onToggled: Colours.setWallpaperSurfaceTint(checked)
             }
         }
 

@@ -118,6 +118,32 @@ class ThumbnailTests(unittest.TestCase):
         self.assertEqual(calls, 1)
         self.assertEqual(first, second)
 
+    def test_dynamic_palette_keeps_upstream_colours_and_separate_tint(self):
+        from caelestia.utils.material import get_colours_for_image
+
+        image = _image(self.directory, "surface-tint.jpg")
+        for mode in ("dark", "light"):
+            with self.subTest(mode=mode):
+                scheme = ws.apply_wallpaper(image, None, mode, "tonalspot", False)
+                upstream = get_colours_for_image(scheme=scheme)
+                saved = json.loads(ws.scheme_path.read_bytes())
+                self.assertEqual(saved["colours"], upstream)
+                self.assertEqual(scheme.colours, upstream)
+                overrides = saved["windowsSurfaceTint"]
+                self.assertNotIn("primary", overrides)
+                self.assertNotIn("onSurface", overrides)
+                for role in ("surface", "surfaceContainer"):
+                    before = ws.Hct.from_int(int(upstream[role], 16))
+                    after = ws.Hct.from_int(int(overrides[role], 16))
+                    self.assertGreater(after.chroma, before.chroma + 3)
+                    self.assertAlmostEqual(after.tone, before.tone, delta=0.5)
+
+        for variant in ("monochrome", "neutral"):
+            with self.subTest(variant=variant):
+                scheme = ws.apply_wallpaper(image, None, "dark", variant, False)
+                self.assertEqual(scheme.colours, get_colours_for_image(scheme=scheme))
+                self.assertEqual(json.loads(ws.scheme_path.read_bytes())["windowsSurfaceTint"], {})
+
 
 class UnicodePathTests(unittest.TestCase):
     """Non-ASCII paths must survive argv, the persisted path file and output."""
@@ -259,6 +285,54 @@ class WarmWorkerTests(unittest.TestCase):
     def _close(self, worker: subprocess.Popen) -> None:
         worker.stdin.close()
         self.assertEqual(worker.wait(timeout=30), 0)
+
+    def test_preview_is_read_only_and_matches_the_committed_palette(self):
+        first = _image(self.directory, "committed.jpg", (720, 480))
+        second = _image(self.directory, "highlighted.jpg", (480, 720))
+        worker = self._start()
+        state = self.profile / "state" / "caelestia"
+        cold = self._request(worker, ["preview-wallpaper", "--image", str(first)])
+        self.assertTrue(cold["ok"], cold)
+        self.assertFalse(state.exists(), "preview created state before the first commit")
+        applied = self._request(worker, ["apply-wallpaper", "--image", str(first)])
+        self.assertTrue(applied["ok"], applied)
+        self.assertEqual(cold["colours"], applied["colours"])
+        persisted = [
+            state / "scheme.json",
+            state / "wallpaper" / "path.txt",
+            state / "wallpaper" / "thumbnail.jpg",
+        ]
+        before = [(file.stat().st_mtime_ns, file.read_bytes()) for file in persisted]
+        preview = self._request(worker, ["preview-wallpaper", "--image", str(second), "--smart", "0"])
+        self.assertTrue(preview["ok"], preview)
+        self.assertEqual((preview["mode"], preview["variant"]), (applied["mode"], applied["variant"]))
+        self.assertEqual([(file.stat().st_mtime_ns, file.read_bytes()) for file in persisted], before)
+        chosen = self._request(worker, ["apply-wallpaper", "--image", str(second), "--smart", "0"])
+        self.assertTrue(chosen["ok"], chosen)
+        self.assertEqual(chosen["colours"], preview["colours"])
+        self.assertEqual(chosen["windowsSurfaceTint"], preview["windowsSurfaceTint"])
+        self._close(worker)
+
+    def test_list_upgrades_a_legacy_tinted_palette_without_changing_its_variant(self):
+        image = _image(self.directory, "legacy.jpg", (720, 480))
+        worker = self._start()
+        applied = self._request(worker, [
+            "apply-wallpaper", "--image", str(image), "--mode", "light", "--variant", "expressive",
+        ])
+        self.assertTrue(applied["ok"], applied)
+        self.assertTrue(applied["windowsSurfaceTint"])
+        self._close(worker)
+        path = self.profile / "state" / "caelestia" / "scheme.json"
+        legacy = json.loads(path.read_bytes())
+        legacy["colours"].update(legacy.pop("windowsSurfaceTint"))
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        worker = self._start()
+        self.assertTrue(self._request(worker, ["list"])["ok"])
+        migrated = json.loads(path.read_bytes())
+        for key in ("mode", "variant", "flavour", "colours", "windowsSurfaceTint"):
+            self.assertEqual(migrated[key], applied[key])
+        self._close(worker)
 
     def test_worker_survives_a_failed_request(self):
         worker = self._start()

@@ -36,16 +36,18 @@ Singleton {
     property string operation: ""
     property double operationStartedAt: 0
     property var pending: []
+    property var queuedPreview: null
     readonly property int helperTimeout: 30000
-    // The serialized request currently waiting for its response. The helper is
-    // one request at a time, so no id is needed.
-    property string activeRequest: ""
+    // The helper handles one request at a time, so no id is needed.
+    property var activeArgs: []
+    property int activePreviewId: -1
     property bool requestSent: false
     property double workerStartedAt: 0
     property int stderrBytes: 0
 
     signal schemeListChanged()
-    signal schemeChanged()
+    signal schemeChanged(var data)
+    signal previewReady(int request, var data)
     signal failed(string message)
 
     readonly property string currentLabel: {
@@ -105,18 +107,25 @@ Singleton {
         if (requestSent || operation === "" || !worker.running)
             return;
         requestSent = true;
-        worker.write(activeRequest + "\n");
+        worker.write(JSON.stringify({args: activeArgs}) + "\n");
     }
 
     function pump(): void {
-        if (!available || operation !== "" || pending.length === 0)
+        if (!available || operation !== "" || (!pending.length && !queuedPreview))
             return;
-        const job = pending.shift();
+        // Persisted changes take priority. At most the latest preview waits
+        // behind an in-flight request.
+        const job = pending.length ? pending.shift() : queuedPreview;
+        if (job.kind === "preview")
+            queuedPreview = null;
         operation = job.kind;
         operationStartedAt = Date.now();
-        console.debug("CAELESTIA_PALETTE_TIMING stage=generate_start ts=" + operationStartedAt + " kind=" + job.kind);
-        status = "working";
-        activeRequest = JSON.stringify({ args: job.args });
+        if (job.kind !== "preview") {
+            console.debug("CAELESTIA_PALETTE_TIMING stage=generate_start ts=" + operationStartedAt + " kind=" + job.kind);
+            status = "working";
+        }
+        activeArgs = job.args;
+        activePreviewId = job.request ?? -1;
         requestSent = false;
         if (worker.running) {
             sendRequest();
@@ -137,12 +146,13 @@ Singleton {
 
     function finish(text: string): void {
         const kind = operation;
+        const previewId = activePreviewId;
         if (kind === "")
             return; // a partial line from a helper we already failed
         const elapsed = operationStartedAt > 0 ? Date.now() - operationStartedAt : 0;
         operation = "";
         requestSent = false;
-        activeRequest = "";
+        activeArgs = [];
         let data = null;
         if (text.trim().length > 0) {
             try {
@@ -151,7 +161,10 @@ Singleton {
                 data = null;
             }
         }
-        if (!data || data.ok !== true) {
+        if (kind === "preview") {
+            if (data?.ok === true)
+                previewReady(previewId, data);
+        } else if (!data || data.ok !== true) {
             status = "error";
             lastError = String(data?.error ?? (text.trim() || "scheme generator returned no result"));
             console.warn(`CAELESTIA_SCHEME_FAIL ${kind} stderr_bytes=${stderrBytes} bytes=${lastError.length}`);
@@ -169,7 +182,7 @@ Singleton {
             lastError = "";
             console.log(`CAELESTIA_SCHEME_APPLIED name=${currentName} flavour=${currentFlavour} mode=${currentMode} variant=${currentVariant} primary=${data.colours?.primary ?? data.colours?.m3primary ?? ""}`);
             console.debug("CAELESTIA_PALETTE_TIMING stage=generate_done ts=" + Date.now() + " elapsed_ms=" + elapsed + " kind=" + kind);
-            schemeChanged();
+            schemeChanged(data);
         }
         Qt.callLater(root.pump);
     }
@@ -180,11 +193,13 @@ Singleton {
         const kind = operation;
         operation = "";
         requestSent = false;
-        activeRequest = "";
-        status = "error";
-        lastError = message;
-        console.warn(`CAELESTIA_SCHEME_FAIL ${kind} stderr_bytes=${stderrBytes} bytes=${message.length}`);
-        failed(message);
+        activeArgs = [];
+        if (kind !== "preview") {
+            status = "error";
+            lastError = message;
+            console.warn(`CAELESTIA_SCHEME_FAIL ${kind} stderr_bytes=${stderrBytes} bytes=${message.length}`);
+            failed(message);
+        }
         Qt.callLater(root.pump);
     }
 
@@ -194,20 +209,46 @@ Singleton {
         const kind = operation;
         operation = "";
         requestSent = false;
-        activeRequest = "";
-        console.warn(`CAELESTIA_SCHEME_TIMEOUT ${kind}: ${message}`);
+        activeArgs = [];
         // The exit handler advances the queue once the old helper is reaped;
         // starting a new one before that would misread its exit as a failure.
         worker.signal(9);
         worker.running = false;
-        status = "error";
-        lastError = message;
-        failed(message);
+        if (kind !== "preview") {
+            console.warn(`CAELESTIA_SCHEME_TIMEOUT ${kind}: ${message}`);
+            status = "error";
+            lastError = message;
+            failed(message);
+        }
     }
 
     // Generate a dynamic scheme from an image (the wallpaper picker path).
     function applyWallpaper(path: string, smart: bool): void {
         enqueue("apply", ["apply-wallpaper", "--image", String(path), "--smart", smart ? "1" : "0"]);
+    }
+
+    function previewWallpaper(path: string, smart: bool, request: int): void {
+        if (!available)
+            return;
+        queuedPreview = {kind: "preview", request,
+            args: ["preview-wallpaper", "--image", path, "--smart", smart ? "1" : "0"]};
+        pump();
+    }
+
+    function cancelPreview(): void {
+        queuedPreview = null;
+    }
+
+    function wallpaperRequest(): var {
+        let args = operation !== "" ? activeArgs : [];
+        for (let i = pending.length - 1; i >= 0; --i) {
+            const job = pending[i];
+            if (job.kind === "apply" || job.kind === "set") {
+                args = job.args;
+                break;
+            }
+        }
+        return args[0] === "apply-wallpaper" ? {path: args[2], smart: args[4] === "1"} : null;
     }
 
     function withImage(args: var, image: string): var {

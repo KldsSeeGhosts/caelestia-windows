@@ -60,7 +60,7 @@ Controls scaling, rounding, spacing, padding, fonts, animation durations, transp
 - **Bundled fonts:** `GoogleSansFlex` (headline, title, body, label), `Rubik` (clock, workspaces), and `Material Symbols Rounded` (icons) are bundled and loaded into the Caelestia process automatically—you do not need to install them into `C:\Windows\Fonts`.
 - **Monospace font (`appearance.font.mono`):** Defaults to `"CaskaydiaCove NF"`. Install Cascadia Code Nerd Font in Windows or change `appearance.font.mono.family` to `"Cascadia Mono"` or `"Consolas"`.
 - **Transparency (`appearance.transparency`):** Set `"enabled": true` to use semi-transparent surfaces (`base`: `0.85`, `layers`: `0.4`). Works whether Windows system transparency effects are on or off.
-- **Dynamic color schemes:** The profile-local pinned Caelestia CLI generates Material You palettes. `services.smartScheme` selects smart mode/variant. Python and a first-launch download are required; failure retains the fixed palette. Wallpaper Engine previews drive the same generator.
+- **Dynamic color schemes:** The profile-local pinned Caelestia CLI generates Material You palettes. `services.smartScheme` selects smart mode/variant. `windows.wallpaperSurfaceTint` is off by default. Turn on **Tint backgrounds** in **Wallpaper & style** to add more wallpaper colour to dynamic backgrounds and containers. Python and a first-launch download are required; failure retains the fixed palette. Wallpaper Engine previews drive the same generator.
 - **Expressive Material 3 shapes:** The native `M3Shapes` QML plugin (`windows/deps/m3shapes`) is compiled and staged on Windows, providing authentic `M3Shapes.MaterialShape` ambient media shapes, cover-art masking, loading indicators, and morph animations.
 
 ### `bar`
@@ -596,6 +596,10 @@ for that chord. See [KEYBINDS.md](KEYBINDS.md).
 `windows.focusFollowsMouse` applies Windows' X-Mouse focus tracking while the
 shell runs. It is off by default and does not touch the Windows-level setting
 until enabled.
+
+While Windows focus tracking is active, launcher shortcuts and new tiled
+windows use the monitor under the pointer when they open. Without focus
+tracking, they use the focused monitor.
 
 ```json
 {"windows":{"focusFollowsMouse":{"enabled":true,"delay":100,"raise":false}}}

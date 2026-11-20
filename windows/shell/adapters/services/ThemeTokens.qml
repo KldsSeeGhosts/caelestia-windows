@@ -12,8 +12,8 @@ QtObject {
     property string outputPath: `${Paths.state}/theme-tokens.json`
     property string bundledFontPath: Quickshell.shellPath("assets/google-sans-flex/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,slnt,wdth,wght.ttf")
     property string bundledFontFamily: "Google Sans Flex"
-    property var palette: Colours.palette
-    property bool light: Colours.light
+    property var palette: Colours.current
+    property bool light: Colours.currentLight
     property font uiFont: Tokens.font.body.medium
     // This one profile-wide export has no screen-attached QQuickItem.
     property var rounding: GlobalConfig.appearance.rounding

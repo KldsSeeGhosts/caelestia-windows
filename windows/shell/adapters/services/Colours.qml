@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Caelestia.Config
 import qs.services
 import qs.utils
 
@@ -19,14 +20,22 @@ Singleton {
     property string scheme: ""
     property string flavour: ""
     property bool currentLight: false
-    readonly property bool light: currentLight
+    readonly property bool light: showPreview ? previewLight : currentLight
     readonly property real wallLuminance: 0
 
-    // Upstream API kept for staged components. Previewing a wallpaper keeps
-    // the current palette; only an applied wallpaper regenerates colours.
-    property bool showPreview: false
+    property int shownPreviewRevision: -1
+    readonly property bool showPreview: scheme === "dynamic" && Wallpapers.showPreview
+        && shownPreviewRevision === Wallpapers.previewRevision
     property bool previewLight: false
-    readonly property M3Palette palette: current
+    readonly property M3Palette palette: showPreview ? preview : current
+    readonly property bool tintWallpaperSurfaces: GlobalConfig.windows?.wallpaperSurfaceTint === true
+    property var currentPaletteData: null
+    property var previewPaletteData: null
+
+    onTintWallpaperSurfacesChanged: {
+        writePalette(current, currentPaletteData);
+        writePalette(preview, previewPaletteData);
+    }
     readonly property TransparentPalette tPalette: TransparentPalette {
         palette: root.palette
         light: root.light
@@ -60,9 +69,6 @@ Singleton {
     }
 
     function load(data: string, isPreview: bool): void {
-        const started = Date.now();
-        if (!isPreview)
-            console.debug("CAELESTIA_PALETTE_TIMING stage=scheme_load_begin ts=" + started);
         let parsed;
         try {
             parsed = JSON.parse(data);
@@ -70,35 +76,54 @@ Singleton {
             console.warn("CAELESTIA_SCHEME_INVALID " + String(error));
             return;
         }
+        usePalette(parsed, isPreview);
+    }
+
+    function usePalette(parsed, isPreview: bool): void {
         if (!parsed || !parsed.colours)
             return;
-
-        const colours = isPreview ? preview : current;
-        if (!isPreview) {
-            root.scheme = String(parsed.name ?? "");
-            root.flavour = String(parsed.flavour ?? "");
-            root.currentLight = parsed.mode === "light";
-        } else {
+        if (isPreview) {
+            root.previewPaletteData = parsed;
             root.previewLight = parsed.mode === "light";
+            writePalette(preview, parsed);
+            return;
         }
+        const started = Date.now();
+        console.debug("CAELESTIA_PALETTE_TIMING stage=scheme_load_begin ts=" + started);
+        root.currentPaletteData = parsed;
+        root.scheme = String(parsed.name ?? "");
+        root.flavour = String(parsed.flavour ?? "");
+        root.currentLight = parsed.mode === "light";
+        const applied = writePalette(current, parsed);
+        console.log(`CAELESTIA_SCHEME_LOADED name=${root.scheme || "fixed"} flavour=${root.flavour || "-"} mode=${root.currentLight ? "light" : "dark"} applied=${applied} primary=${root.current.m3primary}`);
+        console.debug("CAELESTIA_PALETTE_TIMING stage=colours_applied ts=" + Date.now() + " elapsed_ms=" + (Date.now() - started) + " applied=" + applied);
+    }
 
+    function writePalette(colours, parsed): int {
+        if (!parsed?.colours)
+            return 0;
+        const overrides = root.tintWallpaperSurfaces ? parsed.windowsSurfaceTint : null;
         let applied = 0;
         for (const [name, colour] of Object.entries(parsed.colours)) {
             const propName = name.startsWith("term") ? name : `m3${name}`;
             // QML objects expose known properties through lookup; unknown keys
             // from the scheme JSON (terminal, catppuccin aliases) are ignored.
             if (colours[propName] !== undefined) {
-                colours[propName] = `#${colour}`;
+                colours[propName] = `#${overrides?.[name] ?? colour}`;
                 applied++;
             }
         }
-        console.log(`CAELESTIA_SCHEME_LOADED name=${root.scheme || "fixed"} flavour=${root.flavour || "-"} mode=${root.currentLight ? "light" : "dark"} applied=${applied} primary=${root.palette.m3primary}`);
-        if (!isPreview)
-            console.debug("CAELESTIA_PALETTE_TIMING stage=colours_applied ts=" + Date.now() + " elapsed_ms=" + (Date.now() - started) + " applied=" + applied);
+        return applied;
+    }
+
+    function setWallpaperSurfaceTint(enabled: bool): void {
+        const windows = JSON.parse(JSON.stringify(GlobalConfig.windows ?? {}));
+        windows.wallpaperSurfaceTint = enabled;
+        GlobalConfig.windows = windows;
     }
 
     function setMode(mode: string): void {
-        SchemeGenerator.setMode(mode, Wallpapers.currentImage);
+        SchemeGenerator.setMode(mode, Wallpapers.paletteImage);
     }
 
     // Kept for API compatibility with staged components; Hyprland is absent.
@@ -114,14 +139,23 @@ Singleton {
 
         onLoaded: root.load(text(), false)
         onFileChanged: reload()
-        onLoadFailed: root.showPreview = false
     }
 
     Connections {
         target: SchemeGenerator
 
-        function onSchemeChanged(): void {
-            schemeFile.reload();
+        function onSchemeChanged(data): void {
+            // The worker has already saved this palette. Apply its response
+            // immediately instead of waiting for a second disk read.
+            root.usePalette(data, false);
+        }
+
+        function onPreviewReady(request: int, data): void {
+            if (!Wallpapers.showPreview || request !== Wallpapers.previewRevision || root.scheme !== "dynamic"
+                || !data?.colours)
+                return;
+            root.usePalette(data, true);
+            root.shownPreviewRevision = request;
         }
 
         // The first list call may create the default scheme file on a fresh
