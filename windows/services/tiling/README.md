@@ -163,11 +163,15 @@ tile; only off-target and refused placements float.
 | unknown | `Couldn't tile <App>` | `It could not be placed in its tile.` |
 
 The native backend waits for a newly shown legacy console to take focus
-before automatically tiling it. An explicit tile request can still tile it.
-This does not change how the tiler adopts existing windows on enable or how
-it handles Windows Terminal. If a window hides, minimizes, or becomes
-app-cloaked during placement, the in-flight attempt is canceled without a
-failure. Other virtual desktops keep their normal tiling behavior.
+before automatically tiling it. A new Windows Terminal window must stay
+visible for 300 ms before it gets a tile, even if it takes focus sooner.
+If it closes during that wait, neighboring tiles do not move. This wait
+does not apply to explicit tile requests, windows already open when
+tiling starts, or other apps.
+
+If a window hides, minimizes, or becomes app-cloaked during placement,
+the backend cancels the in-flight attempt without recording a failure.
+Other virtual desktops keep their normal tiling behavior.
 
 Rate limits: at most one toast per window address per reason per enabled
 session, and at most three toasts per ten seconds. The third toast of a
