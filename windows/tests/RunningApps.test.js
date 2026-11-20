@@ -251,3 +251,37 @@ test("an unfocused app focuses its last-active window, not its first-created one
         { action: "activate", id: "40" },
         "a closed last-active window falls back to the remaining window");
 });
+
+test("a wide interleaved fanout assigns each handle to its group in stable order", () => {
+    // Interleave mixed-case and object-property-like app IDs.
+    // Group membership must match per-group stable window order after a
+    // reordering refresh, not source encounter order.
+    const apps = ["10", "Alpha", "aLPHA", "Beta", "gamma", "__proto__", "constructor"];
+    const windows = [];
+    for (let round = 0; round < 40; round++)
+        for (const appId of apps)
+            windows.push(window(`w-${appId}-${round}`, appId,
+                { minimized: (round % 7) === 0, mapped: (round % 11) !== 0 }));
+    const state = context.project(windows, [], []);
+
+    // Reorder the next enumeration so stable order differs from source order.
+    const reordered = [...windows.slice(100), ...windows.slice(0, 100)];
+    const next = context.project(reordered, state.groupOrder, state.windowOrder);
+    assert.equal(ids(next.windowIds), ids(state.windowIds), "stable order survives reordering");
+    assert.equal(ids(next.groupIds), ids(state.groupIds));
+
+    const expected = Object.create(null);
+    for (const id of state.windowIds) {
+        const key = state.byId[id].appId.toLowerCase();
+        (expected[key] ??= []).push(id);
+    }
+    for (const key of next.groupIds) {
+        assert.equal(ids(next.groups[key].windowIds), ids(expected[key]),
+            `group ${key} holds exactly its own handles in stable order`);
+        assert.equal(next.groups[key].windowIds.every(id => next.byId[id]), true);
+        assert.equal(next.groups[key].allMinimized,
+            next.groups[key].minimized === next.groups[key].windowIds.length);
+    }
+    const total = next.groupIds.reduce((n, key) => n + next.groups[key].windowIds.length, 0);
+    assert.equal(total, next.windowIds.length, "every visible handle belongs to exactly one group");
+});
