@@ -104,6 +104,69 @@ QtObject {
             count(before + 2, "explicit pick has one generation owner");
             check(last().path === "C:/walls/picked.jpg", "picked source forwarded");
             check(Native.Wallpaper.calls.length === 1, "one native wallpaper request");
+
+            WallpaperEngine.running = false;
+            WallpaperEngine.desktopHandedBack = false;
+            Quickshell.screens = [{name: "primary"}, {name: "secondary"}];
+            const secondary = {name: "secondary"};
+            Native.FsUtils.existingFiles.push("C:/walls/second-pick.jpg", "C:/walls/settings-pick.jpg");
+            const beforeDisplay = SchemeGenerator.calls.length;
+            check(Wallpapers.setWallpaper("C:/walls/second-pick.jpg", secondary), "display pick accepted");
+            count(beforeDisplay + 1, "display pick updates the live palette");
+            check(last().path === "C:/walls/second-pick.jpg", "palette uses the selected display's file");
+            check(Wallpapers.currentForScreen({name: "primary"}) === "C:/walls/picked.jpg",
+                "palette selection leaves the other wallpaper alone");
+            Native.DesktopLayer.wallpaperChanged();
+            count(beforeDisplay + 1, "native readback does not undo a display pick");
+
+            Native.Wallpaper.screenPaths = Object.assign({}, Native.Wallpaper.screenPaths,
+                {secondary: "C:/walls/settings-pick.jpg"});
+            Native.DesktopLayer.wallpaperChanged();
+            count(beforeDisplay + 2, "a Windows Settings change on one display updates the palette");
+            check(last().path === "C:/walls/settings-pick.jpg", "palette uses the externally changed file");
+
+            SchemeGenerator.pendingWallpaper = {path: "C:/walls/second-pick.jpg", smart: false};
+            Wallpapers.applyPalette(false);
+            count(beforeDisplay + 3, "returning to the persisted image supersedes a different in-flight image");
+            check(last().path === "C:/walls/settings-pick.jpg", "the last visible wallpaper wins");
+            SchemeGenerator.pendingWallpaper = last();
+            Wallpapers.applyPalette(false);
+            count(beforeDisplay + 3, "matching in-flight image is not queued again");
+
+            // The deployed failure: an existing profile has opted out, but
+            // Wallpaper Engine is still running with an old preview selected.
+            SchemeGenerator.pendingWallpaper = null;
+            WallpaperEngine.options = {enabled: false};
+            WallpaperEngine.running = true;
+            check(Wallpapers.externalWallpaperActive && !WallpaperEngine.underlayActive,
+                "the idle engine still reserves the desktop");
+            Native.FsUtils.existingFiles.push("C:/walls/idle-engine-pick.jpg", "C:/walls/idle-engine-settings.jpg");
+            const idleStart = SchemeGenerator.calls.length;
+            check(Wallpapers.setWallpaper("C:/walls/idle-engine-pick.jpg"), "local pick with engine idle");
+            count(idleStart + 1, "local pick generates despite the idle engine");
+            check(last().path === "C:/walls/idle-engine-pick.jpg", "idle engine preview does not mask the local image");
+            select("C:/we/idle-preview.jpg");
+            count(idleStart + 1, "an inactive engine's cached selection does not replace local colours");
+
+            check(Wallpapers.setWallpaper("C:/walls/second-pick.jpg", secondary), "display pick with engine idle");
+            count(idleStart + 2, "display pick generates despite the idle engine");
+            check(last().path === "C:/walls/second-pick.jpg", "palette uses the display pick under the desktop guard");
+            Native.Wallpaper.screenPaths = Object.assign({}, Native.Wallpaper.screenPaths,
+                {secondary: "C:/walls/idle-engine-settings.jpg"});
+            Native.DesktopLayer.wallpaperChanged();
+            count(idleStart + 3, "the idle engine does not block Windows display changes");
+            check(last().path === "C:/walls/idle-engine-settings.jpg", "Windows display change supplies the palette");
+            check(Wallpapers.currentForScreen(secondary) === "C:/walls/second-pick.jpg",
+                "reading colours does not replace the retained desktop image");
+
+            const previousPrimary = Colours.palette.m3primary.toString();
+            const reply = {name: "dynamic", mode: "dark", source: Wallpapers.paletteImage,
+                colours: {primary: "70b6a2", surface: "15221f"}};
+            check(previousPrimary !== "#70b6a2", "worker reply differs from the old palette");
+            Files.deferReloads = true;
+            SchemeGenerator.schemeChanged(reply);
+            check(Colours.palette.m3primary.toString() === "#70b6a2", "worker reply recolours the shell without a file reload");
+            check(Colours.palette.m3surface.toString() === "#15221f", "the shell applies the new surface colour");
             console.log("CAELESTIA_WALLPAPER_COLOURS_PASS " + assertions);
             Qt.quit();
         } catch (error) {

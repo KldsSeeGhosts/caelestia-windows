@@ -8,6 +8,7 @@ import Caelestia.Config
 import qs.components.controls
 import qs.components.wallpaper
 import qs.services
+import qs.utils
 
 // Windows adaptation of modules/launcher/WallpaperList.qml.
 //
@@ -25,6 +26,7 @@ Item {
     required property var content
 
     readonly property int itemWidth: Tokens.sizes.launcher.wallpaperWidth * 0.8 + Tokens.padding.medium * 2
+    readonly property int selectedItemWidth: Tokens.sizes.launcher.wallpaperWidth + Tokens.padding.medium * 2
     // The gap between the folder bar and the carousel belongs to the header, so
     // ContentList can reserve the whole block without squeezing the tiles.
     readonly property real headerHeight: folderBar.implicitHeight + Tokens.spacing.small
@@ -48,19 +50,13 @@ Item {
         if (maxWidth <= 0)
             return 0;
 
-        const maxItemsOnScreen = Math.floor(maxWidth / itemWidth);
-        const visible = Math.min(maxItemsOnScreen, Config.launcher.maxWallpapers, scriptModel.values.length);
-
-        if (visible === 2)
-            return 1;
-        if (visible > 1 && visible % 2 === 0)
-            return visible - 1;
-        return visible;
+        const maxItemsOnScreen = 1 + Math.floor((maxWidth - selectedItemWidth) / itemWidth);
+        return Math.max(0, Math.min(maxItemsOnScreen, Config.launcher.maxWallpapers, scriptModel.values.length));
     }
 
     // The folder path has its own row and cannot drive the picker width; the
-    // header's action row is its real minimum. With zero or one wallpaper the
-    // carousel contributes nothing, so without this the path collapsed to the
+    // header's action row is its real minimum. With a short list the carousel
+    // can be narrower than the actions, so without this the path collapsed to the
     // width of the buttons and disappeared.
     implicitWidth: Math.max(pathView.implicitWidth, folderBar.minimumWidth)
     implicitHeight: headerHeight + Tokens.sizes.launcher.wallpaperHeight
@@ -85,9 +81,21 @@ Item {
 
         PathView {
             id: pathView
+            objectName: "launcherWallpaperCarousel"
 
             Layout.fillWidth: true
             Layout.preferredHeight: Tokens.sizes.launcher.wallpaperHeight
+            readonly property real pathWidth: Math.min(width, root.numItems * root.itemWidth)
+            // Odd counts highlight the middle slot. Even counts highlight the
+            // slot just left of centre, so all tile centres stay off the ends.
+            readonly property real highlightPosition: root.numItems > 0
+                ? (Math.floor((root.numItems - 1) / 2) + 0.5) / root.numItems : 0.5
+
+            function selectInitialItem(): void {
+                const actual = scriptModel.search ? -1
+                    : scriptModel.values.findIndex(w => Paths.samePath(w.path, Wallpapers.actualCurrent));
+                currentIndex = scriptModel.values.length ? Math.max(0, actual) : -1;
+            }
 
             model: ScriptModel {
                 id: scriptModel
@@ -95,10 +103,10 @@ Item {
                 readonly property string search: root.search.text.split(" ").slice(1).join(" ")
 
                 values: Wallpapers.query(search)
-                onValuesChanged: pathView.currentIndex = search ? 0 : values.findIndex(w => w.path === Wallpapers.actualCurrent)
+                onValuesChanged: pathView.selectInitialItem()
             }
 
-            Component.onCompleted: currentIndex = Wallpapers.list.findIndex(w => w.path === Wallpapers.actualCurrent)
+            Component.onCompleted: selectInitialItem()
             Component.onDestruction: Wallpapers.stopPreview()
 
             // Windows port: focusing a cloud placeholder must not preview it.
@@ -106,18 +114,20 @@ Item {
             // that path too, and drops whatever preview was showing before.
             onCurrentItemChanged: {
                 const item = currentItem as WallpaperItem;
-                if (item)
+                if (item && root.screenState.launcher)
                     // Windows scopes the preview to this launcher's display.
                     Wallpapers.previewEntry(item.modelData, root.QsWindow.window?.screen);
+                else
+                    Wallpapers.stopPreview();
             }
 
-            implicitWidth: Math.min(numItems, count) * itemWidth
-            pathItemCount: numItems
+            implicitWidth: root.numItems > 0 ? root.selectedItemWidth + (root.numItems - 1) * root.itemWidth : 0
+            pathItemCount: root.numItems
             cacheItemCount: 4
 
             snapMode: PathView.SnapToItem
-            preferredHighlightBegin: 0.5
-            preferredHighlightEnd: 0.5
+            preferredHighlightBegin: highlightPosition
+            preferredHighlightEnd: highlightPosition
             highlightRangeMode: PathView.StrictlyEnforceRange
 
             delegate: WallpaperItem {
@@ -125,6 +135,7 @@ Item {
             }
 
             path: Path {
+                startX: (pathView.width - pathView.pathWidth) / 2
                 startY: pathView.height / 2
 
                 PathAttribute {
@@ -140,7 +151,7 @@ Item {
                     value: 1
                 }
                 PathLine {
-                    x: pathView.width
+                    x: (pathView.width + pathView.pathWidth) / 2
                     relativeY: 0
                 }
             }

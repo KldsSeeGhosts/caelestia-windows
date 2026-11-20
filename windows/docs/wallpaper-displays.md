@@ -46,18 +46,27 @@ to every display. There is no automatic retry or rollback of engine selections.
 
 ## Dynamic colours
 
-There is one shell-wide colour scheme, not one per display. This change keeps
-the existing source policy. For a fresh profile, the first connected display
-with a usable saved pick supplies the image, including a shared fallback pick.
-If none has a pick, the bundled wallpaper supplies it. Topology changes
-recompute that source, and changing a later display does not replace the first
-display's source. Existing profiles continue using Windows' default wallpaper
-source. While Wallpaper Engine owns the desktop, its configured
-`windows.wallpaperEngine.monitor` project preview supplies the colours.
-Changing the picker target does not change that palette-monitor key.
+There is one shell-wide colour scheme, not one per display. Applying a local
+wallpaper updates dynamic colours without a shell reload, including a pick for
+just one display. Existing profiles also follow wallpaper changes made in Windows.
+At startup or when the selected display disconnects, the shell falls back to
+the first connected display with a usable saved pick on fresh profiles, or to
+Windows' default wallpaper on existing profiles. If no image is available,
+the bundled wallpaper supplies it. When Wallpaper Engine integration is on
+and the engine owns the desktop, or the shell sees its wallpaper beneath the
+icons, the configured `windows.wallpaperEngine.monitor` project preview supplies
+the colours. An idle engine process with integration off does not change the
+colour source. Changing the picker target does not change the palette-monitor key.
 
-Fixed colour schemes stay fixed. Previews do not generate colours. The existing
-handback and unavailable-generator behavior is unchanged.
+Fixed colour schemes stay fixed. In the launcher wallpaper picker, highlighting
+a wallpaper previews its dynamic colours without changing the saved wallpaper,
+palette, or colours exported to other apps. Closing the picker restores the
+applied colours. Cloud placeholders do not preview until opened.
+
+Dynamic themes use the upstream palette by default. Enable **Tint backgrounds**
+under **Wallpaper & style** to use more wallpaper colour in shell backgrounds
+and containers. This is `windows.wallpaperSurfaceTint` in `shell.json` and
+does not change accent or text colours.
 
 ## Owner acceptance
 
@@ -77,5 +86,6 @@ On the owner's desktop, check:
   behavior match the old Services controls. A project pick respects both an
   individual target and "All displays", including managed display mappings.
 - With distinct images, dynamic colours follow the source policy above.
-  Fixed schemes stay fixed. Reconnect, handback and launcher preview do not
-  overwrite unrelated display choices.
+  Launcher highlights preview colours without saving them. Fixed schemes stay
+  fixed. Reconnect, handback and launcher preview do not overwrite unrelated
+  display choices.

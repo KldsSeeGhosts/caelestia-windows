@@ -80,6 +80,7 @@ with contextlib.redirect_stdout(sys.stderr):
     from PIL import Image  # noqa: E402
 
     from caelestia.utils.paths import (  # noqa: E402
+        atomic_dump,
         scheme_path,
         wallpaper_path_path,
         wallpaper_thumbnail_path,
@@ -94,6 +95,7 @@ with contextlib.redirect_stdout(sys.stderr):
         scheme_variants,
     )
     import caelestia.utils.material.score as _score_module  # noqa: E402
+    from materialyoucolor.hct import Hct  # noqa: E402
     from materialyoucolor.quantize import QuantizeCelebi  # noqa: E402
 
 
@@ -147,15 +149,13 @@ def _seed_wallpaper(image: Path) -> None:
 
     Upstream uses symlinks for ``current`` and ``thumbnail.jpg``. Windows only
     allows symlinks with extra privileges, so the bridge writes ordinary files:
-    the generator only reads ``thumbnail.jpg`` and ``path.txt``.
+    the generator only needs ``thumbnail.jpg`` to compute the palette.
     """
     thumb = _thumbnail(image)
     wallpaper_thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
     if wallpaper_thumbnail_path.is_symlink():
         wallpaper_thumbnail_path.unlink()
     shutil.copyfile(thumb, wallpaper_thumbnail_path)
-    wallpaper_path_path.parent.mkdir(parents=True, exist_ok=True)
-    wallpaper_path_path.write_text(str(image), encoding="utf-8")
 
 
 def _smart_options(image: Path) -> dict[str, str]:
@@ -181,6 +181,38 @@ def _validated(name: str, flavour: str | None, mode: str | None, variant: str | 
     return name, flavour, mode, variant
 
 
+def _surface_tint(colours: dict[str, str], variant: str) -> dict[str, str]:
+    # Keep the optional Windows tint separate from the upstream palette.
+    if variant in {"neutral", "monochrome"}:
+        return {}
+    accent = Hct.from_int(int(colours["primary"], 16))
+    chroma = min(accent.chroma, 16)
+    result = {}
+    for role in (
+        "background", "surface", "surfaceDim", "surfaceBright",
+        "surfaceContainerLowest", "surfaceContainerLow", "surfaceContainer",
+        "surfaceContainerHigh", "surfaceContainerHighest", "surfaceVariant",
+    ):
+        current = Hct.from_int(int(colours[role], 16))
+        if current.chroma < chroma:
+            tinted = Hct.from_hct(accent.hue, chroma, current.tone)
+            result[role] = f"{tinted.to_int() & 0xffffff:06x}"
+    return result
+
+
+def _palette_data(scheme: Scheme) -> dict:
+    data = {
+        "name": scheme.name,
+        "flavour": scheme.flavour,
+        "mode": scheme.mode,
+        "variant": scheme.variant,
+        "colours": scheme.colours,
+    }
+    if scheme.name == "dynamic":
+        data["windowsSurfaceTint"] = _surface_tint(scheme.colours, scheme.variant)
+    return data
+
+
 def _save_scheme(name: str, flavour: str | None, mode: str | None, variant: str | None) -> Scheme:
     # Mutate the process-global Scheme rather than constructing a second one:
     # upstream get_colours_for_image() resolves its scheme through get_scheme(),
@@ -192,18 +224,16 @@ def _save_scheme(name: str, flavour: str | None, mode: str | None, variant: str 
     scheme._mode = mode
     scheme._variant = variant
     scheme._update_colours()
-    scheme.save()
+    scheme_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_dump(scheme_path, _palette_data(scheme))
     return scheme
 
 
 def _describe(scheme: Scheme) -> dict:
     return {
         "ok": True,
-        "name": scheme.name,
-        "flavour": scheme.flavour,
-        "mode": scheme.mode,
-        "variant": scheme.variant,
-        "colours": scheme.colours,
+        **_palette_data(scheme),
+        "source": str(_current_wallpaper() or "") if scheme.name == "dynamic" else "",
         "path": str(scheme_path),
     }
 
@@ -245,22 +275,53 @@ def _current_wallpaper() -> Path | None:
     return path if path.is_file() else None
 
 
-def apply_wallpaper(image: Path, flavour: str | None, mode: str | None, variant: str | None, smart: bool) -> Scheme:
+def _wallpaper_options(image: Path, current: Scheme, mode: str | None, variant: str | None, smart: bool) -> tuple[str, str]:
+    if smart and not mode and not variant:
+        options = _smart_options(image)
+        mode = options.get("mode")
+        variant = options.get("variant")
+    return mode or current.mode, variant or current.variant
+
+
+def _wallpaper_file(image: Path) -> Path:
     image = image.resolve()
     if not image.is_file():
         raise ValueError(f"wallpaper not found: {image}")
-    _seed_wallpaper(image)
+    return image
 
+
+def apply_wallpaper(image: Path, flavour: str | None, mode: str | None, variant: str | None, smart: bool) -> Scheme:
+    image = _wallpaper_file(image)
+    _seed_wallpaper(image)
     current = get_scheme()
-    target_mode = mode
-    target_variant = variant
-    if smart and not mode and not variant:
-        options = _smart_options(image)
-        target_mode = options.get("mode", current.mode)
-        target_variant = options.get("variant", current.variant)
-    target_mode = target_mode or current.mode
-    target_variant = target_variant or current.variant
-    return _save_scheme("dynamic", flavour or current.flavour, target_mode, target_variant)
+    mode, variant = _wallpaper_options(image, current, mode, variant, smart)
+    scheme = _save_scheme("dynamic", flavour or current.flavour, mode, variant)
+    # Do not mark an image as the saved palette's source until it generated
+    # successfully. Both state files live beside the seeded thumbnail.
+    wallpaper_path_path.write_text(str(image), encoding="utf-8")
+    return scheme
+
+
+def _read_scheme_state() -> dict | None:
+    try:
+        data = json.loads(scheme_path.read_bytes())
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def preview_wallpaper(image: Path, smart: bool) -> dict:
+    from caelestia.utils.material import get_colours_for_image
+
+    image = _wallpaper_file(image)
+    # get_scheme() can create a default scheme. Preview only reads committed
+    # state and uses per-image caches; it never seeds the active thumbnail.
+    current = Scheme(_read_scheme_state())
+    mode, variant = _wallpaper_options(image, current, None, None, smart)
+    name, flavour, mode, variant = _validated("dynamic", current.flavour, mode, variant, current.variant)
+    scheme = Scheme({"name": name, "flavour": flavour, "mode": mode, "variant": variant, "colours": {}})
+    scheme._colours = get_colours_for_image(_thumbnail(image), scheme)
+    return {"ok": True, **_palette_data(scheme)}
 
 
 def set_properties(
@@ -301,6 +362,15 @@ def set_properties(
 
 def list_schemes() -> dict:
     current = get_scheme()
+    if current.name == "dynamic" and "windowsSurfaceTint" not in (_read_scheme_state() or {}):
+        # Earlier Windows builds saved the tint into the base roles. Recover
+        # the upstream colours without changing the saved variant or mode.
+        source = _current_wallpaper()
+        if source is not None:
+            try:
+                current = apply_wallpaper(source, current.flavour, current.mode, current.variant, smart=False)
+            except (OSError, ValueError):
+                pass  # Keep the saved palette when its original image cannot be decoded.
     schemes: dict[str, dict[str, dict[str, str]]] = {}
     for name in get_scheme_names():
         schemes[name] = {}
@@ -344,6 +414,10 @@ def _parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--variant", choices=scheme_variants)
     apply_parser.add_argument("--smart", choices=["0", "1"], default="1")
 
+    preview_parser = commands.add_parser("preview-wallpaper")
+    preview_parser.add_argument("--image", required=True)
+    preview_parser.add_argument("--smart", choices=["0", "1"], default="1")
+
     set_parser = commands.add_parser("set")
     set_parser.add_argument("--name")
     set_parser.add_argument("--flavour")
@@ -371,6 +445,8 @@ def _dispatch(args: argparse.Namespace) -> dict:
         return _describe(apply_wallpaper(
             Path(args.image), args.flavour, args.mode, args.variant, args.smart == "1",
         ))
+    if args.command == "preview-wallpaper":
+        return preview_wallpaper(Path(args.image), args.smart == "1")
     if args.command == "set":
         return _describe(set_properties(
             args.name, args.flavour, args.mode, args.variant,

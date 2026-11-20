@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 QtObject {
+    property var windows: ({})
     property QtObject services: QtObject { property bool smartScheme: true }
     property QtObject screenConfig: QtObject {
         property QtObject background: QtObject {

@@ -401,6 +401,19 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
         assertions++;
     }
 
+    function twoTilesFit(carousel): bool {
+        const first = carousel.itemAtIndex(0);
+        const second = carousel.itemAtIndex(1);
+        if (!first?.visible || !second?.visible || first.opacity < 0.99 || second.opacity < 0.99)
+            return false;
+        const left = Math.min(first.mapToItem(carousel, 0, 0).x, second.mapToItem(carousel, 0, 0).x);
+        const right = Math.max(first.mapToItem(carousel, first.width, 0).x,
+            second.mapToItem(carousel, second.width, 0).x);
+        const firstCentre = first.mapToItem(carousel, first.width / 2, 0).x;
+        const secondCentre = second.mapToItem(carousel, second.width / 2, 0).x;
+        return left >= -1 && right <= carousel.width + 1 && Math.abs(firstCentre - secondCentre) >= root.picker.itemWidth - 1;
+    }
+
     function toastBodies(): string {
         return root.notifications.map(call => call.body).join("\n");
     }
@@ -768,6 +781,20 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
             root.check(root.picker.implicitHeight === root.picker.headerHeight + Tokens.sizes.launcher.wallpaperHeight,
                 "the launcher picker does not reserve the carousel below the header");
             root.check(root.picker.count === 0, "the empty production scan produced wallpaper tiles");
+            // The offscreen display has room for two tiles. Check actual
+            // delegate positions, not just the PathView's model count.
+            Wallpapers.files = [root.realSourcePath, root.cleanupSourcePath].map(path => ({
+                path, relativePath: WallpaperFolderService.wallpaperName(path), parentDir: Paths.wallsdir, onDisk: true
+            }));
+            const carousel = root.find(root.picker, "launcherWallpaperCarousel");
+            root.check(carousel !== null, "the real wallpaper carousel did not load");
+            root.waitFor(() => carousel.count === 2 && root.picker.numItems === 2 && root.twoTilesFit(carousel),
+                3000, "two wallpapers did not fit side by side inside the launcher");
+            const previousSelection = carousel.currentIndex;
+            root.picker.incrementCurrentIndex();
+            root.waitFor(() => carousel.currentIndex !== previousSelection && !carousel.moving && root.twoTilesFit(carousel),
+                3000, "keyboard navigation did not keep both wallpaper tiles visible");
+            Wallpapers.files = [];
             root.productionPickerActive = false;
             root.picker = null;
             root.input.wait(50);

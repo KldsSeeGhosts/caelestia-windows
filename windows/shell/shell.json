@@ -173,6 +173,7 @@
   },
   "windows": {
     "restartFrozenShell": true,
+    "wallpaperSurfaceTint": false,
     "clipboard": {
       "enabled": true
     },

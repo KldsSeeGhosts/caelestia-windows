@@ -90,7 +90,7 @@ Searcher {
 
         function onClicked(list: AppList): void {
             list.screenState.launcher = false;
-            SchemeGenerator.setVariant(variant, Wallpapers.currentImage);
+            SchemeGenerator.setVariant(variant, Wallpapers.paletteImage);
         }
     }
 }
