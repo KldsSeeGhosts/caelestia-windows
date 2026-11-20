@@ -205,6 +205,28 @@ QtObject {
     }
 
     function finish(): void {
+        const first = {path: "p1", title: "One", preview: "one.jpg", engine: true};
+        const second = {path: "p2", title: "Two", preview: "two.jpg", engine: true};
+        const data = {detected: true, running: true, items: [first, second],
+            monitors: {Monitor0: first}, displays: {screen1: first}};
+        WallpaperEngine.applySnapshot(data);
+        const items = WallpaperEngine.items;
+        const monitors = WallpaperEngine.monitors;
+        const displays = WallpaperEngine.displays;
+        const reread = JSON.parse(JSON.stringify(data));
+        WallpaperEngine.applySnapshot(reread);
+        WallpaperEngine.applyStatus(reread);
+        check(WallpaperEngine.items === items && WallpaperEngine.monitors === monitors
+            && WallpaperEngine.displays === displays, "unchanged polls replaced the live models");
+        reread.items.reverse();
+        WallpaperEngine.applySnapshot(reread);
+        check(WallpaperEngine.items[0].path === "p2", "catalogue reorder was ignored");
+        delete reread.monitors.Monitor0.preview;
+        reread.displays = {screen2: second};
+        WallpaperEngine.applyStatus(reread);
+        check(!("preview" in WallpaperEngine.monitors.Monitor0)
+            && !("screen1" in WallpaperEngine.displays) && WallpaperEngine.displays.screen2.path === "p2",
+            "a removed field or a replacement display key was ignored");
         console.log("CAELESTIA_WALLPAPER_ENGINE_CONFIG_PASS " + assertions);
         Qt.quit();
     }

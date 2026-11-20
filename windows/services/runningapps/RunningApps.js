@@ -44,7 +44,6 @@ function project(windows, previousGroups, previousWindows) {
         byId[window.id] = window;
         if (!groups[key])
             groups[key] = { id: key, appId: window.appId, windowIds: [], minimized: 0, active: false };
-        groups[key].windowIds.push(window.id);
         groups[key].minimized += window.minimized ? 1 : 0;
         groups[key].active = groups[key].active || window.active;
     }
@@ -54,9 +53,12 @@ function project(windows, previousGroups, previousWindows) {
     const groupOrder = stableOrder(previousGroups, currentGroups);
     const windowIds = windowOrder.filter(id => byId[id]);
     const groupIds = groupOrder.filter(id => groups[id]);
+    // Assign each visible handle to its group in one stable-order pass instead
+    // of re-scanning the full list once per application.
+    for (const id of windowIds)
+        groups[byId[id].appId.toLowerCase()].windowIds.push(id);
     for (const key of groupIds) {
         const group = groups[key];
-        group.windowIds = windowIds.filter(id => byId[id].appId.toLowerCase() === key);
         group.allMinimized = group.minimized === group.windowIds.length;
     }
     return { byId, groups, windowIds, groupIds, windowOrder, groupOrder };

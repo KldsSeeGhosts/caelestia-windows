@@ -19,6 +19,23 @@ const model = load();
 const entry = (id, text = id) => ({ id, kind: "text", text });
 const ids = rows => Array.from(rows, row => row.itemId);
 
+// Wrap FileUrls.parseFileUrl in a counting spy so a test can assert each row's
+// lines are decoded once per pass, not once per derived field.
+function loadWithParseCounter() {
+    const urls = vm.createContext({});
+    const urlSource = fs.readFileSync(path.join(__dirname, "../shell/adapters/utils/FileUrls.js"), "utf8");
+    vm.runInContext(urlSource.replace(/^\s*\.pragma library\s*$/gm, ""), urls,
+        { filename: "production/FileUrls.js" });
+    const realParse = urls.parseFileUrl;
+    const counter = { calls: 0 };
+    const instrumented = vm.createContext({ FileUrls: Object.assign({}, urls, {
+        parseFileUrl: value => { counter.calls++; return realParse(value); }
+    }) });
+    vm.runInContext(source.replace(/^\s*\.import[^\r\n]*$/gm, ""), instrumented,
+        { filename: "production/ClipboardHistory.js" });
+    return { context: instrumented, counter };
+}
+
 test("clipboard selection follows the item across insert, reorder and delayed snapshot replacement", () => {
     const original = model.displayRows([entry("a"), entry("selected"), entry("c")], "", 60);
     const selected = original[1].itemId;
@@ -68,4 +85,61 @@ test("clipboard stable-ID assertion rejects an index-only behavior mutation", ()
     assert.throws(() => {
         assert.equal(rows[mutant.selectionIndex("selected", 1, rows)].itemId, "selected");
     }, assert.AssertionError, "an index-only implementation must fail the user-visible identity assertion");
+});
+
+test("clipboard file rows split and decode each visible line once per pass", () => {
+    const { context, counter } = loadWithParseCounter();
+    const fileText = [
+        "file:///C:/docs/report.pdf",
+        "file:///D:/photos/cat.png",
+        "plain tail line"
+    ].join("\n");
+    const rows = context.displayRows([entry("files", fileText), entry("note", "no urls here")], "", 60);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].entryType, "file");
+    assert.equal(rows[0].subtitle, "report.pdf, cat.png");
+    assert.equal(rows[0].fullText, "C:/docs/report.pdf\nD:/photos/cat.png");
+    // Only the file row's three lines reach the parser; the plain-text row is
+    // skipped by the file: precheck, and no derived field re-parses a line.
+    assert.equal(counter.calls, 3);
+
+    counter.calls = 0;
+    context.displayRows([entry("files", fileText)], "report", 60);
+    assert.equal(counter.calls, 3, "search reuse must not decode the row a second time");
+});
+
+test("clipboard file search matches labels and file lines past the display cap", () => {
+    const padding = "filler text\n".repeat(700); // pushes text past displayTextLimit
+    const fileText = [
+        "plain intro line",
+        padding,
+        "file:///C:/docs/deep-secret.pdf",
+        "file://remote-host/share/skip.txt",
+        "file:///E:/encoded%20name.txt"
+    ].join("\n");
+    const { context, counter } = loadWithParseCounter();
+    context.displayRows([entry("deep", fileText)], "", 60);
+    assert.equal(counter.calls, 0, "without a search, never parse URLs beyond the preview cap");
+    const rows = model.displayRows([entry("deep", fileText)], "2 files", 60);
+    assert.equal(rows.length, 1, "a file label past the cap must still match search");
+    assert.equal(rows[0].itemId, "deep");
+
+    const mixed = model.displayRows([
+        entry("mixed", "regular line\nfile:///C:/ok/visible.txt\nfile:///\\\\unc\\evil\nfile://otherhost/x/y"),
+        entry("plain", "ordinary text")
+    ], "", 60);
+    assert.equal(mixed.length, 2);
+    assert.equal(mixed[0].entryType, "file");
+    // Remote-authority and decoded-UNC spellings are refused, leaving one path.
+    assert.equal(mixed[0].fullText, "C:/ok/visible.txt");
+    assert.equal(mixed[0].path, "C:/ok/visible.txt");
+    assert.equal(mixed[1].entryType, "text");
+});
+
+test("clipboard rows retain no parsed-path state between calls", () => {
+    const first = model.displayRows([entry("f", "file:///C:/one.txt")], "", 60);
+    assert.equal(first[0].path, "C:/one.txt");
+    const second = model.displayRows([entry("g", "totally plain")], "", 60);
+    assert.equal(second[0].entryType, "text");
+    assert.equal(second[0].path, "");
 });

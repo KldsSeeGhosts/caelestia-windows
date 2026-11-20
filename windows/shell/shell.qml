@@ -97,17 +97,20 @@ ShellRoot {
             id: scope
             required property ShellScreen modelData
             readonly property alias window: content
-            property bool firstFrame: false
-            property int smokeFrames: 0
+            readonly property bool firstFrame: startup.frames > 0
+            readonly property int smokeFrames: root.smokeCi ? startup.frames : 0
 
-            Connections {
-                target: content.contentItem.Window.window
-                function onFrameSwapped(): void {
-                    scope.firstFrame = true;
+            // One frame for cold-start readiness, two under the offscreen
+            // smoke. StartupFrames unsubscribes at its budget instead of
+            // counting frameSwapped for the life of the shell.
+            StartupFrames {
+                id: startup
+                window: content.contentItem.Window.window
+                frameLimit: root.smokeCi ? 2 : 1
+                onCounted: function(count) {
                     if (root.smokeCi) {
-                        scope.smokeFrames++;
-                        if (scope.smokeFrames < 2)
-                            content.contentItem.Window.window.update();
+                        if (count < 2)
+                            startup.window?.update();
                         Qt.callLater(root.finishSmokeCi);
                     }
                 }

@@ -70,6 +70,7 @@ protected:
     void applyCornerFill(float smoothFactor, const QVector<BlobShape*>& rectShapes);
 
     BlobGroup* m_group = nullptr;
+    bool m_physicsActive = false;
     qreal m_radius = 0;
     QMatrix4x4 m_deformMatrix; // identity by default
     QMatrix4x4 m_centeredDeformMatrix;

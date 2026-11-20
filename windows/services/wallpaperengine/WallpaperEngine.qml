@@ -162,8 +162,6 @@ Singleton {
     property bool haveSnapshot: false
     property bool fullScanNeeded: true
     property int statusTicks: 0
-    property string itemsJson: ""
-    property string monitorsJson: ""
     property bool scanPending: false
     // An enable can arrive during an idle scan. Preserve its full refresh
     // even if that older result clears fullScanNeeded before it exits.
@@ -242,24 +240,44 @@ Singleton {
             snapshotReady = true;
     }
 
+    // The bridge returns flat project records in an ordered catalogue and in
+    // maps keyed by monitor or display. Compare the live records rather than
+    // retaining a second, serialized copy of every title, preview and path.
+    function sameProjects(a, b): bool {
+        if (a === b)
+            return true;
+        const ids = Array.isArray(b) ? null : Object.keys(b);
+        const count = ids ? ids.length : b.length;
+        if (count !== (ids ? Object.keys(a).length : a.length))
+            return false;
+        for (let i = 0; i < count; i++) {
+            const id = ids ? ids[i] : i;
+            const x = a[id], y = b[id];
+            if (!x)
+                return false;
+            const keys = Object.keys(y);
+            if (Object.keys(x).length !== keys.length)
+                return false;
+            for (let j = 0; j < keys.length; j++)
+                if (x[keys[j]] !== y[keys[j]])
+                    return false;
+        }
+        return true;
+    }
+    function updateProjects(data, fullCatalogue: bool): void {
+        const nextDisplays = data.displays ?? {};
+        if (!sameProjects(displays, nextDisplays))
+            displays = nextDisplays;
+        if (fullCatalogue && !sameProjects(items, data.items))
+            items = data.items;
+        if (!sameProjects(monitors, data.monitors))
+            monitors = data.monitors;
+    }
     function applySnapshot(data): void {
         detected = data.detected;
         running = data.running;
         configPath = data.configPath || "";
-        displays = data.displays ?? {};
-        // Compare against one cached serialization instead of re-stringifying
-        // the live models: redundant assignments would rebuild the carousel
-        // delegates on every poll.
-        const nextItems = JSON.stringify(data.items);
-        if (nextItems !== itemsJson) {
-            itemsJson = nextItems;
-            items = data.items;
-        }
-        const nextMonitors = JSON.stringify(data.monitors);
-        if (nextMonitors !== monitorsJson) {
-            monitorsJson = nextMonitors;
-            monitors = data.monitors;
-        }
+        updateProjects(data, true);
         haveSnapshot = true;
         fullScanNeeded = false;
         statusTicks = 0;
@@ -288,13 +306,10 @@ Singleton {
         // Status mode carries the resolved selected projects, so a config
         // change reaches currentImage without waiting for the catalogue scan.
         if (data.monitors) {
-            displays = data.displays ?? {};
-            const nextMonitors = JSON.stringify(data.monitors);
-            if (nextMonitors !== monitorsJson) {
-                monitorsJson = nextMonitors;
+            const previous = monitors;
+            updateProjects(data, false);
+            if (previous !== monitors)
                 console.debug("CAELESTIA_PALETTE_TIMING stage=monitors_changed source=status ts=" + Date.now());
-                monitors = data.monitors;
-            }
         }
         snapshotReady = true;
         startupDiscoveryReady = true;

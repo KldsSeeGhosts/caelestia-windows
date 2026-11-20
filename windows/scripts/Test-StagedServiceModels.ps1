@@ -201,7 +201,7 @@ try {
     $count = [regex]::Match($js.text, '(?m)^# tests ([0-9]+)\s*$')
     $passes = [regex]::Match($js.text, '(?m)^# pass ([0-9]+)\s*$')
     $skips = [regex]::Match($js.text, '(?m)^# skipped ([0-9]+)\s*$')
-    $passed = -not $js.timedOut -and $js.exitCode -eq 0 -and $count.Success -and [int]$count.Groups[1].Value -eq 5 `
+    $passed = -not $js.timedOut -and $js.exitCode -eq 0 -and $count.Success -and [int]$count.Groups[1].Value -eq 8 `
         -and $passes.Success -and $passes.Groups[1].Value -eq $count.Groups[1].Value -and $skips.Success -and [int]$skips.Groups[1].Value -eq 0
     $results.Add([ordered]@{ name = 'javascript'; passed = $passed; exitCode = $js.exitCode; timedOut = $js.timedOut
         tests = if ($count.Success) { [int]$count.Groups[1].Value } else { 0 }; seconds = $js.seconds; skipped = 0 })

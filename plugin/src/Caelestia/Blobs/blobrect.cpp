@@ -33,14 +33,8 @@ void BlobRect::updatePolish() {
             emit rawDeformMatrixChanged();
             updateCenteredDeformMatrix();
             m_physicsActive = false;
-        } else {
-            QMetaObject::invokeMethod(
-                this,
-                [this] {
-                    if (m_physicsActive && m_group)
-                        m_group->markDirty();
-                },
-                Qt::QueuedConnection);
+        } else if (m_group) {
+            m_group->requestAnimationTurn();
         }
     }
 }
