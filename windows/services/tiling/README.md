@@ -200,10 +200,12 @@ and a Super+drag follow the same rule:
 | its own slot, a gap or the bar | back home |
 | another monitor's empty area | moves to that monitor |
 
-An edge band is 20% of the tile on that axis, at most 120 DIPs at that
-monitor's scale. In a corner equally deep in two bands, the left or right
-band wins. A zone or target holds until the cursor is 8 DIPs past it, so a
-boundary does not flicker.
+Each split target extends a quarter of the way in from that edge, up to
+160 DIPs at the target monitor's scale. Aim at the middle to swap. Near a
+corner, the edge you're deeper into relative to its band width wins. On a
+fresh drop, an exact tie goes to the left or right edge. The preview holds
+its choice across small movements at a boundary, up to 8 DIPs, so slight
+pointer jitter doesn't switch a split back to a swap.
 
 The release does what the preview last showed. Windows reports the end of
 a drag late, and the cursor may have moved on without a new preview, so the

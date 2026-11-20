@@ -118,6 +118,12 @@ ShellRoot {
         check(ghost.visible, "the split tile is outlined");
         check(marker.glyph === "splitscreen_left", "a split left of the tile points left");
         check(marker.glyph !== "swap_horiz", "an insert never reads as a swap");
+        backend.dragLanding = Qt.rect(300, 50, 200, 300);
+        backend.dragDisplaced = Qt.rect(100, 50, 200, 300);
+        check(marker.glyph === "splitscreen_right", "a split right of the tile points right");
+        backend.dragLanding = Qt.rect(100, 50, 400, 150);
+        backend.dragDisplaced = Qt.rect(100, 200, 400, 150);
+        check(marker.glyph === "splitscreen_top", "a split above the tile points up");
         backend.dragLanding = Qt.rect(100, 350, 400, 150);
         backend.dragDisplaced = Qt.rect(100, 50, 400, 300);
         check(marker.glyph === "splitscreen_bottom", "a split below the tile points down");
