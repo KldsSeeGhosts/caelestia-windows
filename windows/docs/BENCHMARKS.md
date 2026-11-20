@@ -36,6 +36,31 @@ offscreen host for recorder starts and clock callbacks, with synthetic helper
 lifecycle logs and count controls. It does not extend the CPU/timing gate or
 qualify live-desktop costs.
 
+### Shared drawer animation scheduling
+
+`windows/bench/blob-motion` counts queued animation callbacks in the production
+blob renderer. It creates two unshown Qt Quick windows with nine panel shapes
+and a border each. Qt runs the normal polish pass while one or four shapes per
+window move for 32 steps. The probe checks that all moving shapes deform, then
+stops moving them and checks that the matrices return to identity and callbacks
+stop. It never presents a frame or opens the desktop shell.
+
+In a C++ developer shell with Qt 6 on the CMake and DLL paths:
+
+```powershell
+cmake -S windows/bench/blob-motion -B "$env:TEMP/blob-motion-probe" -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build "$env:TEMP/blob-motion-probe"
+$env:QT_QPA_PLATFORM = 'offscreen'
+& "$env:TEMP/blob-motion-probe/blob_motion_probe.exe"
+```
+
+For a paired source comparison, configure a separate build directory with
+`-DBLOB_SRC=<archived checkout>/plugin/src/Caelestia/Blobs` and run the same
+probe. With Qt 6.11.3, baseline `2601026d` delivered 256 callbacks in the
+four-shape case. The shared scheduler delivered 64. With one moving shape per
+window both delivered 64. These counts measure work on the GUI thread, not
+frame timing, GPU load, or memory savings.
+
 ## Workflow 1. Explore and profile
 
 Use a Release build from `Build-Prototype.ps1`, not the installed shell. Main

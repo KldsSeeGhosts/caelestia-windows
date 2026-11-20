@@ -42,6 +42,7 @@ public:
     void markDirty();
     void markShapeDirty(BlobShape* source);
     void ensurePhysicsUpdated();
+    void requestAnimationTurn();
 
 signals:
     void smoothingChanged();
@@ -49,12 +50,15 @@ signals:
     void cornerFillChanged();
 
 private:
+    void deliverAnimationTurn();
+
     qreal m_smoothing = 32.0;
     QColor m_color{ 0x44, 0x88, 0xff };
     bool m_cornerFill = true;
     QList<BlobShape*> m_shapes;
     BlobInvertedRect* m_invertedRect = nullptr;
     bool m_physicsUpdated = false;
+    bool m_animationTurnPending = false;
 };
 
 } // namespace caelestia::shell::blobs

@@ -77,7 +77,6 @@ private:
     // Physics state
     QPointF m_prevScenePos;
     QElapsedTimer m_elapsed;
-    bool m_physicsActive = false;
     bool m_hasPrevPos = false;
 
     // Symmetric 2x2 deformation matrix components (3 independent: m00, m01,

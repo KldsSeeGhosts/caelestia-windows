@@ -21,6 +21,50 @@ ShellRoot {
     }
     MonitorScope { id: first }
     MonitorScope { id: second }
+    component FrameSource: QtObject { signal frameSwapped() }
+    FrameSource { id: original }
+    FrameSource { id: replacement }
+    StartupFrames {
+        id: normal
+        window: original
+        frameLimit: 1
+    }
+    StartupFrames {
+        id: smoke
+        window: replacement
+        frameLimit: 2
+        property int repaints: 0
+        property bool replaceOnFrame: false
+        onCounted: count => {
+            if (replaceOnFrame) {
+                replaceOnFrame = false;
+                window = replacement;
+            } else if (count < 2) {
+                repaints++;
+            }
+        }
+    }
+    function checkFrameSubscriptions(): void {
+        original.frameSwapped();
+        replacement.frameSwapped();
+        check(!normal.subscribed && normal.frames === 1, "production did not disconnect after one frame");
+        check(smoke.subscribed && smoke.frames === 1 && smoke.repaints === 1, "smoke failed to request its second frame");
+        original.frameSwapped();
+        replacement.frameSwapped();
+        replacement.frameSwapped();
+        check(!smoke.subscribed && smoke.frames === 2 && smoke.repaints === 1 && normal.frames === 1,
+            "frames after readiness changed the budget");
+        smoke.window = original;
+        smoke.replaceOnFrame = true;
+        original.frameSwapped();
+        original.frameSwapped();
+        check(smoke.subscribed && smoke.frames === 0, "old source marked replacement ready");
+        replacement.frameSwapped();
+        check(smoke.frames === 1, "did not resubscribe to replacement");
+        smoke.window = null;
+        replacement.frameSwapped();
+        check(!smoke.subscribed && smoke.frames === 0, "lost screen retained a subscription");
+    }
     ShellReadiness {
         id: readiness
         screenCount: 0
@@ -36,6 +80,7 @@ ShellRoot {
         running: true
         onTriggered: {
             try {
+                root.checkFrameSubscriptions();
                 root.check(!readiness.ready && root.reports === 0, "empty model reported ready");
                 readiness.screenCount = 2;
                 readiness.scopes = [first];

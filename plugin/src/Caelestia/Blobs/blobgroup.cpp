@@ -134,4 +134,22 @@ void BlobGroup::ensurePhysicsUpdated() {
         shape->updatePhysics();
 }
 
+void BlobGroup::requestAnimationTurn() {
+    if (m_animationTurnPending)
+        return;
+    m_animationTurnPending = true;
+    QMetaObject::invokeMethod(this, &BlobGroup::deliverAnimationTurn, Qt::QueuedConnection);
+}
+
+void BlobGroup::deliverAnimationTurn() {
+    m_animationTurnPending = false;
+    // A requester can settle, move to another group or be destroyed before delivery.
+    for (auto* shape : std::as_const(m_shapes)) {
+        if (shape->m_physicsActive) {
+            markDirty();
+            return;
+        }
+    }
+}
+
 } // namespace caelestia::shell::blobs
