@@ -76,7 +76,7 @@ def verify(shell, build, inventory, base, head):
         before = git(shell, "ls-tree", base, "--", path)
         require(bool(before) and before == git(shell, "ls-tree", head, "--", path), reason)
     # Run the same fail-closed classifier independently of the scope job.
-    command = ["pwsh" if os.name != "nt" else "powershell.exe", "-NoProfile", "-NonInteractive",
+    command = ["pwsh", "-NoProfile", "-NonInteractive",
                "-File", str(Path(shell) / "windows/ci/Get-NativeBuildRequired.ps1"),
                "-RepoRoot", str(shell), "-Base", base, "-Head", head, "-EventName", "pull_request"]
     env = {key: value for key, value in os.environ.items() if key != "GITHUB_OUTPUT"}

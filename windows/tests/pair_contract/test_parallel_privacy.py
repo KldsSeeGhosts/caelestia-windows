@@ -21,7 +21,7 @@ class ParallelPrivacyTests(unittest.TestCase):
                 ". \"$Repository/windows/scripts/Caelestia-ReleasePrivacy.ps1\"\n" + script,
                 encoding="utf-8-sig")
             return subprocess.run(
-                ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+                ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(harness),
                  str(ROOT), temp, *args], capture_output=True, text=True, timeout=45)
 
     def test_parallel_overlap_is_bounded_complete_and_preserves_input_order(self):

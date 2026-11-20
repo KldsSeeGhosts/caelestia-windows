@@ -457,7 +457,7 @@ def acquire(args):
                     raise TimeoutError("Bounded acquisition exhausted. Do not shorten silently.")
                 stage = output / f"{i:03}-{side}"
                 source = ROOT if side == "A" else source_b
-                command(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                command(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                          source / "windows/bench/Stage-Bench.ps1", "-Destination", stage], timeout=45)
                 staged_hash = digest(tree(stage / "imports"))
                 selected_build = build if side == "A" else build_b

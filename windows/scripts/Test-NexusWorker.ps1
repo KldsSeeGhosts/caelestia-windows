@@ -121,7 +121,7 @@ function Start-Worker([string]$Case, [string]$Arguments, [string]$Pause = '') {
     $control = Join-Path $Case ('control-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($control) | Out-Null
     $info = [Diagnostics.ProcessStartInfo]::new()
-    $info.FileName = Get-WindowsPowerShellPath
+    $info.FileName = Get-CaelestiaPowerShellPath
     $info.Arguments = $Arguments
     $info.UseShellExecute = $false; $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
@@ -164,7 +164,9 @@ try {
     $checked = Finish (Start-Worker $case (Args $case '-Command CheckUpdate'))
     Assert (($checked | ConvertFrom-Json).state -ceq 'available') 'Authenticated check before queue did not offer target.'
     $id = Queue $case
-    $null = Finish (Start-Worker $case (TaskArgs $case $id))
+    $worker = Start-Worker $case (TaskArgs $case $id)
+    $null = Finish $worker
+    Assert ((Get-Content -LiteralPath (Join-Path $worker.control 'boundaries.txt')) -contains 'quit') 'Update did not quit the outgoing payload.'
     $record = Read-CaelestiaInstall "$case\prefix"
     Assert ($record.current -ne 'v2' -and $record.previous -eq 'v2') 'Update did not retain previous working payload.'
     $selected = Read-CaelestiaInstall (Get-CaelestiaVersionPrefix "$case\prefix" $record.current)

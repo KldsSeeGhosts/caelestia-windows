@@ -8,7 +8,7 @@ $children = [Collections.Generic.List[Diagnostics.Process]]::new()
 $watchdogs = [Collections.Generic.List[Diagnostics.Process]]::new()
 $token = [guid]::NewGuid().ToString('N')
 $mutexName = 'Local\CaelestiaDesktopTakeover-Test-' + $token
-$powershell = Get-WindowsPowerShellPath
+$powershell = Get-CaelestiaPowerShellPath
 
 function Assert($Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
@@ -304,10 +304,142 @@ namespace Caelestia.Takeover {
     $restore = Replace-Exactly $restore '[Caelestia.Takeover.Native]::Capture() | ConvertTo-Json -Depth 6' `
         'Write-Output "{}"'
     [IO.File]::WriteAllText((Join-Path $scripts 'Restore-Desktop.ps1'), $restore)
-    Add-Type -Path (Join-Path $scripts 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    Import-CaelestiaDesktopTakeover -ScriptRoot $scripts -SourceOnly
     [Caelestia.Takeover.TaskbarEventFixture]::VerifyNotification()
     [Caelestia.Takeover.TaskbarEventFixture]::VerifyLiveness()
     Write-Output 'PASS liveness policy: unsupported shell, exact nonce, six-miss floor, pause, suspend gap, stale reply and recovery reset.'
+    # The supervisor's own JSON serializer replaced JavaScriptSerializer. These
+    # checks pin the on-disk schema and both directions of compatibility so a
+    # 5.1-written journal still reads and writes identically on PowerShell 7.
+    $snapshot = [Caelestia.Takeover.Snapshot]::new()
+    $snapshot.TaskbarFlags = 5
+    $snapshot.MultiMonitorTaskbar = 1
+    $display = [Caelestia.Takeover.Display]::new()
+    $display.Device = '\\.\DISPLAY1'
+    $display.Bounds = [Caelestia.Takeover.Rect]@{ Left = 0; Top = 0; Right = 1920; Bottom = 1080 }
+    $display.Work = [Caelestia.Takeover.Rect]@{ Left = 0; Top = 0; Right = 1920; Bottom = 1040 }
+    $snapshot.Displays.Add($display)
+    $snapshot.Bars.Add([Caelestia.Takeover.Bar]@{ Handle = 42; Owner = 7; Device = '\\.\DISPLAY1'; Visible = $true; Bounds = $display.Bounds })
+    $snapshot.Regions.Add([Caelestia.Takeover.SavedRegion]@{ Handle = 9; Owner = 3; ProcessStartTicks = 11; RegionData = 'IAAAAA==' })
+    $snapshotJson = [Caelestia.Takeover.Native]::SerializeSnapshot($snapshot)
+    Assert ($snapshotJson -match '"RegionData":"IAAAAA=="' -and $snapshotJson -match '"TaskbarFlags":5') 'Snapshot JSON schema changed.'
+    $roundTrip = [Caelestia.Takeover.Native]::DeserializeSnapshot($snapshotJson)
+    Assert ($roundTrip.TaskbarFlags -eq 5 -and $roundTrip.MultiMonitorTaskbar -eq 1 -and
+        $roundTrip.Displays.Count -eq 1 -and $roundTrip.Bars.Count -eq 1 -and $roundTrip.Regions.Count -eq 1 -and
+        $roundTrip.Regions[0].RegionData -eq 'IAAAAA==') 'Snapshot JSON round-trip lost data.'
+    # RGNDATA also arrives as a JSON byte array from older journals and as null.
+    foreach ($case in @(@('{"Handle":1,"ProcessStartTicks":2,"Owner":3,"RegionData":[32,0,0,0]}', 'IAAAAA=='),
+        @('{"Handle":1,"RegionData":null}', $null))) {
+        $region = [Caelestia.Takeover.TakeoverJson]::DeserializeObject($case[0])
+        Assert ($region.Count -ge 1) 'SavedRegion JSON rejected its payload.'
+        $deserialized = [Caelestia.Takeover.Native]::DeserializeSnapshot(
+            '{"TaskbarFlags":0,"TaskbarFlagsSaved":true,"Regions":[' + $case[0] + ']}')
+        Assert ($deserialized.Regions[0].RegionData -eq $case[1]) 'SavedRegion RegionData compat failed.'
+    }
+    # launch.json reads with missing PowerShellPath, mixed casing and extra fields.
+    $launch = [Caelestia.Takeover.Native]::DeserializeLaunch(
+        '{"executable":"C:\\qs.exe","EXTRA":9,"Arguments":null,"Environment":{"k":"v"},"RestoreWorkAreas":true}')
+    Assert ($launch.Executable -eq 'C:\qs.exe' -and $null -eq $launch.PowerShellPath -and
+        $launch.RestoreWorkAreas -and $launch.Environment['k'] -eq 'v') 'Legacy launch.json did not deserialize.'
+    $launch = [Caelestia.Takeover.Native]::DeserializeLaunch(
+        '{"Executable":"C:\\qs.exe","PowerShellPath":"C:\\pf\\pwsh.exe","Environment":{}}')
+    Assert ($launch.PowerShellPath -eq 'C:\pf\pwsh.exe') 'PowerShellPath was not read from launch.json.'
+    # watchdog.json and taskbar-actions.jsonl keep their exact compact keys.
+    $action = [Caelestia.Takeover.TaskbarAction]@{ Operation = 'hide'; Source = 'event'; Handle = 1; Owner = 2; ShowToHideMilliseconds = 5.5 }
+    $actionJson = [Caelestia.Takeover.Native]::SerializeTaskbarAction($action)
+    Assert ($actionJson -match '"Operation":"hide"' -and $actionJson -match '"ShowToHideMilliseconds":5\.5' -and
+        $actionJson -notmatch ' ') 'Taskbar action JSON is not compact or changed its keys.'
+    $status = [Caelestia.Takeover.TakeoverJson]::DeserializeObject(
+        '{"phase":"running","shellPid":1,"watchdogPid":2,"heartbeat":true,"utc":"2026-01-01T00:00:00.0000000Z","quickCrashes":0,"forcedChildTermination":false,"shellReady":true,"taskbarTakenOver":true,"livenessSupported":true,"shellFrozen":false,"livenessMisses":0,"restartFrozenShell":true,"lastUnhealthyReason":null,"hideTaskbar":true,"restartOnCrash":true,"exitCode":0}')
+    Assert ($status['phase'] -eq 'running' -and $status['shellPid'] -eq 1 -and $status['heartbeat'] -eq $true -and
+        $status['watchdogPid'] -eq 2) 'watchdog.json status keys changed.'
+    # Non-object JSON must fail loudly instead of producing a default Snapshot
+    # that falsely claims TaskbarFlagsSaved. Deep nesting and oversized input
+    # hit the JavaScriptSerializer-compatible depth/byte limits.
+    foreach ($bad in @('[]', '42', '"hello"', 'true')) {
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot($bad) } catch { $rejected = $true }
+        Assert $rejected ("DeserializeSnapshot accepted non-object JSON: " + $bad)
+    }
+    $deep = ('{"a":' * 120) + '1' + ('}' * 120)
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot($deep) } catch { $rejected = $true }
+    Assert $rejected 'DeserializeSnapshot accepted 120-level nested JSON.'
+    $deep = ('[' * 120) + '1' + (']' * 120)
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot($deep) } catch { $rejected = $true }
+    Assert $rejected 'DeserializeSnapshot accepted 120-level nested array JSON.'
+    $huge = '{"TaskbarFlags":0,"pad":"' + ('x' * 2097153) + '"}'
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot($huge) } catch { $rejected = $true }
+    Assert $rejected 'DeserializeSnapshot accepted JSON over the 2 MiB limit.'
+    # Field-level negative controls: strict token types, no coercions.
+    # Boolean fields accept only true/false tokens.
+    foreach ($bad in @('"false"', '0', 'null')) {
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"TaskbarFlagsSaved":' + $bad + '}') } catch { $rejected = $true }
+        Assert $rejected ("DeserializeSnapshot accepted non-boolean TaskbarFlagsSaved: " + $bad)
+    }
+    # Integral fields accept only integral numbers in range.
+    foreach ($bad in @('"42"', 'true', 'null', '1.5')) {
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"TaskbarFlags":' + $bad + '}') } catch { $rejected = $true }
+        Assert $rejected ("DeserializeSnapshot accepted non-integral TaskbarFlags: " + $bad)
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeLaunch('{"Environment":{},"TestWindowOwners":[' + $bad + ']}') } catch { $rejected = $true }
+        Assert $rejected ("DeserializeLaunch accepted non-integral TestWindowOwners element: " + $bad)
+    }
+    # Unsigned fields reject negatives that would silently wrap, and keep the
+    # full UInt64 range instead of rounding it through double.
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"TaskbarFlags":-1,"TaskbarFlagsSaved":true}') } catch { $rejected = $true }
+    Assert $rejected 'DeserializeSnapshot accepted negative TaskbarFlags.'
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"Bars":[{"Owner":-1}]}') } catch { $rejected = $true }
+    Assert $rejected 'DeserializeSnapshot accepted negative Bar.Owner.'
+    $deserialized = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"TaskbarFlags":18446744073709551615,"TaskbarFlagsSaved":true}')
+    Assert ($deserialized.TaskbarFlags -eq [uint64]::MaxValue) 'DeserializeSnapshot lost UInt64.MaxValue precision.'
+    Assert ([Caelestia.Takeover.Native]::SerializeSnapshot($deserialized) -match '"TaskbarFlags":18446744073709551615') 'SerializeSnapshot rounded UInt64.MaxValue.'
+    # Required collections reject an explicit null and null elements; optional
+    # fields keep their nulls.
+    foreach ($bad in @('{"Bars":null}', '{"Bars":[null]}', '{"Displays":null}', '{"Displays":[null]}',
+        '{"Regions":null}', '{"Regions":[null]}')) {
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot($bad) } catch { $rejected = $true }
+        Assert $rejected ("DeserializeSnapshot accepted a null required collection or element: " + $bad)
+    }
+    $deserialized = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"Regions":[{"Handle":1,"RegionData":null}]}')
+    Assert ($deserialized.Regions.Count -eq 1 -and $null -eq $deserialized.Regions[0].RegionData) 'SavedRegion RegionData null was rejected.'
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeLaunch('{"Environment":null}') } catch { $rejected = $true }
+    Assert $rejected 'DeserializeLaunch accepted null Environment.'
+    # Ordinary string fields accept only JSON strings (or null); never a byte
+    # array, number or boolean.
+    foreach ($bad in @('[65]', '42', 'true')) {
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeLaunch('{"Executable":' + $bad + '}') } catch { $rejected = $true }
+        Assert $rejected ("DeserializeLaunch accepted non-string Executable: " + $bad)
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"Bars":[{"Device":' + $bad + '}]}') } catch { $rejected = $true }
+        Assert $rejected ("DeserializeSnapshot accepted non-string Bar.Device: " + $bad)
+    }
+    # A launch spec is a JSON object, never null.
+    $rejected = $false
+    try { $null = [Caelestia.Takeover.Native]::DeserializeLaunch('null') } catch { $rejected = $true }
+    Assert $rejected 'DeserializeLaunch accepted a null root.'
+    # SavedRegion.RegionData keeps both historical encodings only on that one
+    # field: a base64 string, an integer byte array in [0,255], and null.
+    foreach ($case in @(@('"IAAAAA=="', 'IAAAAA=='), @('[1, 2, 3, 4]', 'AQIDBA=='), @('null', $null))) {
+        $deserialized = [Caelestia.Takeover.Native]::DeserializeSnapshot(
+            '{"Regions":[{"Handle":1,"RegionData":' + $case[0] + '}]}')
+        Assert ($deserialized.Regions[0].RegionData -eq $case[1]) ('SavedRegion RegionData compat failed for ' + $case[0])
+    }
+    foreach ($bad in @('[true]', '["1"]', '[300]', '[1.5]', '{}')) {
+        $rejected = $false
+        try { $null = [Caelestia.Takeover.Native]::DeserializeSnapshot('{"Regions":[{"Handle":1,"RegionData":' + $bad + '}]}') } catch { $rejected = $true }
+        Assert $rejected ("DeserializeSnapshot accepted malformed RegionData: " + $bad)
+    }
+    Write-Output 'PASS JSON compat: snapshot, legacy launch, watchdog status, taskbar action, RegionData coercions and strict field types.'
     # The supervisor owns both switches. The shell filters Explorer's taskbar
     # shortcuts only while this supervisor hides the taskbar, and only the
     # shell's own crash relaunch is off. An inherited value never applies.
@@ -327,7 +459,9 @@ namespace Caelestia.Takeover {
     # A console fake stands in for qs. The witness owns a hidden, offscreen
     # window only, never a visible window, AppBar, shortcut or taskbar change.
     $fake = Join-Path $root 'qs.exe'
-    Add-Type -OutputAssembly $fake -OutputType ConsoleApplication -ReferencedAssemblies System.Windows.Forms -TypeDefinition @'
+    # PowerShell 7 Add-Type cannot emit a console executable, so the fixture
+    # uses the shared inbox csc.exe wrapper to produce a runnable fake.
+    New-CaelestiaTestExecutable -OutputPath $fake -ReferencedAssemblies @('System.Windows.Forms.dll') -Source @'
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -642,7 +776,10 @@ public static class SupervisorStopFixture {
             $s = Read-CaelestiaSupervisorStatus $statusPath
             Assert (-not $owned.HasExited -and -not $watchdog.HasExited -and $s.shellPid -eq $owned.Id) 'Readiness deadline or healthy-owner repair stopped/replaced a live child.'
             Assert ($s.phase -eq 'waiting-ready' -and $s.quickCrashes -eq 0 -and -not $s.forcedChildTermination) 'Missing readiness counted as a crash.'
-            Assert (([DateTime]::UtcNow - [DateTimeOffset]::Parse($s.utc).UtcDateTime).TotalSeconds -lt 3) 'Waiting-ready heartbeat became stale.'
+            # ConvertFrom-Json already yields a DateTime under PowerShell 7;
+            # parsing its string form reinterprets UTC ticks as local time.
+            $heartbeatAge = ([DateTime]::UtcNow - (ConvertTo-CaelestiaStatusUtc $s.utc).UtcDateTime).TotalSeconds
+            Assert ($heartbeatAge -ge -2 -and $heartbeatAge -lt 3) "Waiting-ready heartbeat age out of range: $heartbeatAge"
             Assert (-not (Test-Path -LiteralPath $actions) -and
                 [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) -and
                 -not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Waiting-ready touched Explorer.'

@@ -22,11 +22,13 @@ foreach ($key in $StartInfo.EnvironmentVariables.Keys) {
         $childEnvironment[$key] = $StartInfo.EnvironmentVariables[$key]
     }
 }
+$payloadPowerShell = Get-CaelestiaPayloadPowerShellPath $PSScriptRoot
 $specPath = Join-Path $StateDirectory 'launch.json'
 @{
     Executable = $StartInfo.FileName; Arguments = $StartInfo.Arguments
     WorkingDirectory = $StartInfo.WorkingDirectory; Environment = $childEnvironment
     ConfigPath = $ConfigPath; StateDirectory = $StateDirectory
+    PowerShellPath = $payloadPowerShell
     InstallLockKey = $(if ($InstallPrefix) { Get-CaelestiaInstallLockKey $InstallPrefix } else { $null })
     RestoreWorkAreas = $RestoreWorkAreas.IsPresent
     StdoutPath = $StdoutPath; StderrPath = $StderrPath
@@ -36,7 +38,7 @@ foreach ($var in @('ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ASAR')) {
     [Environment]::SetEnvironmentVariable($var, $null, 'Process')
 }
 $arguments = '-NoProfile -Sta -File "' + $watcher + '" -LaunchSpec "' + $specPath + '"'
-$process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+$process = Start-Process -FilePath $payloadPowerShell -ArgumentList $arguments -WindowStyle Hidden -PassThru `
     -WorkingDirectory $StartInfo.WorkingDirectory `
     -RedirectStandardOutput (Join-Path $StateDirectory 'watchdog.stdout.log') `
     -RedirectStandardError (Join-Path $StateDirectory 'watchdog.stderr.log')

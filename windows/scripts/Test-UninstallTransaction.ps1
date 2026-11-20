@@ -99,7 +99,15 @@ function New-Case([string]$Name, [switch]$RealIntegration) {
     Write-FixtureText (Join-Path $scripts 'Uninstall-Caelestia.ps1') $uninstall
     $launcher = @'
 param($Prefix, $Command = 'Start', [switch]$PreparedSchemeRuntime)
-if ($Prefix -ne $env:CAELESTIA_FIXTURE_PREFIX -or $Command -ne 'Quit') { throw 'Blocked unexpected fixture launcher command.' }
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+$fixtureRoot = $env:CAELESTIA_FIXTURE_PREFIX
+# Uninstall calls the stable entry. Upgrade and rollback call the retained
+# payload directly, with that payload's directory as -Prefix.
+if ($Command -ne 'Quit' -or -not $fixtureRoot -or -not (Test-CaelestiaSamePath $Prefix $PSScriptRoot) -or
+    (-not (Test-CaelestiaSamePath $Prefix $fixtureRoot) -and
+     -not (Test-CaelestiaSamePath (Split-Path -Parent $Prefix) (Join-Path $fixtureRoot 'versions')))) {
+    throw 'Blocked unexpected fixture launcher command.'
+}
 Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.txt') -Value 'quit'
 '@
     # A complete synthetic release passes the REAL manifest/path/hash verifier.
@@ -230,7 +238,7 @@ function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [b
     if ($OperationId) { $arguments += ' -OperationId ' + $OperationId }
     if ($RealIntegration) { $arguments += ' -RealIntegration' }
     if ($IntegrationFailure) { $arguments += ' -IntegrationFailure ' + $IntegrationFailure }
-    $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments `
+    $process = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $control 'stdout.txt') `
         -RedirectStandardError (Join-Path $control 'stderr.txt')
     # Retain the handle before a fast busy refusal exits (Windows PS 5.1).
@@ -584,6 +592,7 @@ try {
             Assert-Coherent $case
             if ($operation -eq 'Rollback') {
                 Assert ((Read-CaelestiaInstall (Join-Path $case 'prefix')).current -eq 'v1') 'Real rollback selector did not change.'
+                Assert ((Get-Content -LiteralPath (Join-Path $owner.Control 'boundaries.txt')) -contains 'quit') 'Rollback did not quit the outgoing payload.'
             } else {
                 Assert ((Read-CaelestiaInstall (Join-Path $case 'prefix')).current -notin @('v1', 'v2')) 'Real release install did not publish a payload.'
             }

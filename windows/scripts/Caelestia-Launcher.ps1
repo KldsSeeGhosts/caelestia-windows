@@ -4,13 +4,14 @@
 # HKCU Run value and the Apps & features uninstall command all run this file
 # through:
 #
-#   conhost.exe --headless powershell.exe -NoProfile -ExecutionPolicy Bypass
+#   conhost.exe --headless pwsh.exe -NoProfile -ExecutionPolicy Bypass
 #       -File Caelestia-Launcher.ps1 -Action <action>
 #
-# conhost --headless gives Windows PowerShell a console without a window, so
-# nothing flashes; -WindowStyle Hidden would be redundant. Windows Script Host
-# and VBScript are not used. The per-invocation -ExecutionPolicy Bypass changes
-# no machine or user policy.
+# conhost --headless gives PowerShell 7 a console without a window, so nothing
+# flashes; -WindowStyle Hidden would be redundant. A rolled-back legacy payload
+# substitutes inbox powershell.exe for the same command shape. Windows Script
+# Host and VBScript are not used. The per-invocation -ExecutionPolicy Bypass
+# changes no machine or user policy.
 #
 # The launcher is data for the signed inbox conhost and PowerShell components.
 # It derives its installation prefix from its own path, starts only scripts that
@@ -128,14 +129,17 @@ switch ($Action.ToLowerInvariant()) {
     'switch-back' {
         $target = 'Switch-CaelestiaToWindows.ps1'
         $targetArguments = @{ Prefix = $installRoot }
+        if ($NoDialogs) { $targetArguments.NoDialogs = $true }
     }
     'uninstall' {
         $target = 'Uninstall-Caelestia.ps1'
         $targetArguments = @{ Prefix = $installRoot; AskPurge = $true }
+        if ($NoDialogs) { $targetArguments.NoDialogs = $true }
     }
     'uninstall-quiet' {
         $target = 'Uninstall-Caelestia.ps1'
         $targetArguments = @{ Prefix = $installRoot }
+        if ($NoDialogs) { $targetArguments.NoDialogs = $true }
     }
     default {
         Exit-Launcher 2 'The Caelestia launch action is not recognized.'
@@ -151,9 +155,9 @@ $failure = ''
 try {
     # A fresh invocation must not inherit a stale native exit code from the
     # launcher's own checks. Target scripts that call `exit N` set this value.
-    $LASTEXITCODE = 0
+    $global:LASTEXITCODE = 0
     & $targetPath @targetArguments
-    if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE }
+    if ($null -ne $global:LASTEXITCODE) { $code = [int]$global:LASTEXITCODE }
 } catch {
     $failure = $_.Exception.Message
     $code = 1

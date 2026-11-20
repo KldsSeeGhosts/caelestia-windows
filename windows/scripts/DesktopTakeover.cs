@@ -2,18 +2,18 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
 namespace Caelestia.Takeover {
     public sealed class Launch {
         public string Executable, Arguments, WorkingDirectory, ConfigPath, StateDirectory;
-        public string StdoutPath, StderrPath, InstallLockKey;
+        public string StdoutPath, StderrPath, InstallLockKey, PowerShellPath;
         public bool RestartFrozenShell = true;
         public bool RestoreWorkAreas;
         public Dictionary<string, string> Environment = new Dictionary<string, string>();
@@ -370,6 +370,439 @@ namespace Caelestia.Takeover {
             }
         }
     }
+    // Minimal JSON serializer/deserializer replacing JavaScriptSerializer.
+    // Pure BCL (no System.Web.Extensions, no System.Text.Json) so it works
+    // identically on .NET Framework 4.8 / PS 5.1 and .NET 8+ / PS 7.x.
+    // It reads and writes the exact schema previously produced by
+    // JavaScriptSerializer: same property names, same primitive shapes, and a
+    // byte[] as a JSON integer array (e.g. [32,0,0,0]).
+    public static class TakeoverJson {
+        // JavaScriptSerializer defaults: a 2 MiB input bound and a recursion
+        // limit so hostile or corrupt JSON cannot exhaust the stack or memory.
+        const int MaxJsonLength = 2097152;
+        const int MaxDepth = 100;
+        public static string Serialize(object value) {
+            var builder = new StringBuilder(256);
+            WriteValue(builder, value);
+            return builder.ToString();
+        }
+        static void WriteValue(StringBuilder output, object value) {
+            if (value == null) { output.Append("null"); return; }
+            var type = value.GetType();
+            if (type == typeof(string)) { WriteString(output, (string)value); return; }
+            if (type == typeof(bool)) { output.Append((bool)value ? "true" : "false"); return; }
+            if (type == typeof(byte[])) {
+                var bytes = (byte[])value;
+                output.Append('[');
+                for (int i = 0; i < bytes.Length; i++) {
+                    if (i != 0) output.Append(',');
+                    output.Append(bytes[i].ToString(CultureInfo.InvariantCulture));
+                }
+                output.Append(']');
+                return;
+            }
+            if (type.IsPrimitive || type == typeof(decimal)) {
+                output.Append(Convert.ToString(value, CultureInfo.InvariantCulture));
+                return;
+            }
+            if (value is System.Collections.IDictionary) {
+                output.Append('{');
+                bool first = true;
+                foreach (System.Collections.DictionaryEntry entry in (System.Collections.IDictionary)value) {
+                    if (!first) output.Append(',');
+                    first = false;
+                    WriteString(output, entry.Key.ToString());
+                    output.Append(':');
+                    WriteValue(output, entry.Value);
+                }
+                output.Append('}');
+                return;
+            }
+            if (value is System.Collections.IEnumerable && !(value is string)) {
+                output.Append('[');
+                bool first = true;
+                foreach (var item in (System.Collections.IEnumerable)value) {
+                    if (!first) output.Append(',');
+                    first = false;
+                    WriteValue(output, item);
+                }
+                output.Append(']');
+                return;
+            }
+            // POCO: serialize public instance fields, then readable public
+            // instance properties (covers anonymous status types too), matching
+            // JavaScriptSerializer's contract for these data types.
+            output.Append('{');
+            var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            bool firstField = true;
+            foreach (var field in fields) {
+                if (!firstField) output.Append(',');
+                firstField = false;
+                WriteString(output, field.Name);
+                output.Append(':');
+                WriteValue(output, field.GetValue(value));
+            }
+            if (fields.Length == 0) {
+                foreach (var property in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)) {
+                    if (!property.CanRead || property.GetIndexParameters().Length != 0) continue;
+                    if (!firstField) output.Append(',');
+                    firstField = false;
+                    WriteString(output, property.Name);
+                    output.Append(':');
+                    WriteValue(output, property.GetValue(value, null));
+                }
+            }
+            output.Append('}');
+        }
+        static void WriteString(StringBuilder output, string value) {
+            output.Append('"');
+            foreach (char c in value) {
+                switch (c) {
+                    case '"': output.Append("\\\""); break;
+                    case '\\': output.Append("\\\\"); break;
+                    case '\b': output.Append("\\b"); break;
+                    case '\f': output.Append("\\f"); break;
+                    case '\n': output.Append("\\n"); break;
+                    case '\r': output.Append("\\r"); break;
+                    case '\t': output.Append("\\t"); break;
+                    default:
+                        if (c < ' ') output.Append("\\u").Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                        else output.Append(c);
+                        break;
+                }
+            }
+            output.Append('"');
+        }
+
+        // Deserialization ----------------------------------------------------
+        public static T Deserialize<T>(string json) where T : new() {
+            var value = Parse(json);
+            if (value == null)
+                throw new InvalidOperationException("Expected a JSON object for " + typeof(T).Name + ", got null.");
+            return (T)ConvertTo(value, typeof(T));
+        }
+        public static object DeserializeObject(string json) { return Parse(json); }
+        static object Parse(string json) {
+            if (json == null) throw new InvalidOperationException("JSON input is null.");
+            if (json.Length > MaxJsonLength) throw new InvalidOperationException("JSON input exceeds the 2 MiB limit.");
+            var reader = new Reader(json);
+            reader.SkipWhitespace();
+            var value = reader.ReadValue();
+            reader.SkipWhitespace();
+            if (!reader.End) throw new FormatException("Trailing characters after JSON value.");
+            return value;
+        }
+        sealed class Reader {
+            readonly string text;
+            int position;
+            int depth;
+            public Reader(string text) { this.text = text ?? ""; }
+            public bool End { get { return position >= text.Length; } }
+            public void SkipWhitespace() {
+                while (position < text.Length && (text[position] == ' ' || text[position] == '\t'
+                    || text[position] == '\r' || text[position] == '\n')) position++;
+            }
+            public object ReadValue() {
+                if (position >= text.Length) throw new FormatException("Unexpected end of JSON.");
+                char c = text[position];
+                if (c == '{') return ReadObject();
+                if (c == '[') return ReadArray();
+                if (c == '"') return ReadString();
+                if (c == 't' || c == 'f') return ReadBool();
+                if (c == 'n') { ReadLiteral("null"); return null; }
+                if (c == '-' || (c >= '0' && c <= '9')) return ReadNumber();
+                throw new FormatException("Unexpected JSON character '" + c + "'.");
+            }
+            Dictionary<string, object> ReadObject() {
+                if (++depth > MaxDepth) throw new InvalidOperationException("JSON recursion limit exceeded.");
+                var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                position++; // consume {
+                SkipWhitespace();
+                if (position < text.Length && text[position] == '}') { position++; depth--; return result; }
+                while (true) {
+                    SkipWhitespace();
+                    string key = ReadString();
+                    SkipWhitespace();
+                    Expect(':');
+                    SkipWhitespace();
+                    result[key] = ReadValue();
+                    SkipWhitespace();
+                    if (position < text.Length && text[position] == ',') { position++; continue; }
+                    Expect('}');
+                    depth--;
+                    return result;
+                }
+            }
+            List<object> ReadArray() {
+                if (++depth > MaxDepth) throw new InvalidOperationException("JSON recursion limit exceeded.");
+                var result = new List<object>();
+                position++; // consume [
+                SkipWhitespace();
+                if (position < text.Length && text[position] == ']') { position++; depth--; return result; }
+                while (true) {
+                    SkipWhitespace();
+                    result.Add(ReadValue());
+                    SkipWhitespace();
+                    if (position < text.Length && text[position] == ',') { position++; continue; }
+                    Expect(']');
+                    depth--;
+                    return result;
+                }
+            }
+            string ReadString() {
+                Expect('"');
+                var builder = new StringBuilder();
+                while (position < text.Length) {
+                    char c = text[position++];
+                    if (c == '"') return builder.ToString();
+                    if (c != '\\') { builder.Append(c); continue; }
+                    if (position >= text.Length) break;
+                    char esc = text[position++];
+                    switch (esc) {
+                        case '"': builder.Append('"'); break;
+                        case '\\': builder.Append('\\'); break;
+                        case '/': builder.Append('/'); break;
+                        case 'b': builder.Append('\b'); break;
+                        case 'f': builder.Append('\f'); break;
+                        case 'n': builder.Append('\n'); break;
+                        case 'r': builder.Append('\r'); break;
+                        case 't': builder.Append('\t'); break;
+                        case 'u': builder.Append(ReadUnicodeEscape()); break;
+                        default: throw new FormatException("Invalid JSON escape \\" + esc + ".");
+                    }
+                }
+                throw new FormatException("Unterminated JSON string.");
+            }
+            // Returns one UTF-16 code unit, or a surrogate pair combined into
+            // a two-character string when the escape names a high surrogate
+            // followed by a \uXXXX low surrogate.
+            string ReadUnicodeEscape() {
+                int code = ReadHex4();
+                if (code >= 0xD800 && code <= 0xDBFF && position + 1 < text.Length
+                    && text[position] == '\\' && text[position + 1] == 'u') {
+                    int low;
+                    int save = position;
+                    position += 2;
+                    try { low = ReadHex4(); }
+                    catch (FormatException) { position = save; return new string((char)code, 1); }
+                    if (low >= 0xDC00 && low <= 0xDFFF) {
+                        var pair = new char[2];
+                        pair[0] = (char)code;
+                        pair[1] = (char)low;
+                        return new string(pair);
+                    }
+                    position = save;
+                }
+                return new string((char)code, 1);
+            }
+            int ReadHex4() {
+                if (position + 4 > text.Length) throw new FormatException("Truncated \\u escape.");
+                int value = 0;
+                for (int i = 0; i < 4; i++) {
+                    char c = text[position++];
+                    int digit;
+                    if (c >= '0' && c <= '9') digit = c - '0';
+                    else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+                    else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+                    else throw new FormatException("Invalid \\u escape hex digit.");
+                    value = value * 16 + digit;
+                }
+                return value;
+            }
+            object ReadBool() {
+                if (text[position] == 't') { ReadLiteral("true"); return true; }
+                ReadLiteral("false"); return false;
+            }
+            void ReadLiteral(string literal) {
+                if (string.Compare(text, position, literal, 0, literal.Length, StringComparison.Ordinal) != 0)
+                    throw new FormatException("Invalid JSON literal.");
+                position += literal.Length;
+            }
+            object ReadNumber() {
+                int start = position;
+                if (position < text.Length && text[position] == '-') position++;
+                while (position < text.Length && text[position] >= '0' && text[position] <= '9') position++;
+                bool isDouble = false;
+                if (position < text.Length && text[position] == '.') {
+                    isDouble = true;
+                    position++;
+                    while (position < text.Length && text[position] >= '0' && text[position] <= '9') position++;
+                }
+                if (position < text.Length && (text[position] == 'e' || text[position] == 'E')) {
+                    isDouble = true;
+                    position++;
+                    if (position < text.Length && (text[position] == '+' || text[position] == '-')) position++;
+                    while (position < text.Length && text[position] >= '0' && text[position] <= '9') position++;
+                }
+                var token = text.Substring(start, position - start);
+                if (isDouble) return double.Parse(token, CultureInfo.InvariantCulture);
+                long integral;
+                if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out integral)) {
+                    if (integral >= int.MinValue && integral <= int.MaxValue) return (int)integral;
+                    return integral;
+                }
+                // A value that overflows Int64 but fits UInt64 must stay exact.
+                // Routing UInt64.MaxValue through double.Parse would round it
+                // to a representable neighbor and silently corrupt the restore.
+                ulong unsigned;
+                if (token[0] != '-' && ulong.TryParse(token, NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out unsigned))
+                    return unsigned;
+                return double.Parse(token, CultureInfo.InvariantCulture);
+            }
+            void Expect(char expected) {
+                if (position >= text.Length || text[position] != expected)
+                    throw new FormatException("Expected '" + expected + "' in JSON.");
+                position++;
+            }
+        }
+        static object ConvertTo(object value, Type target) {
+            return ConvertTo(value, target, null);
+        }
+        static object ConvertTo(object value, Type target, System.Reflection.FieldInfo field) {
+            if (value == null) {
+                if (target.IsValueType && Nullable.GetUnderlyingType(target) == null) {
+                    string name = field != null ? field.DeclaringType.Name + "." + field.Name : target.Name;
+                    throw new InvalidOperationException("JSON null is not valid for " + name + ".");
+                }
+                return null;
+            }
+            if (target == typeof(object)) return value;
+            if (target == typeof(string)) {
+                var text = value as string;
+                if (text != null) return text;
+                // SavedRegion.RegionData historically serialized RGNDATA as a
+                // base64 string, but tolerate a legacy JSON byte array too.
+                // That compatibility is limited to this one field; arbitrary
+                // strings never coerce a byte array.
+                var items = value as List<object>;
+                if (items != null) {
+                    if (field != null && field.DeclaringType == typeof(SavedRegion)
+                        && field.Name == "RegionData")
+                        return Convert.ToBase64String(ReadByteArray(items));
+                }
+                throw new InvalidOperationException("Expected JSON string for System.String.");
+            }
+            if (target == typeof(byte[])) {
+                if (value is string) return Convert.FromBase64String((string)value);
+                var items = value as List<object>;
+                if (items == null) throw new InvalidOperationException("Expected JSON string or array for System.Byte[].");
+                return ReadByteArray(items);
+            }
+            var underlying = Nullable.GetUnderlyingType(target);
+            if (underlying != null) return ConvertTo(value, underlying, field);
+            if (target == typeof(bool)) {
+                if (value is bool) return value;
+                throw new InvalidOperationException("Expected JSON boolean for System.Boolean.");
+            }
+            if (target == typeof(int)) return CheckedInt32(Integral(value, target.Name), target.Name);
+            if (target == typeof(long)) return Integral(value, target.Name);
+            if (target == typeof(uint)) {
+                ulong number = UnsignedIntegral(value, target.Name);
+                if (number > uint.MaxValue)
+                    throw new InvalidOperationException("JSON value out of range for System.UInt32.");
+                return (uint)number;
+            }
+            if (target == typeof(ulong)) {
+                return UnsignedIntegral(value, target.Name);
+            }
+            if (target == typeof(double)) {
+                if (value is bool || value is string)
+                    throw new InvalidOperationException("Expected a JSON number for System.Double.");
+                if (value is int || value is long || value is ulong || value is double)
+                    return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                throw new InvalidOperationException("Expected a JSON number for System.Double.");
+            }
+            if (target.IsGenericType && target.GetGenericTypeDefinition() == typeof(Dictionary<,>)) {
+                var source = value as Dictionary<string, object>;
+                if (source == null) throw new InvalidOperationException("Expected JSON object for " + target.Name + ".");
+                var argument = target.GetGenericArguments()[1];
+                var dictionary = (System.Collections.IDictionary)Activator.CreateInstance(target);
+                foreach (var pair in source) dictionary[pair.Key] = ConvertTo(pair.Value, argument);
+                return dictionary;
+            }
+            if (target.IsGenericType && target.GetGenericTypeDefinition() == typeof(List<>)) {
+                var items = value as List<object>;
+                if (items == null) throw new InvalidOperationException("Expected JSON array for " + target.Name + ".");
+                var argument = target.GetGenericArguments()[0];
+                var list = (System.Collections.IList)Activator.CreateInstance(target);
+                foreach (var item in items) list.Add(ConvertTo(item, argument));
+                return list;
+            }
+            if (target.IsArray) {
+                var items = value as List<object>;
+                if (items == null) throw new InvalidOperationException("Expected JSON array for " + target.Name + ".");
+                var element = target.GetElementType();
+                var array = Array.CreateInstance(element, items.Count);
+                for (int i = 0; i < items.Count; i++) array.SetValue(ConvertTo(items[i], element), i);
+                return array;
+            }
+            // POCO: populate public instance fields case-insensitively,
+            // ignoring unknown members.
+            var members = value as Dictionary<string, object>;
+            if (members == null) throw new InvalidOperationException("Expected JSON object for " + target.Name + ".");
+            var result = Activator.CreateInstance(target);
+            var fields = target.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            var lookup = new Dictionary<string, System.Reflection.FieldInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var declared in fields) lookup[declared.Name] = declared;
+            foreach (var pair in members) {
+                System.Reflection.FieldInfo member;
+                if (!lookup.TryGetValue(pair.Key, out member)) continue;
+                member.SetValue(result, ConvertTo(pair.Value, member.FieldType, member));
+            }
+            return result;
+        }
+        static long Integral(object value, string targetName) {
+            if (value is bool || value is string || value is double)
+                throw new InvalidOperationException("Expected an integral JSON number for " + targetName + ".");
+            if (value is int) return (int)value;
+            if (value is long) return (long)value;
+            if (value is ulong) {
+                ulong unsigned = (ulong)value;
+                if (unsigned > long.MaxValue)
+                    throw new InvalidOperationException("JSON value out of range for " + targetName + ".");
+                return (long)unsigned;
+            }
+            throw new InvalidOperationException("Expected an integral JSON number for " + targetName + ".");
+        }
+        // Non-negative int, long or ulong widened to ulong. Negative values
+        // (which would silently wrap) are rejected.
+        static ulong UnsignedIntegral(object value, string targetName) {
+            if (value is int) {
+                int number = (int)value;
+                if (number < 0) throw new InvalidOperationException("JSON value out of range for " + targetName + ".");
+                return (ulong)number;
+            }
+            if (value is long) {
+                long number = (long)value;
+                if (number < 0) throw new InvalidOperationException("JSON value out of range for " + targetName + ".");
+                return (ulong)number;
+            }
+            if (value is ulong) return (ulong)value;
+            throw new InvalidOperationException("Expected an integral JSON number for " + targetName + ".");
+        }
+        static int CheckedInt32(long value, string targetName) {
+            if (value < int.MinValue || value > int.MaxValue)
+                throw new InvalidOperationException("JSON value out of range for " + targetName + ".");
+            return (int)value;
+        }
+        // A legacy JSON byte array is a list of integral values in [0, 255].
+        // Booleans, strings, fractional or out-of-range numbers are rejected.
+        static byte[] ReadByteArray(List<object> items) {
+            var bytes = new byte[items.Count];
+            for (int i = 0; i < items.Count; i++) {
+                object item = items[i];
+                long number;
+                if (item is int) number = (int)item;
+                else if (item is long) number = (long)item;
+                else throw new InvalidOperationException("JSON byte array elements must be integers in [0, 255].");
+                if (number < 0 || number > 255)
+                    throw new InvalidOperationException("JSON byte array element out of range: " + number + ".");
+                bytes[i] = (byte)number;
+            }
+            return bytes;
+        }
+    }
     public static class Native {
         // Per-process observer for the supervisor's own native calls. Another
         // shell can immediately change global state after these observations.
@@ -511,7 +944,7 @@ namespace Caelestia.Takeover {
 
         public static void SaveSnapshot(string path, Snapshot snapshot) {
             var temporary = path + ".tmp";
-            var text = new JavaScriptSerializer().Serialize(snapshot);
+            var text = TakeoverJson.Serialize(snapshot);
             using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
             using (var writer = new StreamWriter(stream)) {
                 writer.Write(text);
@@ -523,6 +956,40 @@ namespace Caelestia.Takeover {
                 else File.Move(temporary, path);
             }, System.Threading.Thread.Sleep);
         }
+        // JSON entry points shared by the restore script and the regression
+        // fixture so both use the same schema on any PowerShell edition.
+        public static string SerializeSnapshot(Snapshot snapshot) { return TakeoverJson.Serialize(snapshot); }
+        public static Snapshot DeserializeSnapshot(string json) {
+            var snapshot = TakeoverJson.Deserialize<Snapshot>(json);
+            ValidateSnapshot(snapshot);
+            return snapshot;
+        }
+        public static Snapshot LoadSnapshot(string path) { return DeserializeSnapshot(File.ReadAllText(path)); }
+        public static Launch DeserializeLaunch(string json) {
+            var launch = TakeoverJson.Deserialize<Launch>(json);
+            ValidateLaunch(launch);
+            return launch;
+        }
+        // Required collections and their elements must never be null. A field
+        // initializer supplies an empty list only when the key is absent; an
+        // explicit JSON null overwrites it, and a null element dereferences
+        // during restore. Deliberately nullable fields keep their defaults.
+        static void ValidateSnapshot(Snapshot snapshot) {
+            if (snapshot.Displays == null) throw new InvalidOperationException("Snapshot.Displays must not be null.");
+            if (snapshot.Bars == null) throw new InvalidOperationException("Snapshot.Bars must not be null.");
+            if (snapshot.Regions == null) throw new InvalidOperationException("Snapshot.Regions must not be null.");
+            foreach (var display in snapshot.Displays)
+                if (display == null) throw new InvalidOperationException("Snapshot.Displays contains a null element.");
+            foreach (var bar in snapshot.Bars)
+                if (bar == null) throw new InvalidOperationException("Snapshot.Bars contains a null element.");
+            foreach (var region in snapshot.Regions)
+                if (region == null) throw new InvalidOperationException("Snapshot.Regions contains a null element.");
+        }
+        static void ValidateLaunch(Launch launch) {
+            if (launch.Environment == null) throw new InvalidOperationException("Launch.Environment must not be null.");
+            if (launch.TestWindowOwners == null) launch.TestWindowOwners = new List<int>();
+        }
+        public static string SerializeTaskbarAction(TaskbarAction action) { return TakeoverJson.Serialize(action); }
         public static void PrepareRegions(string path, Snapshot snapshot, List<Bar> bars) {
             RegionBatch.Prepare(snapshot, bars, CaptureRegion,
                 delegate(Snapshot value) { SaveSnapshot(path, value); });
@@ -1154,7 +1621,6 @@ namespace Caelestia.Takeover {
         readonly Snapshot saved;
         readonly System.Threading.EventWaitHandle recovery;
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
-        readonly JavaScriptSerializer json = new JavaScriptSerializer();
         readonly uint taskbarCreated = Native.RegisterWindowMessage("TaskbarCreated");
         readonly TaskbarShowPolicy showPolicy = new TaskbarShowPolicy(Stopwatch.Frequency);
         readonly Native.WinEventCallback showCallback;
@@ -1253,7 +1719,7 @@ namespace Caelestia.Takeover {
                 catch (System.Threading.AbandonedMutexException) { acquired = true; }
                 if (!acquired) throw new InvalidOperationException("A desktop supervisor already owns this Windows session.");
                 try {
-                    var launch = new JavaScriptSerializer().Deserialize<Launch>(File.ReadAllText(specPath));
+                    var launch = TakeoverJson.Deserialize<Launch>(File.ReadAllText(specPath));
                     if (restartFrozenShell.HasValue) launch.RestartFrozenShell = restartFrozenShell.Value;
                     // An isolated supervisor must not be blocked by the live
                     // shell's tiler guard, so it uses its own unheld name.
@@ -1303,7 +1769,7 @@ namespace Caelestia.Takeover {
             Native.RecordAction = delegate(TaskbarAction action) {
                 SupervisorSafety.Log(delegate {
                     File.AppendAllText(Path.Combine(launch.StateDirectory, "taskbar-actions.jsonl"),
-                        json.Serialize(action) + Environment.NewLine);
+                        TakeoverJson.Serialize(action) + Environment.NewLine);
                 });
             };
             // A hidden top-level window receives Explorer's broadcast. A
@@ -1332,7 +1798,7 @@ namespace Caelestia.Takeover {
                     if (time > bestTime) { best = file; bestTime = time; }
                 }
                 if (best == null) return null;
-                var prior = json.Deserialize<Snapshot>(File.ReadAllText(best));
+                var prior = TakeoverJson.Deserialize<Snapshot>(File.ReadAllText(best));
                 if (prior == null) return null;
                 target.TaskbarFlags = prior.TaskbarFlags;
                 target.TaskbarFlagsSaved = prior.TaskbarFlagsSaved;
@@ -1352,7 +1818,7 @@ namespace Caelestia.Takeover {
         static bool SupervisorAlive(string statusPath) {
             try {
                 if (!File.Exists(statusPath)) return false;
-                var status = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(statusPath));
+                var status = (Dictionary<string, object>)TakeoverJson.DeserializeObject(File.ReadAllText(statusPath));
                 object phase;
                 if (status.TryGetValue("phase", out phase) && phase != null) {
                     var name = phase.ToString();
@@ -1414,7 +1880,7 @@ namespace Caelestia.Takeover {
                     throw new InvalidOperationException("Banner recovery helper is missing: " + helper);
                 return;
             }
-            var info = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
+            var info = new ProcessStartInfo(RecoveryPowerShellPath(launch),
                 "-NoProfile -File \"" + helper + "\" -StateDirectory \"" + state + "\" -Command Restore") {
                 WorkingDirectory = launch.WorkingDirectory,
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true
@@ -1435,6 +1901,20 @@ namespace Caelestia.Takeover {
                 if (recoveryProcess.ExitCode != 0)
                     lock (errors) throw new InvalidOperationException("Banner recovery failed: " + errors.ToString());
             }
+        }
+        // The launcher records the verified PowerShell 7 path; an older journal
+        // or a direct supervisor start may lack it, so fall back to the current
+        // pwsh.exe host before touching Windows PowerShell 5.1.
+        static string RecoveryPowerShellPath(Launch launch) {
+            if (launch.PowerShellPath != null && launch.PowerShellPath.Length != 0
+                && File.Exists(launch.PowerShellPath)) return launch.PowerShellPath;
+            try {
+                var module = Process.GetCurrentProcess().MainModule.FileName;
+                if (module.EndsWith("pwsh.exe", StringComparison.OrdinalIgnoreCase) && File.Exists(module))
+                    return module;
+            } catch (System.ComponentModel.Win32Exception) { }
+              catch (InvalidOperationException) { }
+            return Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
         }
         // A snapshot that still cannot be written after retries leaves that
         // bar untouched (persist precedes apply). Keep the shell running and
@@ -1539,7 +2019,7 @@ namespace Caelestia.Takeover {
             statusPid = pid;
             SupervisorSafety.Log(delegate {
                 var path = Path.Combine(launch.StateDirectory, "watchdog.json");
-                var text = json.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
+                var text = TakeoverJson.Serialize(new { phase = phase, shellPid = pid, watchdogPid = Process.GetCurrentProcess().Id,
                     quickCrashes = quickCrashes, hideTaskbar = hide, restartOnCrash = restart, exitCode = ExitCode,
                     forcedChildTermination = forcedChildTermination,
                     shellReady = childBecameReady, taskbarTakenOver = takeover,

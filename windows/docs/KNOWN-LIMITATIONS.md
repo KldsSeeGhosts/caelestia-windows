@@ -14,6 +14,20 @@ release and Actions runs.
   executables. Do not disable Smart App Control, antivirus or organizational
   protections to run a preview. A self-signed certificate is not a trusted
   publisher signature.
+- **PowerShell 7 required:** the desktop shell and its maintenance scripts run
+  under PowerShell 7.4 or newer (x64). Install it before running the product.
+  The migration changes which host runs the product's scripts; it does not
+  claim to remove unrelated intermittent terminal-window flashes, which are
+  tracked separately. Explicit Windows PowerShell 5.1 compatibility paths
+  remain for `Install.cmd` clean-machine bootstrap, `Start-Caelestia.ps1 -Command NotifyTest`
+  (WinRT toast projection), rolled-back pre-PS7 payloads, and the pinned
+  QuickShell backend's Equalizer APO elevation helper (`equalizer_apo.cpp`).
+- **Autostart 260-character Run value:** Windows limits an `HKCU\...\Run`
+  value to 260 characters. A Microsoft Store `pwsh.exe` alias is much longer
+  than `C:\Program Files\PowerShell\7\pwsh.exe`, so on a Store install with
+  8.3 short names disabled, a longer custom install prefix cannot register
+  autostart. The installer refuses before activation rather than writing a
+  truncated entry; use a shorter prefix or the MSI install of PowerShell 7.
 - **Accessibility:** primary launcher, Nexus and session-menu keyboard paths
   have been exercised, but complete Narrator, high-contrast, reduced-motion and
   visible-focus certification is not established. Session-menu focus return on

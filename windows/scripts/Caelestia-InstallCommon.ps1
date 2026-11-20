@@ -151,6 +151,16 @@ function Read-CaelestiaSupervisorStatus([string]$Path) {
     }
 }
 
+# A watchdog timestamp is written as an 'o'-format UTC string. ConvertFrom-Json
+# already returns a DateTime for it under PowerShell 7; 5.1 keeps the string.
+# Passing a DateTime through [string] and Parse would reinterpret UTC ticks as
+# local time, so take the object as-is.
+function ConvertTo-CaelestiaStatusUtc($Value) {
+    if ($Value -is [DateTime]) { return [DateTimeOffset]::new($Value) }
+    if ($Value -is [DateTimeOffset]) { return $Value }
+    return [DateTimeOffset]::Parse([string]$Value)
+}
+
 function Get-CaelestiaSupervisors([string]$ProfileRoot) {
     $found = @()
     if (-not $ProfileRoot) { return $found }
@@ -167,7 +177,7 @@ function Get-CaelestiaSupervisors([string]$ProfileRoot) {
             if ($process.ProcessName -and $process.ProcessName -notmatch '^(powershell|pwsh)$') { continue }
             if ($status.utc) {
                 $startedUtc = $process.StartTime.ToUniversalTime()
-                if ($startedUtc -gt [DateTimeOffset]::Parse([string]$status.utc).UtcDateTime.AddSeconds(5)) { continue }
+                if ($startedUtc -gt (ConvertTo-CaelestiaStatusUtc $status.utc).UtcDateTime.AddSeconds(5)) { continue }
             }
         } catch {
             # If the process still exists and is a PowerShell host (or cannot be
@@ -199,9 +209,7 @@ function Stop-CaelestiaSupervisor($Supervisor, [int]$RecoveryTimeoutMs = 60000) 
         [Math]::Abs(($native.CreationDate.ToUniversalTime() - $process.StartTime.ToUniversalTime()).TotalMilliseconds) -gt 1) {
         throw 'Refusing forced recovery of an unverified desktop supervisor.'
     }
-    if (-not ('Caelestia.Takeover.Supervisor' -as [type])) {
-        Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
-    }
+    Import-CaelestiaDesktopTakeover -ScriptRoot $PSScriptRoot
     try { [Caelestia.Takeover.Supervisor]::RecoverActive($RecoveryTimeoutMs) }
     catch {
         if ($_.Exception.InnerException -isnot [InvalidOperationException] -or
@@ -247,7 +255,7 @@ function Repair-CaelestiaStaleSupervisors([string]$ProfileRoot) {
         $limit = if ($supervisor.Phase -in @('starting', 'restoring')) { 75 } else { 5 }
         $status = Read-CaelestiaSupervisorStatus $supervisor.StatusPath
         if (-not $status.utc -or -not $status.heartbeat) { continue }
-        $deadline = [DateTimeOffset]::Parse($status.utc).UtcDateTime.AddSeconds($limit)
+        $deadline = (ConvertTo-CaelestiaStatusUtc $status.utc).UtcDateTime.AddSeconds($limit)
         $latest = $status
         while (-not $supervisor.Process.HasExited -and $latest.utc -eq $status.utc -and [DateTime]::UtcNow -lt $deadline) {
             Start-Sleep -Milliseconds 100
@@ -296,11 +304,827 @@ function Get-CaelestiaUnrestoredSnapshot([string]$ProfileRoot) {
     return ($candidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1)
 }
 
-# Windows PowerShell 5.1 hosts the supervisor; $PSHOME is wrong under pwsh 7.
+# Windows PowerShell 5.1 is the inbox compatibility host, kept only for the
+# NotifyTest WinRT toast (PS 7 has no built-in WinRT projection), the
+# clean-machine Install.cmd bootstrap fallback, and launching a rolled-back
+# legacy payload whose DesktopTakeover.cs still uses
+# System.Web.Script.Serialization. Everything else runs on PowerShell 7.
 function Get-WindowsPowerShellPath {
     $path = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
     return Join-Path $PSHOME 'powershell.exe'
+}
+
+# PowerShell 7 x64 is the runtime host for every Caelestia script. Discovery
+# never consults PATH: a user-writable shim could substitute another binary.
+# Sources are, in order, the current Core host, the machine-wide MSI
+# registration, the standard MSI path, App Paths, and the verified Microsoft
+# Store package's stable alias.
+function Get-CaelestiaPowerShellMinimumVersion {
+    # Test and deployment fixtures can raise the floor through the environment;
+    # a malformed or lower value is ignored so the product floor never drops.
+    $override = $env:CAELESTIA_MIN_POWERSHELL_VERSION
+    if ($override -match '\A7\.[0-9]+\.[0-9]+(?:\.[0-9]+)?\z') {
+        $parsed = $null
+        if ([version]::TryParse($override, [ref]$parsed) -and $parsed -ge [version]'7.4.0') {
+            return $parsed
+        }
+    }
+    return [version]'7.4.0'
+}
+
+function Get-CaelestiaPowerShellDownloadUrl {
+    return 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.10/PowerShell-7.6.10-win-x64.msi'
+}
+
+function Get-CaelestiaStorePowerShellAlias {
+    # Resolve the OS LocalAppData, not $env:LOCALAPPDATA. Tests and worker
+    # fixtures redirect that variable to an isolated cache, but the Microsoft
+    # Store always registers its stable execution alias under the real user
+    # profile.
+    $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if (-not $localAppData) { $localAppData = $env:LOCALAPPDATA }
+    return Join-Path $localAppData 'Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
+}
+
+# A reparse point on the file or on any of its parent directories up to and
+# including Boundary means the path is not the trusted image it names.
+function Test-CaelestiaNoReparse([string]$Path, [string]$Boundary) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $stop = Get-CaelestiaLongPath $Boundary
+    $ancestor = $Path
+    while ($true) {
+        $ancestor = Split-Path -Parent $ancestor
+        if (-not $ancestor) { return $true }
+        $node = Get-Item -LiteralPath $ancestor -Force -ErrorAction SilentlyContinue
+        if ($node -and ($node.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+        if ([string]::Equals((Get-CaelestiaLongPath $ancestor), $stop, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+}
+
+# The Machine field at the PE header offset. 0x8664 is x64; WOW64 shims and
+# ARM64 builds are never a substitute for the x64 host.
+function Test-CaelestiaX64Executable([string]$Path) {
+    try {
+        $stream = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        try {
+            $reader = [IO.BinaryReader]::new($stream)
+            if ($stream.Length -lt 0x40) { return $false }
+            if ($reader.ReadUInt16() -ne 0x5A4D) { return $false }
+            $stream.Seek(0x3C, [IO.SeekOrigin]::Begin) | Out-Null
+            $offset = $reader.ReadInt32()
+            if ($offset -lt 0x40 -or ($offset + 6) -gt $stream.Length) { return $false }
+            $stream.Seek($offset, [IO.SeekOrigin]::Begin) | Out-Null
+            if ($reader.ReadUInt32() -ne 0x00004550) { return $false }
+            $stream.Seek($offset + 4, [IO.SeekOrigin]::Begin) | Out-Null
+            return $reader.ReadUInt16() -eq 0x8664
+        } finally { $stream.Dispose() }
+    } catch { return $false }
+}
+
+# A directory (not a file) must exist and carry no reparse point itself or on
+# any ancestor up to and including Boundary. Unlike Test-CaelestiaNoReparse the
+# subject itself is a directory, so the leaf check is skipped for files whose
+# reparse bit is legitimate (a Store AppExecLink alias).
+function Test-CaelestiaNoReparseDirectoryChain([string]$Directory, [string]$Boundary) {
+    $stop = Get-CaelestiaLongPath $Boundary
+    $node = Get-Item -LiteralPath $Directory -Force -ErrorAction SilentlyContinue
+    if (-not $node -or ($node.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $ancestor = $Directory
+    while ($true) {
+        $ancestor = Split-Path -Parent $ancestor
+        if (-not $ancestor) { return $true }
+        $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+        if ([string]::Equals((Get-CaelestiaLongPath $ancestor), $stop, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+}
+
+# A PowerShell file-version/product-version string can carry a prerelease or
+# build-metadata suffix ("7.7.0-preview.1", "7.6.10.0", "7.7.0+sha..."). Strip
+# the suffix before comparing a [version]; a prerelease tag does not change the
+# numeric floor the manifest names.
+function ConvertTo-CaelestiaVersionOrNull([string]$Text) {
+    if (-not $Text) { return $null }
+    $clean = ($Text.Trim() -split '[-+]')[0]
+    $parsed = $null
+    if ([version]::TryParse($clean, [ref]$parsed)) { return $parsed }
+    return $null
+}
+
+# The OS LocalAppData, not $env:LOCALAPPDATA. Test fixtures and worker
+# environments redirect that variable to an isolated cache, but supported
+# per-user installs and the Store alias always live under the real profile.
+function Get-CaelestiaOsLocalAppData {
+    $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if (-not $localAppData) { $localAppData = $env:LOCALAPPDATA }
+    return $localAppData
+}
+
+# A Store execution alias is an AppExecLink reparse point (tag 0x8000001B).
+# Existence and a clean directory chain do not prove it points at the verified
+# package: a user-writable link could redirect the launch elsewhere. Read the
+# reparse buffer through CreateFileW/OPEN_REPARSE_POINT + FSCTL_GET_REPARSE_POINT
+# and compare the recorded package family and target against the verified
+# package. The inline P/Invoke is compiled once per session and only on hosts
+# that need it.
+function Read-CaelestiaAppExecLink([string]$Path) {
+    if (-not ('CaelestiaReparse.AppExecLink' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace CaelestiaReparse {
+    public static class AppExecLink {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr CreateFile(string path, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool DeviceIoControl(IntPtr handle, uint code, byte[] input, uint inputLength, byte[] output, uint outputLength, out uint returned, IntPtr overlapped);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool CloseHandle(IntPtr handle);
+        public static string[] Read(string path) {
+            IntPtr handle = CreateFile(path, 0, 7, IntPtr.Zero, 3, 0x00200000 | 0x00000080, IntPtr.Zero);
+            if (handle == new IntPtr(-1)) { return null; }
+            byte[] buffer = new byte[16384];
+            uint returned;
+            bool ok = DeviceIoControl(handle, 0x000900A8, null, 0, buffer, (uint)buffer.Length, out returned, IntPtr.Zero);
+            CloseHandle(handle);
+            if (!ok || returned < 12 || BitConverter.ToUInt32(buffer, 0) != 0x8000001B) { return null; }
+            int count = (int)BitConverter.ToUInt32(buffer, 8);
+            var strings = new List<string>();
+            int offset = 12;
+            for (int index = 0; index < count && offset < (int)returned - 1; index++) {
+                int end = offset;
+                while (end + 1 < (int)returned && (buffer[end] != 0 || buffer[end + 1] != 0)) { end += 2; }
+                if (end + 1 >= (int)returned) { return null; }
+                strings.Add(Encoding.Unicode.GetString(buffer, offset, end - offset));
+                offset = end + 2;
+            }
+            return strings.ToArray();
+        }
+    }
+}
+'@ -ErrorAction Stop
+    }
+    return [CaelestiaReparse.AppExecLink]::Read($Path)
+}
+
+# The verified Store package must own the alias the launcher persists. The
+# first recorded string names the package family (and its entry point), the
+# third names the executable the alias activates.
+function Test-CaelestiaStorePowerShellAlias($Package) {
+    $alias = Get-CaelestiaStorePowerShellAlias
+    $osLocal = Get-CaelestiaOsLocalAppData
+    if (-not (Test-Path -LiteralPath $alias -PathType Leaf)) { return $false }
+    $aliasParent = Split-Path -Parent $alias
+    if ((Split-Path -Leaf $aliasParent) -cne 'Microsoft.PowerShell_8wekyb3d8bbwe') { return $false }
+    if (-not (Test-CaelestiaNoReparseDirectoryChain $aliasParent $osLocal)) { return $false }
+    try {
+        $fields = Read-CaelestiaAppExecLink $alias
+        if (-not $fields -or $fields.Count -lt 3) { return $false }
+        # The link's recorded package id and entry point must name the verified
+        # package exactly; a looser match would accept an alias another package
+        # family owns.
+        if ($fields[0] -cne 'Microsoft.PowerShell_8wekyb3d8bbwe') { return $false }
+        if ($fields[1] -cne 'Microsoft.PowerShell_8wekyb3d8bbwe!App') { return $false }
+        $target = Get-CaelestiaLongPath (Join-Path ([string]$Package.InstallLocation) 'pwsh.exe')
+        if (-not [string]::Equals((Get-CaelestiaLongPath $fields[2]), $target, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Find-CaelestiaPowerShell7([version]$MinimumVersion = (Get-CaelestiaPowerShellMinimumVersion)) {
+    # Shared file probe: the candidate must exist, carry no reparse point up to
+    # a trusted root, be a PE x64 image and meet the minimum. ProductVersion can
+    # carry a "+sha" build suffix and FileVersion a four-part form; both parse
+    # cleanly through ConvertTo-CaelestiaVersionOrNull.
+    $probeFile = {
+        param([string]$Candidate, [string]$Boundary)
+        if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $null }
+        if (-not (Test-CaelestiaNoReparse $Candidate $Boundary)) { return $null }
+        if (-not (Test-CaelestiaX64Executable $Candidate)) { return $null }
+        $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($Candidate)
+        $version = ConvertTo-CaelestiaVersionOrNull $info.ProductVersion
+        if (-not $version) { $version = ConvertTo-CaelestiaVersionOrNull $info.FileVersion }
+        if (-not $version -or $version -lt $MinimumVersion) { return $null }
+        return $version
+    }
+    # Shared Store verification: the exact PowerShell package family, x64
+    # architecture, a package version meeting the floor, a verified package
+    # pwsh.exe, and an execution alias this package verifiably owns. Returns the
+    # package version on success so the caller can report it.
+    $verifyStorePackage = {
+        param()
+        $pkg = Get-AppxPackage -Name 'Microsoft.PowerShell' -ErrorAction Stop |
+            Where-Object { $_.PackageFamilyName -ceq 'Microsoft.PowerShell_8wekyb3d8bbwe' -and
+                $_.Architecture -eq 'X64' } | Select-Object -First 1
+        if (-not $pkg) { return $null }
+        $pkgVersion = ConvertTo-CaelestiaVersionOrNull ([string]$pkg.Version)
+        if (-not $pkgVersion -or $pkgVersion -lt $MinimumVersion) { return $null }
+        $location = [string]$pkg.InstallLocation
+        $packageExe = if ($location) { Join-Path $location 'pwsh.exe' } else { '' }
+        $windowsAppsRoot = Split-Path -Parent $location
+        if (-not $packageExe -or -not $windowsAppsRoot -or -not (& $probeFile $packageExe $windowsAppsRoot)) {
+            return $null
+        }
+        if (-not (Test-CaelestiaStorePowerShellAlias $pkg)) { return $null }
+        return $pkgVersion
+    }
+    # 1) The current host is already a suitable PowerShell 7. Prefer it so a
+    #    running install keeps its own exact binary rather than discovering a
+    #    different one. A Store host must be persisted through its stable
+    #    alias; the versioned package folder dies on the next auto-update.
+    if ($PSVersionTable.PSEdition -eq 'Core' -and [Environment]::Is64BitProcess -and
+        $PSVersionTable.PSVersion -ge $MinimumVersion) {
+        try {
+            $self = [IO.Path]::GetFullPath([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName).TrimEnd('\')
+            $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\')
+            $osLocal = [IO.Path]::GetFullPath((Get-CaelestiaOsLocalAppData)).TrimEnd('\')
+            $programsRoot = [IO.Path]::GetFullPath((Join-Path $osLocal 'Programs')).TrimEnd('\')
+            if ($self -match 'WindowsApps\\Microsoft\.PowerShell_.*_x64__8wekyb3d8bbwe\\pwsh\.exe$') {
+                # Reuse the current host only when the owning package survives
+                # the same full verification the discovery path applies.
+                $selfPackageVersion = & $verifyStorePackage
+                if ($selfPackageVersion) {
+                    return [pscustomobject]@{
+                        Path = (Get-CaelestiaStorePowerShellAlias)
+                        Version = [version]"$($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor).$($PSVersionTable.PSVersion.Patch)"
+                        Kind = 'msix'
+                    }
+                }
+            } elseif ($self.StartsWith($programFilesRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
+                (& $probeFile $self $programFilesRoot)) {
+                return [pscustomobject]@{ Path = $self; Version = [version]$PSVersionTable.PSVersion; Kind = 'msi' }
+            } else {
+                if ($self.StartsWith($programsRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
+                    (& $probeFile $self $osLocal)) {
+                    return [pscustomobject]@{ Path = $self; Version = [version]$PSVersionTable.PSVersion; Kind = 'msi' }
+                }
+            }
+        } catch { }
+    }
+    # 2) Registered MSI installs. Read the native hive so a WOW64 caller still
+    #    sees the 64-bit registration.
+    $baseKey = $null
+    try {
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+        $installed = $baseKey.OpenSubKey('SOFTWARE\Microsoft\PowerShellCore\InstalledVersions')
+        if ($installed) {
+            try {
+                $candidates = @()
+                foreach ($name in $installed.GetSubKeyNames()) {
+                    $sub = $installed.OpenSubKey($name)
+                    if (-not $sub) { continue }
+                    try {
+                        $location = [string]$sub.GetValue('InstallLocation')
+                        $semantic = [string]$sub.GetValue('SemanticVersion')
+                        $version = $null
+                        $version = ConvertTo-CaelestiaVersionOrNull $semantic
+                        if (-not $location -or -not $version -or $version -lt $MinimumVersion) { continue }
+                        $normalizedLocation = [IO.Path]::GetFullPath($location).TrimEnd('\')
+                        $candidate = [IO.Path]::GetFullPath((Join-Path $normalizedLocation 'pwsh.exe')).TrimEnd('\')
+                        # The registered location itself is not a trust
+                        # boundary: the image must sit under Program Files or
+                        # the per-user Programs root, be reparse-free up to
+                        # that trusted root, be a PE x64 image, and carry a
+                        # real version that still meets the floor.
+                        $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\')
+                        $osLocal = [IO.Path]::GetFullPath((Get-CaelestiaOsLocalAppData)).TrimEnd('\')
+                        $programsRoot = [IO.Path]::GetFullPath((Join-Path $osLocal 'Programs')).TrimEnd('\')
+                        $trusted = $null
+                        $boundary = $null
+                        if ($normalizedLocation.Equals($programFilesRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                            $normalizedLocation.StartsWith($programFilesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                            $trusted = $programFilesRoot
+                            $boundary = $programFilesRoot
+                        } else {
+                            if ($normalizedLocation.Equals($programsRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                                $normalizedLocation.StartsWith($programsRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                                $trusted = $programsRoot
+                                $boundary = $osLocal
+                            }
+                        }
+                        if (-not $trusted) { continue }
+                        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf) -or
+                            -not (Test-CaelestiaNoReparse $candidate $boundary) -or
+                            -not (Test-CaelestiaX64Executable $candidate)) { continue }
+                        $info = [Diagnostics.FileVersionInfo]::GetVersionInfo($candidate)
+                        $fileVersion = ConvertTo-CaelestiaVersionOrNull $info.ProductVersion
+                        if (-not $fileVersion) { $fileVersion = ConvertTo-CaelestiaVersionOrNull $info.FileVersion }
+                        if (-not $fileVersion -or $fileVersion -lt $MinimumVersion) { continue }
+                        $stable = if ($semantic -match '-') { 0 } else { 1 }
+                        $candidates += [pscustomobject]@{ Path = $candidate; Version = $fileVersion; Kind = 'msi'; Stable = $stable }
+                    } finally { $sub.Dispose() }
+                }
+                $best = @($candidates | Sort-Object { $_.Stable }, { $_.Version } -Descending | Select-Object -First 1)
+                if ($best.Count) { return $best[0] }
+            } finally { $installed.Dispose() }
+        }
+    } catch { }
+    finally { if ($baseKey) { $baseKey.Dispose() } }
+    # 3) The standard MSI destination.
+    $standard = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+    $standardVersion = & $probeFile $standard $env:ProgramFiles
+    if ($standardVersion) {
+        return [pscustomobject]@{ Path = $standard; Version = $standardVersion; Kind = 'msi' }
+    }
+    # 3b) The supported per-user install under the OS LocalAppData.
+    $perUser = Join-Path (Get-CaelestiaOsLocalAppData) 'Programs\PowerShell\7\pwsh.exe'
+    $perUserVersion = & $probeFile $perUser (Get-CaelestiaOsLocalAppData)
+    if ($perUserVersion) {
+        return [pscustomobject]@{ Path = $perUser; Version = $perUserVersion; Kind = 'msi' }
+    }
+    # 4) App Paths, only when it names a trusted Program Files image.
+    try {
+        $appPaths = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\pwsh.exe' -ErrorAction Stop
+        $appPath = [string]$appPaths.'(default)'
+        if (-not $appPath) { $appPath = [string]$appPaths.Path }
+        if ($appPath) {
+            $appPath = $appPath.Trim('"')
+            if ([IO.Path]::GetFileName($appPath) -ne 'pwsh.exe') { $appPath = Join-Path $appPath 'pwsh.exe' }
+            $appPath = [IO.Path]::GetFullPath($appPath).TrimEnd('\')
+            $programFilesRoot = [IO.Path]::GetFullPath($env:ProgramFiles).TrimEnd('\')
+            if ($appPath.StartsWith($programFilesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                $appVersion = & $probeFile $appPath $programFilesRoot
+                if ($appVersion) {
+                    return [pscustomobject]@{ Path = $appPath; Version = $appVersion; Kind = 'msi' }
+                }
+            }
+        }
+    } catch { }
+    # 5) The Microsoft Store package. Only its stable LOCALAPPDATA execution
+    #    alias is persisted; the versioned package folder is replaced by
+    #    automatic updates.
+    try {
+        $storeVersion = & $verifyStorePackage
+        if ($storeVersion) {
+            return [pscustomobject]@{ Path = (Get-CaelestiaStorePowerShellAlias); Version = [version]$storeVersion; Kind = 'msix' }
+        }
+    } catch { }
+    return $null
+}
+
+function Get-CaelestiaPowerShellPath([version]$MinimumVersion = (Get-CaelestiaPowerShellMinimumVersion)) {
+    $found = Find-CaelestiaPowerShell7 $MinimumVersion
+    if ($found) { return [string]$found.Path }
+    throw ('Caelestia requires 64-bit PowerShell ' + $MinimumVersion.ToString() +
+        ' or newer, which is not installed. Install it with Install.cmd -InstallPrerequisites, ' +
+        'the official MSI (' + (Get-CaelestiaPowerShellDownloadUrl) + '), ' +
+        '`winget install --id Microsoft.PowerShell --source winget`, or the Microsoft Store, then retry.')
+}
+
+# Rollback compatibility: a retained payload whose supervisor source still
+# uses System.Web.Script.Serialization cannot compile on .NET Core, so it must
+# keep running on inbox Windows PowerShell 5.1. Anything else gets PowerShell 7.
+# A payload can also record a higher PowerShell floor than the product default
+# (install.json powerShellMinimumVersion, written by the release installer):
+# the resolved host must satisfy the higher of the two.
+function Get-CaelestiaPayloadMinimumPowerShellVersion([string]$RuntimePrefix) {
+    $minimum = Get-CaelestiaPowerShellMinimumVersion
+    $manifest = Join-Path $RuntimePrefix 'install.json'
+    if (Test-Path -LiteralPath $manifest -PathType Leaf) {
+        try {
+            $record = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+            $declared = ConvertTo-CaelestiaVersionOrNull ([string]$record.powerShellMinimumVersion)
+            if ($declared -and $declared -gt $minimum) { $minimum = $declared }
+        } catch { }
+    }
+    return $minimum
+}
+
+function Get-CaelestiaPayloadPowerShellPath([string]$RuntimePrefix) {
+    $source = Join-Path $RuntimePrefix 'DesktopTakeover.cs'
+    if (Test-Path -LiteralPath $source -PathType Leaf) {
+        try {
+            if ([IO.File]::ReadAllText($source).Contains('System.Web.Script.Serialization')) {
+                return Get-WindowsPowerShellPath
+            }
+        } catch { }
+    }
+    return Get-CaelestiaPowerShellPath (Get-CaelestiaPayloadMinimumPowerShellVersion $RuntimePrefix)
+}
+
+# True only when this running process IS the verified target executable (so an
+# older Core process never runs a payload that resolved a newer pwsh.exe).
+function Test-CaelestiaCurrentHostMatchesTarget([string]$TargetHost) {
+    $targetEdition = if ((Split-Path -Leaf $TargetHost) -ieq 'powershell.exe') { 'Desktop' } else { 'Core' }
+    if ($targetEdition -cne [string]$PSVersionTable.PSEdition) { return $false }
+    try {
+        $self = Get-CaelestiaLongPath ([Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)
+        $resolvedTarget = Get-CaelestiaLongPath $TargetHost
+        if ([string]::Equals($self, $resolvedTarget, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        # A Store execution alias launches the versioned WindowsApps image.
+        $aliasParent = Split-Path -Parent $resolvedTarget
+        if ((Split-Path -Leaf $aliasParent) -ceq 'Microsoft.PowerShell_8wekyb3d8bbwe') {
+            $fields = Read-CaelestiaAppExecLink $resolvedTarget
+            if ($fields -and $fields.Count -ge 3) {
+                $aliasTarget = Get-CaelestiaLongPath $fields[2]
+                if ([string]::Equals($self, $aliasTarget, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+            }
+        }
+    } catch { }
+    return $false
+}
+
+# Invoke a payload's Start-Caelestia.ps1 on the host it targets, preserving the
+# exact bound-parameter set the caller built. Same-edition payloads run
+# in-process; cross-edition payloads run out-of-process through a small encoded
+# bootstrap that rebuilds the hashtable and splats it, so values the -File
+# dispatcher would corrupt survive: a bound switch set to $false, an empty
+# string, embedded quotes and a trailing backslash. The child's exit code is
+# recorded on $global:CaelestiaLastPayloadExitCode before a nonzero exit throws,
+# so a caller that needs the exact code can exit with it instead of 1.
+function Invoke-CaelestiaPayloadCommand([string]$RuntimePrefix, [hashtable]$Arguments) {
+    # Reset before discovery so a discovery failure never reuses a stale code.
+    $global:CaelestiaLastPayloadExitCode = 0
+    $payloadScript = Join-Path $RuntimePrefix 'Start-Caelestia.ps1'
+    $targetHost = Get-CaelestiaPayloadPowerShellPath $RuntimePrefix
+    $targetEdition = if ((Split-Path -Leaf $targetHost) -ieq 'powershell.exe') { 'Desktop' } else { 'Core' }
+    $argsCopy = @{}
+    foreach ($key in @($Arguments.Keys)) { $argsCopy[$key] = $Arguments[$key] }
+    # The payload always runs against its own directory: a Start needs qs.exe
+    # and the shell files beside it, and the stable install root is never a
+    # valid -Prefix for a versioned payload's own record.
+    $argsCopy['Prefix'] = $RuntimePrefix
+    if (Test-CaelestiaCurrentHostMatchesTarget $targetHost) {
+        $global:LASTEXITCODE = 0
+        & $payloadScript @argsCopy
+        $childExit = $global:LASTEXITCODE
+        if ($null -eq $childExit) { $childExit = 0 }
+        $global:CaelestiaLastPayloadExitCode = $childExit
+        if ($childExit -ne 0) {
+            throw "Caelestia payload command failed on $targetEdition host (exit $childExit)."
+        }
+        return
+    }
+    # Serialize the bound set as typed entries. SwitchParameter serializes as a
+    # bool that binds positionally, so kind carries it separately and the
+    # bootstrap rebuilds a real SwitchParameter with IsPresent from the value.
+    # Every string travels base64-encoded UTF-8: PowerShell 7.5+ ConvertFrom-Json
+    # coerces ISO-looking strings into [DateTime], which would reach the child as
+    # a culture-formatted date instead of the exact caller value.
+    $entries = [Collections.Generic.List[hashtable]]::new()
+    foreach ($key in @($argsCopy.Keys)) {
+        $value = $argsCopy[$key]
+        $entry = @{ name = [string]$key; kind = 'string-b64';
+            value = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$value)) }
+        if ($value -is [System.Management.Automation.SwitchParameter]) {
+            $entry.kind = 'switch'
+            $entry.value = [bool]$value.IsPresent
+        } elseif ($value -is [bool]) {
+            $entry.kind = 'bool'
+            $entry.value = [bool]$value
+        } elseif ($value -is [int] -or $value -is [long] -or $value -is [byte] -or $value -is [int16]) {
+            $entry.kind = 'int'
+            $entry.value = [long]$value
+        }
+        $entries.Add($entry)
+    }
+    $json = ConvertTo-Json -InputObject @($entries) -Compress -Depth 4
+    $argsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+    $scriptB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payloadScript))
+    # 5.1+7 compatible bootstrap: no classes, no ::new on types that lack it
+    # under 5.1 rules, no ternary. SwitchParameter construction uses the full
+    # type name so -Switch:$false stays bound with IsPresent=$false and the
+    # payload's $PSBoundParameters.ContainsKey check still observes it.
+    $bootstrap = @'
+$json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__ARGSB64__'))
+$script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__SCRIPTB64__'))
+$entries = $json | ConvertFrom-Json
+if ($null -ne $entries -and -not ($entries -is [Array])) { $entries = @($entries) }
+$params = @{}
+foreach ($e in $entries) {
+    if ($e.kind -eq 'switch') {
+        $params[$e.name] = New-Object System.Management.Automation.SwitchParameter([bool]$e.value)
+    } elseif ($e.kind -eq 'bool') {
+        $params[$e.name] = [bool]$e.value
+    } elseif ($e.kind -eq 'int') {
+        $params[$e.name] = [int]$e.value
+    } else {
+        $params[$e.name] = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string]$e.value))
+    }
+}
+& $script @params
+$code = $global:LASTEXITCODE
+if ($null -ne $code -and $code -ne 0) { exit $code }
+'@
+    $bootstrap = $bootstrap.Replace('__ARGSB64__', $argsB64).Replace('__SCRIPTB64__', $scriptB64)
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($bootstrap))
+    $global:LASTEXITCODE = 0
+    & $targetHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded
+    $childExit = $global:LASTEXITCODE
+    if ($null -eq $childExit) { $childExit = 0 }
+    $global:CaelestiaLastPayloadExitCode = $childExit
+    if ($childExit -ne 0) {
+        throw "Caelestia payload command failed on $targetEdition host (exit $childExit)."
+    }
+}
+
+# Assemblies needed to compile DesktopTakeover.cs. Passing
+# -ReferencedAssemblies on .NET Core replaces the default reference list, so
+# the full BCL facade plus WinForms set is spelled out. 5.1 only needs
+# WinForms (and, for a legacy payload, System.Web.Extensions).
+function Get-CaelestiaDesktopTakeoverReferences {
+    if ($PSVersionTable.PSEdition -ne 'Core') { return @('System.Windows.Forms') }
+    # Internal WinForms assemblies differ across .NET versions.
+    # System.Private.Windows.Core exists on .NET 9+ but not on the .NET 8
+    # runtime that hosts PowerShell 7.4; System.Windows.Forms.Primitives exists
+    # on both. Include each internal assembly only when the current runtime's
+    # own directories actually ship it, so the same source compiles on both
+    # families. Probing the runtime directory (where [object].Assembly lives)
+    # and the WinForms directory covers runtimes that split them.
+    $optional = [Collections.Generic.List[string]]::new()
+    $probeDirs = [Collections.Generic.List[string]]::new()
+    try { $probeDirs.Add([IO.Path]::GetDirectoryName([object].Assembly.Location)) } catch { }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $probeDirs.Add([IO.Path]::GetDirectoryName([System.Windows.Forms.Form].Assembly.Location))
+    } catch { }
+    foreach ($name in @('System.Windows.Forms.Primitives', 'System.Private.Windows.Core')) {
+        $present = $false
+        foreach ($dir in $probeDirs) {
+            if ($dir -and (Test-Path -LiteralPath (Join-Path $dir ($name + '.dll')) -PathType Leaf)) { $present = $true; break }
+        }
+        if ($present) { $optional.Add($name) }
+    }
+    return @(
+        'System.Windows.Forms'
+    ) + $optional + @(
+        'System.Drawing.Primitives', 'System.Drawing.Common',
+        'System.Threading', 'System.Threading.Thread',
+        'System.Diagnostics.Process',
+        'System.Collections', 'System.Collections.Specialized',
+        'System.ComponentModel.Primitives',
+        'System.Linq', 'System.ObjectModel',
+        'System.Runtime', 'System.Runtime.Extensions', 'System.Runtime.InteropServices',
+        'System.Text.RegularExpressions',
+        'Microsoft.Win32.Registry', 'Microsoft.Win32.Primitives',
+        'netstandard'
+    )
+}
+
+# Load the supervisor type once, preferring the compiled payload DLL and
+# falling back to source when the DLL is missing or targets the other CLR. A
+# legacy .NET Framework DLL fails to load on Core and a Core build fails on
+# Desktop; either way the source compiles cleanly for the current runtime.
+function Import-CaelestiaDesktopTakeover([string]$ScriptRoot = $PSScriptRoot, [switch]$SourceOnly) {
+    if ('Caelestia.Takeover.Supervisor' -as [type]) { return }
+    $dll = Join-Path $ScriptRoot 'DesktopTakeover.dll'
+    if (-not $SourceOnly -and (Test-Path -LiteralPath $dll -PathType Leaf)) {
+        if (Test-CaelestiaDesktopTakeoverBuildMetadata $ScriptRoot) {
+            $validated = $false
+            try {
+                $validated = Test-CaelestiaDesktopTakeoverAssembly $dll
+            } catch {
+                # A probe that itself fails (for example Add-Type throwing on a
+                # Desktop host without WinForms) is not a validated image: fall
+                # through so the source is compiled instead.
+                $validated = $false
+            }
+            if ($validated) {
+                try {
+                    Add-Type -Path $dll -ErrorAction Stop
+                    return
+                } catch {
+                    # A DLL that passed metadata but still fails to bind is not a
+                    # partial success: fall through and compile from source.
+                }
+            }
+        }
+    }
+    Add-Type -Path (Join-Path $ScriptRoot 'DesktopTakeover.cs') `
+        -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop
+}
+
+# A precompiled payload DLL is only trusted when its build metadata exists and
+# names this host: the same CLR major version and the same PowerShell edition.
+# Missing or partial metadata means the DLL came from an untracked build, so it
+# is never loaded even when it happens to match.
+function Test-CaelestiaDesktopTakeoverBuildMetadata([string]$ScriptRoot) {
+    $metadataPath = Join-Path $ScriptRoot 'DesktopTakeover.build.json'
+    if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) { return $false }
+    try {
+        $meta = Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $builtClr = [string]$meta.clrVersion
+        $builtEdition = [string]$meta.psEdition
+        if (-not $builtClr -or -not $builtEdition) { return $false }
+        $builtMajor = ($builtClr -split '\.')[0]
+        if ($builtMajor -cne ([Environment]::Version.Major).ToString()) { return $false }
+        if ($builtEdition -cne [string]$PSVersionTable.PSEdition) { return $false }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# The public contract the installed scripts bind against. Every required method
+# signature (name + exact parameter types), every required public static
+# property getter (name + type), and every required public instance field
+# (name + exact type) must be present. A DLL missing any member or overload is
+# never loaded: the contract failure compiles the source instead.
+function Get-CaelestiaDesktopTakeoverContract {
+    return [ordered]@{
+        Methods = [ordered]@{
+            'Caelestia.Takeover.Supervisor' = [ordered]@{
+                Run = @(
+                    'System.String,System.Boolean,System.Boolean,System.Boolean',
+                    'System.String,System.Boolean,System.Boolean,System.Boolean,System.Boolean'
+                )
+                RecoverActive = @(
+                    '',
+                    'System.Int32'
+                )
+            }
+            'Caelestia.Takeover.SupervisorSafety' = [ordered]@{
+                Log = @('System.Action')
+                Fail = @('System.Action,System.Action')
+            }
+            'Caelestia.Takeover.Native' = [ordered]@{
+                Capture = @('')
+                Restore = @('Caelestia.Takeover.Snapshot,System.Int32')
+                RestoreOwned = @('Caelestia.Takeover.Snapshot,System.Int32,System.Boolean,System.Boolean')
+                Hide = @('System.Boolean')
+                RemoveStaleAppBars = @('System.Int32')
+                LoadSnapshot = @('System.String')
+                SerializeSnapshot = @('Caelestia.Takeover.Snapshot')
+                DeserializeSnapshot = @('System.String')
+                DeserializeLaunch = @('System.String')
+                SerializeTaskbarAction = @('Caelestia.Takeover.TaskbarAction')
+            }
+            'Caelestia.Takeover.TakeoverJson' = [ordered]@{
+                Serialize = @('System.Object')
+                Deserialize = @('System.String')
+                DeserializeObject = @('System.String')
+            }
+        }
+        Properties = [ordered]@{
+            'Caelestia.Takeover.Supervisor' = [ordered]@{
+                MutexName = 'System.String'
+            }
+            'Caelestia.Takeover.Native' = [ordered]@{
+                ExplorerWorkDeferred = 'System.Boolean'
+            }
+        }
+        Fields = [ordered]@{
+            'Caelestia.Takeover.Launch' = [ordered]@{
+                Executable = 'System.String'
+                Arguments = 'System.String'
+                WorkingDirectory = 'System.String'
+                ConfigPath = 'System.String'
+                StateDirectory = 'System.String'
+                StdoutPath = 'System.String'
+                StderrPath = 'System.String'
+                InstallLockKey = 'System.String'
+                PowerShellPath = 'System.String'
+                RestartFrozenShell = 'System.Boolean'
+                RestoreWorkAreas = 'System.Boolean'
+                Environment = 'System.Collections.Generic.Dictionary`2[System.String,System.String]'
+                TestWindowOwners = 'System.Collections.Generic.List`1[System.Int32]'
+            }
+            'Caelestia.Takeover.Snapshot' = [ordered]@{
+                TaskbarFlags = 'System.UInt64'
+                TaskbarFlagsSaved = 'System.Boolean'
+                MultiMonitorTaskbarSaved = 'System.Boolean'
+                MultiMonitorTaskbar = 'System.Nullable`1[System.Int32]'
+                Displays = 'System.Collections.Generic.List`1[Caelestia.Takeover.Display]'
+                Bars = 'System.Collections.Generic.List`1[Caelestia.Takeover.Bar]'
+                Regions = 'System.Collections.Generic.List`1[Caelestia.Takeover.SavedRegion]'
+            }
+        }
+    }
+}
+
+function Get-CaelestiaNormalizedTypeName([type]$Type) {
+    if (-not $Type.IsGenericType) { return $Type.FullName }
+    $genericDef = $Type.GetGenericTypeDefinition().FullName
+    $argNames = @($Type.GetGenericArguments() | ForEach-Object { Get-CaelestiaNormalizedTypeName $_ })
+    return ($genericDef + '[' + ($argNames -join ',') + ']')
+}
+
+# Check one loaded or reflection-only assembly against the takeover contract.
+# Every required public static method overload (exact parameter types), every
+# required public static getter property (exact type), and every required
+# public instance field (exact type) must match. Works for both live Type
+# objects (Core collectible context) and reflection-only Type objects (Desktop).
+function Test-CaelestiaTakeoverContract($Assembly) {
+    $contract = Get-CaelestiaDesktopTakeoverContract
+    $types = @{}
+    foreach ($type in $Assembly.GetTypes()) { $types[$type.FullName] = $type }
+    foreach ($name in $contract.Methods.Keys) {
+        if (-not $types.ContainsKey($name)) { return $false }
+        $methods = @{}
+        foreach ($method in $types[$name].GetMethods([Reflection.BindingFlags]'Public,Static')) {
+            if (-not $methods.ContainsKey($method.Name)) { $methods[$method.Name] = @() }
+            $sig = (@($method.GetParameters() | ForEach-Object { Get-CaelestiaNormalizedTypeName $_.ParameterType }) -join ',')
+            $methods[$method.Name] += $sig
+        }
+        foreach ($required in $contract.Methods[$name].Keys) {
+            if (-not $methods.ContainsKey($required)) { return $false }
+            # Every listed overload signature must be present (not just one).
+            foreach ($requiredSig in $contract.Methods[$name][$required]) {
+                if ($methods[$required] -cnotcontains [string]$requiredSig) { return $false }
+            }
+        }
+    }
+    foreach ($name in $contract.Properties.Keys) {
+        if (-not $types.ContainsKey($name)) { return $false }
+        foreach ($propName in $contract.Properties[$name].Keys) {
+            $prop = $types[$name].GetProperty($propName, [Reflection.BindingFlags]'Public,Static')
+            if (-not $prop -or -not $prop.GetGetMethod($false)) { return $false }
+            if ((Get-CaelestiaNormalizedTypeName $prop.PropertyType) -cne $contract.Properties[$name][$propName]) { return $false }
+        }
+    }
+    foreach ($name in $contract.Fields.Keys) {
+        if (-not $types.ContainsKey($name)) { return $false }
+        $fields = @{}
+        foreach ($field in $types[$name].GetFields([Reflection.BindingFlags]'Public,Instance')) {
+            $fields[$field.Name] = Get-CaelestiaNormalizedTypeName $field.FieldType
+        }
+        foreach ($required in $contract.Fields[$name].Keys) {
+            if (-not $fields.ContainsKey($required)) { return $false }
+            if ($fields[$required] -cne $contract.Fields[$name][$required]) { return $false }
+        }
+    }
+    return $true
+}
+
+# Inspect the payload DLL without loading it into the default load context.
+# No reference may pull in System.Web.Extensions and every referenced assembly
+# must fully resolve on this runtime, so an image built against a different
+# BCL is refused rather than partially trusted. The required public types,
+# method signatures and fields are checked against the live contract. On Core
+# the DLL is inspected inside a collectible AssemblyLoadContext that is always
+# unloaded; on Desktop the reflection-only context answers the same shape.
+function Test-CaelestiaDesktopTakeoverAssembly([string]$Path) {
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop | Out-Null
+        $alc = $null
+        try {
+            $alc = [System.Runtime.Loader.AssemblyLoadContext]::new('caelestia-takeover-probe', $true)
+            $stream = [IO.MemoryStream]::new([IO.File]::ReadAllBytes($Path))
+            try {
+                $assembly = $alc.LoadFromStream($stream)
+            } finally { $stream.Dispose() }
+            foreach ($reference in $assembly.GetReferencedAssemblies()) {
+                if ($reference.Name -ceq 'System.Web.Extensions') { return $false }
+                try {
+                    $null = [System.Runtime.Loader.AssemblyLoadContext]::Default.LoadFromAssemblyName($reference)
+                } catch {
+                    return $false
+                }
+            }
+            return Test-CaelestiaTakeoverContract $assembly
+        } catch {
+            return $false
+        } finally {
+            if ($null -ne $alc) { $alc.Unload() }
+        }
+    }
+    # Desktop: the reflection-only context inspects metadata without committing
+    # the image to the load context. Every referenced assembly must resolve in
+    # the reflection-only context too, so the full assembly identity is checked
+    # rather than a display name. Any loader failure or missing member fails
+    # closed so the source is compiled instead.
+    try {
+        $assembly = [Reflection.Assembly]::ReflectionOnlyLoadFrom($Path)
+        foreach ($reference in $assembly.GetReferencedAssemblies()) {
+            if ($reference.Name -ceq 'System.Web.Extensions') { return $false }
+            $null = [Reflection.Assembly]::ReflectionOnlyLoad($reference.FullName)
+        }
+        return Test-CaelestiaTakeoverContract $assembly
+    } catch {
+        return $false
+    }
+}
+
+# Test fixtures need a runnable executable, and PS 7 removed
+# Add-Type -OutputType ConsoleApplication. Compile with the inbox .NET
+# Framework compiler instead; it exists on every Windows machine and fixture
+# binaries do not need Core.
+function New-CaelestiaTestExecutable([string]$OutputPath, [string]$Source, [string[]]$ReferencedAssemblies = @()) {
+    $compiler = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+    if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
+        $compiler = Join-Path $env:SystemRoot 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
+    }
+    if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) { throw 'The inbox .NET Framework C# compiler is missing.' }
+    $sourcePath = $OutputPath + '.cs'
+    [IO.File]::WriteAllText($sourcePath, $Source, [Text.UTF8Encoding]::new($false))
+    # Concatenate before the array literal: in an argument list ',' binds
+    # tighter than '+', so '/out:' + $Path would append two arguments.
+    $arguments = @('/nologo', '/target:exe', ('/out:' + $OutputPath))
+    foreach ($reference in $ReferencedAssemblies) { $arguments += ('/r:' + $reference) }
+    $arguments += $sourcePath
+    try {
+        $output = & $compiler @arguments 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "csc.exe exited $LASTEXITCODE`n$output" }
+    } finally {
+        if (Test-Path -LiteralPath $sourcePath) { [IO.File]::Delete($sourcePath) }
+    }
 }
 
 # Scheme CLI revision pinned by a repository or installed payload.
@@ -637,8 +1461,20 @@ function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$Profile
     $record = $null
     $message = ''
     try {
-        $record = & (Join-Path $RuntimePrefix 'Install-SchemeRuntime.ps1') -ProfileRoot $ProfileRoot -LockWaitSeconds 900 |
-            Select-Object -Last 1 | ConvertFrom-Json
+        $scriptPath = Join-Path $RuntimePrefix 'Install-SchemeRuntime.ps1'
+        $targetHost = Get-CaelestiaPayloadPowerShellPath $RuntimePrefix
+        if (Test-CaelestiaCurrentHostMatchesTarget $targetHost) {
+            $record = & $scriptPath -ProfileRoot $ProfileRoot -LockWaitSeconds 900 |
+                Select-Object -Last 1 | ConvertFrom-Json
+        } else {
+            $global:LASTEXITCODE = 0
+            $output = & $targetHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath `
+                -ProfileRoot $ProfileRoot -LockWaitSeconds 900
+            if ($global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
+                throw "Scheme provisioning exited with code $($global:LASTEXITCODE)."
+            }
+            $record = $output | Select-Object -Last 1 | ConvertFrom-Json
+        }
     } catch {
         $message = Protect-CaelestiaText $_.Exception.Message
     }
@@ -762,7 +1598,16 @@ function Publish-CaelestiaSchemeRuntime([string]$ProfileRoot, [string]$Revision,
     $receipt = Get-CaelestiaSchemeFingerprint $GenerationRoot
     if (-not $receipt) { return $null }
     $created = ''
-    try { $created = [string](Get-Content -LiteralPath (Join-Path $GenerationRoot 'generation.json') -Raw -Encoding UTF8 | ConvertFrom-Json).created } catch { }
+    # ConvertFrom-Json under PowerShell 7 turns an ISO timestamp into a
+    # DateTime; casting that back to [string] yields the caller's locale form
+    # ("11/20/2026 02:30:00"), not the 'o' format the record contract needs.
+    # Emit UTC ISO text for every typed or string form.
+    try {
+        $createdVal = (Get-Content -LiteralPath (Join-Path $GenerationRoot 'generation.json') -Raw -Encoding UTF8 | ConvertFrom-Json).created
+        if ($createdVal -is [DateTimeOffset]) { $created = $createdVal.UtcDateTime.ToString('o') }
+        elseif ($createdVal -is [DateTime]) { $created = $createdVal.ToUniversalTime().ToString('o') }
+        else { $created = [string]$createdVal }
+    } catch { }
     $record = [ordered]@{
         available = $true
         revision = $Revision
@@ -1281,14 +2126,28 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
 
 # Task Scheduler owns the process tree, not the invoking agent/terminal's job.
 # On-demand only, interactive and non-elevated, with no autostart registration.
-function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning) {
+function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '') {
     $taskName = 'Caelestia-Start-' + [guid]::NewGuid().ToString('N')
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
+    # The scheduled child runs on the host the selected payload needs: PS 7
+    # for current installs, 5.1 for a rolled-back legacy payload.
+    # An explicit -RuntimePrefix names the incoming payload directly, so the
+    # task is measured against the version about to be activated rather than
+    # whatever the still-uncommitted selector happens to point at. Without it
+    # the selector is resolved as before.
+    $runtimePrefix = $RuntimePrefix
+    if (-not $runtimePrefix) {
+        $runtimePrefix = $Prefix
+        if (Get-Command Resolve-CaelestiaRuntimePrefix -ErrorAction SilentlyContinue) {
+            try { $runtimePrefix = Resolve-CaelestiaRuntimePrefix $Prefix } catch { $runtimePrefix = $Prefix }
+        }
+    }
+    $shellHost = Get-CaelestiaPayloadPowerShellPath $runtimePrefix
     $launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "' + $Prefix + '"'
     # Activation only consumes the scheme runtime prepared before the handoff.
     if ($PreparedSchemeRuntime) { $launchArguments += ' -PreparedSchemeRuntime' }
     elseif ($DisableSchemeProvisioning) { $launchArguments += ' -SkipSchemeRuntime' }
-    $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) `
+    $action = New-ScheduledTaskAction -Execute $shellHost `
         -Argument $launchArguments `
         -WorkingDirectory $env:USERPROFILE
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
@@ -1316,7 +2175,11 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
                     # Do not allow a slow launcher to start later over a retry or
                     # rollback. Restore owned state before attempting another run.
                     Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
-                    & $launcher -Prefix $Prefix -Command Quit | Out-Null
+                    # Quit the version actually running, not the selector's
+                    # target: a partially activated upgrade leaves the selector
+                    # pointing at the incoming payload while the outgoing one
+                    # still serves the desktop.
+                    Invoke-CaelestiaPayloadCommand (Resolve-CaelestiaRuntimePrefix $Prefix -Running) @{ Command = 'Quit' } | Out-Null
                 } catch {
                     # Cleanup must not replace the startup error, and if the
                     # launcher/task state cannot be verified, never retry over it.
@@ -1520,12 +2383,13 @@ function Get-CaelestiaUninstallKeyPath([string]$Prefix) {
 
 # One command shape for every user-visible entry: the Start-menu launch and
 # switch-back shortcuts, the optional desktop shortcut, the HKCU Run value and
-# the Apps & features UninstallString. conhost.exe --headless gives Windows
-# PowerShell a console without a window, so the entries never flash a console
-# and never need VBScript or another Windows Script Host engine. The launcher
-# derives its own prefix, so the command does not repeat the path and stays
-# under Windows' 260-character limit for a Run value. A future signed launcher
-# EXE (#20) replaces this helper and Caelestia-Launcher.ps1, nothing else.
+# the Apps & features UninstallString. conhost.exe --headless gives the
+# selected PowerShell host a console without a window, so the entries never
+# flash a console and never need VBScript or another Windows Script Host
+# engine. The launcher derives its own prefix, so the command does not repeat
+# the path and stays under Windows' 260-character limit for a Run value. A
+# future signed launcher EXE (#20) replaces this helper and
+# Caelestia-Launcher.ps1, nothing else.
 function New-CaelestiaLaunchCommand([string]$Conhost, [string]$PowerShell, [string]$Launcher, [string]$Action) {
     # --headless must be followed directly by the child command. The action and
     # the quoted launcher path are data; no cmd.exe or script host parses them.
@@ -1542,8 +2406,9 @@ function New-CaelestiaLaunchCommand([string]$Conhost, [string]$PowerShell, [stri
 }
 
 # Windows' documented limit for a Run value is 260 characters. Only the launcher
-# path can be shortened: the 8.3 name is the same file, and it is kept only when
-# it resolves back to that file. An empty result means no safe shortening.
+# and PowerShell paths can be shortened: the 8.3 name is the same file, and it
+# is kept only when it resolves back to that file. An empty result means no
+# safe shortening.
 function Get-CaelestiaShortPath([string]$Path) {
     # The generated Run value keeps the short spelling as-is. Only the proof
     # that it names the same file goes through the long-path normaliser.
@@ -1568,18 +2433,39 @@ function Get-CaelestiaShortPath([string]$Path) {
     return $short
 }
 
-function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action, [int]$MaxLength = 0) {
+function Get-CaelestiaLaunchCommand([string]$Prefix, [string]$Action, [int]$MaxLength = 0, [string]$RuntimePrefix = '') {
     if ($Action -notin @('start', 'switch-back', 'uninstall', 'uninstall-quiet')) {
         throw "Unknown Caelestia launch action: $Action"
     }
     $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
-    $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    # The entry runs the selected payload's scripts, so it uses the host that
+    # payload needs: PowerShell 7 for current installs, inbox Windows
+    # PowerShell 5.1 for a rolled-back legacy payload.
+    # An explicit -RuntimePrefix names the incoming payload's host, so a
+    # pre-activation Run-value check measures the command it is about to write
+    # rather than the command the still-outgoing selector produces.
+    $runtimePrefix = $RuntimePrefix
+    if (-not $runtimePrefix) {
+        $runtimePrefix = $Prefix
+        if (Get-Command Resolve-CaelestiaRuntimePrefix -ErrorAction SilentlyContinue) {
+            try { $runtimePrefix = Resolve-CaelestiaRuntimePrefix $Prefix } catch { $runtimePrefix = $Prefix }
+        }
+    }
+    $powershell = Get-CaelestiaPayloadPowerShellPath $runtimePrefix
     $launcher = Join-Path $Prefix 'Caelestia-Launcher.ps1'
     $command = New-CaelestiaLaunchCommand $conhost $powershell $launcher $Action
     if (-not $MaxLength -or $command.CommandLine.Length -le $MaxLength) { return $command }
-    $short = Get-CaelestiaShortPath $launcher
-    if ($short) {
-        $shortCommand = New-CaelestiaLaunchCommand $conhost $powershell $short $Action
+    # The Microsoft Store alias is much longer than the classic powershell.exe
+    # path, so a long prefix may need both components in 8.3 form. Try each
+    # alone, then both.
+    $shortLauncher = Get-CaelestiaShortPath $launcher
+    $shortPowerShell = Get-CaelestiaShortPath $powershell
+    foreach ($pair in @(
+        @($powershell, $shortLauncher),
+        @($shortPowerShell, $launcher),
+        @($shortPowerShell, $shortLauncher))) {
+        if (-not $pair[0] -or -not $pair[1]) { continue }
+        $shortCommand = New-CaelestiaLaunchCommand $conhost $pair[0] $pair[1] $Action
         if ($shortCommand.CommandLine.Length -le $MaxLength) { return $shortCommand }
     }
     throw ("The Caelestia launch command for $Prefix is longer than the Windows limit of $MaxLength characters. " +
@@ -1624,8 +2510,8 @@ function Get-CaelestiaAppsFeaturesValues([string]$Prefix, [string]$RuntimePrefix
         DisplayName = 'Caelestia for Windows'
         Publisher = 'KldsSeeGhosts'
         InstallLocation = $Prefix
-        UninstallString = (Get-CaelestiaLaunchCommand $Prefix 'uninstall').CommandLine
-        QuietUninstallString = (Get-CaelestiaLaunchCommand $Prefix 'uninstall-quiet').CommandLine
+        UninstallString = (Get-CaelestiaLaunchCommand $Prefix 'uninstall' -RuntimePrefix $RuntimePrefix).CommandLine
+        QuietUninstallString = (Get-CaelestiaLaunchCommand $Prefix 'uninstall-quiet' -RuntimePrefix $RuntimePrefix).CommandLine
         NoModify = 1
         NoRepair = 1
         EstimatedSize = Get-CaelestiaIntegrationSizeKb $Prefix
@@ -1818,8 +2704,8 @@ function Set-CaelestiaUserIntegration {
     )
     if (-not $Integration) { $Integration = Get-CaelestiaIntegration $Prefix }
     $icon = $RuntimePrefix.TrimEnd('\') + '\qs.exe,0'
-    $launch = Get-CaelestiaLaunchCommand $Prefix 'start'
-    $switchBack = Get-CaelestiaLaunchCommand $Prefix 'switch-back'
+    $launch = Get-CaelestiaLaunchCommand $Prefix 'start' -RuntimePrefix $RuntimePrefix
+    $switchBack = Get-CaelestiaLaunchCommand $Prefix 'switch-back' -RuntimePrefix $RuntimePrefix
     $shortcuts = [Collections.Generic.List[object]]::new()
     foreach ($pair in @(
         @($Integration.Shortcut, $launch),
@@ -1851,7 +2737,7 @@ function Set-CaelestiaUserIntegration {
     # command would exceed Windows' 260-character limit for a Run value, and a
     # refusal here must leave every existing entry untouched.
     $runCommand = ''
-    if ($writeRun) { $runCommand = Get-CaelestiaAutostartValue $Prefix }
+    if ($writeRun) { $runCommand = Get-CaelestiaAutostartValue $Prefix -RuntimePrefix $RuntimePrefix }
     $keyNames = @(Get-CaelestiaAppsFeaturesValueNames)
     $keyPath = ''
     $keySnapshot = $null
@@ -1925,6 +2811,15 @@ function Update-CaelestiaIntegrationRecords([string]$Prefix, [string]$RuntimePre
     $existing = @(Test-Path -LiteralPath $keyPath)
     foreach ($path in @($integration.Shortcut, $integration.SwitchBackShortcut, $integration.DesktopShortcut)) {
         if ($path) { $existing += [bool][IO.File]::Exists($path) }
+    }
+    # A Run-only install has no shortcuts or Apps & features entry, but its Run
+    # command still names the selected payload and must be refreshed on a
+    # version change just like every other integration record.
+    if ($integration.RunName) {
+        try {
+            $existing += [bool](Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) `
+                -Name $integration.RunName -ErrorAction SilentlyContinue)
+        } catch { }
     }
     if (-not ($existing -contains $true)) { return }
     Set-CaelestiaUserIntegration $Prefix $RuntimePrefix -Integration $integration -RefreshOnly

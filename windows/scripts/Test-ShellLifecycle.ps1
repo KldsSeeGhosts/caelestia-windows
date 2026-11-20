@@ -90,7 +90,8 @@ Add-Content -LiteralPath (Join-Path $Prefix 'quit-calls') -Value 'quit'
 
     # A real child process exercises IPC timeout, exit and pipe handling without
     # launching Qt, registering shortcuts or touching the session supervisor.
-    Add-Type -OutputAssembly (Join-Path $root 'qs.exe') -OutputType ConsoleApplication -TypeDefinition @'
+    # The inbox csc.exe builds it; PS 7 removed Add-Type's ConsoleApplication.
+    New-CaelestiaTestExecutable (Join-Path $root 'qs.exe') @'
 using System;
 using System.IO;
 using System.Threading;
@@ -220,7 +221,7 @@ if ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helper-phase') -Raw).Tri
             catch { $failed = $_.Exception.Message -match 'did not become ready' }
             if (-not $failed -or $live.HasExited) { throw 'Plain Start killed its unready shell or accepted strict IPC failure.' }
             $outcome = Join-Path $plainPrefix ('logon-' + $phase + '.json')
-            & (Get-WindowsPowerShellPath) -NoProfile -File (Join-Path $plainPrefix 'Caelestia-Launcher.ps1') `
+            & (Get-CaelestiaPowerShellPath) -NoProfile -File (Join-Path $plainPrefix 'Caelestia-Launcher.ps1') `
                 -Action start -NoDialogs -OutcomeFile $outcome | Out-Null
             $code = $LASTEXITCODE
             $recorded = Get-Content -LiteralPath $outcome -Raw | ConvertFrom-Json
@@ -234,8 +235,9 @@ if ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helper-phase') -Raw).Tri
     }
     Write-Output 'PASS plain/logon Start: waiting-ready and strict IPC failure report errors and preserve the live child.'
 
-    # Compile only. No supervisor or native desktop operations run here.
-    Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+    # Compile from source only; the test owns no compiled DLL in the checkout.
+    # No supervisor or native desktop operations run here.
+    Import-CaelestiaDesktopTakeover -ScriptRoot $PSScriptRoot -SourceOnly
     foreach ($case in @(@(0, 0), @(1, 0), @(2, 1), @(3, 2), @(10, 30))) {
         if ([Caelestia.Takeover.RestartPolicy]::DelaySeconds($case[0]) -ne $case[1]) { throw 'Unexpected crash backoff.' }
     }
@@ -305,6 +307,7 @@ if ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'helper-phase') -Raw).Tri
         [IO.File]::WriteAllText((Join-Path $startupScripts 'Start-DesktopShell.ps1'), $startupSource.Replace('AddSeconds(75)', 'AddSeconds(1)'))
         @'
 function Get-WindowsPowerShellPath { 'fixture.exe' }
+function Get-CaelestiaPowerShellPath { 'fixture.exe' }
 function Stop-CaelestiaSupervisor($Supervisor) { $consumer.Recovered = $true }
 function Read-CaelestiaSupervisorStatus($Path) { [pscustomobject]@{ phase = 'recovered' } }
 '@ | Set-Content -LiteralPath (Join-Path $startupScripts 'Caelestia-InstallCommon.ps1') -Encoding UTF8

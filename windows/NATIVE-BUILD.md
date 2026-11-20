@@ -29,7 +29,7 @@ not interchangeable. The same VS instance must provide
 `vcruntime140.dll` and `vcruntime140_1.dll` must each be version 14.44.35211.0.
 
 The following setup commands download development tools into a separate
-per-user directory. Run them in native Windows PowerShell. Python 3.12, Git,
+per-user directory. Run them in native PowerShell 7. Python 3.12, Git,
 `curl.exe`, and `tar.exe` must be available. Production builds also bundle the
 Caelestia Capture helper from maintained `windows/capture` source, so the Rust
 toolchain (`cargo` on PATH, installed with [rustup](https://rustup.rs/)) is
@@ -51,7 +51,7 @@ Prefer the shared local/hosted preparation entry point:
 
 ```powershell
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
-powershell -NoProfile -File windows/scripts/Prepare-Toolchain.ps1 -ToolRoot $devRoot
+pwsh -NoProfile -File windows/scripts/Prepare-Toolchain.ps1 -ToolRoot $devRoot
 ```
 
 The script uses Python 3.12 x64, committed hash-locked Python wheels and aqt
@@ -76,7 +76,7 @@ From the repository root:
 
 ```powershell
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
-powershell -NoProfile -File windows/scripts/Build-Prototype.ps1 `
+pwsh -NoProfile -File windows/scripts/Build-Prototype.ps1 `
     -QtPrefix "$devRoot\Qt\6.11.3\msvc2022_64" `
     -LlvmBin "$devRoot\clang+llvm-20.1.8-x86_64-pc-windows-msvc\bin" `
     -Cli11Include "$devRoot\deps\CLI11-2.5.0\include" `
@@ -179,8 +179,8 @@ python windows/tools/warning_baseline.py --log $warningLog --build-root $buildRo
 python windows/tools/warning_baseline.py --check $warningLog --build-root $buildRoot
 ```
 
-The tool also accepts the `<BuildRoot>\logs` directory directly. Both modes
-read UTF-8 and Windows PowerShell's UTF-16 component logs. The baseline records
+The tool also accepts the `<BuildRoot>\logs` directory directly. It reads
+UTF-8 logs and legacy UTF-16 component logs. The baseline records
 the compiler and Qt identity from `windows/toolchain.json`. `--check` exits 2
 when that identity no longer matches, so a toolchain upgrade requires a
 reviewed baseline refresh. It exits 1 and prints each new owned diagnostic.
@@ -210,9 +210,9 @@ same exact-version predicate as the release assembler. To check an existing
 build without assembling or installing anything:
 
 ```powershell
-powershell -NoProfile -File windows/scripts/New-CaelestiaRelease.ps1 `
+pwsh -NoProfile -File windows/scripts/New-CaelestiaRelease.ps1 `
     -BuildRoot C:\b-caelestia -ValidateToolchainOnly
-powershell -NoProfile -File windows/scripts/Test-Toolchain.ps1
+pwsh -NoProfile -File windows/scripts/Test-Toolchain.ps1
 ```
 
 Legacy, incomplete, wrong-specification or incompatible receipts require a
@@ -254,7 +254,7 @@ The public smoke command is:
 
 ```powershell
 $devRoot = Join-Path $env:LOCALAPPDATA 'caelestia-dev'
-powershell -NoProfile -File windows/scripts/Test-Smoke.ps1 `
+pwsh -NoProfile -File windows/scripts/Test-Smoke.ps1 `
     -BuildRoot C:\b-smoke `
     -QtPrefix "$devRoot\Qt\6.11.3\msvc2022_64"
 ```

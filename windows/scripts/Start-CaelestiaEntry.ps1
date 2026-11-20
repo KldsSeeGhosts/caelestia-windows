@@ -61,13 +61,24 @@ if ($arguments.ContainsKey('PreparedSchemeRuntime')) {
         $skip = $target -match '\[switch\]\$SkipSchemeRuntime\b'
     } catch { }
     if (-not $prepared) {
+        $requested = [bool]$arguments['PreparedSchemeRuntime']
         $arguments.Remove('PreparedSchemeRuntime')
-        if ($skip) { $arguments['SkipSchemeRuntime'] = $true }
+        # Only a bound $true request translates to the legacy skip switch. An
+        # explicit -PreparedSchemeRuntime:$false must not become an unintended
+        # -SkipSchemeRuntime on the old payload, and SwitchParameter::Present
+        # keeps the bound shape the payload's IsPresent check expects.
+        if ($requested -and $skip) {
+            $arguments['SkipSchemeRuntime'] = [System.Management.Automation.SwitchParameter]::Present
+        }
     }
 }
-$arguments.Prefix = $runtime
+# Invoke-CaelestiaPayloadCommand always rebinds Prefix to the resolved runtime,
+# so whatever root spelling the caller bound never reaches the payload.
+$payloadError = $null
 try {
-    & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+    Invoke-CaelestiaPayloadCommand $runtime $arguments
+} catch {
+    $payloadError = $_
 } finally {
     # The runtime Quit has finished and the supervisor has restored the desktop.
     # The shell has exited, so this launcher owns the visible report; notify even
@@ -75,3 +86,10 @@ try {
     if ($autostartFailure) { Show-CaelestiaHandoffDialog $autostartFailure }
 }
 if ($autostartFailure) { throw $autostartFailure }
+if ($payloadError) {
+    # A cross-host payload failure recorded its real exit code before throwing;
+    # surface it exactly instead of letting the exception collapse to 1.
+    $code = $global:CaelestiaLastPayloadExitCode
+    if ($code -and $code -ne 0) { exit $code }
+    throw $payloadError
+}

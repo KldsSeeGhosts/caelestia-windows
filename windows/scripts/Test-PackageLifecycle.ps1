@@ -97,7 +97,7 @@ function Expand-Package([string]$Zip, [string]$Destination) {
     } finally { $archive.Dispose() }
 }
 function Invoke-PackageInstall([string]$Bundle, [string]$Prefix, [string]$Profile, [string]$Injection = '',
-    [string]$RuntimeFixture = '') {
+    [string]$RuntimeFixture = '', [string]$PowerShellFixture = '') {
     $text = Get-Content -LiteralPath "$Bundle\Install-CaelestiaRelease.ps1" -Raw
     # All mutations are confined to this test's in-memory script block. No
     # production switch, environment bypass or package-file edit is introduced.
@@ -116,6 +116,17 @@ function Invoke-PackageInstall([string]$Bundle, [string]$Prefix, [string]$Profil
         }
         $text = $text.Replace($boundary,
             ('function Test-ReleaseVCRuntime([version]$MinimumVersion) { ' + $probe + " }`n" + $boundary))
+    }
+    if ($PowerShellFixture) {
+        $boundary = 'if ($null -ne $powerShell7Minimum) {'
+        Assert-True ($text.Contains($boundary)) 'PowerShell fixture boundary changed.'
+        $probe = if ($PowerShellFixture -eq 'missing') {
+            'Test-ReleasePowerShell7Versions $false @() @{} $null $false $MinimumVersion'
+        } else {
+            'Test-ReleasePowerShell7Versions $false @("C:\\fixture\\pwsh.exe") @{"C:\\fixture\\pwsh.exe"=[version]"7.3.0"} $null $false $MinimumVersion'
+        }
+        $text = $text.Replace($boundary,
+            ('function Test-ReleasePowerShell7([version]$MinimumVersion) { ' + $probe + " }`n" + $boundary))
     }
     $Injection = @'
 function New-CaelestiaLaunchTask { throw 'Package tests must never request a launch task.' }
@@ -146,6 +157,7 @@ try {
         $verified = Test-ReleaseBundle $bundle
         $script:manifestHash = $verified.Sha256
         $script:receipt = $verified.Manifest.toolchain
+        $script:ps7Minimum = $verified.PowerShell7Minimum
         Assert-True ($null -ne $receipt) 'Package has no toolchain receipt.'
     }
     Invoke-Case 'complete-manifest' { & "$bundle\Install-CaelestiaRelease.ps1" -BundleRoot $bundle -VerifyOnly }
@@ -199,6 +211,18 @@ try {
             Assert-True (-not (Test-Path $prefix) -and -not (Test-Path $profile)) 'Runtime refusal wrote install/profile.'
         }
     }
+    # The PowerShell 7 prerequisite boundary is additive. Historical preview
+    # bundles predate it, so the negative fixtures only run when the tested
+    # installer actually enforces the check.
+    $bundleInstaller = Get-Content -LiteralPath "$bundle\Install-CaelestiaRelease.ps1" -Raw
+    if ($bundleInstaller.Contains('Test-ReleasePowerShell7')) {
+        foreach ($psCase in @('missing', 'outdated')) {
+            Invoke-Case "powershell7-$psCase" {
+                Assert-Refused { Invoke-PackageInstall $bundle $prefix $profile -PowerShellFixture $psCase } 'PowerShell'
+                Assert-True (-not (Test-Path $prefix) -and -not (Test-Path $profile)) 'PowerShell refusal wrote install/profile.'
+            }
+        }
+    }
     Invoke-Case 'clean-install-and-relocation' {
         Invoke-PackageInstall $bundle $prefix $profile
         $record = Get-Selector $prefix
@@ -208,6 +232,10 @@ try {
         Assert-True ($qml.Contains($profile.Replace('\', '/') + '/data') -and -not $qml.Contains('@CAELESTIA_PROFILE@')) 'Profile relocation failed.'
         Assert-True ((Get-FileHash "$installed\release-manifest.json").Hash -eq $manifestHash) 'Installed manifest differs.'
         Assert-True (Test-Path (Get-CaelestiaIntegration $prefix).Shortcut) 'Redirected integration missing.'
+        $installRecord = Get-Content -LiteralPath "$installed\install.json" -Raw | ConvertFrom-Json
+        if ($script:ps7Minimum) {
+            Assert-True ($installRecord.powerShellMinimumVersion -eq $script:ps7Minimum.ToString()) 'Installed record lost the manifest PowerShell floor.'
+        }
     }
     New-Item -ItemType Directory -Path "$profile\config" -Force | Out-Null
     $config = Join-Path $profile 'config\package-test.txt'

@@ -91,7 +91,11 @@ foreach ($name in @('Install-CaelestiaVersion', 'Switch-CaelestiaVersion')) {
     Assert ($null -ne $function) "Missing activation function: $name"
     $quits = @($function.Body.FindAll({
         param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and $node.Extent.Text -match '(?m)-Command\s+Quit\b'
+        $node -is [Management.Automation.Language.CommandAst] -and (
+            $node.Extent.Text -match '(?m)-Command\s+Quit\b' -or
+            ($node.GetCommandName() -eq 'Invoke-CaelestiaPayloadCommand' -and
+                $node.Extent.Text -match "(?m)Command\s*=\s*'Quit'")
+        )
     }, $true))
     Assert ($quits.Count -ge 1) "$name never stops the old shell."
     $firstQuit = ($quits | Sort-Object { $_.Extent.StartOffset } | Select-Object -First 1).Extent.StartOffset

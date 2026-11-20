@@ -50,6 +50,6 @@ jobs:
           NEXUS_CHANNEL: ${{ inputs.channel }}
           NEXUS_ALIAS: ${{ inputs.alias }}
         run: |
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+          & pwsh -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
             -Mode promote -WorkDirectory C:\nexus-promote
           if ($LASTEXITCODE -ne 0) { throw 'Nexus promotion refused.' }

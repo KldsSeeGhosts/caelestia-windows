@@ -76,7 +76,7 @@ class ParallelQmlTests(unittest.TestCase):
 
     def run_suite(self, jobs=2, **env):
         return subprocess.run([
-            "powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            "pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(self.scripts / VALIDATION.name), "-Suite", "Shell",
             "-QtPrefix", "C:\\Qt path\\", "-BuildRoot", "C:\\Build path\\",
             "-OutputRoot", str(self.output), "-QmlJobs", str(jobs)],
@@ -141,7 +141,7 @@ class ParallelQmlTests(unittest.TestCase):
             "ConvertTo-Json -InputObject @(Get-QmlSchedule "
             "@('unknown-z', 'short', 'tie-z', 'long', 'unknown-a', 'tie-a'))\n")
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(probe)],
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(probe)],
             capture_output=True, text=True, timeout=30)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(["long", "tie-z", "tie-a", "short", "unknown-z", "unknown-a"],

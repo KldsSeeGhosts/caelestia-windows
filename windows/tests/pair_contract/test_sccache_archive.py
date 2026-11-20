@@ -61,7 +61,7 @@ function curl.exe {
             environment = os.environ.copy()
             environment["GITHUB_ENV"] = str(env_file)
             environment.pop("CI_COMPILER_LAUNCHER", None)
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                                      str(wrapper), str(SCRIPT), temp], env=environment,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -79,7 +79,7 @@ function curl.exe {
             env_file = root / "github-env"
             environment = os.environ.copy()
             environment["GITHUB_ENV"] = str(env_file)
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                                      str(SCRIPT), "-ToolRoot", str(root / "tools"),
                                      "-ArchiveRoot", str(archive_root)], env=environment,
                                     capture_output=True, text=True, timeout=30)

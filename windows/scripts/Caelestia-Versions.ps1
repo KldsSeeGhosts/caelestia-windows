@@ -201,7 +201,10 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             }
         }
         try {
-            Assert-CaelestiaRunValuePreflight $Prefix -Autostart:$Autostart
+            # Measure the incoming payload's host path, not the host the
+            # still-active selector names: a 5.1-to-PS7 upgrade whose new Run
+            # command cannot fit is refused before activation.
+            Assert-CaelestiaRunValuePreflight $Prefix -Autostart:$Autostart -RuntimePrefix $Payload
         } finally {
             if ($probeLauncher) {
                 try { [IO.File]::Delete($launcher) }
@@ -236,7 +239,10 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             $legacyRecord | Add-Member -NotePropertyName versionId -NotePropertyValue $previous -Force
             Write-CaelestiaJsonAtomic (Join-Path $legacyPath 'install.json') $legacyRecord
         }
-        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime }
+        # The launch task runs the incoming payload's host. Resolving the
+        # selector here would build a task for the outgoing version, which is
+        # still selected until Copy-CaelestiaRootEntries commits the new one.
+        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime }
         # Pick and verify this version's scheme generation while the old shell
         # still serves the desktop, so a slow or hung check is not an outage.
         $verifiedScheme = Select-CaelestiaSchemeGeneration $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
@@ -248,8 +254,13 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         Write-Host "Prepared version $id; beginning activation."
         $clock = [Diagnostics.Stopwatch]::StartNew()
         if ($Restart -and $old) {
+            # Quit the runtime actually serving the desktop, on the host its
+            # payload needs. The root router is not replaced first: a legacy
+            # outgoing payload still needs its own 5.1 entry, and routing
+            # through the just-written router would re-enter this install path.
+            $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
             $stopped = $true
-            & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
+            Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $newRecord.profile).Count) {
             throw 'The installation is still running; the new version was retained but not activated.'
@@ -278,7 +289,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
                 # A broken replacement record must not keep recovery from
                 # quitting. The process check below, not Quit's exit path,
                 # decides whether anything is still running.
-                try { & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null } catch { }
+                try { Invoke-CaelestiaPayloadCommand (Resolve-CaelestiaRuntimePrefix $Prefix -Running) @{ Command = 'Quit' } | Out-Null } catch { }
                 if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $newRecord.profile).Count) {
                     throw "Activation failed and replacement is still running; versions retained at $Prefix\versions."
                 }
@@ -341,14 +352,24 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
     $targetRevision = Get-CaelestiaSchemeRevision $runtime
     $launchTask = $null
     $activated = $false
+    $stopped = $false
     # Verify the target's generation before the running shell is stopped.
     $verifiedScheme = Select-CaelestiaSchemeGeneration $old.profile $targetRevision $runtime
     # Also decide the fallback now: once the shell stops, nothing may probe.
     $restoreScheme = Select-CaelestiaRestoreScheme $old.profile $previousRuntime $verifiedScheme
+    # Measure the incoming payload's Run command before any stop or selector
+    # write and outside the recovery try: both restart and stopped switches
+    # refresh an existing Run entry, so an over-limit command must refuse
+    # cleanly without touching state or triggering recovery.
+    if (-not $SkipIntegration) {
+        Assert-CaelestiaRunValuePreflight $Prefix -RuntimePrefix $runtime
+    }
     try {
         if ($Restart) {
-            $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime
-            & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
+            $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime
+            $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
+            $stopped = $true
+            Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }
         if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count) {
             throw 'Quit this installation before switching versions, or request a restart.'
@@ -370,27 +391,32 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
         if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
     } catch {
         $failure = $_
-        if ($activated) {
-            & (Join-Path $Prefix 'Start-Caelestia.ps1') -Prefix $Prefix -Command Quit | Out-Null
+        if ($activated -or $stopped) {
+            if (-not $activated -and (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count)) {
+                # Quit failed before activation and a supervisor still serves
+                # the desktop; never start a rollback over it.
+                throw $failure
+            }
+            try { Invoke-CaelestiaPayloadCommand (Resolve-CaelestiaRuntimePrefix $Prefix -Running) @{ Command = 'Quit' } | Out-Null } catch { }
             if (@(Get-CaelestiaProcesses $Prefix).Count -or @(Get-CaelestiaSupervisors $old.profile).Count) {
                 throw 'Version switch failed and the replacement has not exited; selector was not changed again.'
             }
             Stop-CaelestiaHosts $Prefix
-            Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
-            $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
-            # The integration refresh itself may have failed, or the restart
-            # after it did. Put the previous version's entries back before the
-            # reported failure, so Apps & features never describes a version
-            # that is no longer selected. A skipped refresh has nothing to put
-            # back: the failed transaction already restored its snapshot.
-            if (-not $SkipIntegration) {
-                try { Update-CaelestiaIntegrationRecords $Prefix $previousRuntime }
-                catch { Write-Warning 'The previous version was selected again, but its Apps & features entry could not be refreshed.' }
+            if ($activated) {
+                Write-CaelestiaJsonAtomic (Join-Path $Prefix 'install.json') $old
+                # The integration refresh itself may have failed, or the
+                # restart after it did. Put the previous version's entries back
+                # before the reported failure, so Apps & features never
+                # describes a version that is no longer selected. A skipped
+                # refresh has nothing to put back: the failed transaction
+                # already restored its snapshot.
+                if (-not $SkipIntegration) {
+                    try { Update-CaelestiaIntegrationRecords $Prefix $previousRuntime }
+                    catch { Write-Warning 'The previous version was selected again, but its Apps & features entry could not be refreshed.' }
+                }
             }
-            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
-        } elseif ($Restart -and -not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $old.profile).Count) {
             $null = Set-CaelestiaSchemeRuntimeForRevision $old.profile $previousRevision $previousRuntime -Verified $restoreScheme
-            Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime
+            if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime }
         }
         throw $failure
     } finally {
@@ -426,8 +452,8 @@ function Get-CaelestiaAutostartKey {
 # so a future signed launcher (#20) changes in one place. A Run value is limited
 # to 260 characters, so the builder enforces that limit and throws before any
 # write when even the launcher's 8.3 path does not fit.
-function Get-CaelestiaAutostartValue([string]$Prefix) {
-    return (Get-CaelestiaLaunchCommand $Prefix 'start' -MaxLength 260).CommandLine
+function Get-CaelestiaAutostartValue([string]$Prefix, [string]$RuntimePrefix = '') {
+    return (Get-CaelestiaLaunchCommand $Prefix 'start' -MaxLength 260 -RuntimePrefix $RuntimePrefix).CommandLine
 }
 
 # Fail before the selector changes when the Run value this install would write
@@ -435,15 +461,17 @@ function Get-CaelestiaAutostartValue([string]$Prefix) {
 # owned value even without -Autostart, so that case is checked too. The caller
 # runs this before activation: a refusal leaves the selected version and every
 # integration entry untouched.
-function Assert-CaelestiaRunValuePreflight([string]$Prefix, [switch]$Autostart) {
+function Assert-CaelestiaRunValuePreflight([string]$Prefix, [switch]$Autostart, [string]$RuntimePrefix = '') {
     $integration = Get-CaelestiaIntegration $Prefix
     if (-not $integration.RunName) { return }
     if (-not $Autostart) {
-        $existing = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) `
-            -Name $integration.RunName -ErrorAction SilentlyContinue
+        try {
+            $existing = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) `
+                -Name $integration.RunName -ErrorAction SilentlyContinue
+        } catch { $existing = $null }
         if ($null -eq $existing) { return }
     }
-    $null = Get-CaelestiaAutostartValue $Prefix
+    $null = Get-CaelestiaAutostartValue $Prefix -RuntimePrefix $RuntimePrefix
 }
 
 # Autostart contract shared with the installer slice (PR #65):

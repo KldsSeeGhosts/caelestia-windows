@@ -177,16 +177,28 @@ try {
     Copy-Item -LiteralPath "$repoRoot\windows\support\support-bundle.schema.json",
         "$repoRoot\windows\support\support-bundle.example.json" -Destination "$payload\support"
     # Compile once while the old shell is alive, not on every watchdog launch.
-    # Always target Windows PowerShell's .NET Framework, even from pwsh 7.
-    $compile = "Add-Type -Path '" + "$payload\DesktopTakeover.cs".Replace("'", "''") +
+    # The payload targets PowerShell 7 / .NET Core; compile it under the
+    # verified pwsh host with the full Core reference set, even when this
+    # installer itself runs on 5.1. The payload's own InstallCommon copy
+    # supplies the reference list, so both stay in sync.
+    $pwsh = Get-CaelestiaPowerShellPath
+    # Supervisor assemblies are compiled and cached for the pwsh host's CLR.
+    # Validating a cached DLL against this installer's own CLR would mix
+    # Framework and Core builds when the installer runs on 5.1.
+    $pwshClrVersion = [string](& $pwsh -NoProfile -NonInteractive -Command '[Environment]::Version.ToString()')
+    $compile = ". '" + "$payload\Caelestia-InstallCommon.ps1".Replace("'", "''") + "'; " +
+        "Add-Type -Path '" + "$payload\DesktopTakeover.cs".Replace("'", "''") +
         "' -OutputAssembly '" + "$payload\DesktopTakeover.dll".Replace("'", "''") +
-        "' -ReferencedAssemblies System.Windows.Forms,System.Web.Extensions -ErrorAction Stop"
+        "' -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop; " +
+        # The metadata belongs to the compile host, which may differ from this
+        # installer's host when the installer itself runs on 5.1.
+        "Write-Output ([Environment]::Version.ToString() + '|' + `$PSVersionTable.PSEdition + '|' + `$PSVersionTable.PSVersion.ToString())"
     $phaseClock.Restart()
     $supervisorSourceHash = (Get-FileHash -LiteralPath "$payload\DesktopTakeover.cs").Hash
     $supervisorCached = $false
     if (-not $NoSupervisorCache -and $buildInfo.supervisor -and
         $buildInfo.supervisor.sourceSha256 -eq $supervisorSourceHash -and
-        $buildInfo.supervisor.clrVersion -eq [Environment]::Version.ToString() -and
+        $buildInfo.supervisor.clrVersion -eq $pwshClrVersion -and
         (Test-Path -LiteralPath "$BuildRoot\install\DesktopTakeover.dll" -PathType Leaf) -and
         (Get-FileHash -LiteralPath "$BuildRoot\install\DesktopTakeover.dll").Hash -eq $buildInfo.supervisor.assemblySha256) {
         Copy-Item -LiteralPath "$BuildRoot\install\DesktopTakeover.dll" -Destination "$payload\DesktopTakeover.dll"
@@ -200,7 +212,7 @@ try {
             try {
                 $cached = Get-Content -LiteralPath $priorMetadata -Raw | ConvertFrom-Json
                 if ($cached.sourceSha256 -eq $supervisorSourceHash -and
-                    $cached.clrVersion -eq [Environment]::Version.ToString() -and
+                    $cached.clrVersion -eq $pwshClrVersion -and
                     (Get-FileHash -LiteralPath $priorAssembly).Hash -eq $cached.assemblySha256 -and
                     -not ((Get-Item -LiteralPath $priorAssembly).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
                     Copy-Item -LiteralPath $priorAssembly -Destination "$payload\DesktopTakeover.dll"
@@ -214,11 +226,20 @@ try {
         }
     }
     if (-not $supervisorCached) {
-        & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -Command $compile
+        $compileHost = (& $pwsh -NoProfile -NonInteractive -Command $compile | Select-Object -Last 1)
         if ($LASTEXITCODE -ne 0) { throw 'Desktop supervisor compilation failed; the current installation was left running.' }
+        $hostFields = ([string]$compileHost) -split '\|'
+        $compileClrVersion = if ($hostFields.Count -ge 1 -and $hostFields[0]) { $hostFields[0] } else { [Environment]::Version.ToString() }
+        $compileEdition = if ($hostFields.Count -ge 2) { $hostFields[1] } else { '' }
+        $compilePsVersion = if ($hostFields.Count -ge 3) { $hostFields[2] } else { '' }
+    } else {
+        # A cached DLL was verified against the pwsh host's CLR above.
+        $compileClrVersion = $pwshClrVersion
+        $compileEdition = 'Core'
+        $compilePsVersion = ''
     }
     [ordered]@{ sourceSha256=$supervisorSourceHash; assemblySha256=(Get-FileHash -LiteralPath "$payload\DesktopTakeover.dll").Hash
-        clrVersion=[Environment]::Version.ToString() } | ConvertTo-Json |
+        clrVersion=$compileClrVersion; psEdition=$compileEdition; psVersion=$compilePsVersion } | ConvertTo-Json |
         Set-Content -LiteralPath "$payload\DesktopTakeover.build.json" -Encoding UTF8
     $timings.compileSupervisorSeconds = $phaseClock.Elapsed.TotalSeconds
     $timings.supervisorCacheHit = $supervisorCached
@@ -345,7 +366,7 @@ try {
     Remove-CaelestiaRetiredVersions $Prefix
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
     Write-Output "Installed Caelestia: $Prefix"
-    Write-Output "Run: powershell -NoProfile -File `"$launcher`""
+    Write-Output "Run: pwsh -NoProfile -File `"$launcher`""
     if (-not $NoIntegration) {
         $integration = Get-CaelestiaIntegration $Prefix
         if ($integration.Shortcut) {

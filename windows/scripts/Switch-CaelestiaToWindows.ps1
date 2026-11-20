@@ -42,10 +42,14 @@ try {
     # removed.
     $arguments = @{ Prefix = $Prefix; Command = 'Quit' }
     if ($disable) { $arguments.DisableAutostart = $true }
+    $global:LASTEXITCODE = 0
     & (Join-Path $Prefix 'Start-Caelestia.ps1') @arguments | Out-Null
+    if ($global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
+        throw "Caelestia Quit exited with code $($global:LASTEXITCODE)."
+    }
 
     Write-Output 'Caelestia is closed and the Windows taskbar and desktop are back.'
-    Write-Output ('Start Caelestia again from the Start menu, or run: powershell -NoProfile -ExecutionPolicy Bypass -File "' +
+    Write-Output ('Start Caelestia again from the Start menu, or run: pwsh -NoProfile -ExecutionPolicy Bypass -File "' +
         (Join-Path $Prefix 'Start-Caelestia.ps1') + '"')
 } catch {
     # The stable entry already reported a denied autostart removal with the

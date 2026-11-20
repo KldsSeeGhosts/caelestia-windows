@@ -3,7 +3,7 @@
 Run this only when you want a local support report. It does not upload anything,
 start or restart the shell, request permissions, change settings, or contact a
 network service. No SDK, Git, Node, administrator access or development checkout
-is needed by the installed command. Windows PowerShell 5.1 and the two packaged
+is needed by the installed command. PowerShell 7 and the two packaged
 support scripts are required.
 
 ```powershell

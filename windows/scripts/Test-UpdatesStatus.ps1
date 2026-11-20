@@ -39,7 +39,7 @@ try {
         }
         $before = @(Get-ChildItem -LiteralPath $prefix -File -Recurse |
             Sort-Object FullName | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName).Hash }) -join ','
-        $status = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\Manage-Caelestia.ps1" `
+        $status = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\Manage-Caelestia.ps1" `
             -Prefix $prefix -Command Status | ConvertFrom-Json
         Assert ($LASTEXITCODE -eq 0) 'Status command failed on a recognized synthetic installation.'
         Assert ($status.schema -eq 1) 'Status schema changed unexpectedly.'

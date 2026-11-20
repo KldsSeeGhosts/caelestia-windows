@@ -174,7 +174,7 @@ try {
         try {
             $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
             if ($state.available -eq $false -and [string]$state.key -eq $generationId -and $state.attemptedAt) {
-                $age = (Get-Date) - [DateTime]::Parse([string]$state.attemptedAt)
+                $age = [DateTimeOffset]::UtcNow - (ConvertTo-CaelestiaStatusUtc $state.attemptedAt)
                 if ($age.TotalMinutes -ge 0 -and $age.TotalMinutes -lt $RetryCooldownMinutes) {
                     Write-Result $false "retry suppressed for $([int]($RetryCooldownMinutes - $age.TotalMinutes)) more minutes after: $($state.message)"
                     return

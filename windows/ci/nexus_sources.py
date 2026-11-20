@@ -168,7 +168,7 @@ def prepare(shell, work, ctx):
             require(code == 0, "source-history-nonpass")
     assets = work / "prepared"
     code = nexus_process.run_stage(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File",
          shell / "windows/ci/Invoke-NexusSources.ps1", "-SourceRoot", shell,
          "-SourceRevision", ctx["sha"], "-OutputDirectory", assets, "-CacheDirectory", work / "cache"],
         private / "sources.log", "sources", 1800, echo=True)
@@ -177,7 +177,7 @@ def prepare(shell, work, ctx):
     # Public source objects are already public upstream/Git bytes. Before
     # uploading, apply the existing privacy policy to metadata and notices too.
     code = nexus_process.run_stage(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File",
          shell / "windows/ci/Invoke-NexusSources.ps1", "-Transfer", work / "out"],
         private / "source-privacy.log", "source-privacy", 300, echo=True)
     require(code == 0, "source-transfer-privacy-nonpass")

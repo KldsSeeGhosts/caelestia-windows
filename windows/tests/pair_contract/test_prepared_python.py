@@ -120,7 +120,7 @@ class PreparedPythonTests(unittest.TestCase):
             "$basePython = Join-Path $BaseBin 'python.exe'\n"
             "$state = & $basePython -I -B $Verifier verify --environment $Environment\n"
             "if ($LASTEXITCODE -ne 0 -or $state -ne 'hit') { throw 'base Python refused the recorded cache' }\n")
-        command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+        command = ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(harness),
                    "-BaseBin", str(Path(sys.executable).parent), "-Environment", str(environment),
                    "-Verifier", str(SCRIPT)]
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)

@@ -6,6 +6,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Windows
 import Caelestia
+import Caelestia.Windows
 import Caelestia.Config
 import Caelestia.I18n
 import Caelestia.State
@@ -52,6 +53,30 @@ Singleton {
     // notification image may come from.
     readonly property string shellAssetsDirectory: Quickshell.shellPath("assets")
     readonly property string bannerHelper: Quickshell.env("CAELESTIA_BANNER_HELPER")
+    // The launcher passes the verified PowerShell 7 path. A standalone run
+    // falls back to the fixed install locations rather than relying on PATH.
+    readonly property string powerShellExecutable: {
+        const configured = String(Quickshell.env("CAELESTIA_POWERSHELL") ?? "");
+        if (configured.length > 0)
+            return configured;
+        const programFiles = String(Quickshell.env("ProgramFiles") ?? "");
+        if (programFiles.length > 0) {
+            const bundled = programFiles + "\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(bundled))
+                return bundled;
+        }
+        const localAppData = String(Quickshell.env("LOCALAPPDATA") ?? "");
+        if (localAppData.length > 0) {
+            const perUser = localAppData + "\\Programs\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(perUser))
+                return perUser;
+            const storeAlias = localAppData
+                + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+            if (WindowsFiles.isFile(storeAlias))
+                return storeAlias;
+        }
+        return "";
+    }
     property bool bannerConfigReady: false
     property bool replaceSystemBanners: true
     property var keepSystemBanners: []
@@ -67,12 +92,12 @@ Singleton {
     readonly property int bannerFailureLimit: 3
     property var pendingBannerApps: []
     readonly property bool bannerWanted: bannerConfigReady && bannerRecoveryComplete && !bannerFailed
-        && root.service.pathConfined && bannerHelper !== ""
+        && root.service.pathConfined && bannerHelper !== "" && powerShellExecutable !== ""
         && root.service.bannerSuppressionAllowed
 
     function recoverBanners(): void {
-        if (bannerHelper !== "" && service.pathConfined && !bannerRecovery.running
-                && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1")
+        if (bannerHelper !== "" && powerShellExecutable !== "" && service.pathConfined
+                && !bannerRecovery.running && Quickshell.env("CAELESTIA_SHELL_SMOKE") !== "1")
             bannerRecovery.running = true;
     }
 
@@ -401,7 +426,7 @@ Singleton {
 
     readonly property Process _bannerProcess: Process {
         id: bannerProcess
-        command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
+        command: [root.powerShellExecutable,
             "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
             "-Command", "Worker"]
         stdinEnabled: true
@@ -454,7 +479,7 @@ Singleton {
     // killed the previous worker without exiting the supervised process.
     readonly property Process _bannerRecovery: Process {
         id: bannerRecovery
-        command: [Quickshell.env("SystemRoot") + "/System32/WindowsPowerShell/v1.0/powershell.exe",
+        command: [root.powerShellExecutable,
             "-NoProfile", "-File", root.bannerHelper, "-StateDirectory", Quickshell.stateDir,
             "-Command", "Restore"]
         stderr: SplitParser { onRead: line => console.warn("Caelestia banner recovery stderr bytes=" + line.length) }

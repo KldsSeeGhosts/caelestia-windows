@@ -2,6 +2,8 @@
 param([Parameter(Mandatory)][string]$QtPrefix, [Parameter(Mandatory)][string]$BuildRoot)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
+. "$PSScriptRoot\Caelestia-InstallCommon.ps1"
+$fixturePowerShell = Get-CaelestiaPowerShellPath
 # The picker leaves its hand-over files in the OS temp directory. The fixture
 # process gets its own temp directory, so nothing lands in the real one.
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
@@ -11,7 +13,7 @@ try {
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-picker -ShellFixture -UseQuickshell `
         -Sources @('windows/tests/CapturePickerTest.qml') -FixtureFile 'windows/tests/CapturePickerTest.qml' `
         -Marker CAELESTIA_CAPTURE_PICKER -MinimumAssertions 150 -TimeoutMs 60000 `
-        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp }
+        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_POWERSHELL = $fixturePowerShell }
     # Every label and icon of the toolbar, its popover and the thumbnail cards
     # lies on a whole device pixel of the window they are shown in. It places the
     # real components itself, with no picker. Each run gives the window a real

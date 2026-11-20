@@ -27,7 +27,7 @@ try {
         'ContainerInherit, ObjectInherit', 'None', 'Allow'))
     Set-Acl -LiteralPath $shared -AclObject $sharedAcl
     $generated = Join-Path $shared 'generated'
-    $generationText = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusSigningKey.ps1" -OutputDirectory $generated
+    $generationText = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusSigningKey.ps1" -OutputDirectory $generated
     Assert ($LASTEXITCODE -eq 0 -and "$generationText" -match 'Public key fingerprint:') 'Signing-key generation failed.'
     $allowedSids = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
     foreach ($path in @($generated, (Join-Path $generated 'private.pkcs8'))) {
@@ -67,7 +67,7 @@ try {
     Write-CaelestiaJsonAtomic "$root\delegations.json" $entries
     function Run-Keys([string]$Output, [bool]$Success = $true, [string[]]$Extra = @()) {
         $ErrorActionPreference = 'Continue'
-        $text = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
+        $text = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
             -RootPrivateKeyListPath "$root\roots.json" -DelegatedKeysPath "$root\delegations.json" `
             -Version 7 -TrustPath "$root\trust.json" -OutputPath $Output @Extra 2>&1
         $exitCode = $LASTEXITCODE
@@ -87,14 +87,14 @@ try {
     $singleTrust = Read-CaelestiaStrictJsonFile "$root\trust.json"
     $singleTrust.rootKeys = @($a.Public); $singleTrust.rootThreshold = 1
     Write-CaelestiaJsonAtomic "$root\single-trust.json" $singleTrust
-    $singleText = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
+    $singleText = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
         -RootPrivateKeyPath "$root\root a.pkcs8" -DelegatedKeysPath "$root\delegations.json" -Version 1 `
         -TrustPath "$root\single-trust.json" -OutputPath "$root\single.dsse.json" -Expires $future
     Assert ($LASTEXITCODE -eq 0 -and "$singleText" -match 'Keys document version: 1') 'Single-root -File invocation failed.'
     # Omitted -TrustPath must resolve the shipped trust under -File. A test key
     # is not the shipped root, so it reaches and fails the signer check.
     $ErrorActionPreference = 'Continue'
-    $defaultText = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
+    $defaultText = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\New-NexusKeysDocument.ps1" `
         -RootPrivateKeyPath "$root\root a.pkcs8" -DelegatedKeysPath "$root\delegations.json" -Version 1 `
         -OutputPath "$root\default-trust.dsse.json" 2>&1
     $defaultExit = $LASTEXITCODE
@@ -150,7 +150,7 @@ try {
     $null = Test-CaelestiaMetadata $keysBytes $pointer $trust 'development' $null
     [IO.File]::WriteAllBytes("$root\document.dsse.json", $pointer)
     Write-CaelestiaJsonAtomic "$root\request.json" @{ channel = 'development' }
-    & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\Invoke-NexusCrypto.ps1" `
+    & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$PSScriptRoot\..\ci\Invoke-NexusCrypto.ps1" `
         -Action ReadChannel -Directory $root -TrustPath "$root\trust.json"
     Assert ($LASTEXITCODE -eq 0) 'Publisher refused generated keys.'
     $script:requests = @()

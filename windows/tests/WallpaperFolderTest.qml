@@ -73,6 +73,31 @@ ShellRoot {
     readonly property string retrySourcePath: Quickshell.env("CAELESTIA_WALLPAPER_RETRY_SOURCE") || ""
     readonly property string deniedFolderPath: Quickshell.env("CAELESTIA_WALLPAPER_DENIED_DIR") || ""
     readonly property string junctionFolderPath: Quickshell.env("CAELESTIA_WALLPAPER_JUNCTION_DIR") || ""
+    // The fixture spawns real PowerShell children against disposable folders.
+    // CAELESTIA_POWERSHELL wins; otherwise the verified PowerShell 7 install
+    // locations are probed, never a bare powershell.exe on PATH.
+    readonly property string powerShellExe: {
+        const configured = Quickshell.env("CAELESTIA_POWERSHELL") || "";
+        if (configured.length > 0)
+            return configured;
+        const programFiles = Quickshell.env("ProgramFiles") || "";
+        if (programFiles.length > 0) {
+            const bundled = programFiles + "\\PowerShell\\7\\pwsh.exe";
+            if (Native.FsUtils.classify(bundled) === "file")
+                return bundled;
+        }
+        const localAppData = Quickshell.env("LOCALAPPDATA") || "";
+        if (localAppData.length > 0) {
+            const perUser = localAppData + "\\Programs\\PowerShell\\7\\pwsh.exe";
+            if (Native.FsUtils.classify(perUser) === "file")
+                return perUser;
+            const storeAlias = localAppData
+                + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+            if (Native.FsUtils.classify(storeAlias) === "file")
+                return storeAlias;
+        }
+        return "";
+    }
     property bool junctionDone: false
     property int junctionCode: -1
     property string junctionOutput: ""
@@ -221,7 +246,7 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
     Process {
         id: externalCopy
 
-        command: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.externalCopyScript]
+        command: [root.powerShellExe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.externalCopyScript]
         environment: ({
                 CAELESTIA_TEST_SOURCE: root.realSourcePath,
                 CAELESTIA_TEST_FOLDER: Paths.wallsdir,
@@ -239,7 +264,7 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
     Process {
         id: seedTemps
 
-        command: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.tempSeedScript]
+        command: [root.powerShellExe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.tempSeedScript]
         environment: ({
                 CAELESTIA_TEST_FOLDER: Paths.wallsdir,
                 CAELESTIA_TEST_STAGING: root.stagingFolderName,
@@ -259,7 +284,7 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
     Process {
         id: stagingProbe
 
-        command: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.stagingProbeScript]
+        command: [root.powerShellExe, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.stagingProbeScript]
         environment: ({
                 CAELESTIA_TEST_STAGING: root.stagingPath
             })
@@ -934,7 +959,7 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
                 "the production job deadline changed");
             root.resetActions();
             WallpaperFolderService.startFileJob = root.defaultStartJob;
-            WallpaperFolderService.jobCommand = ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+            WallpaperFolderService.jobCommand = [root.powerShellExe, "-NoLogo", "-NoProfile", "-NonInteractive",
                 "-Command", "Start-Sleep -Seconds 120"];
             WallpaperFolderService.jobTimeoutMs = 4000;
             WallpaperFolderService.jobExitGraceMs = 3000;

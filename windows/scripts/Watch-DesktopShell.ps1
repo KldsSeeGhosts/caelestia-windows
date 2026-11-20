@@ -3,12 +3,8 @@ param(
     [Parameter(Mandatory)][string]$LaunchSpec
 )
 $ErrorActionPreference = 'Stop'
-$assembly = Join-Path $PSScriptRoot 'DesktopTakeover.dll'
-if (Test-Path -LiteralPath $assembly) { Add-Type -Path $assembly }
-else {
-    # Repository prototype/test launches still work without an installed DLL.
-    Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
-}
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+Import-CaelestiaDesktopTakeover -ScriptRoot $PSScriptRoot
 $spec = Get-Content -LiteralPath $LaunchSpec -Raw | ConvertFrom-Json
 $hideTaskbar = $false
 $restartOnCrash = $true

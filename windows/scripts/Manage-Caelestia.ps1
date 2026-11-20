@@ -162,8 +162,15 @@ try {
         if ($pending -and $pending.phase -in @('queued', 'working')) {
             $pendingTasks = @(Get-OperationTasks ([string]$pending.operationId))
             $queuedDeadline = [DateTime]::MinValue
-            $hasDeadline = [DateTime]::TryParseExact([string]$pending.queuedDeadlineUtc, 'o',
-                [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$queuedDeadline)
+            # ConvertFrom-Json already yields a DateTime for an ISO timestamp
+            # under PowerShell 7; 5.1 leaves the raw string for TryParseExact.
+            if ($pending.queuedDeadlineUtc -is [DateTime]) {
+                $queuedDeadline = $pending.queuedDeadlineUtc
+                $hasDeadline = $true
+            } else {
+                $hasDeadline = [DateTime]::TryParseExact([string]$pending.queuedDeadlineUtc, 'o',
+                    [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$queuedDeadline)
+            }
             if ($pending.phase -eq 'queued' -and $pendingTasks.Count -gt 0 -and $hasDeadline -and
                 $queuedDeadline.Kind -eq [DateTimeKind]::Utc -and $queuedDeadline -gt [DateTime]::UtcNow -and
                 $queuedDeadline -le [DateTime]::UtcNow.AddSeconds(86460)) {
@@ -181,7 +188,7 @@ try {
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($operationFile)) | Out-Null
         $operationId = [guid]::NewGuid().ToString('N')
         $name = 'Caelestia-Maintenance-' + $operationId
-        $action = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) -WorkingDirectory $Prefix `
+        $action = New-ScheduledTaskAction -Execute (Get-CaelestiaPowerShellPath) -WorkingDirectory $Prefix `
             -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') +
                 '" -Prefix "' + $Prefix + '" -Command ' + $Command + ' -Wait -TaskName "' + $name +
                 '" -ExpectedCurrent "' + $record.current + '" -PhaseTimeoutSeconds ' + $PhaseTimeoutSeconds +
@@ -197,7 +204,7 @@ try {
         try {
             # Reporting must be registered successfully before accepting a
             # queued operation. Do not silently queue without its watchdog.
-            $watchAction = New-ScheduledTaskAction -Execute (Get-WindowsPowerShellPath) -WorkingDirectory $Prefix `
+            $watchAction = New-ScheduledTaskAction -Execute (Get-CaelestiaPowerShellPath) -WorkingDirectory $Prefix `
                 -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $Prefix 'Manage-Caelestia.ps1') +
                     '" -Prefix "' + $Prefix + '" -Command Watch -OperationId "' + $operationId + '" -TaskName "' + $watchName + '"')
             $watchTrigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddSeconds($PhaseTimeoutSeconds))

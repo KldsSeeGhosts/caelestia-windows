@@ -121,7 +121,7 @@ try {
             # processes prevent one locale's cached policy masking another.
             for culture in ("Invariant", "en-US", "tr-TR"):
                 result = subprocess.run(
-                    ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+                    ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(harness),
                      "-Repository", str(ROOT), "-Cases", str(source), "-Culture", culture],
                     capture_output=True, text=True, timeout=60)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)

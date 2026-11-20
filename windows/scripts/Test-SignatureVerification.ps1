@@ -32,7 +32,7 @@
     Optional scratch directory. Defaults to a new directory under the temp path.
 
 .EXAMPLE
-    powershell -NoProfile -File windows/scripts/Test-SignatureVerification.ps1
+    pwsh -NoProfile -File windows/scripts/Test-SignatureVerification.ps1
 #>
 [CmdletBinding()]
 param([string]$OutputRoot)
@@ -55,7 +55,7 @@ $tempStoreKey = "HKCU:\Software\Microsoft\SystemCertificates\$tempStoreName"
 $store = $null
 $certificate = $null
 $passed = 0
-$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$powershell = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $releaseRoot = Split-Path -Parent $PSScriptRoot
 $signedInventoryPath = Join-Path $releaseRoot 'release\signing-inventory.json'
 $vendorReviewPath = Join-Path $releaseRoot 'release\vendor-privacy-review.json'
@@ -74,10 +74,20 @@ function New-FixturePe([string]$Path) {
     $parent = Split-Path -Parent $Path
     if ($parent) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
     # A throwaway unsigned PE: the compiler emits it, nothing ever runs it.
+    # Add-Type cannot emit a standalone .exe on PowerShell 7 (.NET Core drops
+    # the console-application output type), so the fixture uses inbox csc.exe.
     $type = 'public static class Fixture' + [guid]::NewGuid().ToString('N').Substring(0, 12) + ' { ' +
         'public static int Value = 1; public static void Main() { } }'
-    $outputType = if ([IO.Path]::GetExtension($Path) -eq '.exe') { 'ConsoleApplication' } else { 'Library' }
-    Add-Type -TypeDefinition $type -OutputAssembly $Path -OutputType $outputType
+    $source = Join-Path ([IO.Path]::GetDirectoryName($Path)) ([IO.Path]::GetRandomFileName() + '.cs')
+    [IO.File]::WriteAllText($source, $type)
+    $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+    $target = if ([IO.Path]::GetExtension($Path) -eq '.exe') { 'exe' } else { 'library' }
+    try {
+        & $csc /nologo /target:$target "/out:$Path" "$source" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Fixture PE compilation failed.' }
+    } finally {
+        Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue
+    }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Fixture PE compilation failed.' }
 }
 

@@ -8,6 +8,9 @@ const test = require("node:test");
 const read = file => fs.readFileSync(path.resolve(__dirname, file), "utf8").replace(/\r\n/g, "\n");
 const notifs = read("../services/notifications/Notifs.qml");
 const quota = read("../quota/services/Quota.qml");
+const sessionBackend = read("../services/session/NativeSessionBackend.qml");
+const wallpaperFolder = read("../shell/adapters/services/WallpaperFolderService.qml");
+const updatesPage = read("../shell/adapters/modules/nexus/pages/UpdatesPage.qml");
 
 function body(source, name) {
     const match = source.match(new RegExp(`    function ${name}\\([^\\n]*\\)(?:: \\w+)? \\{\\n([\\s\\S]*?)\\n    \\}`));
@@ -213,4 +216,78 @@ test("the keepalive consumer exposes partial inference failure and quota-only re
     root.keepaliveError = "";
     run(consume, { ...context, data: JSON.stringify({ ok: true, succeeded: 2, fallback: 0, failed: 0 }) });
     assert.equal(root.keepaliveError, "");
+});
+
+// PowerShell 7 resolution in every shipped caller follows one order: the
+// CAELESTIA_POWERSHELL override, then each fixed install location only after
+// WindowsFiles.isFile confirms the candidate exists. An unverified path is
+// never returned; with no candidate the result is "" so callers stay disabled
+// instead of spawning an empty or missing program.
+function powerShellResolver(source, name) {
+    const match = source.match(new RegExp(`readonly property string ${name}: \\{\\n([\\s\\S]*?)\\n    \\}`));
+    assert.ok(match, `${name} resolver`);
+    return match[1];
+}
+
+function resolvePowerShell(resolver, environment, existing) {
+    const context = {
+        Quickshell: { env: name => environment[name] },
+        WindowsFiles: { isFile: candidate => existing.has(candidate) },
+    };
+    return run(resolver, context);
+}
+
+const PF = "C:\\Program Files";
+const LAD = "C:\\Users\\fixture\\AppData\\Local";
+const MSI = PF + "\\PowerShell\\7\\pwsh.exe";
+const PER_USER = LAD + "\\Programs\\PowerShell\\7\\pwsh.exe";
+const STORE = LAD + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+
+for (const [file, name] of [
+    [notifs, "powerShellExecutable"],
+    [sessionBackend, "powershell"],
+    [wallpaperFolder, "powerShellExecutable"],
+    [updatesPage, "powerShellExecutable"],
+]) {
+    const sourceName = { [notifs]: "Notifs.qml", [sessionBackend]: "NativeSessionBackend.qml",
+        [wallpaperFolder]: "WallpaperFolderService.qml", [updatesPage]: "UpdatesPage.qml" }[file];
+    const resolver = powerShellResolver(file, name);
+    const env = { ProgramFiles: PF, LOCALAPPDATA: LAD };
+
+    test(`${sourceName} honors CAELESTIA_POWERSHELL before probing`, () => {
+        assert.equal(resolvePowerShell(resolver, { ...env, CAELESTIA_POWERSHELL: "D:\\tools\\pwsh.exe" }, new Set()),
+            "D:\\tools\\pwsh.exe");
+    });
+
+    test(`${sourceName} returns the machine-wide install only after probing it`, () => {
+        assert.equal(resolvePowerShell(resolver, env, new Set([MSI])), MSI);
+        // An unprobed ProgramFiles candidate is never returned: when the MSI
+        // file is absent the next candidates are tried instead.
+        assert.notEqual(resolvePowerShell(resolver, env, new Set([STORE])), MSI);
+    });
+
+    test(`${sourceName} falls back to the per-user install when the MSI is absent`, () => {
+        assert.equal(resolvePowerShell(resolver, env, new Set([PER_USER])), PER_USER);
+    });
+
+    test(`${sourceName} falls back to the Store alias when only it exists`, () => {
+        assert.equal(resolvePowerShell(resolver, env, new Set([STORE])), STORE);
+    });
+
+    test(`${sourceName} prefers the per-user install over the Store alias`, () => {
+        assert.equal(resolvePowerShell(resolver, env, new Set([PER_USER, STORE])), PER_USER);
+    });
+
+    test(`${sourceName} returns an empty path when no candidate exists`, () => {
+        assert.equal(resolvePowerShell(resolver, env, new Set()), "");
+        assert.equal(resolvePowerShell(resolver, {}, new Set()), "");
+    });
+}
+
+test("Notifs.qml never runs the banner helper without a resolved interpreter", () => {
+    // bannerWanted and the recovery guard both require a non-empty resolved
+    // executable, so a machine with no probed pwsh.exe keeps the banner
+    // processes stopped instead of spawning an empty program path.
+    assert.match(notifs, /bannerWanted: [^\n]*\n[^\n]*powerShellExecutable !== ""/);
+    assert.match(notifs, /function recoverBanners\(\): void \{\n\s+if \(bannerHelper !== "" && powerShellExecutable !== ""/);
 });
