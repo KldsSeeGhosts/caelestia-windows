@@ -32,7 +32,22 @@ The offscreen Qt test imported the original and candidate `RunningApps.js` side 
 ## Idle work and remaining questions
 
 - The shell already stops dashboard statistics sampling when the last dashboard closes. The clock uses minute precision unless a visible consumer requests seconds. The recorder's default route stops polling after its idle baseline; the classic tray route can start recording outside the shell, so its status poll still has a purpose. No change to these timers.
-- A focus change still visits every managed window to refresh border colours. Windows whose desired colour already matches avoid the DWM write, but the eligibility checks can still cost work. The next useful measurement is native state reads during a focus-only switch at different window counts, including fullscreen exit. This audit did not change the border lifecycle.
+- The first pass found a full border eligibility scan on focus change. The follow-up below addresses it.
 - A wallpaper selection uses the active-project status scan rather than walking the entire Workshop catalogue. An enabled or running Wallpaper Engine can still start a Python helper every 15 or 60 seconds. Before changing that policy, measure helper starts and CPU with the engine stopped, idle and rendering, and verify external wallpaper changes still reach the shell.
 
 The five native tiling fixtures passed 528 cases. The running-app suite passed 11 tests. No live window moves, focus switches, hardware traces, or production release builds were part of these measurements.
+
+## Follow-up: focus, wallpaper memory, and clipboard
+
+The follow-up baseline was shell `fd71f8ca` with backend `7f900bd9`. All inputs were synthetic; no personal clipboard, wallpapers, or live windows were used.
+
+| Path | Workload | Result |
+| --- | --- | --- |
+| Tiling focus | Switch focus with 4 and then 16 tiled windows | Only the previous and new foreground windows incurred border reads or writes in either layout. A palette or layout change still takes the full path. A refused Windows write is retried on a later update. |
+| Smart wallpaper preview | First preview of a 7680 × 4320 JPEG, in a fresh worker and empty cache | Median peak working set fell from 281.2 to 154.6 MiB. Median preview time fell from 190.3 to 142.5 ms. All previews returned the same palette. |
+| Wallpaper Engine catalogue | 25 checks of an unchanged 2,000-project snapshot | Median comparison time fell from 157 to 51 ms. The shell no longer keeps a separate 359,561-character JSON string for this catalogue. An unchanged status poll also retains the existing display model. |
+| Clipboard picker | Build 50 rows: 25 twelve-line notes and 25 two-file lists | File URL parser calls fell from 1,800 to 50, with identical serialized rows. A search can still find a file label beyond the preview limit. No clipboard content is cached between calls. |
+
+For the preview test, Windows `GetProcessMemoryInfo` reported the worker's peak working set. Three fresh processes per revision ran in alternating pairs. The worker sampled the decoded frame before converting to RGB; it did not ask the JPEG decoder for a lower-resolution image. The latter saved more memory but changed the palette. For the catalogue test, Qt 6.11.3 ran five alternating batches against the same parsed records. It measured comparison work only, not workshop enumeration, helper startup, or rendering.
+
+These measurements do not establish a whole-shell idle memory or desktop frame-time improvement. Wallpaper Engine's discovery interval is unchanged.
