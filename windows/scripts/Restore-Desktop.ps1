@@ -8,7 +8,8 @@ param(
     [switch]$RestartExplorer
 )
 $ErrorActionPreference = 'Stop'
-Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
+. (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+Import-CaelestiaDesktopTakeover -ScriptRoot $PSScriptRoot
 $ownership = $null
 $acquired = $false
 try {
@@ -27,8 +28,7 @@ try {
     }
     $snapshot = $null
     if ($SnapshotPath) {
-        $serializer = New-Object Web.Script.Serialization.JavaScriptSerializer
-        $snapshot = $serializer.Deserialize((Get-Content -LiteralPath $SnapshotPath -Raw), [Caelestia.Takeover.Snapshot])
+        $snapshot = [Caelestia.Takeover.Native]::LoadSnapshot($SnapshotPath)
     }
     [Caelestia.Takeover.Native]::Restore($snapshot, 0)
     [Caelestia.Takeover.Native]::Capture() | ConvertTo-Json -Depth 6

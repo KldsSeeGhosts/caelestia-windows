@@ -196,7 +196,7 @@ class PairTests(unittest.TestCase):
             p.validator(script, {"validatorSha256": "0" * 64})
 
     def ps(self, name, *args):
-        return subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        return subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                                str(ROOT / "windows/scripts" / name), *map(str, args)],
                               capture_output=True, text=True)
 
@@ -213,7 +213,7 @@ class PairTests(unittest.TestCase):
         (notices / "NOTICE.txt").write_text("synthetic supplier notice")
         for receipt in ({"backendMode": "candidate"}, {}):
             p.write(build / "logs/build.json", receipt)
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                                      str(scripts / "New-CaelestiaRelease.ps1"), "-BuildRoot", str(build),
                                      "-ReleaseId", "fixture", "-OutputDirectory", str(self.root / "never-created"),
                                      "-SupplementalNoticesRoot", str(notices)], capture_output=True, text=True)
@@ -229,7 +229,7 @@ class PairTests(unittest.TestCase):
 
     def test_powershell_wrapper_omits_empty_native_argument(self):
         results = self.root / "wrapper-results"
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Resolve-PairRequest.ps1"), "-Mode", "pinned",
             "-ShellSha", "f" * 40, "-ShellRoot", str(self.shell), "-CandidateRoot",
             str(self.root / "candidate"), "-Results", str(results)], capture_output=True, text=True)
@@ -336,7 +336,7 @@ class PairTests(unittest.TestCase):
             with self.subTest(echo=enabled):
                 results = self.root / ("echo" if enabled else "quiet")
                 command = [
-                    "powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                    "pwsh", "-NoProfile", "-NonInteractive", "-File",
                     str(ROOT / "windows/ci/Invoke-PairIntegration.ps1"),
                     "-ShellRoot", str(self.shell), "-BackendRoot", str(self.backend),
                     "-Mode", "pinned", "-BackendSha", self.backend_sha,
@@ -377,7 +377,7 @@ class PairTests(unittest.TestCase):
         self.assertIn("retention-days: 7", timing_step)
 
     def integration_command(self, results, *extra, build=None):
-        return ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        return ["pwsh", "-NoProfile", "-NonInteractive", "-File",
                 str(ROOT / "windows/ci/Invoke-PairIntegration.ps1"),
                 "-ShellRoot", str(self.shell), "-BackendRoot", str(self.backend),
                 "-Mode", "pinned", "-BackendSha", self.backend_sha,
@@ -487,7 +487,7 @@ class PairTests(unittest.TestCase):
         self.synthetic_scripts("exit 0\n")
         junction = self.root / "source-alias"
         linked = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command",
              f"New-Item -ItemType Junction -Path '{junction}' -Target '{self.shell}' | Out-Null"],
             capture_output=True, timeout=30)
         self.assertEqual(0, linked.returncode, linked.stderr.decode(errors="replace"))
@@ -543,9 +543,9 @@ class PairTests(unittest.TestCase):
             " ConvertTo-Json -Compress | Add-Content -LiteralPath $env:WORKFLOW_CALLS\n"
             " $global:LASTEXITCODE = 0\n"
             "}\n"
-            "function powershell.exe { Save-Call 'powershell' $args }\n"
+            "function pwsh { Save-Call 'powershell' $args }\n"
             "function python { Save-Call 'python' $args }\n" + "\n".join(blocks))
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive",
                                  "-File", str(harness)], capture_output=True, timeout=30,
                                 env=dict(os.environ, BUILD_JOBS="5", PAIR_RESULTS=str(results),
                                          GITHUB_WORKSPACE=str(ROOT), TRUSTED_ROOT=str(self.root / "trusted"),
@@ -581,7 +581,7 @@ class PairTests(unittest.TestCase):
             " ConvertTo-Json -Compress | Add-Content -LiteralPath $env:WORKFLOW_CALLS\n"
             " $global:LASTEXITCODE = 0\n"
             "}\n"
-            "function powershell.exe { Save-Call 'powershell' $args }\n" + found[1])
+            "function pwsh { Save-Call 'powershell' $args }\n" + found[1])
         launcher = str(self.root / "sccache.exe")
         rust_cache = str(self.root / "rust-cache")
         for case, launcher_value in (("set", launcher), ("unset", None), ("empty", "")):
@@ -593,7 +593,7 @@ class PairTests(unittest.TestCase):
             env.pop("CI_COMPILER_LAUNCHER", None)
             if launcher_value is not None:
                 env["CI_COMPILER_LAUNCHER"] = launcher_value
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive",
                                      "-File", str(harness)], capture_output=True, timeout=30, env=env)
             self.assertEqual(0, result.returncode, (result.stdout + result.stderr).decode(errors="replace"))
             rows = [json.loads(line) for line in calls.read_text(encoding="utf-8-sig").splitlines()]
@@ -855,7 +855,7 @@ class PairTests(unittest.TestCase):
                   for outcome in ("success", "failure", "cancelled")]
         for changes, passed in cases:
             with self.subTest(changes=changes):
-                result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive",
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive",
                                          "-File", str(harness)], env={**base, **changes},
                                         capture_output=True)
                 self.assertEqual(passed, result.returncode == 0, result.stderr.decode(errors="replace"))

@@ -121,7 +121,7 @@ function Start-Worker([string]$Case, [string]$Arguments, [string]$Pause = '') {
     $control = Join-Path $Case ('control-' + [guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($control) | Out-Null
     $info = [Diagnostics.ProcessStartInfo]::new()
-    $info.FileName = Get-WindowsPowerShellPath
+    $info.FileName = Get-CaelestiaPowerShellPath
     $info.Arguments = $Arguments
     $info.UseShellExecute = $false; $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true

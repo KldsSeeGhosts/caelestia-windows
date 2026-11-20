@@ -144,7 +144,7 @@ if ($scopeName -eq 'shell') {
     Assert-Contains $security 'has not been verified' 'private advisory availability must not be assumed'
 }
 Assert-Contains $security 'public issue tracker' 'the existing safe fallback route is missing'
-Assert-Contains $security $issueTracker 'security fallback must use this repository’s existing public tracker'
+Assert-Contains $security $issueTracker "security fallback must use this repository's existing public tracker"
 Assert-Contains $security 'do not include' 'the public fallback must prohibit vulnerability details'
 if ($security -match '(?i)mailto:|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}') {
     throw 'Policy check failed: SECURITY.md must not invent or publish an unverified email address'

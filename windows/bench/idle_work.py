@@ -38,7 +38,7 @@ def qualify(session):
 
 def run(args, name, revision=None, plant=False):
     stage = args.output / name
-    method.command(["powershell.exe", "-NoProfile", "-File", HERE / "Stage-Bench.ps1",
+    method.command(["pwsh", "-NoProfile", "-File", HERE / "Stage-Bench.ps1",
                     "-Destination", stage], timeout=45)
     shell = stage / "imports/qs"
     if revision:

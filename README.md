@@ -57,9 +57,9 @@ Invoke-WebRequest -Uri $zipUrl -OutFile "$tmp\caelestia.zip"
 if ((Get-FileHash -Algorithm SHA256 "$tmp\caelestia.zip").Hash.ToLowerInvariant() -ne $expectedSha) { throw 'SHA-256 mismatch' }
 Expand-Archive -Path "$tmp\caelestia.zip" -DestinationPath $tmp -Force
 
-# 2. Verify and install per user (pass -InstallPrerequisites if VC++ x64 14.44.35211.0+ is missing and the user approves UAC)
+# 2. Verify and install per user (runs on inbox Windows PowerShell 5.1 on a clean machine; pass -InstallPrerequisites if VC++ x64 14.44.35211.0+ or PowerShell 7.4+ x64 is missing and the user approves UAC)
 $bundle = (Get-ChildItem -Path $tmp -Directory | Select-Object -First 1).FullName
-powershell -NoProfile -ExecutionPolicy Bypass -File "$bundle\Install-CaelestiaRelease.ps1" -NonInteractive
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$bundle\Install-CaelestiaRelease.ps1" -NonInteractive
 ```
 
 **Option B: Build and install from source**
@@ -67,9 +67,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$bundle\Install-CaelestiaRe
 ```powershell
 git clone --recurse-submodules https://github.com/KldsSeeGhosts/caelestia-windows.git
 cd caelestia-windows
-powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Strict -Json
+pwsh -NoProfile -File windows/scripts/Test-Environment.ps1 -Strict -Json
 # Follow windows/NATIVE-BUILD.md to build into C:\b-caelestia, then:
-powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -BuildRoot C:\b-caelestia
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -BuildRoot C:\b-caelestia
 ```
 
 **Start and verify:**

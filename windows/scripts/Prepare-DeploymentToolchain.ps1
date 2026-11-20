@@ -29,7 +29,7 @@ try {
     if ($AllowFullPreparation) {
         # A cold path retains the existing pinned Python, aqt, Qt, LLVM,
         # CLI11 and Rust provisioning and actual-toolchain assertions.
-        & powershell.exe -NoProfile -NonInteractive -File "$PSScriptRoot\Prepare-Toolchain.ps1" `
+        & (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source -NoProfile -NonInteractive -File "$PSScriptRoot\Prepare-Toolchain.ps1" `
             -ToolRoot $ToolRoot -Python $Python -InstallRust
         if ($LASTEXITCODE -ne 0) { throw 'Full deployment-cache miss preparation failed.' }
         Save-DeploymentTiming 'full-fallback'

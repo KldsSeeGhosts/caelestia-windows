@@ -27,7 +27,7 @@ class CiShardsAndTiming(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def ps(self, script, *args):
-        return subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        return subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                                str(script), *map(str, args)], capture_output=True, text=True, timeout=30)
 
     def test_shards_partition_the_authoritative_inventory_and_fail_closed(self):
@@ -153,7 +153,7 @@ class CiShardsAndTiming(unittest.TestCase):
             " . ([scriptblock]::Create($node.Extent.Text))\n"
             "}\n"
             "$script:fixtureExit = 7\n"
-            f"function cmake {{ & powershell.exe -NoProfile -NonInteractive -File {quote(child)} -Code $script:fixtureExit }}\n"
+            f"function cmake {{ & pwsh -NoProfile -NonInteractive -File {quote(child)} -Code $script:fixtureExit }}\n"
             "$refused = $false\n"
             "try { Invoke-BuildCommand 'build-fixture' @('--build', 'private-path') }\n"
             "catch { if ($_.Exception.Message -notlike 'build-fixture failed.*') { throw }; $refused = $true }\n"

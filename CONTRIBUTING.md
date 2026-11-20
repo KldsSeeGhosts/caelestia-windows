@@ -10,7 +10,7 @@ Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Report s
 
 ## Build
 
-Use native Windows PowerShell and the toolchain in
+Use PowerShell 7 (x64, 7.4 or newer) and the toolchain in
 [windows/NATIVE-BUILD.md](windows/NATIVE-BUILD.md). It documents prerequisite
 setup and `windows/scripts/Build-Prototype.ps1`; do not run the inherited Linux
 installer on Windows. Python is required for colour generation, whose packages
@@ -18,7 +18,7 @@ live in a profile-local virtual environment.
 
 ```powershell
 git submodule update --init --recursive
-powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json
+pwsh -NoProfile -File windows/scripts/Test-Environment.ps1 -Json
 ```
 
 The environment report checks prerequisites; it does not prove a build or
@@ -29,11 +29,11 @@ runtime pass. Run it again after changing dependency pins or setup instructions.
 Run the fast, SDK-free regression suite before building:
 
 ```powershell
-powershell -NoProfile -File windows/scripts/Test-Validation.ps1 -Suite Unit
-powershell -NoProfile -File windows/scripts/Test-Validation.ps1 -Suite Packaging
+pwsh -NoProfile -File windows/scripts/Test-Validation.ps1 -Suite Unit
+pwsh -NoProfile -File windows/scripts/Test-Validation.ps1 -Suite Packaging
 ```
 
-These use Windows PowerShell, Node 24 and Python 3.12. They cover source and
+These use PowerShell 7, Node 24 and Python 3.12. They cover source and
 documentation checks, JavaScript logic, quota providers, lifecycle, settings
 import, versioned installation, rollback and scheme-runtime safety. Tests use
 synthetic data, local fixture servers and temporary profiles, never your live

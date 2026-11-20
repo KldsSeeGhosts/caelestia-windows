@@ -88,7 +88,7 @@ class DeploymentPreparationTests(unittest.TestCase):
 
     def prepare(self, *args):
         return subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File",
              str(self.scripts / "Prepare-DeploymentToolchain.ps1"), "-ToolRoot", str(self.tools), *args],
             capture_output=True, text=True, timeout=30)
 

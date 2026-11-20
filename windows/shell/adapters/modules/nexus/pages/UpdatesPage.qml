@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import QtQuick.Templates as T
 import Quickshell
 import Quickshell.Io
+import Caelestia.Windows
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
@@ -27,7 +28,7 @@ PageBase {
     readonly property string runningRevision: String(Quickshell.env("CAELESTIA_SOURCE_REVISION") ?? "")
     readonly property string systemRoot: String(Quickshell.env("SystemRoot") ?? "")
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
-    readonly property bool available: installRoot !== "" && systemRoot !== ""
+    readonly property bool available: installRoot !== "" && systemRoot !== "" && powerShellExecutable !== ""
 
     property string loadState: "idle"
     property var info: null
@@ -135,10 +136,35 @@ PageBase {
     }
     function powershellCommand(extra: var): var {
         return [
-            `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
+            powerShellExecutable,
             "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
             "-File", `${installRoot}\\Manage-Caelestia.ps1`, "-Prefix", installRoot, ...extra
         ];
+    }
+
+    // The launcher passes the verified PowerShell 7 path. A standalone run
+    // falls back to the fixed install locations rather than relying on PATH.
+    readonly property string powerShellExecutable: {
+        const configured = String(Quickshell.env("CAELESTIA_POWERSHELL") ?? "");
+        if (configured.length > 0)
+            return configured;
+        const programFiles = String(Quickshell.env("ProgramFiles") ?? "");
+        if (programFiles.length > 0) {
+            const bundled = programFiles + "\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(bundled))
+                return bundled;
+        }
+        const localAppData = String(Quickshell.env("LOCALAPPDATA") ?? "");
+        if (localAppData.length > 0) {
+            const perUser = localAppData + "\\Programs\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(perUser))
+                return perUser;
+            const storeAlias = localAppData
+                + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+            if (WindowsFiles.isFile(storeAlias))
+                return storeAlias;
+        }
+        return "";
     }
 
     title: Tr.tr("Updates")

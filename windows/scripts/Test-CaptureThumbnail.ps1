@@ -2,6 +2,8 @@
 param([Parameter(Mandatory)][string]$QtPrefix, [Parameter(Mandatory)][string]$BuildRoot)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
+. "$PSScriptRoot\Caelestia-InstallCommon.ps1"
+$fixturePowerShell = Get-CaelestiaPowerShellPath
 # The thumbnail keeps preview files in the OS temp directory. The fixture process
 # gets its own temp directory, so nothing lands in the real one, and the final
 # step checks that the fixture's directory is empty again.
@@ -12,7 +14,7 @@ try {
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-thumbnail -ShellFixture -UseQuickshell `
         -Sources @('windows/tests/CaptureThumbnailTest.qml') -FixtureFile 'windows/tests/CaptureThumbnailTest.qml' `
         -Marker CAELESTIA_CAPTURE_THUMBNAIL -MinimumAssertions 250 -TimeoutMs 120000 `
-        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp }
+        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_POWERSHELL = $fixturePowerShell }
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureTemp)
     if ($resolved.StartsWith($tempRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and

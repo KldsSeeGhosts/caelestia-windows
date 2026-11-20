@@ -17,6 +17,32 @@ catch {
     [Console]::Error.WriteLine('Support helper unavailable. Install both packaged support scripts together.')
     exit 1
 }
+# Prefer the shared x64 PowerShell 7 resolver. In the minimal packaged layout
+# the common module may be absent, so fall back to the running pwsh host on
+# PowerShell 7 and to Windows PowerShell 5.1 on Desktop.
+function Resolve-SupportPowerShellPath {
+    $common = Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1'
+    if (Test-Path -LiteralPath $common -PathType Leaf) {
+        try {
+            . $common
+            if (Get-Command Get-CaelestiaPowerShellPath -ErrorAction SilentlyContinue) {
+                return (Get-CaelestiaPowerShellPath)
+            }
+        } catch { }
+    }
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        # Never resolve pwsh from PATH: an attacker-writable directory could
+        # place a shim earlier in PATH than the real host. Only the absolute
+        # executable of the currently running process (or $PSHOME) is trusted.
+        try {
+            $running = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+            if ($running -and $running.EndsWith('\pwsh.exe') -and
+                (Test-Path -LiteralPath $running -PathType Leaf)) { return $running }
+        } catch { }
+        return (Join-Path $PSHOME 'pwsh.exe')
+    }
+    return (Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe')
+}
 if ($Collect) {
     try {
         $bundle = Get-CaelestiaSupportBundle $Prefix $SnapshotPath
@@ -43,7 +69,7 @@ try {
         -not [IO.Directory]::Exists([IO.Path]::GetDirectoryName($OutputPath))) { throw 'invalid' }
     # No shell, profile, executable from the payload, or arbitrary provider runs.
     $start = [Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
+    $start.FileName = Resolve-SupportPowerShellPath
     $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', $PSCommandPath, '-Collect', '-Prefix', $Prefix)
     if ($SnapshotPath) { $arguments += @('-SnapshotPath', $SnapshotPath) }

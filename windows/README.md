@@ -65,7 +65,7 @@ the revisions and scenarios it was recorded against, not a release guarantee.
 ```powershell
 git clone --recurse-submodules https://github.com/KldsSeeGhosts/caelestia-windows.git
 cd caelestia-windows
-powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json
+pwsh -NoProfile -File windows/scripts/Test-Environment.ps1 -Json
 ```
 
 For an existing checkout:
@@ -171,7 +171,7 @@ of the upstream projects.
 ## Toolchain direction
 
 The supported native route uses Windows clang-cl, Visual Studio's C++ tools and
-Windows SDK, Ninja, and Windows Qt. Tool discovery in an ordinary PowerShell
+Windows SDK, Ninja, and Windows Qt. Tool discovery in an ordinary PowerShell 7
 session can still report missing tools because the development environment is
 loaded only inside the build script's process.
 

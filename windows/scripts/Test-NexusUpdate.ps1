@@ -29,7 +29,9 @@ try {
     $manifest = Join-Path $root 'release.json'
     # Execute the existing producer's encoding choice, not just a hand-written
     # UTF8 fixture. Compatibility must not weaken network DSSE parsing.
-    '{"releaseId":"0.2.0-dev.1.57.1"}' | Set-Content -LiteralPath $manifest -Encoding UTF8
+    # Write the BOM bytes explicitly: PS 7's -Encoding UTF8 emits no BOM, while
+    # 5.1's does, and the fixture requires one.
+    [IO.File]::WriteAllText($manifest, '{"releaseId":"0.2.0-dev.1.57.1"}', [Text.UTF8Encoding]::new($true))
     $manifestHash = (Get-FileHash -LiteralPath $manifest).Hash
     Assert ((Read-CaelestiaStrictJsonFile $manifest 16777216 -AllowUtf8Bom).releaseId -ceq '0.2.0-dev.1.57.1') 'Existing manifest BOM compatibility.'
     Refuse { Read-CaelestiaStrictJsonFile $manifest } 'network JSON BOM remains refused'
@@ -130,14 +132,14 @@ try {
     }
     $before = [IO.File]::ReadAllBytes((Join-Path $prefix 'install.json'))
     $ErrorActionPreference = 'Continue'
-    $output = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$scripts\Manage-Caelestia.ps1" `
+    $output = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$scripts\Manage-Caelestia.ps1" `
         -Prefix $prefix -Command Update -Wait -ExpectedCurrent 'fixture' -ExpectedBuild '0.2.0-dev.1.1.1' -Channel development 2>&1
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
     Assert ($exitCode -ne 0 -and "$output" -match 'Updates are not configured') 'Production worker did not fail closed.'
     Assert ([Convert]::ToBase64String($before) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $prefix 'install.json')))) 'Refused worker changed selector.'
     Assert (-not (Test-Path -LiteralPath (Join-Path $root 'profile'))) 'Refused worker created profile/journal.'
-    $check = & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -File "$scripts\Manage-Caelestia.ps1" `
+    $check = & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -File "$scripts\Manage-Caelestia.ps1" `
         -Prefix $prefix -Command CheckUpdate -Channel development | ConvertFrom-Json
     Assert ($LASTEXITCODE -eq 0 -and $check.state -ceq 'not-configured') 'Production CheckUpdate contract.'
     $global:LASTEXITCODE = 0

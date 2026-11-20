@@ -70,7 +70,7 @@ Both install paths preserve the profile and do not launch the shell by default.
 From PowerShell (no admin prompt needed), run `Install-Caelestia.ps1` from the source repository:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1
 & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1"
 ```
 
@@ -90,7 +90,7 @@ What the installer does:
 ### Start, switch back to Windows, and uninstall without a terminal
 
 Installation registers three per-user entrypoints. They start `conhost.exe
---headless` with Windows PowerShell, so no console window appears and no
+--headless` with PowerShell 7, so no console window appears and no
 VBScript host is used. `-ExecutionPolicy Bypass` is passed only to that single
 process; your execution policy is never changed.
 
@@ -132,7 +132,7 @@ To enable autostart at sign-in during installation or afterward:
 
 ```powershell
 # Enable autostart at Windows sign-in
-powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -Autostart
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelestia.ps1 -Autostart
 ```
 
 `-Autostart` creates a per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry named `CaelestiaWindows` (temporary/custom prefixes use a stable hash suffix). The value starts Caelestia through the same hidden launcher as the Start-menu entry, so sign-in does not flash a console window.
@@ -161,7 +161,7 @@ is the default, so configuration and logs are kept for a later reinstall. The
 equivalent command, for scripted or advanced use, is:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Uninstall-Caelestia.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Uninstall-Caelestia.ps1
 ```
 
 Uninstall supports `-Prefix`, `-Purge`, and `-AskPurge` (the Settings dialog).
@@ -193,11 +193,11 @@ If you previously used `ksg-shell`, you can preview or import your supported bar
 
 ```powershell
 # Preview mapped settings without writing any files
-powershell -NoProfile -File .\windows\scripts\Import-KsgShellSettings.ps1 -Summary
+pwsh -NoProfile -File .\windows\scripts\Import-KsgShellSettings.ps1 -Summary
 
 # Write to your Caelestia config (backs up an existing shell.json when -Force is passed)
 $config = Join-Path $env:LOCALAPPDATA 'caelestia-windows\config\shell.json'
-powershell -NoProfile -File .\windows\scripts\Import-KsgShellSettings.ps1 -OutFile $config -Force
+pwsh -NoProfile -File .\windows\scripts\Import-KsgShellSettings.ps1 -OutFile $config -Force
 ```
 
 Disable `ksg-shell`'s tiler and exit `ksg-shell` before starting Caelestia in full shell or tiling mode.
@@ -857,7 +857,7 @@ On Linux, StatusNotifierItem (`SNI`) apps send icon pixmaps and semantic `dbusme
 - **Source builds:** Build logs are under `<BuildRoot>\logs\`. Public smoke keeps its temporary run directory on failure. Keep diagnostic output outside the source checkout.
 - **Inspecting live desktop state:** Run the included read-only diagnostic script from the repo to inspect monitor work areas, DPI scaling, taskbar auto-hide flags, and running shell PIDs:
   ```powershell
-  powershell -NoProfile -File .\windows\scripts\Get-DesktopState.ps1
+  pwsh -NoProfile -File .\windows\scripts\Get-DesktopState.ps1
   ```
 
 ### Crash dumps

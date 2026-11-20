@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Caelestia
+import Caelestia.Windows
 import Caelestia.I18n
 import qs.components.filedialog
 import qs.services
@@ -219,7 +220,32 @@ try {
 
     // The child command is a property so a fixture can answer with a
     // controlled child that stalls. Production always runs jobScript above.
-    property var jobCommand: ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.jobScript]
+    property var jobCommand: [root.powerShellExecutable, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", root.jobScript]
+
+    // The launcher passes the verified PowerShell 7 path. A standalone run
+    // falls back to the fixed install locations rather than relying on PATH.
+    readonly property string powerShellExecutable: {
+        const configured = String(Quickshell.env("CAELESTIA_POWERSHELL") ?? "");
+        if (configured.length > 0)
+            return configured;
+        const programFiles = String(Quickshell.env("ProgramFiles") ?? "");
+        if (programFiles.length > 0) {
+            const bundled = programFiles + "\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(bundled))
+                return bundled;
+        }
+        const localAppData = String(Quickshell.env("LOCALAPPDATA") ?? "");
+        if (localAppData.length > 0) {
+            const perUser = localAppData + "\\Programs\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(perUser))
+                return perUser;
+            const storeAlias = localAppData
+                + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+            if (WindowsFiles.isFile(storeAlias))
+                return storeAlias;
+        }
+        return "";
+    }
 
     // Starts one folder/copy job. Fixtures replace this to answer immediately.
     property var startFileJob: (kind, source, folder) => root.startProcess(kind, source, folder)

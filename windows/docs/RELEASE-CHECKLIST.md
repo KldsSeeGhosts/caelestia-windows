@@ -33,7 +33,7 @@ GitHub pull-request refs, edited discussion history or attachments.
   personal data, private tracker references, private links and internal-only
   notes. Check the backend and Glazier too. Only the reviewed clean commits and
   release tags may be sent to the public repositories.
-- [ ] Run `powershell -NoProfile -File windows/scripts/Test-PublicDocs.ps1` and
+- [ ] Run `pwsh -NoProfile -File windows/scripts/Test-PublicDocs.ps1` and
   keep its output with the release record. It fails on private tracker
   references, personal paths, agent assignments and links that do not resolve
   inside the repository or to a public URL.
@@ -52,7 +52,7 @@ GitHub pull-request refs, edited discussion history or attachments.
 
 - [ ] Follow [NATIVE-BUILD.md](../NATIVE-BUILD.md) from a clean recursive
   checkout with the documented toolchain.
-- [ ] Run `powershell -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`;
+- [ ] Run `pwsh -NoProfile -File windows/scripts/Test-Environment.ps1 -Json`;
   record the prerequisite report separately from build and runtime results.
 - [ ] Build with `windows/scripts/Build-Prototype.ps1 -PublicRelease`; record source pins,
   Qt/compiler/SDK versions and build logs.

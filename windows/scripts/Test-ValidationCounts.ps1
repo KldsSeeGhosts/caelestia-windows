@@ -17,7 +17,7 @@ if (-not $definition) { throw 'Validation step function is missing.' }
 $OutputRoot = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-count-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $OutputRoot | Out-Null
 $results = New-Object 'System.Collections.Generic.List[object]'
-$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$powershell = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 try {
     $cases = @(
         @{ name = 'node-empty'; output = '# tests 0'; pattern = '(?m)^# tests ([0-9]+)\s*$'; count = 0; code = 1 },

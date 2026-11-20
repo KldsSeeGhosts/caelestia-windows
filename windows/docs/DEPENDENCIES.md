@@ -24,6 +24,8 @@ lists cover conservative source contents. Deployed DLLs have separate entries;
 the supplier Qt SBOMs and notices describe their embedded third parties.
 Python, scheme packages and Microsoft's system runtime are external or optional.
 Their inventory entries do not mean they are installed in a release ZIP.
+PowerShell 7.4 or newer (x64) is the required desktop runtime host for the
+product's scripts and is provisioned separately, not bundled.
 
 ## Release SBOM
 

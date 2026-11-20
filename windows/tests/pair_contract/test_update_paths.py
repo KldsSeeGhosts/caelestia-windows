@@ -28,7 +28,7 @@ class UpdatePathTests(unittest.TestCase):
             "$ErrorActionPreference = 'Stop'\n"
             ". $Module\n" + script)
         return subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(harness),
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(harness),
              "-Module", str(self.module), "-Root", str(self.root), *map(str, args)],
             capture_output=True, text=True, timeout=30)
 

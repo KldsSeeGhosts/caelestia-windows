@@ -94,7 +94,7 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 if ($RuntimePrefix) { $env:CAELESTIA_TEST_RUNTIME_PREFIX = [IO.Path]::GetFullPath($RuntimePrefix) }
 if ($RuntimePrefix -and -not $BuildRoot) { $BuildRoot = $RuntimePrefix }
 if ($Suite -in @('Services', 'Shell') -and -not $QtPrefix) { throw 'QtPrefix is required for QML fixtures.' }
-$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$powershell = (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $results = New-Object 'System.Collections.Generic.List[object]'
 $completed = $false
 

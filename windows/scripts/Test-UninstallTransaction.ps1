@@ -230,7 +230,7 @@ function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [b
     if ($OperationId) { $arguments += ' -OperationId ' + $OperationId }
     if ($RealIntegration) { $arguments += ' -RealIntegration' }
     if ($IntegrationFailure) { $arguments += ' -IntegrationFailure ' + $IntegrationFailure }
-    $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments `
+    $process = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $control 'stdout.txt') `
         -RedirectStandardError (Join-Path $control 'stderr.txt')
     # Retain the handle before a fast busy refusal exits (Windows PS 5.1).

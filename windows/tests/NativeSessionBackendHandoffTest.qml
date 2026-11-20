@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Caelestia.Windows
 
 // Real NativeSessionBackend with a harmless installed-looking prefix. The
 // process launch is replaced with a recording fake that can fail immediately or
@@ -42,6 +43,24 @@ ShellRoot {
         backend.switchBackAckTimeoutMs = 120;
         backend.launch = fakeLaunch;
 
+        // PowerShell 7 resolution: the launcher environment variable wins, and
+        // without it the verified install locations are probed. The fixture
+        // never sets CAELESTIA_POWERSHELL, so the resolved executable must be a
+        // real pwsh.exe on this machine.
+        const configuredShell = String(Quickshell.env("CAELESTIA_POWERSHELL") ?? "");
+        check(backend.powershell.length > 0, "no PowerShell 7 executable was resolved");
+        check(/pwsh\.exe$/i.test(backend.powershell),
+            "the handoff resolves PowerShell 7, not Windows PowerShell: " + backend.powershell);
+        if (configuredShell.length > 0) {
+            equal(backend.powershell, configuredShell, "CAELESTIA_POWERSHELL was not honored");
+        } else {
+            // Without the override, resolution only returns a probed candidate:
+            // the machine-wide install, the per-user install or the Store
+            // alias, each verified with WindowsFiles.isFile before it wins.
+            check(WindowsFiles.isFile(backend.powershell),
+                "the resolved PowerShell 7 path was probed, not guessed: " + backend.powershell);
+        }
+
         check(backend.switchBackSupported, "the disposable prefix is a supported handoff");
         equal(backend.switchBackPending, false, "no handoff is pending before the click");
         equal(backend.switchBackError, "", "no error before the click");
@@ -71,7 +90,7 @@ ShellRoot {
         equal(backend.switchBackPending, false, "the unacknowledged handoff is no longer pending");
         check(backend.switchBackError.length > 0, "the unacknowledged handoff reports an error");
         check(backend.switchBackSupported, "the action stays supported after the timeout");
-        check(launches[1].indexOf("powershell.exe") >= 0, "the handoff uses the inbox Windows PowerShell");
+        check(launches[1].indexOf("pwsh.exe") >= 0, "the handoff uses PowerShell 7");
         check(launches[1].indexOf(installRoot + "\\Start-Caelestia.ps1") >= 0,
             "the handoff targets the stable-root launcher entry");
         check(launches[1].indexOf("\\versions\\") < 0, "the handoff never targets a version payload directly");

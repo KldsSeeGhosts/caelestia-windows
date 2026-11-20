@@ -193,7 +193,7 @@ class PreparedSourcesTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell privacy boundary")
     def test_source_privacy_gate_rejects_sensitive_metadata_before_upload(self):
         self.export()
-        command = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        command = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
                    str(ROOT / "windows/ci/Invoke-NexusSources.ps1"), "-Transfer", str(self.transfer)]
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -224,7 +224,7 @@ class PreparedSourcesTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell repository policy boundary")
     def test_repository_policy_keeps_exact_job_inventory_and_required_validation_gate(self):
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+            ["pwsh", "-NoProfile", "-NonInteractive", "-File",
              str(ROOT / "windows/scripts/Test-RepositoryPolicy.ps1"), "-RepositoryRoot", str(ROOT)],
             capture_output=True, text=True, timeout=30)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)

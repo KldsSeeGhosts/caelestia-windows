@@ -315,7 +315,7 @@ class Crypto:
         environment.pop("GH_TOKEN", None)
         if action.startswith("Sign"):
             environment["NEXUS_SIGNING_KEY"] = self.secret
-        checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        checked_run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                      self.shell / "windows/ci/Invoke-NexusCrypto.ps1", "-Action", action,
                      "-Directory", directory, "-TrustPath", self.trust], env=environment,
                     diagnostic_log=directory / "crypto.private.log")
@@ -547,7 +547,7 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
             checked_run(["git", "-C", root, "-c", "credential.helper=", "fetch", "--unshallow", "origin"], timeout=600)
     def check_sources():
         reprepared = work / "independent-source-assets"
-        checked_run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        checked_run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                      shell / "windows/scripts/Prepare-CaelestiaSourceAssets.ps1",
                      "-SourceRoot", shell, "-SourceRevision", ctx["sha"],
                      "-OutputDirectory", reprepared, "-CacheDirectory", work / "supplier-cache"], timeout=3600,
@@ -569,7 +569,7 @@ def verify_payload(shell, directory, work, ctx, validator, historical=False):
         assets_root.mkdir()
         extract_source(directory / "project-source.zip", assets_root / "project-source")
         extract_source(directory / "supplier-source.zip", assets_root / "supplier-source")
-        args = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File", shell / "windows/ci/Test-NexusCandidatePayload.ps1",
+        args = ["pwsh", "-NoProfile", "-NonInteractive", "-File", shell / "windows/ci/Test-NexusCandidatePayload.ps1",
                 "-CandidateDirectory", directory, "-OutputDirectory", work / "payload-check",
                 "-SourceDataRoot", source, "-AssetsRoot", assets_root]
         checked_run(args, timeout=600, diagnostic_log=work / "independent-payload.private.log")

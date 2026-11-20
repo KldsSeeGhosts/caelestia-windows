@@ -27,10 +27,13 @@ if ($DisableAutostart -and $Command -ne 'Quit') { throw '-DisableAutostart requi
 # Does not read the profile or alter consent, settings or shell lifecycle.
 if ($Command -eq 'NotifyTest') {
     if ($env:OS -ne 'Windows_NT') { throw 'NotifyTest requires an interactive Windows desktop.' }
-    # PowerShell 7 has no built-in WinRT projection. Use inbox Windows PowerShell
-    # without loading the user's PowerShell profile or changing execution policy.
+    # PowerShell 7 has no built-in WinRT projection, so the test toast is
+    # delegated to inbox Windows PowerShell 5.1 without loading the user's
+    # profile or changing execution policy. This is an explicit 5.1
+    # compatibility path, the same one Install.cmd uses to bootstrap.
     if ($PSVersionTable.PSEdition -eq 'Core') {
-        & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -NoLogo -NoProfile -NonInteractive -File $PSCommandPath -Command NotifyTest
+        . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+        & (Get-WindowsPowerShellPath) -NoLogo -NoProfile -NonInteractive -File $PSCommandPath -Command NotifyTest
         if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell could not submit the test toast.' }
         return
     }
@@ -62,11 +65,28 @@ if (-not $Prefix) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $record = Read-CaelestiaInstall $Prefix
+# A version dir's own install.json has version=1 (the payload record) and
+# installRoot pointing at the stable prefix. When Invoke-CaelestiaPayloadCommand
+# calls this script in a version dir it is the payload, not the router: the
+# router lives at the stable root and already resolved this dir. Re-entering
+# the router here would recurse back into Invoke-CaelestiaPayloadCommand.
+$selfRecord = $null
+try {
+    $selfManifest = Join-Path $PSScriptRoot 'install.json'
+    if (Test-Path -LiteralPath $selfManifest -PathType Leaf) {
+        $selfRecord = Get-Content -LiteralPath $selfManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+} catch { }
+$isPayload = $selfRecord -and $selfRecord.installRoot -and -not (Test-CaelestiaSamePath $selfRecord.installRoot $PSScriptRoot)
+# The autostart entry is owned by the stable prefix, never by a version
+# payload. When this script itself is a versioned payload, hash the Run name
+# from the install root its record names, not the version directory.
+$autostartPrefix = if ($isPayload) { Resolve-CaelestiaDirectory ([string]$selfRecord.installRoot) } else { $Prefix }
 # The autostart entry is owned by the stable prefix, never by a version
 # payload. Answer and remove it before the versioned-route below can replace
 # $Prefix with versions\<id> and hash the wrong Run name.
 if ($Command -eq 'AutostartStatus') {
-    [ordered]@{ schema = 1; enabled = (Test-CaelestiaAutostart $Prefix) } |
+    [ordered]@{ schema = 1; enabled = (Test-CaelestiaAutostart $autostartPrefix) } |
         ConvertTo-Json -Compress
     return
 }
@@ -75,11 +95,11 @@ if ($Command -eq 'Quit' -and $DisableAutostart) {
     # The user asked to leave Caelestia, so a failed Run-entry removal must not
     # cancel Quit or desktop restoration. Report it after the shell exits, then
     # fail the launcher call so the caller cannot mistake the choice as applied.
-    $autostartFailure = Disable-CaelestiaAutostartForQuit $Prefix
+    $autostartFailure = Disable-CaelestiaAutostartForQuit $autostartPrefix
 }
 # Repository callers can still target the stable root. Route before building
 # a ProcessStartInfo so leftover legacy qs.exe files are never launched.
-if ($record.version -eq 2) {
+if ($record.version -eq 2 -and -not $isPayload) {
     $runtime = Resolve-CaelestiaRuntimePrefix $Prefix -Running:($Command -ne 'Start')
     if ($Command -eq 'Settings') {
         if ($Smoke) { throw '-Smoke requires -Command Start.' }
@@ -93,9 +113,13 @@ if ($record.version -eq 2) {
         if ($key -eq 'DisableAutostart') { continue }
         $arguments[$key] = $PSBoundParameters[$key]
     }
-    $arguments.Prefix = $runtime
+    # Invoke-CaelestiaPayloadCommand always rebinds Prefix to the resolved
+    # runtime, so the stable root spelling never reaches the payload.
+    $payloadError = $null
     try {
-        & (Join-Path $runtime 'Start-Caelestia.ps1') @arguments
+        Invoke-CaelestiaPayloadCommand $runtime $arguments
+    } catch {
+        $payloadError = $_
     } finally {
         # The versioned Quit has finished and the desktop is restored. The shell
         # has exited, so this launcher owns the visible report before it fails.
@@ -104,7 +128,18 @@ if ($record.version -eq 2) {
     # The stable root owns the Run entry. Re-raise its removal failure after the
     # versioned launcher has finished Quit and desktop restoration.
     if ($autostartFailure) { throw $autostartFailure }
+    if ($payloadError) {
+        $code = $global:CaelestiaLastPayloadExitCode
+        if ($code -and $code -ne 0) { exit $code }
+        throw $payloadError
+    }
     return
+}
+if ($isPayload) {
+    # The router resolved this payload dir; file paths must point at this
+    # version's own files, not the stable root it was launched from.
+    $Prefix = $PSScriptRoot
+    $record = $selfRecord
 }
 $installRoot = if ($record.installRoot) { [string]$record.installRoot } else { $Prefix }
 $profile = Resolve-CaelestiaDirectory $record.profile
@@ -225,6 +260,7 @@ $info.EnvironmentVariables['CAELESTIA_BANNER_HELPER'] = Join-Path $PSScriptRoot 
 $info.EnvironmentVariables['CAELESTIA_RUNTIME_DIR'] = Join-Path $profile 'runtime'
 $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
 $info.EnvironmentVariables['CAELESTIA_INSTALL_ROOT'] = $installRoot
+$info.EnvironmentVariables['CAELESTIA_POWERSHELL'] = Get-CaelestiaPayloadPowerShellPath $Prefix
 $info.EnvironmentVariables['CAELESTIA_VERSION_ID'] = [string]$record.versionId
 $info.EnvironmentVariables['CAELESTIA_SOURCE_REVISION'] = [string]$record.sourceRevision
 foreach ($directory in @('config', 'state', 'data', 'cache')) {
@@ -335,9 +371,7 @@ if ($Command -ne 'Start') {
             # IPC acceptance does not mean qs has exited. Always notify the
             # supervisor so it can bound the wait for its own child. Its event
             # exists before "starting" is published, including banner recovery.
-            if (-not ('Caelestia.Takeover.Native' -as [type])) {
-                Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
-            }
+            Import-CaelestiaDesktopTakeover -ScriptRoot $PSScriptRoot
             Stop-CaelestiaSupervisor $supervisor
             if (-not $supervisor.Process.WaitForExit([Math]::Max(1000, [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds))) {
                 throw "Desktop supervisor has not finished restoring: $($supervisor.StatusPath)"
@@ -413,9 +447,7 @@ if ($Smoke) {
     if ($timedOut) { $process.Kill(); $process.WaitForExit() }
     [IO.File]::WriteAllText($stdoutPath, $outTask.GetAwaiter().GetResult())
     [IO.File]::WriteAllText($stderrPath, $errTask.GetAwaiter().GetResult())
-    if (-not ('Caelestia.Takeover.Native' -as [type])) {
-        Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -ReferencedAssemblies System.Windows.Forms, System.Web.Extensions
-    }
+    Import-CaelestiaDesktopTakeover -ScriptRoot $PSScriptRoot
     # ABM_REMOVE only for this exited child, including a crash/timeout. Do not
     # restore global work-area snapshots or taskbars belonging to the live shell.
     [Caelestia.Takeover.Native]::RemoveStaleAppBars($process.Id) | Out-Null

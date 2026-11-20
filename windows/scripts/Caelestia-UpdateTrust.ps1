@@ -1,7 +1,14 @@
 #requires -Version 5.1
 . (Join-Path $PSScriptRoot 'Caelestia-SemVer.ps1')
 if (-not ('Caelestia.Update.Security' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot 'Caelestia-UpdateSecurity.cs') -ReferencedAssemblies System.Net.Http -ErrorAction Stop
+    # On PowerShell 7, passing -ReferencedAssemblies drops the implicit BCL
+    # facades and the compile fails; the default reference set already covers
+    # System.Net.Http. Windows PowerShell 5.1 still needs the explicit hint.
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        Add-Type -Path (Join-Path $PSScriptRoot 'Caelestia-UpdateSecurity.cs') -ErrorAction Stop
+    } else {
+        Add-Type -Path (Join-Path $PSScriptRoot 'Caelestia-UpdateSecurity.cs') -ReferencedAssemblies System.Net.Http -ErrorAction Stop
+    }
 }
 
 function ConvertFrom-CaelestiaStrictJson([byte[]]$Bytes, [int]$MaxBytes = 65536) {

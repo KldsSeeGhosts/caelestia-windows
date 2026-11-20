@@ -361,6 +361,7 @@ try {
         schema = 'caelestia-windows-release'; version = 1; platform = 'windows-x64'
         releaseId = $ReleaseId; sourceRevision = $revision; nativeSourceRevision = $build.sourceRevision
         appVersion = $appVersion.version; profileSchema = $appVersion.profileSchema
+        runtimeHost = 'powershell7'
         backendRevision = $build.backendRevision; qtVersion = $build.qtVersion
         toolchain = $build.toolchain
         dependencies = $dependencies; nativeInputs = $nativeInputs
@@ -368,6 +369,14 @@ try {
             visualCppRuntime = [ordered]@{
                 deployment = 'system'; architecture = 'x64'; minimumVersion = (Get-CaelestiaToolchain).runtimeMinimum
                 downloadUrl = 'https://aka.ms/vc14/vc_redist.x64.exe'
+            }
+            powershell7 = [ordered]@{
+                name = 'PowerShell 7 (x64)'
+                architecture = 'x64'
+                minimumVersion = '7.4.0'
+                downloadUrl = 'https://github.com/PowerShell/PowerShell/releases/download/v7.6.10/PowerShell-7.6.10-win-x64.msi'
+                deployment = 'system'
+                bundled = $false
             }
         }
         supplementalNotices = $supplementalInputs

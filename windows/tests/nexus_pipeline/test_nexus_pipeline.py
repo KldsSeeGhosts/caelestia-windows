@@ -91,7 +91,7 @@ foreach ($name in @('Invoke-CandidateCommand', 'Invoke-CandidateGate')) {
     if (-not $node) { throw 'candidate gate missing' }
     . ([scriptblock]::Create($node.Extent.Text))
 }
-$ps = Join-Path $PSHOME 'powershell.exe'
+$ps = Join-Path $PSHOME 'pwsh.exe'
 $Python = @@PYTHON@@
 $candidateRunner = @@RUNNER@@
 $privateLogs = @@LOGS@@
@@ -113,7 +113,7 @@ catch {
                 script = root / ("check-" + str(echo) + ".ps1")
                 script.write_text(fixture_script(bootstrap, **values, LOGS=quote(logs),
                                                  ECHO="$true" if echo else "$false"), encoding="utf-8")
-                result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                         capture_output=True, text=True, timeout=30)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual(echo, "UNDERLYING_FIXTURE_FAILURE" in result.stdout)
@@ -127,7 +127,7 @@ catch {
             blocked = root / "missing-parent" / "logs"
             script.write_text(fixture_script(bootstrap, **values, LOGS=quote(blocked), ECHO="$false"),
                               encoding="utf-8")
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                     capture_output=True, text=True, timeout=30)
             self.assertNotEqual(0, result.returncode)
             self.assertNotIn("unexpected success", result.stdout)
@@ -137,7 +137,7 @@ catch {
             script.write_text(fixture_script(bootstrap,
                 **{**values, "TIMEOUT": "1", "EXPECTED_EXIT": "124"}, LOGS=quote(timeout_logs), ECHO="$true"),
                 encoding="utf-8")
-            result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+            result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(0, result.returncode, result.stdout + result.stderr)
             self.assertIn("exit=124", result.stdout)
@@ -269,7 +269,7 @@ Complete-CandidateHistory @@SHALLOW@@ 'fixture'
                               LOGS=quote(self.root), SHALLOW=quote(shallow))
         script = self.root / "history.ps1"
         script.write_text(body, encoding="utf-8")
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File", str(script)],
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual("false", git(shallow, "rev-parse", "--is-shallow-repository"))
@@ -388,7 +388,7 @@ class Evidence(unittest.TestCase):
         for missing in ("release.cdx.json", "package-lifecycle-receipt.json"):
             with self.subTest(missing=missing):
                 out_dir = self.root / f"payload-missing-{missing}"
-                result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                     str(ROOT / "windows/ci/Test-NexusCandidatePayload.ps1"),
                     "-CandidateDirectory", str(directory), "-OutputDirectory", str(out_dir),
                     "-SourceDataRoot", str(self.shell), "-AssetsRoot", str(assets),
@@ -401,7 +401,7 @@ class Evidence(unittest.TestCase):
         trusted = self.root / "trusted/.github/scripts"
         trusted.mkdir(parents=True)
         shutil.copyfile(self.validator, trusted / "candidate_contract.py")
-        arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        arguments = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Seal-NexusCandidate.ps1"), "-ShellRoot", str(self.shell),
             "-BuildRoot", str(self.build), "-PairResults", str(self.results),
             "-TrustedRoot", str(self.root / "trusted"), "-CandidateDirectory", str(directory),
@@ -423,7 +423,7 @@ class Evidence(unittest.TestCase):
         directory, doc = self.unsealed()
         assets = self.root / "source-assets"; assets.mkdir()
         original = (directory / "unsealed.json").read_bytes()
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Test-NexusCandidatePayload.ps1"),
             "-CandidateDirectory", str(directory), "-OutputDirectory", str(self.root / "payload"),
             "-SourceDataRoot", str(self.shell), "-AssetsRoot", str(assets),
@@ -504,7 +504,7 @@ class Evidence(unittest.TestCase):
 
     def test_native_only_export_excludes_all_evidence_and_test_state(self):
         transfer = self.root / "native-transfer"
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"), "-BuildRoot", str(self.build),
             "-NativeOnly", "-OutputDirectory", str(transfer)], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -539,7 +539,7 @@ class Evidence(unittest.TestCase):
         (self.build / "caelestia/CTestTestfile.cmake").write_text(
             f'add_test(synthetic "{Path(sys.executable).as_posix()}" "-I" "-c" "pass")\n')
         build, results = self.root / "production-build", self.root / "split-results"
-        arguments = ["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        arguments = ["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Invoke-PairIntegration.ps1"), "-ShellRoot", str(self.shell),
             "-BackendRoot", str(self.shell / "windows/deps/quickshell"), "-Mode", "pinned",
             "-BackendSha", record["backendRevision"], "-ToolRoot", str(self.root / "tools"),
@@ -588,7 +588,7 @@ class Evidence(unittest.TestCase):
     def test_integration_transfer_has_only_join_inputs(self):
         p.write(self.results / "pair-local.json", {"backendRoot": "synthetic-local-root"})
         transfer = self.root / "integration-transfer"
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"), "-BuildRoot", str(self.build),
             "-PairResults", str(self.results), "-OutputDirectory", str(transfer), "-Integration"],
             capture_output=True, text=True)
@@ -609,7 +609,7 @@ class Evidence(unittest.TestCase):
             (tests / name).write_bytes(b"inert")
         (self.build / "caelestia/CTestTestfile.cmake").write_bytes(b"inert")
         transfer = self.root / "reuse-transfer"
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
             str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"), "-BuildRoot", str(self.build),
             "-OutputDirectory", str(transfer), "-Reuse"], capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
@@ -673,7 +673,7 @@ class Evidence(unittest.TestCase):
         (self.build / "object.obj").write_bytes(b"not an assembly input")
         (self.results / "environment.json").write_text('{"private": true}')
         transfer = self.root / "transfer"
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-File",
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File",
                                  str(ROOT / "windows/ci/Export-NexusCandidateInputs.ps1"),
                                  "-BuildRoot", str(self.build), "-PairResults", str(self.results),
                                  "-OutputDirectory", str(transfer)], capture_output=True, text=True)

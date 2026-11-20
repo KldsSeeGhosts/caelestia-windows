@@ -111,7 +111,7 @@ function Invoke-Verification($Case, [string]$ExpectedFailure = '') {
     $previousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $output = @(& powershell.exe -NoProfile -NonInteractive -File $fixtureBootstrap `
+        $output = @(& (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source -NoProfile -NonInteractive -File $fixtureBootstrap `
             -BundleRoot $Case.root -ExpectedManifestSha256 $hash -VerifyOnly 2>&1 | ForEach-Object { "$_" })
         $exitCode = $LASTEXITCODE
     } finally { $ErrorActionPreference = $previousPreference }

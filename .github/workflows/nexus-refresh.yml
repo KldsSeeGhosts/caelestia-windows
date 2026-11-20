@@ -33,7 +33,7 @@ jobs:
           NEXUS_SIGNING_KEY: ${{ secrets.NEXUS_DEVELOPMENT_SIGNING_KEY }}
           NEXUS_DEVELOPMENT_PUBLISH: ${{ vars.NEXUS_DEVELOPMENT_PUBLISH }}
         run: |
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+          & pwsh -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
             -Mode refresh-development -WorkDirectory C:\nexus-refresh-development
           if ($LASTEXITCODE -ne 0) { throw 'Development freshness refused.' }
   promotion:
@@ -63,6 +63,6 @@ jobs:
           NEXUS_SIGNING_KEY: ${{ secrets.NEXUS_PROMOTION_SIGNING_KEY }}
           NEXUS_PROMOTION_PUBLISH: ${{ vars.NEXUS_PROMOTION_PUBLISH }}
         run: |
-          & powershell.exe -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
+          & pwsh -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\ci\Invoke-NexusPublication.ps1" `
             -Mode refresh-promotion -WorkDirectory C:\nexus-refresh-promotion
           if ($LASTEXITCODE -ne 0) { throw 'Promotion freshness refused.' }

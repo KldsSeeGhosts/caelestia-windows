@@ -35,7 +35,11 @@ if ($LASTEXITCODE -ne 0 -or "$identity" -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $privateLogs = Join-Path $OutputDirectory 'private'
 [IO.Directory]::CreateDirectory($privateLogs) | Out-Null
-$ps = Get-WindowsPowerShellPath
+$ps = if (Get-Command Get-CaelestiaPowerShellPath -ErrorAction SilentlyContinue) {
+    Get-CaelestiaPowerShellPath
+} else {
+    (Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+}
 $candidateRunner = Join-Path $PSScriptRoot 'nexus_process.py'
 function Invoke-CandidateCommand([string]$Name, [string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds) {
     $log = Join-Path $privateLogs "$Name.log"

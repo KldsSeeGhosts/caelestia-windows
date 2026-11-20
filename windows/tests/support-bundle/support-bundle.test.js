@@ -10,7 +10,24 @@ const output = process.env.CAELESTIA_SUPPORT_TEST_OUTPUT;
 assert.ok(output, 'Run Test-SupportBundle.ps1 with an explicit disposable output directory');
 const root = fs.mkdtempSync(path.join(path.resolve(output), 'support-'));
 const exporter = path.resolve(__dirname, '../../scripts/Export-CaelestiaSupport.ps1');
-const powershell = path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
+// Resolve PowerShell 7 (pwsh): explicit override, the MSIX/Store alias, the
+// MSI install dir, or whatever 'pwsh' resolves to on PATH.
+function resolvePowerShell() {
+    const local = process.env.LOCALAPPDATA || '';
+    const programFiles = process.env.ProgramFiles || 'C:/Program Files';
+    const candidates = [
+        process.env.CAELESTIA_POWERSHELL,
+        local && path.join(local, 'Programs/PowerShell/7/pwsh.exe'),
+        local && path.join(local, 'Microsoft/WindowsApps/Microsoft.PowerShell_8wekyb3d8bbwe/pwsh.exe'),
+        local && path.join(local, 'Microsoft/WindowsApps/pwsh.exe'),
+        path.join(programFiles, 'PowerShell/7/pwsh.exe')
+    ];
+    for (const candidate of candidates) {
+        if (candidate && fs.existsSync(candidate)) return candidate;
+    }
+    return 'pwsh';
+}
+const powershell = resolvePowerShell();
 const support = path.resolve(__dirname, '../../support');
 const schema = JSON.parse(fs.readFileSync(path.join(support, 'support-bundle.schema.json')));
 const secret = 'SYNTHETIC_SECRET_TOKEN_Z9';
@@ -517,6 +534,25 @@ test('schema rejects additions at every nested boundary and invalid values', () 
 
 test('sanitized committed example validates against strict schema', () => {
     validate(JSON.parse(fs.readFileSync(path.join(support, 'support-bundle.example.json'))), schema);
+});
+
+test('PowerShell JSON projection preserves nested arrays without flattening', () => {
+    const helper = path.resolve(__dirname, '../../scripts/Caelestia-Support.ps1');
+    const script = `. '${helper.replaceAll("'", "''")}'; ` +
+        `$r = ConvertFrom-CaelestiaSupportJson '[[1,2]]' 4096; ` +
+        'if ($r.Count -ne 1 -or $r[0].Count -ne 2 -or $r[0][0] -ne 1 -or $r[0][1] -ne 2) { exit 3 }; ' +
+        `$e = ConvertFrom-CaelestiaSupportJson '[[]]' 4096; ` +
+        'if ($e.Count -ne 1 -or $e[0].Count -ne 0) { exit 4 }; ' +
+        'exit 0';
+    const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', script],
+        { encoding: 'utf8', timeout: 20000, windowsHide: true });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+});
+
+test('exporter never resolves the worker pwsh from PATH', () => {
+    const source = fs.readFileSync(exporter, 'utf8');
+    assert.ok(!/Get-Command\s+pwsh/.test(source), 'Get-Command pwsh PATH lookup remains');
 });
 
 test.after(() => {

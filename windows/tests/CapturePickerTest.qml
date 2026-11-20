@@ -36,6 +36,31 @@ ShellRoot {
     property string tempFolder: (Quickshell.env("TEMP") || "").split("\\").join("/")
     property string stateFolder: (Quickshell.env("CAELESTIA_STATE_DIR") || "").split("\\").join("/")
 
+    // The fixture spawns real PowerShell children. CAELESTIA_POWERSHELL wins;
+    // otherwise the verified PowerShell 7 install locations are probed.
+    readonly property string powerShellExe: {
+        const configured = Quickshell.env("CAELESTIA_POWERSHELL") || "";
+        if (configured.length > 0)
+            return configured;
+        const programFiles = Quickshell.env("ProgramFiles") || "";
+        if (programFiles.length > 0) {
+            const bundled = programFiles + "\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(bundled))
+                return bundled;
+        }
+        const localAppData = Quickshell.env("LOCALAPPDATA") || "";
+        if (localAppData.length > 0) {
+            const perUser = localAppData + "\\Programs\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(perUser))
+                return perUser;
+            const storeAlias = localAppData
+                + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+            if (WindowsFiles.isFile(storeAlias))
+                return storeAlias;
+        }
+        return "";
+    }
+
     property QtObject glazier: QtObject {
         property bool ready: true
         property string executable: "C:/Caelestia/caelestia-capture.exe"
@@ -194,7 +219,7 @@ ShellRoot {
 
     function powershell(script, callback): void {
         shell.done = callback;
-        shell.command = [Quickshell.env("SystemRoot") + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        shell.command = [root.powerShellExe,
             "-NoProfile", "-NonInteractive", "-Command", script];
         shell.running = true;
     }

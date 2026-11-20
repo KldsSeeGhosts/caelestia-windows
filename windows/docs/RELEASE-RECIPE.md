@@ -13,7 +13,7 @@ their supplier archives, provenance and build/replacement guidance.
 
 ## Public prerequisites and candidate
 
-Use native 64-bit Windows PowerShell 5.1, Git for Windows, Windows `tar.exe` and
+Use native 64-bit PowerShell 7.4 or newer, Git for Windows, Windows `tar.exe` and
 `curl.exe`. Application builds additionally need the public prerequisites in
 [NATIVE-BUILD.md](../NATIVE-BUILD.md) and `windows/toolchain.json`. No account,
 provider configuration, unpublished notice folder or authenticated download is
@@ -36,7 +36,7 @@ foreach ($dependency in @('windows/deps/quickshell', 'windows/deps/m3shapes')) {
         if ($LASTEXITCODE -ne 0) { throw 'Public dependency history fetch failed.' }
     }
 }
-powershell -NoProfile -File C:\src\caelestia\windows\scripts\Prepare-CaelestiaSourceAssets.ps1 `
+pwsh -NoProfile -File C:\src\caelestia\windows\scripts\Prepare-CaelestiaSourceAssets.ps1 `
     -SourceRoot C:\src\caelestia -SourceRevision <full-reviewed-shell-commit> `
     -OutputDirectory C:\release\source-run-1 -CacheDirectory C:\release\source-cache
 ```
@@ -209,5 +209,5 @@ of archives is measured agreement, not a general bit-reproducibility guarantee.
 Focused disposable tests:
 
 ```powershell
-powershell -NoProfile -File windows/scripts/Test-SourceAssets.ps1
+pwsh -NoProfile -File windows/scripts/Test-SourceAssets.ps1
 ```

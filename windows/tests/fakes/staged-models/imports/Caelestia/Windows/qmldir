@@ -1,2 +1,3 @@
 module Caelestia.Windows
 WindowsClipboard 1.0 WindowsClipboard.qml
+singleton WindowsFiles 1.0 WindowsFiles.qml

@@ -6,6 +6,40 @@ digest. Source ZIPs are not installable application bundles. Preview 2 has no
 automatic updater. The guide below also describes current source installer
 capabilities; it does not add those capabilities to an older downloaded ZIP.
 
+## Desktop runtime: PowerShell 7
+
+The desktop shell and its launcher, maintenance and recovery scripts run under
+**PowerShell 7.4 or newer (x64)**. On a clean Windows 11 machine, install it
+before running the product, through any supported channel:
+
+- `Install.cmd` verifies and downloads the official x64 MSI when you pass
+  `-InstallPrerequisites`, the same verified acquisition used for the Visual
+  C++ runtime.
+- `winget install --id Microsoft.PowerShell --source winget`
+- the Microsoft Store `Microsoft.PowerShell` app
+
+The installer and maintenance scripts locate the verified x64 `pwsh.exe`
+(`C:\Program Files\PowerShell\7\pwsh.exe` or the Microsoft Store MSIX alias)
+rather than relying on `PATH`. Three narrow Windows PowerShell 5.1 paths remain
+intentionally: `Start-Caelestia.ps1 -Command NotifyTest` projects the WinRT
+toast notification that PowerShell 7 cannot host, `Install.cmd` can bootstrap a
+clean machine before PowerShell 7 is present, and rollback to a pre-PowerShell-7
+legacy payload still works. Everything else uses PowerShell 7.
+
+The PowerShell 7 migration changes which host runs the product's scripts; it
+does not claim to remove unrelated intermittent terminal-window flashes, which
+are tracked separately.
+
+The per-user `Run` autostart value is limited to 260 characters by Windows.
+The Microsoft Store alias for `pwsh.exe` is much longer than the MSI path
+under `C:\Program Files\PowerShell\7`, so with a Store install and 8.3 short
+names disabled on the install volume, a long custom `-Prefix` can exceed the
+limit. The installer checks the exact command it would write before
+activation and refuses with an explanatory error, leaving the existing
+installation untouched. If you see that refusal, choose a shorter install
+prefix or install PowerShell 7 from the MSI under `C:\Program
+Files\PowerShell\7`.
+
 This is the prebuilt Windows 11 x64 product, not a source archive. The bundle
 includes the native shell, Qt DLLs/plugins/QML, M3Shapes, Glazier, fonts,
 production shell/services, supervisor and maintenance/recovery scripts, and
@@ -111,7 +145,7 @@ This is not a signature or a trust check. It changes no persistent policy and
 does not disable Smart App Control, antivirus or enforced organizational policy.
 
 The generated Start-menu and Settings entries start `conhost.exe --headless`
-with Windows PowerShell. `conhost` and PowerShell are signed Windows components,
+with PowerShell 7. `conhost` and `pwsh` are signed components,
 and `--headless` keeps the console window from appearing. The installed `.ps1`
 files are unsigned data for those hosts. That is not a trust exemption: under
 App Control or Smart App Control, Windows may block the unsigned launcher and
@@ -135,7 +169,7 @@ ZIP viewer, a network share, a symlink or a junction. Keep `release.json`,
 `Install.cmd`, `Install-CaelestiaRelease.ps1`, this guide and `payload` together.
 Do not edit or add files inside this directory.
 
-Run `Install.cmd`, or from 64-bit Windows PowerShell in the extracted directory:
+Run `Install.cmd`, or from 64-bit PowerShell 7 in the extracted directory:
 
 ```powershell
 .\Install-CaelestiaRelease.ps1 -ExpectedManifestSha256 '<published 64-character manifest digest>'
@@ -347,7 +381,7 @@ before any signed stable release.
 
 ## Package lifecycle regressions
 
-Run the ZIP test with 64-bit Windows PowerShell. It needs no developer build
+Run the ZIP test with 64-bit PowerShell 7. It needs no developer build
 or Qt SDK. Use a reviewed release ZIP, not an arbitrary untrusted download.
 
 ```powershell

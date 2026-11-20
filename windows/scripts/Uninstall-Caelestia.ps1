@@ -179,7 +179,7 @@ Write-Output 'Kept update trust data: %LOCALAPPDATA%\caelestia-update-trust (new
     # The launch is hidden, so an exception alone is invisible to the user.
     # Show one actionable dialog unless a scripted caller opted out.
     if (-not $NoDialogs) {
-        $retry = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $Prefix + '\Uninstall-Caelestia.ps1" -Prefix "' + $Prefix + '"'
+        $retry = 'pwsh -NoProfile -ExecutionPolicy Bypass -File "' + $Prefix + '\Uninstall-Caelestia.ps1" -Prefix "' + $Prefix + '"'
         $text = "Caelestia was not uninstalled.`r`n`r`n" + $_.Exception.Message
         if ($_.Exception.Message -notmatch 'installation files are at') {
             $text += "`r`n`r`nRetry from Settings > Apps > Installed apps, or run:`r`n" + $retry

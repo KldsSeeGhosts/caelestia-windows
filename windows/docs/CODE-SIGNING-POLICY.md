@@ -144,7 +144,7 @@ Once a signed stable release exists, these steps apply:
    [releases page](https://github.com/KldsSeeGhosts/caelestia-windows/releases),
    never from an unrelated mirror.
 2. Check the ZIP digest: `Get-FileHash -Algorithm SHA256 <zip>`.
-3. Extract the whole ZIP. In Windows PowerShell, check a signed file:
+3. Extract the whole ZIP. In PowerShell 7, check a signed file:
 
    ```powershell
    Get-AuthenticodeSignature .\payload\caelestia-capture.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
@@ -155,7 +155,7 @@ Once a signed stable release exists, these steps apply:
 4. Verify the whole bundle with the project's own check from a reviewed checkout:
 
    ```powershell
-   powershell.exe -NoProfile -File windows\scripts\Test-AuthenticodeSignatures.ps1 `
+   pwsh -NoProfile -File windows\scripts\Test-AuthenticodeSignatures.ps1 `
        -BundleRoot <extracted-bundle> -Channel stable `
        -ExpectedSignerSubject '<exact certificate subject>'
    ```

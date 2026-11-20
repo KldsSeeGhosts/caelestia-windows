@@ -35,7 +35,11 @@ try {
             [Security.AccessControl.PropagationFlags]::None,
             [Security.AccessControl.AccessControlType]::Allow))
     }
-    [IO.Directory]::CreateDirectory($OutputDirectory, $security) | Out-Null
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        [System.IO.FileSystemAclExtensions]::CreateDirectory($security, $OutputDirectory) | Out-Null
+    } else {
+        [IO.Directory]::CreateDirectory($OutputDirectory, $security) | Out-Null
+    }
     $private = $ecdsa.Key.Export([Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
     # Private output is binary PKCS8, never stdout or a source-controlled file.
     [IO.File]::WriteAllBytes((Join-Path $OutputDirectory 'private.pkcs8'), $private)

@@ -54,12 +54,30 @@ function Get-CaelestiaProcesses([string]$Prefix) {
     foreach ($path in $script:runningPaths) { [pscustomobject]@{ Path = $path } }
 }
 function Get-CaelestiaSupervisors { return @() }
-function New-CaelestiaLaunchTask {
-    param([string]$Prefix, [switch]$PreparedSchemeRuntime)
-    if (-not $PreparedSchemeRuntime) { throw 'Activation did not request the prepared scheme runtime.' }
-    return 'fixture-no-task'
+# The production task builder runs under recording stubs so tests can assert
+# the exact -Execute host each activation schedules. The scheduled-task
+# cmdlets resolve inside the production script's scope, so the stubs live at
+# script scope; only the Execute path is captured.
+$script:taskExecutes = [Collections.Generic.List[string]]::new()
+$global:caelestiaTestTaskExecutes = $script:taskExecutes
+function New-ScheduledTaskAction {
+    param($Execute, $WorkingDirectory, $Argument)
+    # Called from Manage-Caelestia.ps1 too, where $script: binds to that file's
+    # scope; the list is kept on a global name so both callers record.
+    if ($null -ne $global:caelestiaTestTaskExecutes) { $global:caelestiaTestTaskExecutes.Add([string]$Execute) }
+    [pscustomobject]@{ Execute = $Execute; WorkingDirectory = $WorkingDirectory; Argument = $Argument }
 }
-function Unregister-ScheduledTask { }
+function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) return $null }
+function New-ScheduledTaskSettingsSet {
+    param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [switch]$StartWhenAvailable, $ExecutionTimeLimit)
+    [pscustomobject]@{ ExecutionTimeLimit = $ExecutionTimeLimit }
+}
+function Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, $ErrorAction) }
+function Start-ScheduledTask { param($TaskName, $ErrorAction) }
+function Stop-ScheduledTask { param($TaskName, $TaskPath, $ErrorAction) }
+function Get-ScheduledTask { param($TaskName, $TaskPath, $ErrorAction) }
+function Get-ScheduledTaskInfo { param($TaskName, $TaskPath, $ErrorAction) }
+function Unregister-ScheduledTask { param($TaskName, $TaskPath, [switch]$Confirm, $ErrorAction) }
 function Start-CaelestiaDetached {
     param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime)
     $script:started++
@@ -82,7 +100,7 @@ function Start-CaelestiaDetached {
     # and the installer only waits 20 s for the shell to become ready. A cold
     # provisioner inside that launch would consume the budget and fail here.
     $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = Get-WindowsPowerShellPath
+    $info.FileName = Get-CaelestiaPowerShellPath
     $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
         (Join-Path $Prefix 'Start-Caelestia.ps1') + '" -Prefix "' + $Prefix + '" -PreparedSchemeRuntime'
     $info.UseShellExecute = $false
@@ -159,7 +177,7 @@ function New-Payload([string]$Prefix, [string]$Label, [string]$AppVersion = '') 
 function Get-SchemeQsFixture {
     if (-not $script:schemeQs) {
         $script:schemeQs = Join-Path $root 'scheme-qs.exe'
-        Add-Type -OutputAssembly $script:schemeQs -OutputType ConsoleApplication -TypeDefinition @'
+        New-CaelestiaTestExecutable $script:schemeQs @'
 using System;
 using System.IO;
 public static class SchemeProvisioningFixture {
@@ -200,7 +218,7 @@ function Get-FakePythonFixture {
         $directory = Join-Path $root 'fake-python'
         [IO.Directory]::CreateDirectory($directory) | Out-Null
         $script:fakePython = Join-Path $directory 'py.exe'
-        Add-Type -OutputAssembly $script:fakePython -OutputType ConsoleApplication -TypeDefinition @'
+        New-CaelestiaTestExecutable $script:fakePython @'
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -457,11 +475,11 @@ try {
     # Match the Run entry: a fresh Windows PowerShell -File process, no -Prefix.
     # In-process invocation does not reproduce $PSScriptRoot parameter defaults.
     $entry = Join-Path $prefix 'Start-Caelestia.ps1'
-    $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry
+    $output = & (Get-CaelestiaPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry
     Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture-start') 'Sign-in launcher did not start the selected payload without -Prefix.'
-    $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Command State
+    $output = & (Get-CaelestiaPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Command State
     Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture') 'Installed launcher did not route State without -Prefix.'
-    $output = & (Get-WindowsPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Prefix $prefix -Command State
+    $output = & (Get-CaelestiaPowerShellPath) -NoProfile -ExecutionPolicy Bypass -File $entry -Prefix $prefix -Command State
     Assert ($LASTEXITCODE -eq 0 -and $output -eq 'fixture') 'Installed launcher did not preserve an explicit -Prefix.'
     $failed = $false
     $beforeNested = Get-DirectoryHash $a
@@ -529,7 +547,7 @@ try {
         }
         function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) return $null }
         function New-ScheduledTaskSettingsSet {
-            param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [switch]$StartWhenAvailable, $ExecutionTimeLimit)
+            param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, [switch]$StartWhenAvailable, $ExecutionTimeLimit, $RestartCount, $RestartInterval)
             [pscustomobject]@{ ExecutionTimeLimit = $ExecutionTimeLimit }
         }
         function New-ScheduledTaskTrigger { param([switch]$Once, $At) [pscustomobject]@{ At = $At } }
@@ -538,7 +556,9 @@ try {
             $null = $global:queuedTasks.Add([pscustomobject]@{ Name = $TaskName; Action = $Action; Trigger = $Trigger; Settings = $Settings })
         }
         function Start-ScheduledTask { param($TaskName, $ErrorAction) }
-        function Unregister-ScheduledTask { param($TaskName, [switch]$Confirm, $ErrorAction) }
+        function Get-ScheduledTask { param($TaskName, $TaskPath, $ErrorAction) }
+        function Stop-ScheduledTask { param($TaskName, $TaskPath, $ErrorAction) }
+        function Unregister-ScheduledTask { param($TaskName, $TaskPath, [switch]$Confirm, $ErrorAction) }
         & (Join-Path $PSScriptRoot 'Manage-Caelestia.ps1') -Prefix $prefix -Command Rollback -ExpectedCurrent $recordA.current -PhaseTimeoutSeconds 5
     }
     $queuedId = ($queued | ConvertFrom-Json).operationId
@@ -581,7 +601,7 @@ try {
     }
     $unownedFile = Join-Path $unownedRetired 'user.txt'
     [IO.File]::WriteAllText($unownedFile, 'unowned data')
-    $holder = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+    $holder = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
         -WorkingDirectory $heldRetired -WindowStyle Hidden -PassThru
     try {
         $retiredWarnings = @(Remove-CaelestiaRetiredVersions $prefix 3>&1)
@@ -649,7 +669,7 @@ try {
     '{}' | Set-Content -LiteralPath (Join-Path $ownStage '.caelestia-staging.json') -Encoding UTF8
     Remove-CaelestiaStagingDirectories $stagePrefix
     Assert (-not (Test-Path -LiteralPath $ownStage)) 'A stale staging directory with a reused PID of this process was not removed.'
-    $sleeper = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+    $sleeper = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
         -WindowStyle Hidden -PassThru
     try {
         $liveStage = "$stagePrefix.staging-$($sleeper.Id)"
@@ -1060,7 +1080,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert (Test-Path -LiteralPath $ui2KeyPath) 'The Apps & features entry was not created.'
     $launch = Read-Shortcut $ui2.Shortcut
     Assert ((Split-Path -Leaf $launch.TargetPath) -eq 'conhost.exe') 'The launch shortcut does not use the no-window console host.'
-    Assert ($launch.Arguments -match ('^--headless ".+\\powershell\.exe" -NoProfile -ExecutionPolicy Bypass -File "' +
+    Assert ($launch.Arguments -match ('^--headless ".+\\(powershell|pwsh)\.exe" -NoProfile -ExecutionPolicy Bypass -File "' +
         [regex]::Escape((Join-Path $ui2Prefix 'Caelestia-Launcher.ps1')) + '" -Action start$')) 'The launch shortcut does not start through the hidden launcher.'
     Assert ($launch.Arguments -notmatch '-Prefix|-WindowStyle') 'The launch shortcut repeats the prefix or hides a redundant window style.'
     Assert ($launch.IconLocation -eq ((Join-Path $ui2Prefix "versions\$ui2B") + '\qs.exe,0')) 'The launch shortcut icon does not name the installed version.'
@@ -1076,7 +1096,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     Assert ($entry.NoModify -eq 1 -and $entry.NoRepair -eq 1) 'The Apps & features entry must disable modify and repair.'
     Assert ($entry.EstimatedSize -ge 1) 'The Apps & features entry has no size.'
     Assert ($entry.DisplayIcon -eq ((Join-Path $ui2Prefix "versions\$ui2B") + '\qs.exe,0')) 'The Apps & features icon does not name the installed version.'
-    Assert ($entry.UninstallString -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*Caelestia-Launcher\.ps1" -Action uninstall$') 'Uninstall from Settings is not the conhost uninstall command.'
+    Assert ($entry.UninstallString -match '^".*conhost\.exe" --headless ".+\\(powershell|pwsh)\.exe" .*Caelestia-Launcher\.ps1" -Action uninstall$') 'Uninstall from Settings is not the conhost uninstall command.'
     Assert ($entry.UninstallString -notmatch 'uninstall-quiet') 'The interactive uninstall command asks no purge question.'
     Assert ($entry.QuietUninstallString -match '-Action uninstall-quiet$') 'The quiet uninstall command is wrong.'
     Assert ($entry.UninstallString -notmatch '-Prefix|-WindowStyle') 'Uninstall from Settings repeats the prefix or hides a redundant window style.'
@@ -1103,7 +1123,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
     $runValue = if ($null -ne $run) { [string]$run.($ui2.RunName) } else { '' }
     # The fixture uses the same single builder as every other entry; check the
     # command shape and that the builder produced this value.
-    Assert ($runValue -match '^".*conhost\.exe" --headless ".+\\powershell\.exe" .*\.ps1" -Action start$') 'Autostart does not use the no-window launcher.'
+    Assert ($runValue -match '^".*conhost\.exe" --headless ".+\\(powershell|pwsh)\.exe" .*\.ps1" -Action start$') 'Autostart does not use the no-window launcher.'
     Assert ($runValue -eq (Get-CaelestiaAutostartValue $ui2Prefix)) 'Autostart is not the single launch command for this prefix.'
     Assert ($runValue -notmatch '-Prefix|-WindowStyle') 'The autostart command repeats the prefix or hides a redundant window style.'
     Write-Output 'PASS integration desktop/autostart: the opt-in entries use the same hidden launch path.'
@@ -1143,7 +1163,7 @@ function Show-CaelestiaHandoffDialog([string]$Message) {
         if ($PrefixArgument) { $launcherArguments += ' -Prefix "' + $PrefixArgument + '"' }
         $launcherArguments += ' -NoDialogs'
         if ($OutcomePath) { $launcherArguments += ' -OutcomeFile "' + $OutcomePath + '"' }
-        return (Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $launcherArguments -Wait -PassThru).ExitCode
+        return (Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $launcherArguments -Wait -PassThru).ExitCode
     }
     $launcherPrefix = Join-Path $root 'launcher'
     [IO.Directory]::CreateDirectory($launcherPrefix) | Out-Null
@@ -1266,14 +1286,36 @@ $hasWindow = [CaelestiaLauncherProbe.Native]::GetConsoleWindow() -ne [IntPtr]::Z
 
     # Windows limits a Run value to 260 characters. The generated command no
     # longer repeats the prefix, so a default installation stays under the limit
-    # even with the longest supported user name (20 characters). A longer custom
-    # prefix can use the launcher's 8.3 name, and a command that still does not
-    # fit is refused before anything is registered.
+    # even with the longest supported user name (20 characters) when the host
+    # path is the short MSI spelling. The Microsoft Store alias is longer, so
+    # on a Store install the default prefix fits only through an 8.3 name; the
+    # Run-value builder applies that shortening. Stub the host path for a fixed
+    # MSI spelling and a fixed Store spelling so the length check is asserted
+    # deterministically on every machine, not skipped when this host resolves a
+    # different candidate.
     $defaultPrefix = 'C:\Users\' + ('a' * 20) + '\AppData\Local\Programs\caelestia-windows'
-    $defaultLaunch = Get-CaelestiaLaunchCommand $defaultPrefix 'start'
-    Assert ($defaultLaunch.CommandLine.Length -le 260) ('The default-prefix launch command is {0} characters; a Run value allows 260.' -f $defaultLaunch.CommandLine.Length)
-    Assert ((Get-CaelestiaAutostartValue $defaultPrefix).Length -le 260) 'The default-prefix Run value exceeds 260 characters.'
-    Assert ($defaultLaunch.CommandLine -match '^".*conhost\.exe" --headless ".*powershell\.exe" -NoProfile -ExecutionPolicy Bypass -File "') 'The launch command does not start through the fully qualified conhost and PowerShell paths.'
+    $savedPowerShellPath = ${function:Get-CaelestiaPowerShellPath}
+    try {
+        $msiHost = 'C:\Program Files\PowerShell\7\pwsh.exe'
+        ${function:Get-CaelestiaPowerShellPath} = { return $msiHost }
+        $defaultLaunch = Get-CaelestiaLaunchCommand $defaultPrefix 'start'
+        Assert ($defaultLaunch.CommandLine.Length -le 260) ('The default-prefix launch command is {0} characters under the MSI host; a Run value allows 260.' -f $defaultLaunch.CommandLine.Length)
+        $defaultRun = Get-CaelestiaAutostartValue $defaultPrefix
+        Assert ($defaultRun -and $defaultRun.Length -le 260) 'The default-prefix Run value exceeds 260 characters under the MSI host.'
+
+        $storeHost = 'C:\Users\' + ('a' * 20) + '\AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
+        ${function:Get-CaelestiaPowerShellPath} = { return $storeHost }
+        $storeFailed = $false
+        $storeText = ''
+        try { $null = Get-CaelestiaAutostartValue $defaultPrefix } catch { $storeFailed = $true; $storeText = $_.Exception.Message }
+        # A Store alias under the longest supported user name cannot fit a Run
+        # value even with 8.3 shortening of a prefix that does not exist, so the
+        # builder must refuse with the documented limit message.
+        Assert ($storeFailed -and $storeText -match '260') 'The Store-alias default-prefix Run value was not refused at the 260-character limit.'
+    } finally {
+        Set-Item -Path function:Get-CaelestiaPowerShellPath -Value $savedPowerShellPath
+    }
+    Assert ($defaultLaunch.CommandLine -match '^".*conhost\.exe" --headless ".*(powershell|pwsh)\.exe" -NoProfile -ExecutionPolicy Bypass -File "') 'The launch command does not start through the fully qualified conhost and PowerShell paths.'
     Assert ($defaultLaunch.Arguments -notmatch '-Prefix|-WindowStyle') 'The launch command repeats the prefix or hides a redundant window style.'
     Write-Output 'PASS launch length: the default prefix stays inside the 260-character Run-value limit.'
 
@@ -1520,7 +1562,7 @@ if ('__BEHAVIOUR__' -eq 'throw') { throw 'Injected quit or desktop restore failu
     function Invoke-SwitchBackCase([string]$Case, [string]$AutostartMode = 'Ask') {
         $stdout = Join-Path $Case 'stdout.txt'
         $stderr = Join-Path $Case 'stderr.txt'
-        $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList (
+        $process = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList (
             '-NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $Case 'Switch-CaelestiaToWindows.ps1') +
             '" -Prefix "' + $Case + '" -Autostart ' + $AutostartMode + ' -NoDialogs') -Wait -PassThru `
             -RedirectStandardOutput $stdout -RedirectStandardError $stderr
@@ -1545,10 +1587,27 @@ if ('__BEHAVIOUR__' -eq 'throw') { throw 'Injected quit or desktop restore failu
     Assert ((Get-Content -LiteralPath (Join-Path $root 'switch-back-kept\entry.txt') -Raw).Trim() -eq 'Quit|Disable=False') 'Switch back ignored the Keep choice.'
     Write-Output 'PASS switch back: only the stable Quit entry runs; failures are reported and the autostart choice is delegated.'
 
+    # A genuine pre-migration legacy payload is a flat root install: no
+    # dispatcher, its Start-Caelestia.ps1 invokes the supervisor in-process,
+    # and DesktopTakeover.cs still uses System.Web.Script.Serialization so it
+    # can only compile on Windows PowerShell 5.1. The first live upgrade must
+    # quit the outgoing shell on that 5.1 host and schedule its restart task
+    # with pwsh; a rollback to the retained legacy payload does the reverse.
     foreach ($injectFailure in @($false, $true)) {
         $legacy = Join-Path $root ('legacy-' + $injectFailure)
         $legacyPayload = New-Payload $legacy 'legacy-original'
         [IO.Directory]::Move($legacyPayload, $legacy)
+        # Overwrite the fixture start script with a flat pre-versioning one and
+        # drop in the 5.1-only supervisor source that pins the payload host.
+        @'
+[CmdletBinding()]
+param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
+if ($Command -eq 'Quit') { if ($env:CAELESTIA_TEST_PROVISION_LOG) { Add-Content -LiteralPath $env:CAELESTIA_TEST_PROVISION_LOG -Value ("{0},0,quit" -f [DateTime]::UtcNow.Ticks) } }
+if ($Command -ne 'Start') { return }
+'@ | Set-Content -LiteralPath (Join-Path $legacy 'Start-Caelestia.ps1') -Encoding UTF8
+        'using System.Web.Script.Serialization; public static class LegacyTakeover {}' |
+            Set-Content -LiteralPath (Join-Path $legacy 'DesktopTakeover.cs') -Encoding UTF8
+        $script:taskExecutes.Clear()
         $script:failStart = $injectFailure
         $failed = $false
         try { $null = Install-CaelestiaVersion $legacy (New-Payload $legacy 'migrated') -Restart }
@@ -1560,8 +1619,242 @@ if ('__BEHAVIOUR__' -eq 'throw') { throw 'Injected quit or desktop restore failu
         $expected = if ($injectFailure) { 'legacy-original' } else { 'migrated' }
         Assert ([IO.File]::ReadAllText((Join-Path $runtime 'qs.exe')) -eq $expected) 'Legacy migration/rollback selected wrong bytes.'
         Assert ((Get-ChildItem (Join-Path $legacy 'versions') -Directory).Count -eq 2) 'Legacy copy recursed into versions.'
+        # The restart task is built for the incoming payload, whose
+        # DesktopTakeover.cs-free supervisor compiles on PowerShell 7; the
+        # outgoing 5.1 flat payload was quit on powershell.exe through
+        # Invoke-CaelestiaPayloadCommand before the root router was replaced.
+        Assert (@($script:taskExecutes | Where-Object { (Split-Path -Leaf $_) -ieq 'pwsh.exe' }).Count -eq 1) `
+            'The migration restart task did not schedule the pwsh.exe host.'
     }
-    Write-Output 'PASS migration: legacy payload retained without recursion; failed first version falls back to migrated legacy.'
+    Write-Output 'PASS migration: legacy payload retained without recursion; the outgoing 5.1 shell is quit on its own host and the restart task schedules the incoming host.'
+
+    # Rollback to the retained 5.1 payload quits the running Core shell and
+    # schedules the restart task on powershell.exe.
+    $rollbackPrefix = Join-Path $root 'legacy-rb-host'
+    $null = Install-CaelestiaVersion $rollbackPrefix (New-Payload $rollbackPrefix 'rb-new')
+    $newId = (Read-CaelestiaInstall $rollbackPrefix).current
+    $legacyVersion = Join-Path $rollbackPrefix 'versions\rb-legacy'
+    [IO.Directory]::CreateDirectory($legacyVersion) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'legacy-False\Start-Caelestia.ps1') -Destination $legacyVersion -ErrorAction SilentlyContinue
+    'using System.Web.Script.Serialization; public static class LegacyTakeover {}' |
+        Set-Content -LiteralPath (Join-Path $legacyVersion 'DesktopTakeover.cs') -Encoding UTF8
+    [IO.File]::WriteAllText((Join-Path $legacyVersion 'qs.exe'), 'legacy-bytes')
+    @{
+        product = 'caelestia-windows'; version = 1; prefix = $legacyVersion
+        profile = (Join-Path $root 'profile'); installId = 'version-test'
+        installRoot = $rollbackPrefix; versionId = 'rb-legacy'
+        sourceRevision = 'legacy'; executableSha256 = (Get-FileHash (Join-Path $legacyVersion 'qs.exe')).Hash
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $legacyVersion 'install.json') -Encoding UTF8
+    $rollbackRecord = Read-CaelestiaInstall $rollbackPrefix
+    $rollbackRecord.previous = 'rb-legacy'
+    Write-CaelestiaJsonAtomic (Join-Path $rollbackPrefix 'install.json') $rollbackRecord
+    $script:taskExecutes.Clear()
+    $script:failStart = $false
+    $null = Switch-CaelestiaVersion $rollbackPrefix 'rb-legacy' -Restart
+    Assert (@($script:taskExecutes | Where-Object { (Split-Path -Leaf $_) -ieq 'powershell.exe' }).Count -eq 1) `
+        'The rollback restart task did not schedule the 5.1 host.'
+
+    # Cross-edition dispatch must preserve the exact bound-parameter set the
+    # caller built. A bound switch set to $false, an empty string, embedded
+    # quotes and a trailing backslash are all corrupted by naive -File
+    # dispatch; the encoded bootstrap rebuilds them verbatim, and a nonzero
+    # payload exit propagates its exact code.
+    $dispatchRuntime = Join-Path $root 'dispatch-payload'
+    [IO.Directory]::CreateDirectory($dispatchRuntime) | Out-Null
+    @'
+[CmdletBinding()]
+param(
+    [string]$Prefix, [string]$Command = 'Start', [string]$Text = '',
+    [switch]$SkipSchemeRuntime, [switch]$PreparedSchemeRuntime, [switch]$Smoke
+)
+$bound = $PSBoundParameters
+"skip-bound=$($bound.ContainsKey('SkipSchemeRuntime')) skip=$($SkipSchemeRuntime.IsPresent) " +
+    "prepared-bound=$($bound.ContainsKey('PreparedSchemeRuntime')) prepared=$($PreparedSchemeRuntime.IsPresent) " +
+    "smoke-bound=$($bound.ContainsKey('Smoke')) smoke=$($Smoke.IsPresent) " +
+    "text=[$Text] tail=[$($Prefix.Substring($Prefix.Length - 1))] edition=$($PSVersionTable.PSEdition)"
+'@ | Set-Content -LiteralPath (Join-Path $dispatchRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+    # Force the cross-edition path by pointing the payload host at the other
+    # shell for each direction.
+    $savedPayloadHost = ${function:Get-CaelestiaPayloadPowerShellPath}
+    try {
+        # Desktop target: run the fixture on Windows PowerShell 5.1.
+        ${function:Get-CaelestiaPayloadPowerShellPath} = { param([string]$r) Get-WindowsPowerShellPath }
+        $out = Invoke-CaelestiaPayloadCommand $dispatchRuntime @{
+            Command = 'Start'
+            SkipSchemeRuntime = [System.Management.Automation.SwitchParameter]::new($false)
+            PreparedSchemeRuntime = [System.Management.Automation.SwitchParameter]::new($true)
+            Text = 'say "hi"'
+        }
+        Assert ($out -match 'skip-bound=True skip=False') 'Cross-host dispatch lost a bound -Switch:$false.'
+        Assert ($out -match 'prepared-bound=True prepared=True') 'Cross-host dispatch lost a bound switch.'
+        Assert ($out -match 'text=\[say "hi"\]') 'Cross-host dispatch corrupted embedded quotes.'
+        Assert ($out -match 'edition=Desktop') 'The payload did not run on the Desktop host.'
+
+        $out2 = Invoke-CaelestiaPayloadCommand $dispatchRuntime @{ Command = 'Start'; Text = '' }
+        Assert ($out2 -match 'text=\[\]') 'Cross-host dispatch corrupted an empty string.'
+        $outIso = Invoke-CaelestiaPayloadCommand $dispatchRuntime @{ Command = 'Start'; Text = '2026-11-20T04:00:00Z' }
+        Assert ($outIso -match 'text=\[2026-11-20T04:00:00Z\]') 'Cross-host dispatch coerced an ISO-looking string.'
+        $backslashRuntime = Join-Path $root ('dispatch-trail\')
+        [IO.Directory]::CreateDirectory($backslashRuntime.TrimEnd('\')) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $dispatchRuntime 'Start-Caelestia.ps1') -Destination $backslashRuntime
+        $out3 = Invoke-CaelestiaPayloadCommand $backslashRuntime @{ Command = 'Start' }
+        Assert ($out3 -match 'tail=\[\\\]') 'Cross-host dispatch corrupted a trailing backslash.'
+
+        'exit 7' | Set-Content -LiteralPath (Join-Path $dispatchRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+        $threw = $false
+        try { Invoke-CaelestiaPayloadCommand $dispatchRuntime @{ Command = 'Quit' } } catch { $threw = $true }
+        Assert ($threw -and $global:CaelestiaLastPayloadExitCode -eq 7) 'Cross-host dispatch did not propagate the exact payload exit code.'
+
+        # Same-host nonzero exit must also fail and record the exact exit code.
+        ${function:Get-CaelestiaPayloadPowerShellPath} = { param([string]$r) Get-CaelestiaPowerShellPath }
+        'exit 2' | Set-Content -LiteralPath (Join-Path $dispatchRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+        $sameThrew = $false
+        try { Invoke-CaelestiaPayloadCommand $dispatchRuntime @{ Command = 'Quit' } } catch { $sameThrew = $true }
+        Assert ($sameThrew -and $global:CaelestiaLastPayloadExitCode -eq 2) 'Same-host dispatch returned success for a payload that exited 2.'
+
+        # Host discovery failure must reset CaelestiaLastPayloadExitCode first so
+        # a prior nonzero exit code is never reused.
+        ${function:Get-CaelestiaPayloadPowerShellPath} = { param([string]$r) throw 'synthetic discovery failure' }
+        $discThrew = $false
+        try { Invoke-CaelestiaPayloadCommand $dispatchRuntime @{ Command = 'Quit' } } catch { $discThrew = $true }
+        Assert ($discThrew -and $global:CaelestiaLastPayloadExitCode -eq 0) 'A discovery failure reused a stale CaelestiaLastPayloadExitCode.'
+    } finally {
+        Set-Item -Path function:Get-CaelestiaPayloadPowerShellPath -Value $savedPayloadHost
+    }
+
+    # Actual entry-script subprocess tests in both directions (Core -> Core,
+    # Core -> Desktop, Desktop -> Core): verify exact exit codes and ISO-looking
+    # string arguments across the real Start-CaelestiaEntry.ps1 executable boundary.
+    $entryDispatchRoot = Join-Path $root 'entry-dispatch'
+    $entryDispatchV1 = New-Payload $entryDispatchRoot 'ed-ps7'
+    $entryDispatchRuntime = Install-CaelestiaVersion $entryDispatchRoot $entryDispatchV1
+    $entryScriptPath = Join-Path $entryDispatchRoot 'Start-Caelestia.ps1'
+    # 1) Same-host (Core -> Core) nonzero exit 2 via actual entry script.
+    "param([string]`$Prefix, [string]`$Command = 'Start', [string]`$TilingIncluded = '')`nexit 2" |
+        Set-Content -LiteralPath (Join-Path $entryDispatchRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+    & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $entryScriptPath -Prefix $entryDispatchRoot -Command State *> $null
+    Assert ($LASTEXITCODE -eq 2) ("Same-host entry executable returned $LASTEXITCODE instead of 2.")
+    # 2) Desktop -> Core: ISO-looking string survives PS 7.5+ ConvertFrom-Json and exact exit 9 propagates.
+    $isoCapture = Join-Path $root 'iso-core-capture.txt'
+    ("param([string]`$Prefix, [string]`$Command = 'Start', [string]`$TilingIncluded = '')`n" +
+        "[IO.File]::WriteAllText('" + $isoCapture.Replace("'", "''") + "', (`$PSVersionTable.PSEdition + '|' + `$TilingIncluded))`n" +
+        'exit 9') | Set-Content -LiteralPath (Join-Path $entryDispatchRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+    & (Get-WindowsPowerShellPath) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $entryScriptPath -Prefix $entryDispatchRoot -Command State -TilingIncluded '2026-11-20T04:00:00Z' *> $null
+    Assert ($LASTEXITCODE -eq 9) ("Desktop->Core entry executable returned $LASTEXITCODE instead of 9.")
+    Assert ((Get-Content -LiteralPath $isoCapture -Raw) -ceq 'Core|2026-11-20T04:00:00Z') 'Desktop->Core dispatch coerced an ISO-looking string.'
+    # 3) Core -> Desktop: legacy 5.1 payload exits 7 via actual entry script.
+    [IO.File]::WriteAllText((Join-Path $entryDispatchRuntime 'DesktopTakeover.cs'), 'using System.Web.Script.Serialization; // legacy')
+    $isoCapture51 = Join-Path $root 'iso-desktop-capture.txt'
+    ("param([string]`$Prefix, [string]`$Command = 'Start', [string]`$TilingIncluded = '')`n" +
+        "[IO.File]::WriteAllText('" + $isoCapture51.Replace("'", "''") + "', (`$PSVersionTable.PSEdition + '|' + `$TilingIncluded))`n" +
+        'exit 7') | Set-Content -LiteralPath (Join-Path $entryDispatchRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+    & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $entryScriptPath -Prefix $entryDispatchRoot -Command State -TilingIncluded '2026-11-20T04:00:00Z' *> $null
+    Assert ($LASTEXITCODE -eq 7) ("Core->Desktop entry executable returned $LASTEXITCODE instead of 7.")
+    Assert ((Get-Content -LiteralPath $isoCapture51 -Raw) -ceq 'Desktop|2026-11-20T04:00:00Z') 'Core->Desktop dispatch coerced an ISO-looking string.'
+
+    # Nested launcher regression: Caelestia-Launcher.ps1 -> Switch-CaelestiaToWindows.ps1
+    # -> Start-Caelestia.ps1 must propagate nonzero exit 2 and never print the
+    # restored-desktop success message or exit 0.
+    $nestedRoot = Join-Path $root 'nested-launcher-exit'
+    $nestedV1 = New-Payload $nestedRoot 'nl-ps7'
+    $nestedRuntime = Install-CaelestiaVersion $nestedRoot $nestedV1
+    "param([string]`$Prefix, [string]`$Command = 'Start')`nexit 2" |
+        Set-Content -LiteralPath (Join-Path $nestedRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+    $nestedOutcome = Join-Path $root 'nested-outcome.json'
+    $nestedOut = (& (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File (Join-Path $nestedRoot 'Caelestia-Launcher.ps1') -Action switch-back -NoDialogs -OutcomeFile $nestedOutcome 2>&1 | Out-String)
+    $nestedExit = $LASTEXITCODE
+    Assert ($nestedExit -ne 0) ("Nested launcher reported exit 0 for a Quit that exited 2.")
+    Assert ($nestedOut -notmatch 'taskbar and desktop are back') 'Switch-CaelestiaToWindows printed success after a nonzero Quit exit.'
+    Assert ((Get-Content -LiteralPath $nestedOutcome -Raw | ConvertFrom-Json).exitCode -ne 0) 'Nested launcher outcome recorded exitCode 0.'
+    # Direct Caelestia-Launcher -Action start must preserve exact child exit 2.
+    $nestedStartOutcome = Join-Path $root 'nested-start-outcome.json'
+    & (Get-CaelestiaPowerShellPath) -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File (Join-Path $nestedRoot 'Caelestia-Launcher.ps1') -Action start -NoDialogs -OutcomeFile $nestedStartOutcome *> $null
+    Assert ($LASTEXITCODE -eq 2) ("Nested launcher start returned $LASTEXITCODE instead of 2.")
+    Assert ((Get-Content -LiteralPath $nestedStartOutcome -Raw | ConvertFrom-Json).exitCode -eq 2) 'Nested launcher start outcome did not record exit 2.'
+    Write-Output 'PASS cross-host dispatch: bound switches, empty strings, quotes, backslashes and exit codes survive edition crossing.'
+
+    # A rollback Run-value that cannot fit the 260-character limit must be
+    # refused before the shell is stopped or launched (even on a stopped
+    # installation), and a Run-only installation (no shortcuts or Apps &
+    # features entry) must still have its Run command refreshed when the
+    # selected version changes. Pin the host path so the test never skips or
+    # depends on the machine's active pwsh install path length.
+    $savedShortPath3 = ${function:Get-CaelestiaShortPath}
+    $savedPwsh3 = ${function:Get-CaelestiaPowerShellPath}
+    ${function:Get-CaelestiaShortPath} = { param([string]$Path) return '' }
+    $pinnedStoreHost = 'C:\Users\TwentyCharUserNameXX\AppData\Local\Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
+    $pinnedMsiHost = 'C:\Program Files\PowerShell\7\pwsh.exe'
+    try {
+        $rbPad = [Math]::Max(4, 80 - $shortRoot.Length - 4)
+        $rbPreflightPrefix = Join-Path $shortRoot ('rp-' + ('x' * $rbPad))
+        [IO.Directory]::CreateDirectory($rbPreflightPrefix) | Out-Null
+        ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $pinnedMsiHost }
+        $null = Install-CaelestiaVersion $rbPreflightPrefix (New-Payload $rbPreflightPrefix 'rp-a')
+        $rpA = (Read-CaelestiaInstall $rbPreflightPrefix).current
+        $null = Install-CaelestiaVersion $rbPreflightPrefix (New-Payload $rbPreflightPrefix 'rp-b')
+        $rpIntegration = Get-CaelestiaIntegration $rbPreflightPrefix
+        New-CaelestiaRegistryKey (Get-CaelestiaAutostartKey)
+        New-ItemProperty -Path (Get-CaelestiaAutostartKey) -Name $rpIntegration.RunName -PropertyType String `
+            -Value 'existing owned value' -Force | Out-Null
+        # Pin the target host to the long Store-alias length so the rollback
+        # Run command deterministically exceeds 260 characters. Record Quit and
+        # Start calls: a refused rollback on a stopped install must invoke
+        # neither Quit nor launch.
+        ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $pinnedStoreHost }
+        $rbQuitMarker = Join-Path $root 'rb-preflight-quit.txt'
+        $rpBRuntime = Resolve-CaelestiaRuntimePrefix $rbPreflightPrefix
+        ("param([string]`$Prefix, [string]`$Command = 'Start')`n" +
+            "[IO.File]::WriteAllText('" + $rbQuitMarker.Replace("'", "''") + "', `$Command)") |
+            Set-Content -LiteralPath (Join-Path $rpBRuntime 'Start-Caelestia.ps1') -Encoding UTF8
+        $script:taskExecutes.Clear()
+        $failed = $false
+        $failureText = ''
+        try { Switch-CaelestiaVersion $rbPreflightPrefix $rpA -Restart } catch { $failed = $true; $failureText = $_.Exception.Message }
+        Assert ($failed -and $failureText -match '260') 'A rollback that cannot fit its Run value was not refused at the limit.'
+        Assert ((Read-CaelestiaInstall $rbPreflightPrefix).current -ne $rpA) 'A refused rollback still changed the selected version.'
+        Assert ($script:taskExecutes.Count -eq 0) 'A refused rollback still scheduled or launched a task.'
+        Assert (-not (Test-Path -LiteralPath $rbQuitMarker)) 'A refused rollback still invoked Quit.'
+        $keptRun = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $rpIntegration.RunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $keptRun -and [string]$keptRun.($rpIntegration.RunName) -eq 'existing owned value') 'A refused rollback changed the existing Run value.'
+
+        # Same over-limit rollback WITHOUT -Restart must also refuse before any
+        # host stop, selector write, or Quit.
+        $script:taskExecutes.Clear()
+        $stoppedFailed = $false
+        $stoppedFailureText = ''
+        try { Switch-CaelestiaVersion $rbPreflightPrefix $rpA } catch { $stoppedFailed = $true; $stoppedFailureText = $_.Exception.Message }
+        Assert ($stoppedFailed -and $stoppedFailureText -match '260') 'A stopped rollback that cannot fit its Run value was not refused at the limit.'
+        Assert ((Read-CaelestiaInstall $rbPreflightPrefix).current -ne $rpA) 'A refused stopped rollback changed the selected version.'
+        Assert ($script:taskExecutes.Count -eq 0) 'A refused stopped rollback scheduled or launched a task.'
+        Assert (-not (Test-Path -LiteralPath $rbQuitMarker)) 'A refused stopped rollback invoked Quit.'
+        $keptRun2 = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $rpIntegration.RunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $keptRun2 -and [string]$keptRun2.($rpIntegration.RunName) -eq 'existing owned value') 'A refused stopped rollback changed the existing Run value.'
+        Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $rpIntegration.RunName -ErrorAction SilentlyContinue
+        Write-Output 'PASS rollback Run preflight: an over-limit command is refused before Quit or launch.'
+
+        # Run-only refresh: the same install without any shortcuts or Apps &
+        # features entry still gets its Run command rewritten on switch.
+        ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $pinnedMsiHost }
+        $runOnlyPrefix = Join-Path $shortRoot 'runonly'
+        $null = Install-CaelestiaVersion $runOnlyPrefix (New-Payload $runOnlyPrefix 'ro-a')
+        $roA = (Read-CaelestiaInstall $runOnlyPrefix).current
+        $null = Install-CaelestiaVersion $runOnlyPrefix (New-Payload $runOnlyPrefix 'ro-b')
+        $roIntegration = Get-CaelestiaIntegration $runOnlyPrefix
+        New-ItemProperty -Path (Get-CaelestiaAutostartKey) -Name $roIntegration.RunName -PropertyType String `
+            -Value 'stale run command' -Force | Out-Null
+        Switch-CaelestiaVersion $runOnlyPrefix $roA
+        $refreshed = Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $roIntegration.RunName -ErrorAction SilentlyContinue
+        Assert ($null -ne $refreshed -and [string]$refreshed.($roIntegration.RunName) -ne 'stale run command') `
+            'A Run-only install did not refresh its Run command on version switch.'
+        Assert ([string]$refreshed.($roIntegration.RunName) -match 'conhost\.exe') 'A Run-only refresh did not write the launch command.'
+        Remove-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $roIntegration.RunName -ErrorAction SilentlyContinue
+        Write-Output 'PASS Run-only refresh: a version switch updates the Run command even without other integration entries.'
+    } finally {
+        Set-Item -Path function:Get-CaelestiaShortPath -Value $savedShortPath3
+        Set-Item -Path function:Get-CaelestiaPowerShellPath -Value $savedPwsh3
+    }
 
     # Scheme dependencies are optional and are prepared before the activation
     # handoff. Activation must never run the provisioner inside its 20 s
@@ -1876,7 +2169,7 @@ param([string]$Prefix, [string]$Command = 'Start', [switch]$SkipSchemeRuntime)
     # Update while another process holds the scheme lock: nothing can be probed
     # or published, the shell still restarts (on the fixed palette) without
     # waiting, and nothing is probed after the stop.
-    Add-Type -OutputAssembly (Join-Path $root 'scheme-lock-holder.exe') -OutputType ConsoleApplication -TypeDefinition @'
+    New-CaelestiaTestExecutable (Join-Path $root 'scheme-lock-holder.exe') @'
 using System;
 using System.IO;
 using System.Threading;
@@ -2021,7 +2314,7 @@ public static class SchemeLockHolderFixture {
     New-Item -ItemType Directory -Force -Path (Join-Path $workGeneration 'work') | Out-Null
     'in use' | Set-Content -LiteralPath (Join-Path $workGeneration 'work\state.txt') -Encoding UTF8
     $workBefore = Get-DirectoryHash $workGeneration
-    $holder = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+    $holder = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
         -WorkingDirectory (Join-Path $workGeneration 'work') -WindowStyle Hidden -PassThru
     try {
         Remove-CaelestiaSchemeGenerations $prunePrefix $pruneProfile
@@ -2063,7 +2356,7 @@ if ([T.K]::LoadLibraryW($Dll) -eq [IntPtr]::Zero) { exit 3 }
 Set-Content -LiteralPath $Marker -Value loaded
 Start-Sleep -Seconds 60
 '@ | Set-Content -LiteralPath $loaderScript -Encoding UTF8
-    $loader = Start-Process -FilePath (Get-WindowsPowerShellPath) -WindowStyle Hidden -PassThru `
+    $loader = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -WindowStyle Hidden -PassThru `
         -ArgumentList ('-NoProfile -ExecutionPolicy Bypass -File "' + $loaderScript + '" -Dll "' + $loadedDll + '" -Marker "' + $loadedMarker + '"')
     $originalImagePaths = ${function:Get-CaelestiaProcessImagePaths}
     $originalImagesFree = ${function:Test-CaelestiaSchemeImagesFree}
@@ -2538,7 +2831,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
             $stderr = Join-Path $root "$Name.err"
             $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
                 '" -ProfileRoot "' + $Profile + '" -LockWaitSeconds ' + $LockWaitSeconds
-            $process = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments `
+            $process = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments `
                 -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             return [pscustomobject]@{ Process = $process; Stdout = $stdout }
         }
@@ -2600,7 +2893,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $cacheErr = Join-Path $root 'cache.err'
         $cacheArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
             '" -ProfileRoot "' + $generationProfile + '" -LockWaitSeconds 30'
-        $cacheRun = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $cacheArguments `
+        $cacheRun = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $cacheArguments `
             -WindowStyle Hidden -PassThru -RedirectStandardOutput $cacheOut -RedirectStandardError $cacheErr
         if (-not $cacheRun.WaitForExit(120000)) {
             $cacheRun.Kill()
@@ -2614,7 +2907,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $repairErr = Join-Path $root 'repair.err'
         $repairArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
             '" -ProfileRoot "' + $generationProfile + '" -Force -LockWaitSeconds 30'
-        $repair = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $repairArguments `
+        $repair = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $repairArguments `
             -WindowStyle Hidden -PassThru -RedirectStandardOutput $repairOut -RedirectStandardError $repairErr
         if (-not $repair.WaitForExit(120000)) {
             $repair.Kill()
@@ -2650,12 +2943,13 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $env:CAELESTIA_TEST_PIP_SECONDS = '2'
         $first = Start-SchemeProvision 30 'canon-first' $canonProfile
         $deadline = [DateTime]::UtcNow.AddSeconds(60)
-        $started = $false
-        while ([DateTime]::UtcNow -lt $deadline -and -not $started) {
-            if (Test-Path -LiteralPath $canonLog) { try { $started = (Get-Content -LiteralPath $canonLog -Raw) -match 'venv' } catch { } }
-            if (-not $started) { Start-Sleep -Milliseconds 50 }
+        # Script-scope name: Start-CaelestiaDetached counts into $script:started.
+        $canonStarted = $false
+        while ([DateTime]::UtcNow -lt $deadline -and -not $canonStarted) {
+            if (Test-Path -LiteralPath $canonLog) { try { $canonStarted = (Get-Content -LiteralPath $canonLog -Raw) -match 'venv' } catch { } }
+            if (-not $canonStarted) { Start-Sleep -Milliseconds 50 }
         }
-        Assert $started 'The first provisioner did not start.'
+        Assert $canonStarted 'The first provisioner did not start.'
         # A trailing separator reaches the script through the argument quoting.
         $second = Start-SchemeProvision 0 'canon-second' ($canonProfile.ToUpperInvariant() + '\\')
         if (-not $second.Process.WaitForExit(10000)) { $second.Process.Kill(); $second.Process.WaitForExit(); throw 'A second spelling waited for the provisioner.' }
@@ -2684,7 +2978,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
             $err = $out + '.err'
             $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $ip 'Install-SchemeRuntime.ps1') +
                 '" -ProfileRoot "' + $ipProfile + '" -CliRevision rev-x -LockWaitSeconds 30 ' + ($Extra -join ' ')
-            $run = Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
+            $run = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput $out -RedirectStandardError $err
             if (-not $run.WaitForExit(120000)) { $run.Kill(); $run.WaitForExit(); throw 'The provisioner timed out.' }
             return [pscustomobject]@{ Result = (Read-SchemeResult $out); Stdout = $out; Stderr = $err }
@@ -2775,7 +3069,7 @@ throw 'injected provisioning failure'
     # installation and selector writes still serialize with that copy. The
     # legacy owner runs in a separate process; mutex ownership is per thread,
     # so an in-process holder would let this same thread re-enter recursively.
-    Add-Type -OutputAssembly (Join-Path $root 'legacy-install-lock.exe') -OutputType ConsoleApplication -TypeDefinition @'
+    New-CaelestiaTestExecutable (Join-Path $root 'legacy-install-lock.exe') @'
 using System;
 using System.IO;
 using System.Threading;
@@ -2867,6 +3161,407 @@ public static class LegacyInstallLockFixture {
     Assert (-not (Test-Path -LiteralPath $lockedApp)) 'Uninstall left the prefix.'
     Assert (@(Get-ChildItem -LiteralPath $root -Directory -Filter 'locked-app.uninstall-*').Count -eq 0) 'Uninstall left a tombstone.'
     Write-Output 'PASS uninstall: a locked installation is unchanged; a clean run removes prefix and tombstone.'
+
+    # PowerShell 7 discovery must not depend on PATH: the machine's verified
+    # install is found through its registration, standard path or Store alias.
+    $found7 = Find-CaelestiaPowerShell7
+    Assert ($null -ne $found7) 'PowerShell 7 was not discovered without PATH.'
+    Assert ((Split-Path -Leaf $found7.Path) -eq 'pwsh.exe') 'Discovery did not return a pwsh.exe path.'
+    Assert ($found7.Kind -in @('msi', 'msix')) 'Discovery returned an unexpected install kind.'
+    Assert ((Get-CaelestiaPowerShellPath) -eq $found7.Path) 'Get-CaelestiaPowerShellPath disagrees with discovery.'
+    Write-Output ('PASS powershell discovery: {0} {1} at {2}.' -f $found7.Kind, $found7.Version, $found7.Path)
+
+    # Legacy 5.1 -> PS 7 upgrade: a payload predating the migration keeps the
+    # 5.1 host, and the next payload's integration entries move to pwsh.exe.
+    $ps7Prefix = Join-Path $root 'ps7-upgrade'
+    $legacyPayloadPath = New-Payload $ps7Prefix 'ps7-legacy'
+    # A legacy payload still carries a .NET Framework supervisor source.
+    [IO.File]::WriteAllText((Join-Path $legacyPayloadPath 'DesktopTakeover.cs'),
+        'using System.Web.Script.Serialization; // legacy 5.1 payload marker')
+    $legacyRuntime = Install-CaelestiaVersion $ps7Prefix $legacyPayloadPath
+    Assert ((Get-CaelestiaPayloadPowerShellPath $legacyRuntime) -eq (Get-WindowsPowerShellPath)) `
+        'A legacy 5.1 payload did not select the inbox Windows PowerShell host.'
+    Assert ((Get-CaelestiaLaunchCommand $ps7Prefix 'start').Arguments -match '(?i)\\powershell\.exe') `
+        'A legacy payload did not keep the 5.1 launch host.'
+    $ps7Runtime = Install-CaelestiaVersion $ps7Prefix (New-Payload $ps7Prefix 'ps7-current')
+    # Current payloads have no System.Web supervisor source, so they run on pwsh.
+    Assert ((Get-CaelestiaPayloadPowerShellPath $ps7Runtime) -ceq (Get-CaelestiaPowerShellPath)) `
+        'A current payload did not select PowerShell 7.'
+    $ps7Command = Get-CaelestiaLaunchCommand $ps7Prefix 'start'
+    Assert ($ps7Command.Arguments -match '(?i)\\pwsh\.exe') 'The upgraded launch command does not use pwsh.exe.'
+    Assert ($ps7Command.Arguments -match '--headless') 'The upgraded launch command lost conhost --headless.'
+    # Run/shortcuts refresh on activation, so an existing 5.1 entry moves too.
+    $ps7RunValue = Get-CaelestiaAutostartValue $ps7Prefix
+    Assert ($ps7RunValue -match '(?i)\\pwsh\.exe') 'The upgraded Run value does not use pwsh.exe.'
+    Write-Output 'PASS powershell migration: legacy 5.1 payloads keep powershell.exe and current payloads launch on pwsh.exe through conhost.'
+
+    # Rollback to the legacy payload selects 5.1 again for every entry.
+    $null = Switch-CaelestiaVersion $ps7Prefix ([string](Read-CaelestiaInstall $ps7Prefix).previous)
+    Assert ((Get-CaelestiaPayloadPowerShellPath $legacyRuntime) -eq (Get-WindowsPowerShellPath)) `
+        'A rolled-back legacy payload did not select the inbox 5.1 host.'
+    Assert ((Get-CaelestiaLaunchCommand $ps7Prefix 'start').Arguments -match '(?i)\\powershell\.exe') `
+        'A rolled-back payload did not restore the 5.1 launch host.'
+    Write-Output 'PASS powershell rollback: a rolled-back legacy payload launches on inbox powershell.exe.'
+
+    # With -Restart the scheduled task and the outgoing Quit must both use the
+    # host of the version actually being activated, not the host the
+    # still-current selector names. Payloads below record which edition ran
+    # their Quit, and the launch-task stub records every -Execute host.
+    function New-HostRecordingPayload([string]$Prefix, [string]$Label, [string]$Marker, [switch]$Legacy) {
+        $path = New-Payload $Prefix $Label
+        if ($Legacy) {
+            [IO.File]::WriteAllText((Join-Path $path 'DesktopTakeover.cs'),
+                'using System.Web.Script.Serialization; // legacy 5.1 payload marker')
+        }
+        # 5.1-compatible: reads $Prefix\install.json and fails if given the v2
+        # root instead of the resolved payload directory, mirroring a real
+        # pre-migration v2 payload whose InstallCommon lacks Resolve-CaelestiaRuntimePrefix.
+        $script = 'param([string]$Prefix, [string]$Command = "Start")' + "`n" +
+            '$rec = Get-Content -LiteralPath (Join-Path $Prefix "install.json") -Raw -Encoding UTF8 | ConvertFrom-Json' + "`n" +
+            'if ($rec.version -eq 2) { throw "Legacy payload received v2 root instead of version directory: $Prefix" }' + "`n" +
+            'if ($Command -eq "Quit") { [IO.File]::WriteAllText("' + $Marker.Replace('\', '\\') + '", ([string]$PSVersionTable.PSEdition + "|" + $Prefix)) }'
+        [IO.File]::WriteAllText((Join-Path $path 'Start-Caelestia.ps1'), $script, [Text.UTF8Encoding]::new($false))
+        return $path
+    }
+
+    # Upgrade 5.1 -> PS7: the outgoing payload is legacy, so its Quit must be
+    # dispatched to powershell.exe, while the scheduled launch task must run
+    # the incoming PS7 payload on pwsh.exe. Seed the install root and legacy
+    # payload with genuine pre-migration v2 scripts (a historical router that
+    # sources its own pre-migration Caelestia-InstallCommon and invokes the
+    # payload in-process, plus a legacy payload whose Quit loads
+    # System.Web.Extensions). Add a call marker to the historical router so we
+    # prove Install-CaelestiaVersion upgrades cleanly without invoking it.
+    $upPrefix = Join-Path $root 'up-hosts'
+    $upQuitMarker = Join-Path $root 'up-quit-host.txt'
+    $upRouterMarker = Join-Path $root 'up-router-called.txt'
+    $upLegacy = New-HostRecordingPayload $upPrefix 'up-legacy' $upQuitMarker -Legacy
+    $upLegacyRuntime = Install-CaelestiaVersion $upPrefix $upLegacy
+    # Historical pre-migration Caelestia-InstallCommon (no PS7 discovery, no
+    # cross-host dispatch) and Caelestia-Versions at the install root, matching
+    # the shipped v2 layout before #176.
+    $historicalCommon = @'
+$ErrorActionPreference = 'Stop'
+function Get-WindowsPowerShellPath { return Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
+function Resolve-CaelestiaDirectory([string]$Path) { return [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+function Test-CaelestiaSamePath([string]$Left, [string]$Right) {
+    return [string]::Equals((Resolve-CaelestiaDirectory $Left), (Resolve-CaelestiaDirectory $Right), [StringComparison]::OrdinalIgnoreCase)
+}
+function Read-CaelestiaInstall([string]$Prefix) {
+    return Get-Content -LiteralPath (Join-Path (Resolve-CaelestiaDirectory $Prefix) 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+function Resolve-CaelestiaRuntimePrefix([string]$Prefix, [switch]$Running) {
+    $root = Resolve-CaelestiaDirectory $Prefix
+    $rec = Read-CaelestiaInstall $root
+    if ($rec.version -eq 2 -and $rec.current) { return (Join-Path $root ('versions\' + $rec.current)) }
+    return $root
+}
+'@
+    # Historical pre-migration payload common file: provides Read-CaelestiaInstall
+    # and Get-WindowsPowerShellPath, without Resolve-CaelestiaRuntimePrefix.
+    $historicalPayloadCommon = @'
+$ErrorActionPreference = 'Stop'
+function Get-WindowsPowerShellPath { return Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe' }
+function Resolve-CaelestiaDirectory([string]$Path) { return [IO.Path]::GetFullPath($Path).TrimEnd('\') }
+function Read-CaelestiaInstall([string]$Prefix) {
+    return Get-Content -LiteralPath (Join-Path (Resolve-CaelestiaDirectory $Prefix) 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+'@
+    [IO.File]::WriteAllText((Join-Path $upPrefix 'Caelestia-InstallCommon.ps1'), $historicalCommon, [Text.UTF8Encoding]::new($false))
+    # Historical pre-migration v2 root router (verbatim pre-#176 Start-CaelestiaEntry
+    # dispatch shape with a call marker): sources its pre-migration common file,
+    # resolves the runtime, and dispatches in-process with `&`.
+    $historicalRouter = ('[CmdletBinding()]' + "`n" +
+        'param([string]$Prefix, [ValidateSet("Start","State","Quit","Restart","Settings","NotifyTest","AutostartStatus")][string]$Command = "Start", [switch]$DisableAutostart, [switch]$Smoke, [switch]$SkipSchemeRuntime, [switch]$PreparedSchemeRuntime, [switch]$Wait)' + "`n" +
+        '[IO.File]::WriteAllText(''' + $upRouterMarker.Replace("'", "''") + ''', [string]$PSVersionTable.PSEdition)' + "`n" +
+        'if (-not $Prefix) { $Prefix = $PSScriptRoot }' + "`n" +
+        '. (Join-Path $PSScriptRoot "Caelestia-InstallCommon.ps1")' + "`n" +
+        '$Prefix = Resolve-CaelestiaDirectory $Prefix' + "`n" +
+        '$runtime = Resolve-CaelestiaRuntimePrefix $Prefix -Running:($Command -notin @("Start", "NotifyTest"))' + "`n" +
+        'if (Test-CaelestiaSamePath $runtime $PSScriptRoot) { throw "Installation migration is incomplete. Run the installer again." }' + "`n" +
+        '$arguments = @{}' + "`n" +
+        'foreach ($key in $PSBoundParameters.Keys) { if ($key -ne "DisableAutostart") { $arguments[$key] = $PSBoundParameters[$key] } }' + "`n" +
+        '$arguments.Prefix = $runtime' + "`n" +
+        '& (Join-Path $runtime "Start-Caelestia.ps1") @arguments')
+    [IO.File]::WriteAllText((Join-Path $upPrefix 'Start-Caelestia.ps1'), $historicalRouter, [Text.UTF8Encoding]::new($false))
+    # Legacy payload Quit script: sources its own pre-migration common file
+    # (lacking Resolve-CaelestiaRuntimePrefix), validates $Prefix is the
+    # version directory (not the v2 root), and exercises JavaScriptSerializer
+    # (which succeeds on inbox 5.1 and throws TypeLoadException on PS 7).
+    [IO.File]::WriteAllText((Join-Path $upLegacyRuntime 'Caelestia-InstallCommon.ps1'), $historicalPayloadCommon, [Text.UTF8Encoding]::new($false))
+    $legacyPayloadStart = ('param([string]$Prefix, [string]$Command = "Start")' + "`n" +
+        '. (Join-Path $PSScriptRoot "Caelestia-InstallCommon.ps1")' + "`n" +
+        '$rec = Read-CaelestiaInstall $Prefix' + "`n" +
+        'if ($rec.version -eq 2) { throw "Legacy payload received v2 root instead of version directory: $Prefix" }' + "`n" +
+        'if ($Command -eq "Quit") {' + "`n" +
+        '    Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop' + "`n" +
+        '    $serialized = (New-Object Web.Script.Serialization.JavaScriptSerializer).Serialize(@{ ok = $true })' + "`n" +
+        '    if ($serialized -notmatch ''"ok":true'') { throw "JavaScriptSerializer failed" }' + "`n" +
+        '    [IO.File]::WriteAllText(''' + $upQuitMarker.Replace("'", "''") + ''', ([string]$PSVersionTable.PSEdition + "|" + $Prefix))' + "`n" +
+        '}')
+    [IO.File]::WriteAllText((Join-Path $upLegacyRuntime 'Start-Caelestia.ps1'), $legacyPayloadStart, [Text.UTF8Encoding]::new($false))
+    $script:taskExecutes.Clear()
+    $upNew = New-HostRecordingPayload $upPrefix 'up-ps7' (Join-Path $root 'up-quit2.txt')
+    $null = Install-CaelestiaVersion $upPrefix $upNew -Restart
+    Assert ($script:taskExecutes.Count -ge 1) 'The upgrade scheduled no launch task.'
+    Assert ((Split-Path -Leaf $script:taskExecutes[$script:taskExecutes.Count - 1]) -ceq 'pwsh.exe') `
+        ('An upgrade to a PS7 payload scheduled the task on ' + $script:taskExecutes[$script:taskExecutes.Count - 1])
+    Assert (-not (Test-Path -LiteralPath $upRouterMarker)) 'First live upgrade invoked the pre-migration v2 root router.'
+    Assert ((Get-Content -LiteralPath $upQuitMarker -Raw).Trim() -ceq ('Desktop|' + $upLegacyRuntime)) `
+        ('Quitting the legacy v2 payload during upgrade did not pass the payload directory on powershell.exe: ' + (Get-Content -LiteralPath $upQuitMarker -Raw).Trim())
+    Write-Output 'PASS host dispatch upgrade: Quit passed the resolved payload directory on powershell.exe without calling the pre-migration root router; the task runs the PS7 payload on pwsh.exe.'
+
+    # Supervisor DLL contract validation: an incomplete assembly (only 4-arg Run,
+    # missing 5-arg Run and MutexName) must be rejected, while a real compiled
+    # DesktopTakeover.dll passes.
+    $dllCheckDir = Join-Path $root 'dll-contract'
+    [IO.Directory]::CreateDirectory($dllCheckDir) | Out-Null
+    $incompleteDll = Join-Path $dllCheckDir 'IncompleteTakeover.dll'
+    Add-Type -OutputAssembly $incompleteDll -TypeDefinition @'
+namespace Caelestia.Takeover {
+    public static class Supervisor {
+        public static int Run(string a, bool b, bool c, bool d) { return 0; }
+        public static void RecoverActive() {}
+    }
+    public static class SupervisorSafety {
+        public static void Log(System.Action a) {}
+        public static void Fail(System.Action a, System.Action b) {}
+    }
+    public static class Native {
+        public static object Capture() { return null; }
+    }
+    public static class TakeoverJson {
+        public static string Serialize(object v) { return null; }
+        public static T Deserialize<T>(string s) where T : new() { return new T(); }
+        public static object DeserializeObject(string s) { return null; }
+    }
+    public class Launch {}
+    public class Snapshot {}
+}
+'@ -ErrorAction Stop
+    Assert (-not (Test-CaelestiaDesktopTakeoverAssembly $incompleteDll)) 'DLL validation accepted an assembly missing 5-arg Run and MutexName.'
+    $validDll = Join-Path $dllCheckDir 'DesktopTakeover.dll'
+    Add-Type -Path (Join-Path $PSScriptRoot 'DesktopTakeover.cs') -OutputAssembly $validDll `
+        -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop
+    Assert (Test-CaelestiaDesktopTakeoverAssembly $validDll) 'DLL validation rejected a valid compiled DesktopTakeover.dll.'
+    Write-Output 'PASS supervisor DLL contract: incomplete assembly rejected; full DesktopTakeover.dll accepted.'
+
+    # Scheme retry cooldown under PowerShell 7 outside UTC: a fresh UTC
+    # Z-suffixed attemptedAt timestamp (which PS 7 ConvertFrom-Json parses as a
+    # Utc DateTime) must suppress retries instead of reinterpreting as local
+    # time.
+    $cooldownProfile = Join-Path $root 'scheme-cooldown'
+    $cooldownSchemeDir = Join-Path $cooldownProfile 'scheme'
+    [IO.Directory]::CreateDirectory($cooldownSchemeDir) | Out-Null
+    $cooldownPy = Join-Path $cooldownSchemeDir 'python.exe'
+    [IO.File]::WriteAllText($cooldownPy, 'fixture')
+    Set-CaelestiaSchemeInterpreter $cooldownProfile $cooldownPy
+    $cooldownRev = Get-CaelestiaSchemeRevision $PSScriptRoot
+    $cooldownIdentity = Get-CaelestiaSchemeIdentity $PSScriptRoot $cooldownRev
+    $utcAttemptedAt = [DateTime]::UtcNow.AddMinutes(-1).ToString('o')
+    Assert ($utcAttemptedAt.EndsWith('Z', [StringComparison]::Ordinal)) 'Cooldown fixture must use a Z-suffixed UTC timestamp.'
+    [ordered]@{
+        available = $false
+        key = $cooldownIdentity.Id
+        attemptedAt = $utcAttemptedAt
+        message = 'synthetic failure'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $cooldownSchemeDir 'provision-state.json') -Encoding UTF8
+    $cooldownResult = & (Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1') -ProfileRoot $cooldownProfile -CliRevision $cooldownRev -RetryCooldownMinutes 360 |
+        Select-Object -Last 1 | ConvertFrom-Json
+    Assert ($cooldownResult.available -eq $false -and [string]$cooldownResult.message -match 'retry suppressed') `
+        ('Scheme retry cooldown failed under PowerShell 7: ' + [string]$cooldownResult.message)
+    Write-Output 'PASS scheme retry cooldown: UTC attemptedAt suppresses retries accurately outside UTC.'
+
+    # Manifest powerShellMinimumVersion floor: a payload requiring a newer
+    # PowerShell 7 version than installed must be refused rather than silently
+    # falling back to 7.4.0.
+    $floorRuntime = Join-Path $root 'floor-payload'
+    [IO.Directory]::CreateDirectory($floorRuntime) | Out-Null
+    [ordered]@{ product = 'caelestia-windows'; version = 1; powerShellMinimumVersion = '7.99.0' } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $floorRuntime 'install.json') -Encoding UTF8
+    $floorRejected = $false
+    try { $null = Get-CaelestiaPayloadPowerShellPath $floorRuntime } catch { $floorRejected = $true }
+    Assert $floorRejected 'A payload requiring PowerShell 7.99.0 fell back to 7.4.0 instead of refusing.'
+    [ordered]@{ product = 'caelestia-windows'; version = 1; powerShellMinimumVersion = '7.4.0' } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $floorRuntime 'install.json') -Encoding UTF8
+    Assert ((Get-CaelestiaPayloadPowerShellPath $floorRuntime) -ceq (Get-CaelestiaPowerShellPath)) `
+        'A payload declaring the 7.4.0 floor did not resolve PowerShell 7.'
+    Write-Output 'PASS powershell minimum floor: payload powerShellMinimumVersion governs runtime selection.'
+
+    # Rollback PS7 -> 5.1: the outgoing payload is current, so its Quit runs
+    # on pwsh.exe in-process, while the relaunch task must schedule the
+    # incoming legacy payload on powershell.exe.
+    $downMarker = Join-Path $root 'down-quit-host.txt'
+    [IO.File]::WriteAllText((Join-Path (Join-Path $upPrefix ('versions\' + (Read-CaelestiaInstall $upPrefix).current)) 'Start-Caelestia.ps1'),
+        ('param([string]$Prefix, [string]$Command = "Start")' + "`n" +
+         'if ($Command -eq "Quit") { [IO.File]::WriteAllText("' + $downMarker.Replace('\', '\\') + '", [string]$PSVersionTable.PSEdition) }'),
+        [Text.UTF8Encoding]::new($false))
+    $downTarget = [string](Read-CaelestiaInstall $upPrefix).previous
+    $script:taskExecutes.Clear()
+    $null = Switch-CaelestiaVersion $upPrefix $downTarget -Restart
+    Assert ($script:taskExecutes.Count -ge 1) 'The rollback scheduled no launch task.'
+    Assert ((Split-Path -Leaf $script:taskExecutes[$script:taskExecutes.Count - 1]) -ceq 'powershell.exe') `
+        ('A rollback to a 5.1 payload scheduled the task on ' + $script:taskExecutes[$script:taskExecutes.Count - 1])
+    Assert ((Get-Content -LiteralPath $downMarker -Raw).Trim() -ceq 'Core') `
+        'Quitting the PS7 payload during rollback did not run on pwsh.exe.'
+    Write-Output 'PASS host dispatch rollback: Quit ran the outgoing PS7 payload on pwsh.exe; the task runs the legacy payload on powershell.exe.'
+
+    # The Run-value preflight measures the incoming payload's host path, not
+    # the outgoing one. Upgrading 5.1 -> PS7 with a prefix whose PS7 command
+    # cannot fit 260 characters refuses before activation and leaves the
+    # existing 5.1 selector and Run entry untouched. 8.3 shortening is
+    # disabled so the fixture runs on every volume.
+    $savedShortPath2 = ${function:Get-CaelestiaShortPath}
+    ${function:Get-CaelestiaShortPath} = { param([string]$Path) return '' }
+    try {
+        $candNameLength = 80 - $shortRoot.Length - 1
+        Assert ($candNameLength -ge 4) 'TEMP is too deep for the candidate preflight fixture.'
+        $candPrefix = Join-Path $shortRoot ('cd-' + ('c' * ($candNameLength - 3)))
+        Assert ($candPrefix.Length -eq 80) 'The candidate fixture prefix has the wrong length.'
+        [IO.Directory]::CreateDirectory($candPrefix) | Out-Null
+        $candLegacy = New-HostRecordingPayload $candPrefix 'cand-legacy' (Join-Path $root 'cand-quit.txt') -Legacy
+        $null = Install-CaelestiaVersion $candPrefix $candLegacy
+        $candCurrent = (Read-CaelestiaInstall $candPrefix).current
+        $candIntegration = Get-CaelestiaIntegration $candPrefix
+        $candRunKey = Get-CaelestiaAutostartKey
+        $candOldRun = '"' + (Get-WindowsPowerShellPath) +
+            '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+            (Join-Path $candPrefix 'Start-Caelestia.ps1') + '"'
+        Assert ($candOldRun.Length -le 260) 'The candidate fixture''s existing Run value does not fit.'
+        # The new PS7 command at this prefix exceeds 260 once shortening is off.
+        # Pin the incoming host to the Store-length alias so the length
+        # condition holds no matter which pwsh this machine resolved.
+        $savedCandPwsh = ${function:Get-CaelestiaPowerShellPath}
+        $storeHostPath = Join-Path (Get-CaelestiaOsLocalAppData) 'Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
+        ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $storeHostPath }
+        try {
+            Assert ((Get-CaelestiaLaunchCommand $candPrefix 'start' -RuntimePrefix (New-HostRecordingPayload $candPrefix 'cand-new' (Join-Path $root 'cand-quit2.txt'))).CommandLine.Length -gt 260) `
+                'The candidate fixture''s PS7 Run command fits; the fixture cannot reproduce the refusal.'
+        } finally { ${function:Get-CaelestiaPowerShellPath} = $savedCandPwsh }
+        New-CaelestiaRegistryKey $candRunKey
+        New-ItemProperty -Path $candRunKey -Name $candIntegration.RunName -PropertyType String `
+            -Value $candOldRun -Force | Out-Null
+        try {
+            $beforeVersions = @(Get-ChildItem -LiteralPath (Join-Path $candPrefix 'versions') -Directory).Count
+            $candNew = New-HostRecordingPayload $candPrefix 'cand-new' (Join-Path $root 'cand-quit3.txt')
+            # The install must measure the incoming PS7 host (Store-length
+            # here), not the outgoing 5.1 one, so pin the host during it.
+            ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $storeHostPath }
+            try {
+            $failed = $false
+            try { $null = Install-CaelestiaVersion $candPrefix $candNew }
+            catch { $failed = $true }
+            } finally { ${function:Get-CaelestiaPowerShellPath} = $savedCandPwsh }
+            Assert $failed 'An upgrade whose PS7 Run value exceeds 260 characters was accepted.'
+            Assert ((Read-CaelestiaInstall $candPrefix).current -eq $candCurrent) 'A refused candidate upgrade changed the selected version.'
+            Assert (@(Get-ChildItem -LiteralPath (Join-Path $candPrefix 'versions') -Directory).Count -eq $beforeVersions) 'A refused candidate upgrade published a version.'
+            $candKept = Get-ItemProperty -LiteralPath $candRunKey -Name $candIntegration.RunName -ErrorAction SilentlyContinue
+            Assert ($null -ne $candKept -and [string]$candKept.($candIntegration.RunName) -eq $candOldRun) 'A refused candidate upgrade changed the existing 5.1 Run value.'
+        } finally {
+            Remove-ItemProperty -LiteralPath $candRunKey -Name $candIntegration.RunName -ErrorAction SilentlyContinue
+        }
+
+        # A real default-length prefix with 8.3 unavailable: the Store alias
+        # host path is long enough to refuse, while the short MSI path fits.
+        # Both are measured against the incoming payload, and a refusal leaves
+        # every existing entry untouched.
+        $realPrefix = Join-Path $shortRoot ('df-' + ('d' * ($candNameLength - 3)))
+        Assert ($realPrefix.Length -eq 80) 'The default-length fixture prefix has the wrong length.'
+        [IO.Directory]::CreateDirectory($realPrefix) | Out-Null
+        $realLegacy = New-HostRecordingPayload $realPrefix 'df-legacy' (Join-Path $root 'df-quit.txt') -Legacy
+        $null = Install-CaelestiaVersion $realPrefix $realLegacy
+        $realIntegration = Get-CaelestiaIntegration $realPrefix
+        $realRunKey = Get-CaelestiaAutostartKey
+        $realOldRun = '"' + (Get-WindowsPowerShellPath) +
+            '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+            (Join-Path $realPrefix 'Start-Caelestia.ps1') + '"'
+        New-CaelestiaRegistryKey $realRunKey
+        New-ItemProperty -Path $realRunKey -Name $realIntegration.RunName -PropertyType String `
+            -Value $realOldRun -Force | Out-Null
+        try {
+            # Short MSI-length host: fits without any 8.3 name.
+            $savedPwsh = ${function:Get-CaelestiaPowerShellPath}
+            $msihost = Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe'
+            ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $msihost }
+            try {
+                $null = Install-CaelestiaVersion $realPrefix (New-HostRecordingPayload $realPrefix 'df-new' (Join-Path $root 'df-quit2.txt'))
+                Assert ((Get-CaelestiaAutostartValue $realPrefix -RuntimePrefix (Resolve-CaelestiaRuntimePrefix $realPrefix)).Length -le 260) `
+                    'A default-length prefix Run value with the MSI host path exceeded 260 characters.'
+            } finally { ${function:Get-CaelestiaPowerShellPath} = $savedPwsh }
+
+            # Store-length host on a fresh prefix: the command cannot fit and
+            # the install refuses before registering anything.
+            $storeHost = Join-Path (Get-CaelestiaOsLocalAppData) 'Microsoft\WindowsApps\Microsoft.PowerShell_8wekyb3d8bbwe\pwsh.exe'
+            $longStorePrefix = Join-Path $shortRoot ('st-' + ('s' * ($candNameLength - 3)))
+            [IO.Directory]::CreateDirectory($longStorePrefix) | Out-Null
+            $storeLegacy = New-HostRecordingPayload $longStorePrefix 'st-legacy' (Join-Path $root 'st-quit.txt') -Legacy
+            $null = Install-CaelestiaVersion $longStorePrefix $storeLegacy
+            $storeIntegration = Get-CaelestiaIntegration $longStorePrefix
+            $storeOldRun = '"' + (Get-WindowsPowerShellPath) +
+                '" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+                (Join-Path $longStorePrefix 'Start-Caelestia.ps1') + '"'
+            New-ItemProperty -Path $realRunKey -Name $storeIntegration.RunName -PropertyType String `
+                -Value $storeOldRun -Force | Out-Null
+            ${function:Get-CaelestiaPowerShellPath} = { param([version]$MinimumVersion = [version]'7.4.0') return $storeHost }
+            try {
+                $storeFailed = $false
+                try { $null = Install-CaelestiaVersion $longStorePrefix (New-HostRecordingPayload $longStorePrefix 'st-new' (Join-Path $root 'st-quit2.txt')) }
+                catch { $storeFailed = $true }
+                Assert $storeFailed 'A Store-length host Run value that cannot fit was accepted.'
+                $storeKept = Get-ItemProperty -LiteralPath $realRunKey -Name $storeIntegration.RunName -ErrorAction SilentlyContinue
+                Assert ($null -ne $storeKept -and [string]$storeKept.($storeIntegration.RunName) -eq $storeOldRun) 'A refused Store-length upgrade changed the existing Run value.'
+            } finally {
+                ${function:Get-CaelestiaPowerShellPath} = $savedPwsh
+                Remove-ItemProperty -LiteralPath $realRunKey -Name $storeIntegration.RunName -ErrorAction SilentlyContinue
+            }
+        } finally {
+            Remove-ItemProperty -LiteralPath $realRunKey -Name $realIntegration.RunName -ErrorAction SilentlyContinue
+        }
+        Write-Output 'PASS run-value preflight host: preflight measures the incoming payload host for upgrade and rollback; MSI-length fits, Store-length refuses cleanly.'
+    } finally {
+        Set-Item -Path function:Get-CaelestiaShortPath -Value $savedShortPath2
+    }
+
+    # BOM-less UTF-8 manifests under inbox Windows PowerShell 5.1. PowerShell
+    # 5.1's default decoding is the ANSI code page, so every JSON read in the
+    # release verifier must name -Encoding UTF8 explicitly. Prove it: write a
+    # release.json without a BOM holding non-ASCII metadata, then have real
+    # powershell.exe read it through the verifier's own AST.
+    $utf8Manifest = Join-Path $root 'utf8-release.json'
+    # Real non-ASCII bytes built from code points keep this script ASCII-safe
+    # while still proving the decoder: without -Encoding UTF8, 5.1 reads the
+    # multi-byte sequences as ANSI and mangles them.
+    $nonAscii = 'C:\ZqApps\Ch' + [char]0x00E2 + 'telain ' + [char]0x03A9 + '\caelestia-' + [char]0x5237 + [char]0x6F06
+    [IO.File]::WriteAllText($utf8Manifest,
+        ('{"schema":"caelestia-windows-release","version":1,"releaseId":"' + $nonAscii.Replace('\', '\\') + '","files":[]}'),
+        [Text.UTF8Encoding]::new($false))
+    Assert (([IO.File]::ReadAllBytes($utf8Manifest))[0] -ne 0xEF) 'The fixture wrote a BOM.'
+    $verifierSource = Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'
+    $readUnder51 = @'
+param([string]$Verifier, [string]$Manifest)
+$ErrorActionPreference = 'Stop'
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($Verifier, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'Verifier does not parse under 5.1.' }
+# The verifier reads release.json with Get-Content -Encoding UTF8. Without the
+# flag, 5.1 decodes BOM-less UTF-8 as ANSI and mangles non-ASCII metadata.
+$source = Get-Content -LiteralPath $Verifier -Raw
+if ($source -notmatch 'Get-Content -LiteralPath \(Join-Path \$Root ''release\.json''\) -Raw -Encoding UTF8') {
+    throw 'The release.json read lost -Encoding UTF8.'
+}
+# Careful: the [string]$Manifest parameter's type constraint would coerce a
+# PSCustomObject back to string; keep the parsed object in a fresh variable.
+$parsed = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+Write-Output $parsed.releaseId
+'@
+    $readScriptPath = Join-Path $root 'read-utf8.ps1'
+    [IO.File]::WriteAllText($readScriptPath, $readUnder51, [Text.UTF8Encoding]::new($false))
+    $powershell51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $readOutput = & $powershell51 -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+        -File $readScriptPath -Verifier $verifierSource -Manifest $utf8Manifest 2>&1 | Out-String
+    Assert ($LASTEXITCODE -eq 0) ('The 5.1 manifest read failed: ' + $readOutput)
+    Assert ($readOutput.Trim() -ceq $nonAscii) 'Inbox Windows PowerShell 5.1 mangled the BOM-less UTF-8 manifest metadata.'
+    Write-Output 'PASS manifest encoding: a BOM-less UTF-8 release.json with non-ASCII metadata reads accurately under powershell.exe 5.1.'
 } finally {
     if (Test-Path -LiteralPath $script:registryTestRoot) {
         $registryItem = Get-Item -LiteralPath $script:registryTestRoot

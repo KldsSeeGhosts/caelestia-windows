@@ -31,6 +31,66 @@ function Test-SupportLiteral($Value, [string]$Expected) {
     return ($Value -is [string] -and $Value -ceq $Expected)
 }
 
+# Convert a parsed System.Text.Json tree into the same plain data shape the
+# previous JavaScriptSerializer produced: nested case-sensitive dictionaries,
+# object arrays, integer (long) vs floating (double) numbers, booleans,
+# strings and null. Callers bound recursion before this runs.
+function ConvertFrom-CaelestiaJsonElement($Element) {
+    switch ($Element.ValueKind) {
+        'Object' {
+            # OrderedDictionary (not Dictionary[string,object]) because it
+            # implements System.Collections.IDictionary on .NET Core; the
+            # generic type lost that interface after .NET Framework.
+            $result = [Collections.Specialized.OrderedDictionary]::new()
+            foreach ($property in $Element.EnumerateObject()) {
+                $result[$property.Name] = ConvertFrom-CaelestiaJsonElement $property.Value
+            }
+            return ,$result
+        }
+        'Array' {
+            # A generic list keeps nested array results intact; `+=` on a plain
+            # array would flatten a child's single-element wrapper into it.
+            $items = [Collections.Generic.List[object]]::new()
+            foreach ($item in $Element.EnumerateArray()) {
+                $items.Add((ConvertFrom-CaelestiaJsonElement $item))
+            }
+            return ,$items.ToArray()
+        }
+        'String' { return $Element.GetString() }
+        'Number' {
+            # Match JavaScriptSerializer: integers within Int32 range arrive as
+            # int, larger integers as long, everything else as a floating type.
+            $int = 0
+            if ($Element.TryGetInt32([ref]$int)) { return $int }
+            $long = 0L
+            if ($Element.TryGetInt64([ref]$long)) { return $long }
+            return $Element.GetDouble()
+        }
+        'True' { return $true }
+        'False' { return $false }
+        default { return $null }
+    }
+}
+
+# Fixed-depth, fixed-byte JSON reader shared by every metadata file. It never
+# produces an untrusted object graph: only dictionaries, arrays and scalars.
+function ConvertFrom-CaelestiaSupportJson([string]$Text, [int]$ByteLimit) {
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        $options = [Text.Json.JsonDocumentOptions]::new()
+        $options.MaxDepth = 24
+        $document = [Text.Json.JsonDocument]::Parse($Text, $options)
+        # Comma-wrap so a top-level JSON array survives as one return value,
+        # the same shape JavaScriptSerializer hands callers on 5.1.
+        try { return ,(ConvertFrom-CaelestiaJsonElement $document.RootElement) }
+        finally { $document.Dispose() }
+    }
+    Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop
+    $parser = [Web.Script.Serialization.JavaScriptSerializer]::new()
+    $parser.MaxJsonLength = $ByteLimit
+    $parser.RecursionLimit = 24
+    return ,$parser.DeserializeObject($Text)
+}
+
 function Test-SupportVersion($Value, [int[]]$Allowed = @(1)) {
     return ($Value -is [int] -and $Value -in $Allowed)
 }
@@ -116,11 +176,7 @@ function Read-SupportJson([string]$Path, [int]$Limit) {
         if ($count -gt $Limit) { return @{ reason = 'oversized'; data = $null } }
         $utf8 = [Text.UTF8Encoding]::new($false, $true)
         $text = $utf8.GetString($buffer, 0, $count).TrimStart([char]0xfeff)
-        Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop
-        $parser = [Web.Script.Serialization.JavaScriptSerializer]::new()
-        $parser.MaxJsonLength = $Limit
-        $parser.RecursionLimit = 24
-        $data = $parser.DeserializeObject($text)
+        $data = ConvertFrom-CaelestiaSupportJson $text $Limit
         if ($data -isnot [Collections.IDictionary]) { throw 'invalid' }
         return @{ reason = 'none'; data = $data }
     } catch [IO.FileNotFoundException] {

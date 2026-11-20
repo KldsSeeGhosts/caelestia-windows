@@ -32,17 +32,35 @@ QtObject {
         const value = String(Quickshell.env("CAELESTIA_INSTALL_ROOT") ?? "");
         return value.replace(/[\\/]+$/, "");
     }
-    readonly property string systemRoot: {
-        const value = String(Quickshell.env("SystemRoot") ?? "");
-        return value.replace(/[\\/]+$/, "");
-    }
     // CAELESTIA_INSTALL_ROOT is the stable install root, never a version
     // payload. Start-Caelestia.ps1 there is the installed copy of
     // Start-CaelestiaEntry.ps1, which owns the Run entry and routes to the
     // selected runtime after consuming -Command Quit -DisableAutostart.
     readonly property string launcher: installRoot ? installRoot + "\\Start-Caelestia.ps1" : ""
-    readonly property string powershell: systemRoot
-        ? systemRoot + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" : ""
+    // The launcher passes the verified PowerShell 7 path. A standalone run
+    // falls back to the fixed install locations rather than relying on PATH.
+    readonly property string powershell: {
+        const configured = String(Quickshell.env("CAELESTIA_POWERSHELL") ?? "");
+        if (configured.length > 0)
+            return configured;
+        const programFiles = String(Quickshell.env("ProgramFiles") ?? "");
+        if (programFiles.length > 0) {
+            const bundled = programFiles + "\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(bundled))
+                return bundled;
+        }
+        const localAppData = String(Quickshell.env("LOCALAPPDATA") ?? "");
+        if (localAppData.length > 0) {
+            const perUser = localAppData + "\\Programs\\PowerShell\\7\\pwsh.exe";
+            if (WindowsFiles.isFile(perUser))
+                return perUser;
+            const storeAlias = localAppData
+                + "\\Microsoft\\WindowsApps\\Microsoft.PowerShell_8wekyb3d8bbwe\\pwsh.exe";
+            if (WindowsFiles.isFile(storeAlias))
+                return storeAlias;
+        }
+        return "";
+    }
     readonly property bool live: Quickshell.env("CAELESTIA_SHELL_LIVE") === "1"
     readonly property bool smoke: Quickshell.env("CAELESTIA_SHELL_SMOKE") === "1"
 

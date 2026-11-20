@@ -86,14 +86,24 @@ New-Item -ItemType Directory -Path $testRoot | Out-Null
 try {
     function New-VersionedFixture([string]$Version) {
         # Real PE file-version resources without VS, SDK or native compiler
-        # prerequisites. These assemblies are inspected, never executed.
+        # prerequisites. PowerShell 7's Add-Type -OutputAssembly omits the
+        # Win32 VS_VERSION_INFO resource that FileVersionInfo reads, so
+        # compile the fixture DLL with inbox csc.exe.
         $id = [guid]::NewGuid().ToString('N')
         $file = Join-Path $testRoot "$id.dll"
-        Add-Type -OutputAssembly $file -TypeDefinition @"
+        $source = Join-Path $testRoot "$id.cs"
+        [IO.File]::WriteAllText($source, @"
 using System.Reflection;
 [assembly: AssemblyFileVersion("$Version")]
 public class Fixture_$id {}
-"@
+"@, [Text.UTF8Encoding]::new($false))
+        $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+        if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) {
+            $csc = Join-Path $env:SystemRoot 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
+        }
+        if (-not (Test-Path -LiteralPath $csc -PathType Leaf)) { throw 'Missing inbox .NET Framework csc.exe for versioned fixture.' }
+        $output = & $csc /nologo /target:library ("/out:$file") $source 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "csc.exe failed for versioned fixture: $output" }
         return $file
     }
     $qualifiedBinary = New-VersionedFixture $spec.vcRedistVersion

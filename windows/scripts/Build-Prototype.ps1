@@ -487,29 +487,99 @@ $supervisorAssembly = Join-Path $installRoot 'DesktopTakeover.dll'
 $supervisorMetadata = Join-Path $installRoot 'DesktopTakeover.build.json'
 $supervisorSourceHash = (Get-FileHash -LiteralPath $supervisorSource).Hash
 $supervisorReady = $false
+# Resolve the desktop host first. The cache check and the metadata record must
+# name the CLR the supervisor will actually compile and run under, which is
+# the resolved pwsh host's runtime, not this caller's. When this script runs
+# on Windows PowerShell 5.1 the two differ (Framework 4.x vs .NET 8/9), and a
+# cached DLL built on .NET would be wrongly accepted or wrongly invalidated.
+if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')) {
+    . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+}
+if (Get-Command Get-CaelestiaPowerShellPath -ErrorAction SilentlyContinue) {
+    $supervisorPowerShell = Get-CaelestiaPowerShellPath
+} else {
+    $supervisorPowerShell = (Get-Command pwsh -CommandType Application -ErrorAction Stop |
+        Select-Object -First 1).Source
+}
+# The CLR, edition and PS version the compile host reports for itself. All
+# three feed the cache check and the recorded metadata, so a caller on 5.1
+# writes what the pwsh host saw rather than its own Framework version. A probe
+# that fails or answers malformed is fatal: a guessed value would accept or
+# invalidate the wrong cached image.
+# -EncodedCommand (UTF-16LE) keeps the probe intact on every host: an inbox
+# 5.1 -Command parse strips the quotes around "|" and the pipeline would run
+# three commands instead of one expression.
+$probeSource = '[Environment]::Version.ToString() + ''|'' + $PSVersionTable.PSEdition + ''|'' + $PSVersionTable.PSVersion.ToString()'
+$probeEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probeSource))
+$compileProbe = [string[]](& $supervisorPowerShell -NoProfile -NonInteractive -EncodedCommand $probeEncoded)
+if ($LASTEXITCODE -ne 0 -or -not $compileProbe -or @($compileProbe).Count -ne 1) {
+    throw 'The supervisor compile host did not report its CLR and edition.'
+}
+$compileProbeParts = ([string]$compileProbe[0]).Trim() -split '\|'
+if ($compileProbeParts.Count -ne 3 -or -not $compileProbeParts[0] -or -not $compileProbeParts[1] -or -not $compileProbeParts[2]) {
+    throw 'The supervisor compile host returned a malformed CLR/edition probe.'
+}
+$compileClrVersion = $compileProbeParts[0]
+$compileEdition = $compileProbeParts[1]
+$compilePsVersion = $compileProbeParts[2]
 if ((Test-Path -LiteralPath $supervisorMetadata) -and (Test-Path -LiteralPath $supervisorAssembly)) {
-    $priorSupervisor = Get-Content -LiteralPath $supervisorMetadata -Raw | ConvertFrom-Json
+    $priorSupervisor = Get-Content -LiteralPath $supervisorMetadata -Raw -Encoding UTF8 | ConvertFrom-Json
     $supervisorReady = $priorSupervisor.sourceSha256 -eq $supervisorSourceHash -and
-        $priorSupervisor.clrVersion -eq [Environment]::Version.ToString() -and
+        $priorSupervisor.clrVersion -eq $compileClrVersion -and
+        $priorSupervisor.psEdition -eq $compileEdition -and
         $priorSupervisor.assemblySha256 -eq (Get-FileHash -LiteralPath $supervisorAssembly).Hash
 }
 if (-not $supervisorReady) {
     if (Test-Path -LiteralPath $supervisorAssembly) { Remove-Item -LiteralPath $supervisorAssembly }
-    $compileSupervisor = "Add-Type -Path '" + $supervisorSource.Replace("'", "''") +
+    # The reference list is computed inside the compile host, where the
+    # runtime and WinForms probe directories are the ones the DLL will load
+    # against. Computing them in the caller would name this host's runtime.
+    $escapedCommon = (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1').Replace("'", "''")
+    $compileSupervisor = ". '$escapedCommon'; " +
+        "Add-Type -Path '" + $supervisorSource.Replace("'", "''") +
         "' -OutputAssembly '" + $supervisorAssembly.Replace("'", "''") +
-        "' -ReferencedAssemblies System.Windows.Forms,System.Web.Extensions -ErrorAction Stop"
-    & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command $compileSupervisor
+        "' -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop"
+    & $supervisorPowerShell -NoProfile -NonInteractive -Command $compileSupervisor
     if ($LASTEXITCODE -ne 0) { throw 'Production supervisor compilation failed.' }
 }
 $supervisor = [ordered]@{
     sourceSha256 = $supervisorSourceHash
     assemblySha256 = (Get-FileHash -LiteralPath $supervisorAssembly).Hash
-    clrVersion = [Environment]::Version.ToString()
+    clrVersion = $compileClrVersion
+    psEdition = $compileEdition
+    psVersion = $compilePsVersion
 }
 $supervisor | ConvertTo-Json | Set-Content -LiteralPath $supervisorMetadata -Encoding UTF8
-# Metadata-only reflection never constructs a supervisor or invokes Win32.
-$supervisorReflection = [Reflection.Assembly]::ReflectionOnlyLoadFrom($supervisorAssembly)
-if (-not $supervisorReflection.GetType('Caelestia.Takeover.SupervisorSafety', $false)) {
+# Metadata-only PE inspection never constructs a supervisor or invokes Win32.
+# ReflectionOnlyLoadFrom is unsupported on the .NET runtime that hosts
+# PowerShell 7, so read the type table through System.Reflection.Metadata.
+# The read runs inside the resolved supervisor host rather than this caller:
+# an inbox 5.1 caller lacks PEReader entirely, while the compile host always
+# has the System.Reflection.Metadata facade the DLL was built against.
+$abiSource = @'
+$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__DLLB64__'))
+$stream = [IO.File]::OpenRead($path)
+try {
+    $peReader = [System.Reflection.PortableExecutable.PEReader]::new($stream)
+    try {
+        $reader = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($peReader)
+        $found = $false
+        foreach ($typeHandle in $reader.TypeDefinitions) {
+            $typeDefinition = $reader.GetTypeDefinition($typeHandle)
+            if ($reader.GetString($typeDefinition.Namespace) -eq 'Caelestia.Takeover' -and
+                $reader.GetString($typeDefinition.Name) -eq 'SupervisorSafety') {
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) { exit 3 }
+    } finally { $peReader.Dispose() }
+} finally { $stream.Dispose() }
+'@
+$abiSource = $abiSource.Replace('__DLLB64__', [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($supervisorAssembly)))
+$abiEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($abiSource))
+& $supervisorPowerShell -NoProfile -NonInteractive -EncodedCommand $abiEncoded | Out-Null
+if ($LASTEXITCODE -ne 0) {
     throw 'Production supervisor ABI verification failed.'
 }
 $nativeFiles = @((Get-Item -LiteralPath "$BuildRoot\quickshell\qs.exe"),
