@@ -51,13 +51,24 @@ function decodeFileUri(uri) {
     return parsed.path;
 }
 
+// Ordinary clipboard text almost never holds a file URL. A case-insensitive
+// substring check is far cheaper than splitting every line and running the
+// URI parser on each, so skip the split entirely without one.
+function mayContainFileUrl(text) {
+    return /file:/i.test(text);
+}
+
 // Windows clipboard text may contain "file://" lines. Keep the reference's
 // file-reference presentation for those, with Windows-aware basenames.
 function filePaths(entry) {
     if (!entry || entry.type !== "text")
         return [];
 
-    const lines = String(entry.text || "").split(/\r?\n/);
+    const text = String(entry.text || "");
+    if (!mayContainFileUrl(text))
+        return [];
+
+    const lines = text.split(/\r?\n/);
     const paths = [];
     for (let i = 0; i < lines.length; i++) {
         const path = decodeFileUri(lines[i]);
@@ -117,23 +128,25 @@ function charCount(text) {
     return text.length;
 }
 
-function searchableText(entry) {
+function searchableText(entry, paths) {
     if (!entry)
         return "";
     if (entry.type === "image")
         return `image screenshot bitmap ${entry.formats} ${entry.timestampLabel} ${entry.timestamp}`;
     if (entry.type === "other")
         return `clipboard item ${entry.formats} ${entry.timestampLabel} ${entry.timestamp}`;
-    return `${String(entry.text || "")} ${fileEntryText(entry)}`;
+    return `${String(entry.text || "")} ${fileEntryText(entry, paths)}`;
 }
 
-function fileEntryText(entry) {
-    const paths = filePaths(entry);
-    if (paths.length === 0)
+// Callers that already decoded the row pass the list in so each entry's text
+// is split and its URIs parsed once per displayRows pass, not once per field.
+function fileEntryText(entry, paths) {
+    const list = paths === undefined ? filePaths(entry) : paths;
+    if (list.length === 0)
         return "";
-    if (paths.length === 1)
-        return fileName(paths[0]);
-    return `${paths.length} files`;
+    if (list.length === 1)
+        return fileName(list[0]);
+    return `${list.length} files`;
 }
 
 function imagePreviewText(entry) {
@@ -146,23 +159,23 @@ function otherPreviewText(entry) {
     return formats ? `Clipboard item (${formats})` : "Clipboard item";
 }
 
-function entryTitle(entry) {
+function entryTitle(entry, paths) {
     if (!entry) return "";
     if (entry.type === "image") return imagePreviewText(entry);
     if (entry.type === "other") return otherPreviewText(entry);
-    const paths = filePaths(entry);
-    if (paths.length > 0) return fileEntryText(entry);
+    const list = paths === undefined ? filePaths(entry) : paths;
+    if (list.length > 0) return fileEntryText(entry, list);
     const lines = String(entry.text || "").trim().split(/\r?\n/);
     return lines[0] ? lines[0].trim() : "";
 }
 
-function entrySubtitle(entry) {
+function entrySubtitle(entry, paths) {
     if (!entry) return "";
     if (entry.type === "image") return entry.timestampLabel || entry.formats;
     if (entry.type === "other") return entry.timestampLabel || entry.formats;
-    const paths = filePaths(entry);
-    if (paths.length > 1) return paths.slice(0, 3).map(fileName).join(", ");
-    if (paths.length === 1) return paths[0];
+    const list = paths === undefined ? filePaths(entry) : paths;
+    if (list.length > 1) return list.slice(0, 3).map(fileName).join(", ");
+    if (list.length === 1) return list[0];
     const lines = String(entry.text || "").trim().split(/\r?\n/);
     if (lines.length > 1) {
         return lines.slice(1).map(l => l.trim()).filter(Boolean).join(" ");
@@ -170,27 +183,27 @@ function entrySubtitle(entry) {
     return "";
 }
 
-function previewText(entry) {
+function previewText(entry, paths) {
     if (!entry)
         return "";
     if (entry.type === "image")
         return imagePreviewText(entry);
     if (entry.type === "other")
         return otherPreviewText(entry);
-    const fileText = fileEntryText(entry);
+    const fileText = fileEntryText(entry, paths);
     if (fileText)
         return fileText;
     return String(entry.text || "").replace(/\s+/g, " ");
 }
 
-function fullText(entry) {
+function fullText(entry, paths) {
     if (!entry)
         return "";
     if (entry.type === "image" || entry.type === "other")
         return "";
-    const paths = filePaths(entry);
-    if (paths.length > 0)
-        return paths.join("\n");
+    const list = paths === undefined ? filePaths(entry) : paths;
+    if (list.length > 0)
+        return list.join("\n");
     return String(entry.text || "");
 }
 
@@ -264,17 +277,21 @@ function displayRows(history, query, limit) {
         const original = normalizeEntry(values[i]);
         if (!original)
             continue;
+        const entry = cappedEntry(original);
+        // Parse the visible URI list once per row and reuse it for the title,
+        // subtitle, preview and full text below. Search needs the uncapped
+        // text, so it keeps its own list only when capping actually cut text.
+        const paths = filePaths(entry);
+        const searchPaths = entry === original ? paths : filePaths(original);
         // Bound rendering, not searching: matches beyond the preview limit
         // must still find the original clipboard entry.
-        if (needle && searchableText(original).toLowerCase().indexOf(needle) < 0)
+        if (needle && searchableText(original, searchPaths).toLowerCase().indexOf(needle) < 0)
             continue;
-        const entry = cappedEntry(original);
 
-        const paths = filePaths(entry);
         const isFile = paths.length > 0;
         const isImage = entry.type === "image";
         const isOther = entry.type === "other";
-        const text = isImage || isOther ? "" : fullText(entry);
+        const text = isImage || isOther ? "" : fullText(entry, paths);
         const isUrl = !isImage && !isOther && !isFile && isUrlText(text);
         const isColor = !isImage && !isOther && !isFile && isColorText(text);
         const isCode = !isImage && !isOther && !isFile && !isUrl && !isColor && isCodeText(text);
@@ -294,10 +311,10 @@ function displayRows(history, query, limit) {
         rows.push({
             itemId: entry.id,
             entryType: type,
-            title: entryTitle(entry),
-            subtitle: entrySubtitle(entry),
+            title: entryTitle(entry, paths),
+            subtitle: entrySubtitle(entry, paths),
             fullText: text,
-            previewText: previewText(entry),
+            previewText: previewText(entry, paths),
             previewImage: previewImage,
             path: isFile && paths.length === 1 ? paths[0] : "",
             formats: entry.formats,
