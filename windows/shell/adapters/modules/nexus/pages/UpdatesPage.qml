@@ -33,16 +33,14 @@ PageBase {
     property string loadState: "idle"
     property var info: null
     property bool confirming: false
-    property bool confirmingDevelopment: false
     property bool detailsExpanded: false
-    property string channelError: ""
     property var checkResult: null
     readonly property bool rollbackSubmitted: UpdateManager.submitted
     readonly property bool rollbackFailed: UpdateManager.failed
     readonly property bool rollbackUnconfirmed: UpdateManager.unconfirmed
     readonly property bool rollbackComplete: UpdateManager.complete
     readonly property bool loaded: loadState === "ready" && info !== null
-    readonly property bool busy: loadState === "loading" || rollbackSubmitted || checkProc.running || channelProc.running
+    readonly property bool busy: loadState === "loading" || rollbackSubmitted || checkProc.running
     readonly property bool versioned: loaded && updateStatus.versioned
     readonly property string selectedId: loaded ? updateStatus.current : ""
     readonly property string previousId: loaded ? updateStatus.previous : ""
@@ -50,13 +48,14 @@ PageBase {
     readonly property bool stale: loaded && runningId !== "" && selectedId !== "" && selectedId !== runningId
     readonly property string runningLabel: runningId === "legacy" ? Tr.tr("Legacy install")
         : UpdatesLogic.formatVersion((!stale && updateStatus.displayVersion) || runningId)
-    readonly property bool channelBlocked: smoke || !available || !loaded || busy || rollbackUnconfirmed || rollbackComplete
+    readonly property bool updateBlocked: smoke || !available || !loaded || busy || rollbackUnconfirmed || rollbackComplete || stale
+    readonly property var availableUpdate: checkResult?.channel === UpdatesLogic.releaseFeed ? checkResult.available : null
     readonly property var primary: UpdatesLogic.primaryState({
         operationState: UpdateManager.operationState, operationKind: UpdateManager.operationKind,
         step: UpdateManager.step, checking: checkProc.running, result: checkResult,
-        available: checkResult?.channel === updateStatus.channel ? checkResult.available : null,
+        available: availableUpdate,
         configured: loaded ? updateStatus.updatesConfigured : undefined,
-        notice: notice, blocked: channelBlocked || stale
+        notice: notice, blocked: updateBlocked
     })
     readonly property string rollbackBlocker: {
         if (smoke) return Tr.tr("Turned off during smoke runs");
@@ -76,7 +75,6 @@ PageBase {
         if (!available) return Tr.tr("Version management needs an installed Caelestia.");
         if (loadState === "error") return Tr.tr("Version status could not be read. Refresh in Details to retry.");
         if (stale) return Tr.tr("Restart Caelestia first; a different version is selected.");
-        if (channelError) return channelError;
         if (!loaded) return Tr.tr("Reading installed versions\u2026");
         return "";
     }
@@ -102,32 +100,15 @@ PageBase {
         UpdateManager.request(powershellCommand(["-Command", "Rollback", "-ExpectedCurrent", selectedId]));
     }
     function check(): void {
-        if (channelBlocked || stale) return;
+        if (updateBlocked) return;
         checkResult = null;
-        checkProc.command = powershellCommand(["-Command", "CheckUpdate"]);
+        checkProc.command = powershellCommand(["-Command", "CheckUpdate", "-Channel", UpdatesLogic.releaseFeed]);
         checkProc.running = true;
     }
-    function selectChannel(channel: string): void {
-        if (channelBlocked) return;
-        confirmingDevelopment = false;
-        if (channel === updateStatus.channel) return;
-        if (channel === "development") confirmingDevelopment = true;
-        else setChannel(channel);
-    }
-    function setChannel(channel: string): void {
-        if (channelBlocked) return;
-        checkResult = null;
-        confirmingDevelopment = false;
-        channelError = "";
-        const args = ["-Command", "SetChannel", "-Channel", channel];
-        if (channel === "development") args.push("-AcceptDevelopment");
-        channelProc.command = powershellCommand(args);
-        channelProc.running = true;
-    }
     function requestUpdate(): void {
-        if (channelBlocked || stale || !checkResult?.available || checkResult.channel !== updateStatus.channel) return;
+        if (updateBlocked || !availableUpdate) return;
         UpdateManager.request(powershellCommand(["-Command", "Update", "-ExpectedCurrent", selectedId,
-            "-ExpectedBuild", checkResult.available.buildVersion, "-Channel", checkResult.channel]), "update");
+            "-ExpectedBuild", availableUpdate.buildVersion, "-Channel", UpdatesLogic.releaseFeed]), "update");
     }
     function activatePrimary(): void {
         if (primary.disabled) return;
@@ -170,7 +151,6 @@ PageBase {
     title: Tr.tr("Updates")
     Component.onCompleted: refresh()
     onCanRollbackChanged: { if (!canRollback) confirming = false; }
-    onChannelBlockedChanged: { if (channelBlocked) confirmingDevelopment = false; }
 
     property Process statusProcess: Process {
         id: statusProc
@@ -187,14 +167,7 @@ PageBase {
         id: checkProc
         stdout: StdioCollector { id: checkOut }
         onExited: code => root.checkResult = UpdatesLogic.parseCheck(code, checkOut.text.trim()) ||
-            {state: "bad-metadata", channel: root.updateStatus.channel, available: null}
-    }
-    property Process channelProcess: Process {
-        id: channelProc
-        onExited: code => {
-            if (code === 0) root.refresh();
-            else root.channelError = Tr.tr("Channel could not be changed. Try again.");
-        }
+            {state: "bad-metadata", available: null}
     }
 
     // Native buttons with the keyboard/focus contract used by Nexus rows.
@@ -250,7 +223,7 @@ PageBase {
                     Layout.fillWidth: true
                     text: Tr.tr(root.primary.status)
                     font: Tokens.font.body.medium
-                    color: root.rollbackFailed || root.loadState === "error" || root.channelError
+                    color: root.rollbackFailed || root.loadState === "error"
                         ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                     wrapMode: Text.WordWrap
                     Accessible.role: Accessible.StaticText
@@ -304,86 +277,11 @@ PageBase {
                 }
                 StyledText {
                     Layout.fillWidth: true
-                    visible: !!root.checkResult?.available && !root.rollbackSubmitted
+                    visible: !!root.availableUpdate && !root.rollbackSubmitted
                     text: Tr.tr("Downloads, verifies, installs and restarts. Your settings are kept.")
                     font: Tokens.font.label.small
                     color: Colours.palette.m3onSurfaceVariant
                     wrapMode: Text.WordWrap
-                }
-            }
-        }
-
-        ConnectedRect {
-            Layout.fillWidth: true
-            Layout.topMargin: Tokens.spacing.medium
-            first: true
-            last: !root.confirmingDevelopment
-            implicitHeight: channelLayout.implicitHeight + Tokens.padding.medium * 2
-            ColumnLayout {
-                id: channelLayout
-                anchors.fill: parent
-                anchors.margins: Tokens.padding.medium
-                spacing: Tokens.spacing.small
-                StyledText {
-                    text: Tr.tr("Update channel")
-                    font: Tokens.font.body.small
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Tokens.spacing.extraSmall
-                    Repeater {
-                        model: [
-                            {channel: "stable", label: Tr.tr("Stable")},
-                            {channel: "preview", label: Tr.tr("Preview")},
-                            {channel: "development", label: Tr.tr("Development")}
-                        ]
-                        delegate: ActionButton {
-                            required property var modelData
-                            objectName: `channel-${modelData.channel}`
-                            Layout.fillWidth: true
-                            horizontalPadding: Tokens.padding.small
-                            type: TextButton.Tonal
-                            text: modelData.label
-                            checked: root.updateStatus.channel === modelData.channel
-                            disabled: root.channelBlocked
-                            border.width: checked ? 1 : 0
-                            border.color: Colours.palette.m3outline
-                            Accessible.role: Accessible.RadioButton
-                            Accessible.name: Tr.tr("Update channel: %1").arg(modelData.label)
-                            Accessible.checked: checked
-                            onClicked: root.selectChannel(modelData.channel)
-                        }
-                    }
-                }
-            }
-        }
-        ConnectedRect {
-            Layout.fillWidth: true
-            visible: root.confirmingDevelopment
-            last: true
-            implicitHeight: warning.implicitHeight + Tokens.padding.medium * 2
-            ColumnLayout {
-                id: warning
-                anchors.fill: parent
-                anchors.margins: Tokens.padding.medium
-                StyledText {
-                    Layout.fillWidth: true
-                    text: Tr.tr("Development builds follow verified main. They can break. Switch to Development?")
-                    wrapMode: Text.WordWrap
-                    font: Tokens.font.body.small
-                }
-                RowLayout {
-                    ActionButton {
-                        objectName: "confirmDevelopment"
-                        text: Tr.tr("Use Development")
-                        disabled: root.channelBlocked
-                        onClicked: root.setChannel("development")
-                    }
-                    ActionButton {
-                        text: Tr.tr("Cancel")
-                        type: TextButton.Text
-                        onClicked: root.confirmingDevelopment = false
-                    }
                 }
             }
         }
@@ -438,7 +336,7 @@ PageBase {
             InfoRow { visible: root.stale; label: Tr.tr("Selected version id"); value: root.selectedId }
             InfoRow { label: Tr.tr("Kept version id"); value: root.previousId || Tr.tr("None") }
             InfoRow { visible: root.previousId !== ""; label: Tr.tr("Previous revision"); value: root.shortRevision(root.previousRevision) }
-            InfoRow { visible: !!root.checkResult?.available; label: Tr.tr("Available artifact"); value: root.checkResult?.available?.buildVersion ?? "" }
+            InfoRow { visible: !!root.availableUpdate; label: Tr.tr("Available version"); value: root.availableUpdate?.buildVersion ?? "" }
             RowButton {
                 icon: "refresh"
                 text: Tr.tr("Refresh")
@@ -446,17 +344,17 @@ PageBase {
                 onClicked: root.refresh()
             }
             RowButton {
-                visible: !!root.checkResult?.available
+                visible: !!root.availableUpdate
                 icon: "open_in_new"
                 text: Tr.tr("Release notes")
-                onClicked: root.openReleasePage(root.checkResult.available.notesUrl)
+                onClicked: root.openReleasePage(root.availableUpdate.notesUrl)
             }
             RowButton {
                 objectName: "manualReleasesButton"
                 last: true
                 icon: "open_in_new"
-                text: Tr.tr("View manual downloads")
-                subtext: Tr.tr("Public previews and verification instructions on GitHub")
+                text: Tr.tr("Download manually")
+                subtext: Tr.tr("The same Windows release, with installation instructions")
                 onClicked: root.openReleasePage(root.releasesUrl)
             }
         }

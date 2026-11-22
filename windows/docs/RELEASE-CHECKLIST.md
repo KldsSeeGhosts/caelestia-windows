@@ -1,11 +1,10 @@
 # Windows release checklist
 
-The [verified public release table](../release/PUBLIC-RELEASE.md) records the
-current recommendation. After qualification, review `public-release.json`
-against the published ZIP's manifest and sidecars, update its table and site
-patch together, and run the offline validator plus its anonymous `--online`
-check. Follow the site handoff's staging and post-publication checks. A failed
-check must leave the previous complete Pages deployment available.
+The [public release guide](../release/PUBLIC-RELEASE.md) describes the
+shared Nexus and website download. After qualification, confirm that both
+point to the same published ZIP and that the ZIP and manifest match the
+authenticated digests. A failed website check must leave the previous complete
+Pages deployment available.
 
 Nexus ships configured development root trust. Development publication requires
 the ordered owner setup in [UPDATES.md](../../UPDATES.md). Preview/stable

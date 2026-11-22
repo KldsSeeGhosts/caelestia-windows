@@ -1,19 +1,15 @@
 # Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io),
-certificate by [SignPath Foundation](https://signpath.org).
-
 This policy covers the Windows x64 releases published from
 [KldsSeeGhosts/caelestia-windows](https://github.com/KldsSeeGhosts/caelestia-windows).
 The project is licensed under [GPL-3.0](../../LICENSE). SignPath Foundation's
 conditions are at [signpath.org/terms](https://signpath.org/terms).
 
-**Current state.** No release is signed. There is no stable release, no signing
-credential and no signing job in this repository. Development and preview
-packages are unsigned. This page records the policy the project intends to apply
-once a signing pipeline exists, and the work that pipeline still needs is in
-[SIGNING-ROADMAP.md](SIGNING-ROADMAP.md). Do not describe any current download
-as signed.
+**Current policy.** The project publishes one unsigned Windows release. Nexus
+authenticates the update metadata, not the Windows executables. There is no
+Authenticode signing job or separate stable release. The remainder of this
+document records the inactive SignPath design and its requirements, not a
+commitment to implement it. Do not describe any current download as signed.
 
 A signature proves which publisher produced a binary and that the signed bytes
 are the ones that publisher released. It does not certify that the software is
@@ -25,9 +21,9 @@ and [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md).
 
 | Channel | Reference | Signed | Notes |
 | --- | --- | --- | --- |
-| Development | `vX.Y.Z-development` | No | Eligible green `main` pushes publish history-derived plain versions. |
-| Preview | `vX.Y.Z-preview` | No | Promotion of identical tested development artifacts. Historical `v0.1.0-preview.2` keeps its original tag. |
-| Stable | `vMAJOR.MINOR.PATCH`, `MAJOR >= 1` | Intended | My plan is that stable releases will be signed through SignPath Foundation once the pipeline exists. No stable release exists today. |
+| Public release | `vX.Y.Z-development` | No | Eligible green `main` pushes publish one version for manual downloads and Nexus. |
+| Preview | `vX.Y.Z-preview` | Not offered | Historical previews keep their original tags. |
+| Stable | `vMAJOR.MINOR.PATCH`, `MAJOR >= 1` | Not offered | Inactive design only. |
 
 The table describes this project's own publisher signature. Deployed Qt DLLs
 carry Qt's signature in every channel; that is a vendor signature, not one from
@@ -43,11 +39,9 @@ grammar and the channel metadata agree.
 Legacy development and preview tags retain their historical classification.
 Only version/tag classification changes here, not signing policy or keys.
 
-Development and preview releases stay unsigned on purpose. They change with
-every push, they are not manual release decisions, and signing each one would
-exhaust the approval process that makes a signature meaningful. If a preview is
-blocked by Smart App Control, antivirus or an organizational policy, do not
-disable that protection. Wait for a stable release or build from source.
+If a release is blocked by Smart App Control, antivirus or an organizational
+policy, do not disable that protection. On a managed machine, ask your
+administrator about an approved installation.
 
 ## What a stable release would sign
 

@@ -6,7 +6,8 @@ const {test} = require("node:test");
 const logic = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname,
     "../shell/adapters/modules/nexus/pages/UpdatesLogic.js"), "utf8"), logic);
-const manual = "https://github.com/KldsSeeGhosts/caelestia-windows/releases";
+const manual = "https://kldsseeghosts.github.io/caelestia-windows/#install";
+const github = "https://github.com/KldsSeeGhosts/caelestia-windows/releases";
 
 test("current status separates manual destination, unknown latest and retained rollback", () => {
     const current = logic.parseStatus(0, JSON.stringify({schema: 1, versioned: true,
@@ -48,9 +49,10 @@ test("unavailable, invalid and unsupported status commands do not invent a relea
     assert.equal(logic.normalize(null).manualReleaseUrl, manual);
 });
 test("legacy releasesUrl is supported but arbitrary or executable links are refused", () => {
-    const preview = manual + "/tag/v0.1.0-preview.2";
+    const preview = github + "/tag/v0.1.0-preview.2";
     assert.equal(logic.normalize({releasesUrl: preview}).manualReleaseUrl, preview);
-    for (const url of ["javascript:alert(1)", manual + ".evil", manual + "/tag/../settings",
+    assert.equal(logic.normalize({manualReleaseUrl: manual}).manualReleaseUrl, manual);
+    for (const url of ["javascript:alert(1)", github + ".evil", github + "/tag/../settings",
         "https://example.invalid/releases", manual + "?redirect=elsewhere"]) {
         assert.equal(logic.normalize({manualReleaseUrl: url}).manualReleaseUrl, manual);
     }
@@ -62,20 +64,19 @@ test("a download link or claimed future capability is not proof of an implemente
     assert.equal(status.remoteVersionChecked, false);
     assert.equal(status.automaticUpdatesAvailable, false);
 });
-test("configured capability is explicit; channel and build identities remain separate", () => {
+test("configured capability is explicit; old channel preferences are not exposed", () => {
     const result = logic.normalize({updatesConfigured: true, automaticUpdatesAvailable: true,
         channel: "stable", releaseVersion: "1.0.0-dev.1.5.1", displayVersion: "1.0.0"});
     assert.equal(result.automaticUpdatesAvailable, true);
-    assert.equal(result.channel, "stable");
+    assert.equal(result.channel, undefined);
     assert.equal(result.releaseVersion, "1.0.0-dev.1.5.1");
     assert.equal(result.displayVersion, "1.0.0");
     assert.equal(result.remoteVersionChecked, false);
-    assert.equal(logic.normalize({channel: "evil"}).channel, "preview");
 });
 test("checks validate states, identities, bounds and release links", () => {
     const available = {buildVersion: "0.2.0-dev.1.57.1", displayVersion: "0.2.0-preview.1",
         bundle: {size: 1024}, notesUrl: "javascript:alert(1)"};
-    const data = {schema: 1, state: "available", channel: "preview", available};
+    const data = {schema: 1, state: "available", channel: "development", available};
     assert.equal(logic.parseCheck(0, JSON.stringify(data)).available.notesUrl, manual);
     for (const state of ["not-newer", "not-configured", "offline", "http", "too-large",
         "bad-signature", "bad-metadata", "expired", "clock", "replay", "unsupported", "busy"]) {
@@ -86,6 +87,7 @@ test("checks validate states, identities, bounds and release links", () => {
     }
     for (const mutation of [
         {...data, state: "invented"}, {...data, channel: "arbitrary"}, {...data, schema: 2},
+        {...data, channel: "preview"}, {...data, channel: "stable"},
         {...data, available: {...available, buildVersion: "0.2.0-dev.01.57.1"}},
         {...data, available: {...available, bundle: {size: 0}}},
         {...data, available: {...available, bundle: {size: 1073741825}}}
@@ -119,6 +121,7 @@ test("one primary action maps every maintenance and check state", () => {
     assert.equal(update.action, "update");
     assert.equal(update.disabled, false);
     assert.equal(update.status, "Update available: 0.2.0 · Dev build 283");
+    assert.equal(logic.primaryState({available: {displayVersion: "0.5.0"}}).status, "Update available: 0.5.0");
     assert.equal(logic.primaryState({result: {state: "not-newer"}}).status, "Up to date");
     for (const step of ["checking", "downloading", "verifying", "installing", "restarting", ""]) {
         const running = logic.primaryState({operationState: "waiting", operationKind: "update", step, available});

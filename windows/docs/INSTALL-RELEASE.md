@@ -1,10 +1,10 @@
 # Install a Windows release
 
-Use the [verified public release table](../release/PUBLIC-RELEASE.md) for the
-recommended version, exact Windows x64 download, SHA256 checksums and manifest
-digest. Source ZIPs are not installable application bundles. Preview 2 has no
-automatic updater. The guide below also describes current source installer
-capabilities; it does not add those capabilities to an older downloaded ZIP.
+The [download page](https://kldsseeghosts.github.io/caelestia-windows/#install)
+offers the same Windows x64 release as Nexus. See
+[public releases](../release/PUBLIC-RELEASE.md) for manual verification and
+historical packages. Source ZIPs are not installable application bundles.
+Preview 2 has no automatic updater.
 
 ## Desktop runtime: PowerShell 7
 
@@ -91,22 +91,12 @@ Do not add a copy of the system `dbghelp.dll` to the release payload. Diagnostic
 files are runtime user data, not release payload or support-bundle attachments.
 See [Crash diagnostics and privacy](SUPPORT-BUNDLE.md#crash-diagnostics-and-privacy).
 
-## Trust, signing and unsigned previews
+## Trust and unsigned packages
 
-The [code signing policy](CODE-SIGNING-POLICY.md) describes the intended stable
-behaviour. Development (`v*-dev.*`) and preview (`v*-preview.*`, `v*-rc.*`)
-packages are unsigned: there is no invented certificate or publisher signature,
-and their first-party executables and scripts carry no Authenticode signature.
-Deployed Qt DLLs keep Qt's signature in every channel.
-
-My plan is that stable releases
-(`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation
-once a signing pipeline exists. No release is signed today. The intended signed
-set is the first-party executables and PowerShell scripts in the ZIP. Qt's DLLs
-keep Qt's own signature, the M3Shapes DLL and `qs.exe` are not signed by this
-project, `Install.cmd` is a batch file that cannot be signed, and the ZIP itself
-is not signed. [SIGNING-ROADMAP.md](SIGNING-ROADMAP.md) lists the pipeline work
-that must land before this changes.
+Caelestia's Windows packages are unsigned. Nexus verifies the signed release
+metadata and checks the package and manifest hashes. This does not sign the
+Windows executables. Vendor files keep their original signatures. See the
+[code signing policy](CODE-SIGNING-POLICY.md).
 
 SHA256 checks detect damage or changes against a trusted digest; a manifest
 stored beside its files does not authenticate its publisher. Obtain the ZIP and
@@ -133,12 +123,9 @@ timestamp, or names another publisher. The verifier is standalone; no CI job
 runs it. Do not install a package that claims to be signed but fails it.
 
 Windows policy, Smart App Control, antivirus or organizational policy may block
-unsigned scripts or executables, and may still block a signed stable release:
-Smart App Control weighs its own reputation data, and `qs.exe` is not signed by
-this project. Do not disable those protections. A blocked preview is not
-supported on that machine until an approved, externally signed release is
-available. Packaging does not sign anything today and never alters machine
-policy.
+unsigned scripts or executables. Do not disable those protections. If your
+organization manages the machine, ask its administrator about an approved
+installation. The package does not alter machine policy.
 Like the existing product launchers, `Install.cmd` uses `-ExecutionPolicy Bypass`
 for its own PowerShell process only, to run the unsigned preview bootstrap.
 This is not a signature or a trust check. It changes no persistent policy and
@@ -249,14 +236,10 @@ Other optional integrations retain their own availability requirements.
 
 ## Update and rollback
 
-The recommended Preview 2's Settings > Updates links to manual downloads.
-Use the [verified public release table](../release/PUBLIC-RELEASE.md) to select
-the intended public preview. Preview 2 reads installed and retained versions,
-not the latest online release, so the latest public version is shown as unknown.
-Preview 2 has no automatic updater. Current-source authenticated development
-publication is separate, as described in [UPDATES.md](../../UPDATES.md).
-Preview/stable promotion stays inactive. A manual download link
-does not mean a newer version is available for your installation.
+Open **Settings > Updates** in Nexus and select **Check for updates**. A newer
+release, when available, is the same package the website offers. Choose
+**Update now** to verify and install it. Older builds without an updater need
+one manual installation. See [UPDATES.md](../../UPDATES.md).
 
 Download and verify the new release, extract into a **different** directory,
 then run its installer against the same stable prefix. The installed profile
@@ -458,9 +441,8 @@ graphics and hardware qualification.
 
 ## Nexus bootstrap status
 
-Preview 2 has no updater. Source merges do not update it. The new client
-ships configured development root trust. Development publication requires owner
-setup; preview/stable promotion remains inactive.
-Do not replace the existing install during source validation. See
+Preview 2 has no updater. Source merges do not update it. Current packages use
+one authenticated release feed. Do not replace the existing install during
+source validation. See
 [UPDATES.md](https://github.com/KldsSeeGhosts/caelestia-windows/blob/main/UPDATES.md)
 for owner-only bootstrap and remaining gates.

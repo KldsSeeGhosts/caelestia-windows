@@ -24,11 +24,20 @@ $trustPath = Join-Path $PSScriptRoot 'update-trust.json'
 $trust = if (Test-Path -LiteralPath $trustPath -PathType Leaf) {
     Read-CaelestiaStrictJsonFile $trustPath
 } else { @{ status = 'unconfigured'; rootKeys = @() } }
+$publicFeed = Get-CaelestiaUpdateChannel
+# Retained shells can still send the old command through the stable launcher.
+# The only accepted channel is already selected, so there is nothing to store.
+if ($Command -eq 'SetChannel') {
+    if ($Channel -cne $publicFeed) { throw 'Caelestia now has one update feed.' }
+    @{ schema = 1; channel = $publicFeed } | ConvertTo-Json -Compress
+    return
+}
+if ($Command -in @('CheckUpdate', 'Update') -and $Channel -and $Channel -cne $publicFeed) {
+    throw 'The requested update feed is not supported.'
+}
 if ($Command -eq 'CheckUpdate') {
-    $record = Read-CaelestiaInstall $Prefix
     $current = Read-CaelestiaInstall (Resolve-CaelestiaRuntimePrefix $Prefix)
-    if (-not $Channel) { $Channel = Get-CaelestiaUpdateChannel $record.profile $current.appVersion }
-    Invoke-CaelestiaUpdateCheck $trust $Channel $current.releaseId (Get-CaelestiaUpdateStatePath) | ConvertTo-Json -Depth 10 -Compress
+    Invoke-CaelestiaUpdateCheck $trust $publicFeed $current.releaseId (Get-CaelestiaUpdateStatePath) | ConvertTo-Json -Depth 10 -Compress
     return
 }
 if ($Command -eq 'Status') {
@@ -49,18 +58,17 @@ if ($Command -eq 'Status') {
         sourceRevision = $current.sourceRevision
         releaseVersion = $releaseVersion
         displayVersion = $(if ($current.displayVersion) { $current.displayVersion } else { $releaseVersion })
-        channel = Get-CaelestiaUpdateChannel $record.profile $current.appVersion
+        channel = $publicFeed
         updatesConfigured = Test-CaelestiaTrustConfigured $trust
         previous = $(if ($previous) { $previous.versionId } else { '' })
         previousDisplayVersion = $(if ($previous.displayVersion) { $previous.displayVersion } elseif ($previous.releaseId) { $previous.releaseId } else { '' })
         previousRevision = $(if ($previous) { $previous.sourceRevision } else { '' })
         canRollback = $null -ne $previous
-        # Public previews are manually downloadable. This command reads only
-        # installed state; it neither checks remote versions nor downloads.
+        # This command reads only installed state; it never checks the feed.
         automaticUpdatesAvailable = Test-CaelestiaTrustConfigured $trust
         remoteVersionChecked = $false
         latestVersion = $null
-        manualReleaseUrl = 'https://github.com/KldsSeeGhosts/caelestia-windows/releases'
+        manualReleaseUrl = 'https://kldsseeghosts.github.io/caelestia-windows/#install'
         # Compatibility field: means an automatic/authenticated channel,
         # never the existence of a public manual download.
         downloadChannelAvailable = Test-CaelestiaTrustConfigured $trust
@@ -121,16 +129,6 @@ try {
         return
     }
     $record = Read-CaelestiaInstall $Prefix
-    if ($Command -eq 'SetChannel') {
-        if (-not $Channel) { throw 'A channel is required.' }
-        if ($Channel -eq 'development' -and -not $AcceptDevelopment) { throw 'Development updates require explicit acceptance.' }
-        $settingsFile = Join-Path $record.profile 'state\updates\settings.json'
-        Assert-CaelestiaUpdatePath $settingsFile
-        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($settingsFile)) | Out-Null
-        Write-CaelestiaJsonAtomic $settingsFile @{ schema = 1; channel = $Channel }
-        @{ schema = 1; channel = $Channel } | ConvertTo-Json -Compress
-        return
-    }
     if ($Command -eq 'Watch' -or -not $Wait -or $TaskName) {
         $operationFile = Join-Path (Resolve-CaelestiaDirectory $record.profile) 'state\update-operation.json'
     }
