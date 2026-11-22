@@ -18,8 +18,10 @@ $uninstallText = [IO.File]::ReadAllText("$PSScriptRoot\Uninstall-Caelestia.ps1")
 $manageText = [IO.File]::ReadAllText("$PSScriptRoot\Manage-Caelestia.ps1")
 # Reuse the established complete inert bundle builder, not an alternate
 # installer. No top-level code from either test is evaluated.
+$script:caseExecutableHash = @{}
+$script:caseTemplate = $null
 foreach ($definition in @(
-    @{ file = 'Test-UninstallTransaction.ps1'; names = @('Replace-Exactly', 'Write-FixtureText', 'New-Case') },
+    @{ file = 'Test-UninstallTransaction.ps1'; names = @('Replace-Exactly', 'Write-FixtureText', 'New-CaseTemplate', 'New-Case') },
     @{ file = 'Test-UpdateTrust.ps1'; names = @('New-Key', 'JsonBytes', 'Strict', 'Sign') }
 )) {
     $tokens = $null; $errors = $null

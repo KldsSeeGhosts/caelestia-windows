@@ -94,7 +94,7 @@ jobs:
           ref: ${{ inputs.shell_sha || github.sha }}
           # Shard 3 alone reads history: version metadata, tags and the Pages
           # ref. The other shards run file-only checks on the merge commit.
-          fetch-depth: ${{ matrix.shard == 3 && 0 || 1 }}
+          fetch-depth: ${{ matrix.shard != 3 && 1 || 0 }}
           persist-credentials: false
       - name: Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
