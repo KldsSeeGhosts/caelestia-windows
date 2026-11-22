@@ -1,7 +1,12 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell
+import Quickshell.Io
+import Caelestia
 import Caelestia.Config
 import qs.modules.areapicker
+import "modules/areapicker/CaptureLogic.js" as Capture
 import "modules/areapicker/ThumbnailLogic.js" as Thumb
 
 // Every label and icon of the capture interface lies on a whole device pixel.
@@ -40,6 +45,7 @@ ShellRoot {
     property int items: 0
     property var misplaced: []
     property var region: ({ x: 300, y: 200, width: 500, height: 300 })
+    property string previewSample
 
     EditorState {
         id: state
@@ -61,6 +67,16 @@ ShellRoot {
         function finish(): void {}
     }
 
+    AreaPicker {
+        id: picker
+        history: null
+        saveRoot: (Quickshell.env("CAELESTIA_STATE_DIR") || "").replace(/\\/g, "/") + "/pixel-exports"
+    }
+
+    Thumbnails {
+        id: thumbs
+    }
+
     FloatingWindow {
         id: win
 
@@ -78,6 +94,29 @@ ShellRoot {
                 anchors.fill: parent
                 color: "#445566"
             }
+
+            Rectangle {
+                x: 500
+                width: 480
+                height: 120
+                visible: !!Quickshell.env("CAELESTIA_THUMBNAIL_RENDER")
+                color: "#593b68"
+
+                Rectangle { width: parent.width / 4; height: parent.height; color: "#b46f62" }
+                Rectangle { x: 3 * parent.width / 4; width: parent.width / 4; height: parent.height; color: "#436577" }
+                Text {
+                    anchors.centerIn: parent
+                    color: "white"
+                    text: "Screenshot preview"
+                    font.pixelSize: 18
+                }
+            }
+        }
+
+        Image {
+            id: outputImage
+            visible: false
+            cache: false
         }
 
         EditorToolbar {
@@ -117,11 +156,21 @@ ShellRoot {
                         property int imageHeight: 400
                         property real dpr: root.captureScale
                         property string path: ""
-                        property string imagePath: ""
+                        property string imagePath: root.previewSample
                     }
                 }
             }
         }
+    }
+
+    Process {
+        id: pngProbe
+
+        property string failure: "the edited PNG must contain the stroke and fill the original bounds"
+        onExited: code => root.step(() => {
+            root.check(code === 0, failure + " (exit " + code + ")");
+            root.finish();
+        })
     }
 
     Timer {
@@ -150,6 +199,17 @@ ShellRoot {
         timer.next = body;
         timer.interval = milliseconds;
         timer.restart();
+    }
+
+    function waitFor(test, next, description, attempts = 100): void {
+        later(50, () => {
+            if (test())
+                next();
+            else if (attempts > 1)
+                waitFor(test, next, description, attempts - 1);
+            else
+                check(false, description);
+        });
     }
 
     // The name of the nearest ancestor that has one, for the failure message.
@@ -277,14 +337,111 @@ ShellRoot {
                 const card = cards.itemAt(i);
                 check(card.slide === 1 && card.fade === 1 && card.transform[0].x === 0, "card " + i + " has settled");
                 const label = "thumbnail card " + i + " of 5";
-                // Copy, Save, Show in folder and Close.
-                checkTexts(texts(card, []), 4, label);
+                // Copy, Save, Close, Pin, Edit, and Show in folder.
+                checkTexts(texts(card, []), 6, label);
                 const edge = card.mapToItem(null, 0, 0);
                 assertions++;
                 if (!whole(edge.x * scale) || !whole(edge.y * scale))
                     misplaced.push({ group: label + " at " + scale, text: label + ": the card starts at device " + (edge.x * scale) + ", " + (edge.y * scale) });
             }
-            finish();
+            if (Quickshell.env("CAELESTIA_THUMBNAIL_RENDER"))
+                renderCard();
+            else if (scale === 1.5 && captureScale === 1.25)
+                checkEditExport();
+            else if (scale === 1 && captureScale === 1 && typeof CUtils.saveCaptureWithPreview === "function")
+                checkMemoryPreview();
+            else
+                finish();
         }));
+    }
+
+    function checkMemoryPreview(): void {
+        const legacy = Quickshell.stateDir.replace(/\\/g, "/") + "/legacy.png";
+        const path = CUtils.newCaptureTempPath().replace(/\\/g, "/");
+        const crop = Qt.rect(40, 30, 1440, 810);
+        CUtils.saveItem(backdrop, "file:///" + legacy, crop, () => step(() => {
+            let previewReady = false;
+            later(50, () => CUtils.saveCaptureWithPreview(backdrop, "file:///" + path, crop, Qt.size(240, 160),
+                url => {
+                    step(() => {
+                        outputImage.source = url;
+                        check(outputImage.status === Image.Ready, "the memory preview can be used before PNG completion");
+                        check(outputImage.sourceSize.width === 240 && outputImage.sourceSize.height === 135,
+                            "the quick preview is bounded and keeps the original aspect ratio");
+                        previewReady = true;
+                    });
+                    return previewReady;
+                },
+                () => {
+                    step(() => {
+                        check(previewReady, "the native preview arrived before PNG completion");
+                        CUtils.releaseCapturePreview(outputImage.source);
+                        outputImage.source = "file:///" + path;
+                        check(outputImage.status === Image.Ready && outputImage.sourceSize.width === 1440
+                            && outputImage.sourceSize.height === 810, "the PNG retains the full crop dimensions");
+                        const first = legacy.replace(/'/g, "''");
+                        const second = path.replace(/'/g, "''");
+                        const script = "$ErrorActionPreference='Stop'; if ((Get-FileHash -LiteralPath '" + first
+                            + "').Hash -ne (Get-FileHash -LiteralPath '" + second + "').Hash) { exit 1 }";
+                        pngProbe.failure = "the full PNG must match the legacy crop byte for byte";
+                        pngProbe.command = [Quickshell.env("CAELESTIA_POWERSHELL") || "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script];
+                        pngProbe.running = true;
+                    });
+                    return true;
+                },
+                () => step(() => check(false, "could not write the full capture"))));
+        }), () => step(() => check(false, "could not write the legacy capture")));
+    }
+
+    function renderCard(): void {
+        const dir = Quickshell.stateDir.replace(/\\/g, "/");
+        const input = dir + "/thumbnail-source.png";
+        CUtils.saveItem(backdrop, "file:///" + input, Qt.rect(500, 0, 480, 120), () => step(() => {
+            previewSample = input;
+            later(500, () => step(() => {
+                const card = cards.itemAt(4);
+                CUtils.saveItem(card, "file:///" + dir + "/thumbnail-render.png",
+                    () => step(finish), () => step(() => check(false, "could not render thumbnail")));
+            }));
+        }), () => step(() => check(false, "could not generate a wide sample image")));
+    }
+
+    function checkEditExport(): void {
+        // At 150% this crop is 61 px wide, a size grabToImage cannot
+        // request directly from a 150% window with a whole logical width.
+        const crop = Capture.physicalExport({ x: 1, y: 1, width: 41, height: 41 }, scale);
+        const path = CUtils.newCaptureTempPath().replace(/\\/g, "/");
+        CUtils.saveItem(backdrop, "file:///" + path, Qt.rect(1, 1, 41, 41), () => step(() => {
+            const info = { screen: Quickshell.screens[0].name, width: crop.width, height: crop.height, dpr: captureScale };
+            check(thumbs.addCapture(info, path), "the fractional crop is staged");
+            const source = thumbs.entries[0];
+            thumbs.edit(source);
+            waitFor(() => picker.editPicker && CUtils.findChild(picker.editPicker, "captureEditorSource")?.status === Image.Ready, () => {
+                picker.editor.pressAt(10, 10);
+                picker.editor.moveTo(20, 20);
+                picker.editor.releaseAt();
+                picker.editPicker.exportEdit("save");
+                waitFor(() => !picker.opened && thumbs.entries[0]?.saved, () => {
+                    outputImage.source = "file:///" + thumbs.entries[0].path;
+                    check(outputImage.status === Image.Ready && outputImage.sourceSize.width === crop.width
+                        && outputImage.sourceSize.height === crop.height, "the exported PNG retains the original physical dimensions");
+                    // Read actual PNG pixels. Grabbing the displayed Image
+                    // can hide transparent padding on a fractional-DPR window.
+                    const path = thumbs.entries[0].path.replace(/'/g, "''");
+                    const script = "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Drawing; "
+                        + "$b = [Drawing.Bitmap]::new('" + path + "'); try { "
+                        + "$bg = [Drawing.Color]::FromArgb(255,68,85,102).ToArgb(); "
+                        + "$corners = @($b.GetPixel(2,2), $b.GetPixel(($b.Width-2),2), "
+                        + "$b.GetPixel(2,($b.Height-2)), $b.GetPixel(($b.Width-2),($b.Height-2))); "
+                        + "if (@($corners | Where-Object { $_.ToArgb() -ne $bg }).Count) { exit 2 }; "
+                        + "$ink = [Drawing.Color]::FromArgb(255,255,68,68).ToArgb(); "
+                        + "for ($y=8; $y -lt 36; $y++) { for ($x=8; $x -lt 36; $x++) { "
+                        + "if ($b.GetPixel($x,$y).ToArgb() -eq $ink) { exit 0 } } }; exit 3 "
+                        + "} finally { $b.Dispose() }";
+                    pngProbe.command = [Quickshell.env("CAELESTIA_POWERSHELL") || "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script];
+                    pngProbe.running = true;
+                }, "saving the edited crop returns to a saved thumbnail");
+            }, "the staged crop opens for editing");
+        }), () => step(() => check(false, "could not create the staged crop")));
     }
 }

@@ -112,6 +112,7 @@ ShellRoot {
     AreaPicker {
         id: picker
 
+        history: null
         saveRoot: root.saveRoot
         clipboard: root.clipboardRecorder
         thumbnails: root.thumbRecorder
@@ -141,7 +142,7 @@ ShellRoot {
     Component {
         id: extraPicker
 
-        AreaPicker {}
+        AreaPicker { history: null }
     }
 
     Image {
@@ -324,7 +325,8 @@ ShellRoot {
         const area = areaOf(window);
         const tint = find(window.contentItem, "areaPickerTint");
         const outline = find(window.contentItem, "areaPickerOutline");
-        check(tint !== null && Math.abs(tint.opacity - 0.3) < 1e-6, "30 percent tint");
+        check(tint !== null && tint.color === Qt.color("black") && Math.abs(tint.opacity - 0.3) < 1e-6,
+            "30 percent neutral dimming, independent of the wallpaper palette");
         check(outline !== null && outline.border.width === 2, "2 px outline");
         check(area.cursorShape === Qt.CrossCursor, "cross cursor");
         // An offscreen pointer may already count as inside, in which case the
@@ -400,7 +402,8 @@ ShellRoot {
         check(find(composed, "editorToolbar") === null && find(composed, "captureEditor") === null && find(composed, "areaPickerTint") === null,
             "and neither the toolbar, the wash nor the tint");
         const annotations = find(composed, "areaPickerAnnotations");
-        check(annotations.visible && annotations.clip && annotations.x === 20 && annotations.y === 30
+        const annotationOrigin = annotations.mapToItem(composed, 0, 0);
+        check(annotations.visible && annotations.clip && annotationOrigin.x === 20 && annotationOrigin.y === 30
             && annotations.width === 60 && annotations.height === 40, "the annotation layer is the selection, clipped to it");
         check(findAll(editorItem, "captureEditorWash").length === 4, "four washes around the selection");
         for (const wash of findAll(editorItem, "captureEditorWash"))

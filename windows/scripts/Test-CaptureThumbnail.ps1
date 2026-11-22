@@ -15,6 +15,18 @@ try {
         -Sources @('windows/tests/CaptureThumbnailTest.qml') -FixtureFile 'windows/tests/CaptureThumbnailTest.qml' `
         -Marker CAELESTIA_CAPTURE_THUMBNAIL -MinimumAssertions 250 -TimeoutMs 120000 `
         -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_POWERSHELL = $fixturePowerShell }
+    $scratchOld = New-Item -ItemType File -Path (Join-Path $fixtureTemp 'caelestia-clipboard-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png')
+    $scratchFresh = New-Item -ItemType File -Path (Join-Path $fixtureTemp 'caelestia-clipboard-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png')
+    $scratchForeign = New-Item -ItemType File -Path (Join-Path $fixtureTemp 'caelestia-clipboard-someone-elses.png')
+    $scratchDrag = New-Item -ItemType Directory -Path (Join-Path $fixtureTemp 'caelestia-drag-cccccccccccccccccccccccccccccccc')
+    $null = New-Item -ItemType File -Path (Join-Path $scratchDrag.FullName 'annotate-test.png')
+    $scratchOld.LastWriteTime = (Get-Date).AddDays(-2)
+    $scratchForeign.LastWriteTime = $scratchOld.LastWriteTime
+    $scratchDrag.LastWriteTime = $scratchOld.LastWriteTime
+    $history = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name screenshot-history -ShellFixture -UseQuickshell `
+        -Sources @('windows/tests/ScreenshotHistoryTest.qml') -FixtureFile 'windows/tests/ScreenshotHistoryTest.qml' `
+        -Marker CAELESTIA_SCREENSHOT_HISTORY -MinimumAssertions 41 -TimeoutMs 30000 `
+        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_SCRATCH_FIXTURE = '1' }
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureTemp)
     if ($resolved.StartsWith($tempRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
@@ -23,4 +35,16 @@ try {
     }
 }
 $result | ConvertTo-Json -Depth 8
-if (-not $result.passed) { throw "Capture thumbnail fixture failed. See $($result.stderr)." }
+$history | ConvertTo-Json -Depth 8
+foreach ($fixture in @($result, $history)) {
+    if ($fixture.passed) { continue }
+    $reason = if ($fixture.diagnostics.Count) { $fixture.diagnostics | Select-Object -First 4 }
+        else { 'No failure marker. The last fixture messages follow.' }
+    Write-Output $reason
+    if (-not $fixture.diagnostics.Count) {
+        foreach ($log in @($fixture.stdout, $fixture.stderr)) {
+            Get-Content -LiteralPath $log -Tail 4
+        }
+    }
+    throw "Capture fixture failed (exit=$($fixture.exitCode), timedOut=$($fixture.timedOut)). See $($fixture.stdout) and $($fixture.stderr)."
+}

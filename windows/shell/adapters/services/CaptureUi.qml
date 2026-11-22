@@ -28,14 +28,18 @@ Singleton {
     readonly property bool shellAvailable: picker !== null
 
     // `name` is the upstream picker function: open, openFreeze, openClip or
-    // openFreezeClip. All four open the editor, whose Copy and Save decide the
-    // output. The return value means accepted, not completed.
+    // openFreezeClip. All four honor Quick Capture settings.
+    // The return value means accepted, not completed.
     function screenshot(name = "open"): bool {
         return request(name);
     }
 
     function record(sound = false): bool {
         return request("record", sound);
+    }
+
+    function showHistory(): bool {
+        return picker?.showHistory() ?? false;
     }
 
     // Screenshot and recording entry points share the same routing decision.

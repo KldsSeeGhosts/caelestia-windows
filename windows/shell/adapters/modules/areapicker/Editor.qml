@@ -23,11 +23,14 @@ Item {
     required property Item backdrop
     // An export is under way.
     property bool busy
+    property bool canFinish
+    property bool savedOriginal
 
     property bool present
 
     signal copyRequested
     signal saveRequested
+    signal doneRequested
     signal closeRequested
 
     readonly property var area: ({ x: 0, y: 0, width: width, height: height })
@@ -98,8 +101,11 @@ Item {
         work: root.area
         backdrop: root.backdrop
         busy: root.busy
+        canFinish: root.canFinish
+        savedOriginal: root.savedOriginal
         onCopyRequested: root.copyRequested()
         onSaveRequested: root.saveRequested()
+        onDoneRequested: root.doneRequested()
         onCloseRequested: root.closeRequested()
     }
 }

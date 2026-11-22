@@ -34,9 +34,12 @@ Item {
     required property Item backdrop
     // An export is under way. Nothing responds until it ends.
     property bool busy
+    property bool canFinish
+    property bool savedOriginal
 
     signal copyRequested
     signal saveRequested
+    signal doneRequested
     signal closeRequested
 
     // The device pixel ratio of the window this toolbar is in, as Qt renders it
@@ -61,7 +64,8 @@ Item {
         metrics: metrics,
         button: buttonSize,
         clear: { width: clearButton.implicitWidth, height: clearButton.implicitHeight },
-        copy: { width: copyButton.implicitWidth, height: copyButton.implicitHeight }
+        copy: { width: copyButton.implicitWidth, height: copyButton.implicitHeight },
+        done: canFinish ? { width: doneButton.implicitWidth, height: doneButton.implicitHeight } : null
     })
     readonly property var barPlace: Logic.barPosition(work, region, layout, editor.barPosition, metrics)
     readonly property var ink: Logic.inkPopover({
@@ -271,7 +275,7 @@ Item {
         BarIcon {
             cellId: "save"
             objectName: "editor-save"
-            tip: Tr.tr("Save")
+            tip: root.savedOriginal ? Tr.tr("Save a copy") : Tr.tr("Save to file")
             icon: "download"
             onClicked: root.saveRequested()
         }
@@ -284,8 +288,20 @@ Item {
             tip: Tr.tr("Copy")
             icon: "content_copy"
             text: Tr.tr("Copy")
-            type: IconTextButton.Filled
+            type: root.canFinish ? IconTextButton.Tonal : IconTextButton.Filled
             onClicked: root.copyRequested()
+        }
+
+        BarText {
+            id: doneButton
+            cellId: "done"
+            objectName: "editor-done"
+            visible: root.canFinish
+            tip: Tr.tr("Keep edits and return to the thumbnail")
+            icon: "check"
+            text: Tr.tr("Done")
+            type: IconTextButton.Filled
+            onClicked: root.doneRequested()
         }
 
         BarIcon {

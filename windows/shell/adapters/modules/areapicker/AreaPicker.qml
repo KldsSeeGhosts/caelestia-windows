@@ -6,11 +6,13 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Windows as Native
 import Caelestia
+import Caelestia.Config
 import Caelestia.I18n
 import qs.components.containers
 import qs.services
 import qs.utils
 import "CaptureLogic.js" as Logic
+import "HistoryLogic.js" as History
 import "RecordingLogic.js" as Recording
 import "../../utils/FileUrls.js" as FileUrls
 
@@ -28,11 +30,9 @@ import "../../utils/FileUrls.js" as FileUrls
 //   capturing while it is hidden, so upstream's live mode, which hides the view
 //   and re-shows it, cannot work. CaptureUi accepts the four upstream names, and
 //   open and openFreeze (and the Clip pair) therefore behave the same.
-// - A selection opens the editor over the frozen frame (EditorState.qml,
-//   Editor.qml). Nothing is written until the user chooses Save or Copy there.
-//   Save writes Pictures\Screenshots, Copy writes the clipboard, and both then
-//   close the editor and show the thumbnail. open, openFreeze and the Clip pair
-//   all behave the same, as the classic tool does.
+// - A selection goes to an unsaved thumbnail. The thumbnail can open the
+//   editor (Editor.qml) on its captured PNG. Without thumbnails, the editor
+//   opens directly so Copy and Save are still available.
 Scope {
     id: root
 
@@ -55,6 +55,14 @@ Scope {
     property string editScreen
     property var editPlan: null
     property var editPicker: null
+    // A reopened capture owns a separate source file until the editor closes.
+    property string editPath
+    property var editInfo: null
+    property int editSerial
+    property string editHistoryId
+    property var restoredEdit: null
+    property var committedEdit: null
+    property bool editingSaved
     // The tool state and annotations, shared by every screen's window.
     readonly property EditorState editor: EditorState {}
     // Window stack taken once when the picker opens, topmost first.
@@ -88,6 +96,23 @@ Scope {
     // Shows the finished capture. Thumbnails.qml registers itself with CaptureUi;
     // fixtures replace it, and without one no thumbnail is shown.
     property var thumbnails: CaptureUi.thumbnails
+    property var history: historyStore
+    readonly property var captureSettings: History.settings(GlobalConfig.windows?.capture)
+
+    ScreenshotHistory {
+        id: historyStore
+        enabled: root.interactionEnabled && root.history === historyStore
+        onEditRequested: row => {
+            if (root.reopenCapture(historyStore.pathFor(row.raw), row.info, 0, row.id, false))
+                historyStore.viewing = false;
+        }
+        onCopyRequested: row => root.thumbnails?.copyOutput(historyStore.pathFor(row.image))
+        onExportRequested: row => historyStore.markExported(row.id, root.thumbnails?.exportHistory(historyStore.pathFor(row.image)) ?? "")
+    }
+
+    ScreenshotScratch {
+        enabled: root.interactionEnabled && root.history === historyStore
+    }
 
     readonly property var screenNames: screenList.map(screen => screen.name)
     readonly property var windows: loader.item ? loader.item.instances : []
@@ -133,9 +158,7 @@ Scope {
         }
     }
 
-    // A Picker calls this when the user releases a selection. The editor opens
-    // over it and nothing is saved.
-    function startEditing(picker: var, plan: var): void {
+    function acceptSelection(picker: var, plan: var, releasedAt: double): void {
         if (recordingMode) {
             const region = Recording.region(plan.logical, picker.geometry, picker.dpr);
             if (region && recorder.startRegion(region, Recording.startArgs(region, recordingSound)))
@@ -146,6 +169,97 @@ Scope {
             }
             return;
         }
+        const info = { screen: picker.screen.name, width: plan.crop.width, height: plan.crop.height, dpr: picker.dpr };
+        const hasOutput = thumbnails?.canAdd?.(info)
+            || (history && thumbnails && (captureSettings.mode !== "preview" || captureSettings.limit));
+        if (!hasOutput || !beginClipboard()) {
+            startEditing(picker, plan);
+            return;
+        }
+        saving = true;
+        // Keep the frozen selection ready as a fallback if staging fails.
+        editPicker = picker;
+        editPlan = plan;
+        picker.stageCapture(activeTemp, plan, info, releasedAt);
+    }
+
+    function canPreviewCapture(info: var): bool {
+        return history && !captureSettings.openEditor
+            && (captureSettings.mode === "copy" || captureSettings.mode === "preview") && thumbnails?.canAdd?.(info);
+    }
+
+    function captureActions(entry: var, path: string, info: var, mode: string): void {
+        entry.afterReveal = () => {
+            entry.historyId = history?.keep("", path, path, info, [], 0) ?? "";
+            if (mode === "copy") {
+                if (entry.closing || !thumbnails.entries.includes(entry))
+                    thumbnails.copyOutput(path);
+                else
+                    thumbnails.copyEntry(entry);
+            }
+        };
+    }
+
+    function capturePreviewReady(started: int, path: string, info: var, preview: url, releasedAt: double): bool {
+        if (started !== session || !canPreviewCapture(info))
+            return false;
+        const entry = thumbnails.addPendingCapture(info, path, preview, releasedAt);
+        if (!entry)
+            return false;
+        captureActions(entry, path, info, captureSettings.mode);
+        activeTemp = "";
+        finishClose();
+        return true;
+    }
+
+    function captureFinished(started: int, path: string, info: var, releasedAt = 0): void {
+        if (started !== session) {
+            removeTemp(path);
+            return;
+        }
+        const mode = history ? captureSettings.mode : "preview";
+        if (history && !captureSettings.openEditor && (mode === "copy" || mode === "preview")
+            && thumbnails?.addCapture(info, path)) {
+            const entry = thumbnails.entries[thumbnails.entries.length - 1];
+            // The card owns the staged PNG now. Its first frame doesn't have
+            // to wait for the history index or the clipboard's synchronous
+            // file read. The thumbnail scope keeps the file through both.
+            entry.captureReleasedAt = releasedAt;
+            if (releasedAt)
+                thumbnails.logCaptureTiming(entry, "png");
+            captureActions(entry, path, info, mode);
+            activeTemp = "";
+            finishClose();
+            return;
+        }
+        const historyId = history?.keep("", path, path, info, [], 0) ?? "";
+        const result = thumbnails?.finishCapture(info, path, historyId, mode);
+        if (result?.accepted || historyId) {
+            if (result?.saved && historyId)
+                history.markExported(historyId, result.path);
+            if (result?.transferred)
+                activeTemp = "";
+            const editSource = result?.path || (historyId ? history.pathFor(history.get(historyId).raw) : "");
+            finishClose();
+            if (captureSettings.openEditor && editSource)
+                Qt.callLater(() => reopenCapture(editSource, info, result?.serial ?? 0, historyId, result?.saved === true));
+        } else {
+            captureFailed(started, path);
+        }
+    }
+
+    function captureFailed(started: int, path: string): void {
+        if (started !== session) {
+            removeTemp(path);
+            return;
+        }
+        const picker = editPicker;
+        const plan = editPlan;
+        invalidate();
+        startEditing(picker, plan);
+    }
+
+    function startEditing(picker: var, plan: var): void {
         editor.reset();
         editor.scale = picker.dpr;
         editPlan = plan;
@@ -154,11 +268,64 @@ Scope {
         editing = true;
     }
 
+    function reopenCapture(path: string, info: var, serial: int, historyId = "", saved = false): bool {
+        const screen = screenNames.includes(info.screen) ? info.screen : screenNames[0];
+        if (!interactionEnabled || opened || !screen)
+            return false;
+        const row = historyId ? history?.get(historyId) : null;
+        const original = row ? history.pathFor(row.raw) : path;
+        const temp = CUtils.newCaptureTempPath().replace(/\\/g, "/");
+        if (!temp)
+            return false;
+        if (!CUtils.copyFile(FileUrls.fromLocalPath(original), FileUrls.fromLocalPath(temp), true)) {
+            removeTemp(temp);
+            return false;
+        }
+        session++;
+        recordingMode = false;
+        stack = [];
+        editPath = temp;
+        editInfo = Object.assign({}, info, { screen });
+        editSerial = serial;
+        editHistoryId = historyId;
+        restoredEdit = row;
+        editingSaved = saved || !!row?.exportPath;
+        editScreen = screen;
+        openScreenNames = screenNames;
+        editing = true;
+        opened = true;
+        return true;
+    }
+
+    function showHistory(): bool {
+        if (!history || !interactionEnabled || opened)
+            return false;
+        history.show();
+        return true;
+    }
+
+    function editSourceFailed(): void {
+        if (!opened || closing || !editPath)
+            return;
+        Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be opened."), "screenshot_region", Toast.Error);
+        cancel();
+    }
+
     function endEditing(): void {
         editing = false;
         editScreen = "";
         editPlan = null;
         editPicker = null;
+        const path = editPath;
+        editPath = "";
+        editInfo = null;
+        editSerial = 0;
+        editHistoryId = "";
+        restoredEdit = null;
+        committedEdit = null;
+        editingSaved = false;
+        if (path)
+            removeTemp(path);
         editor.reset();
     }
 
@@ -182,6 +349,10 @@ Scope {
     function editorKey(key: int, ctrl: bool, shift: bool, alt: bool): bool {
         if (!editing || closing || saving || !editPicker)
             return false;
+        if (!ctrl && !alt && !editor.inkOpen && editPath && history && (key === Qt.Key_Return || key === Qt.Key_Enter)) {
+            editPicker.exportEdit("done");
+            return true;
+        }
         const result = editor.shortcut(key, ctrl, shift, alt);
         if (result === "copy" || result === "save")
             editPicker.exportEdit(result);
@@ -191,10 +362,22 @@ Scope {
     // Called by a picker when its fade out has finished, or at once when the
     // animation is disabled.
     function finishClose(): void {
+        if (!opened)
+            return;
+        // LazyLoader deletes its detached item later. Mark the session closed
+        // before resetting editing state so those delegates stay hidden and
+        // the retiring Variants cannot create a picker on the other monitors.
         opened = false;
         closing = false;
         invalidate();
         endEditing();
+    }
+
+    function closeAfterDone(): void {
+        // The result is ready. Release input and retire the fullscreen editor
+        // in this turn instead of keeping the thumbnail behind its exit fade.
+        closing = true;
+        finishClose();
     }
 
     // Deletes one hand-over file. The plugin accepts only the exact path scheme it
@@ -210,6 +393,52 @@ Scope {
         return activeTemp;
     }
 
+    function reopenedExportFinished(started: int, kind: string, path: string, ok: bool, info = editInfo): void {
+        if (started !== session)
+            return;
+        if (ok && kind === "copy") {
+            copyFinished(started, path, info);
+            return;
+        }
+        if (ok && kind === "done") {
+            const id = keepEdited(path, info);
+            if (thumbnails?.addCapture(info, path, id, editSerial)) {
+                activeTemp = "";
+                closeAfterDone();
+                return;
+            }
+            if (id) {
+                closeAfterDone();
+                return;
+            }
+        }
+        if (ok) {
+            const saved = thumbnails?.saveExport(path, saveRoot);
+            if (saved) {
+                fileFinished(started, saved, info);
+                return;
+            }
+        }
+        saveFailed(started, Tr.tr("The image could not be saved."));
+    }
+
+    function keepEdited(path: string, info: var, exported = ""): string {
+        if (!history || !editPath || !editPicker)
+            return "";
+        const id = history.keep(editHistoryId, editPath, path, info, editor.strokes, editPicker.editRegion.width, exported);
+        if (id)
+            editHistoryId = id;
+        return id;
+    }
+
+    function finishUnchanged(): bool {
+        if (!committedEdit || committedEdit !== editor.history
+            || !thumbnails?.entries?.some(entry => entry.serial === editSerial))
+            return false;
+        closeAfterDone();
+        return true;
+    }
+
     // Results from the editor's exports. Each ignores a result from an earlier
     // session. `info` is { screen, width, height, dpr } for the thumbnail, and
     // null when the caller has none.
@@ -221,11 +450,20 @@ Scope {
     function fileFinished(started: int, path: string, info = null): void {
         if (started !== session)
             return;
-        if (thumbnails && info)
-            thumbnails.addSaved(info, path);
-        if (thumbnails && !thumbnails.enabled)
+        const id = keepEdited(path, info, path);
+        if (thumbnails && info && thumbnails.addSaved(info, path, id, editPath ? editSerial : -1)) {
+            if (editPath)
+                editSerial = thumbnails.lastId;
+        }
+        if (history || (thumbnails && !thumbnails.enabled))
             Toaster.toast(Tr.tr("Screenshot saved"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
-        cancel();
+        if (history && editPath) {
+            editingSaved = true;
+            committedEdit = editor.history;
+            invalidate();
+        } else {
+            cancel();
+        }
     }
 
     // The writer reads the hand-over file before returning an operation id.
@@ -236,7 +474,7 @@ Scope {
             removeTemp(path);
             return;
         }
-        if (thumbnails && thumbnails.enabled && info) {
+        if (info && ((thumbnails && thumbnails.enabled) || (history && editPath))) {
             copyPreview = CUtils.newCaptureTempPath().split("\\").join("/");
             if (copyPreview && !CUtils.copyFile(FileUrls.fromLocalPath(path), FileUrls.fromLocalPath(copyPreview), true)) {
                 removeTemp(copyPreview);
@@ -260,9 +498,19 @@ Scope {
                 root.saveFailed(root.copySession, Tr.tr("The image could not be copied."));
                 return;
             }
-            if (root.thumbnails && root.copyInfo && root.copyPreview)
-                root.thumbnails.addCopy(root.copyInfo, root.copyPreview);
-            root.cancel();
+            const unchanged = root.committedEdit && root.committedEdit === root.editor.history;
+            const historyId = !unchanged && root.copyPreview ? root.keepEdited(root.copyPreview, root.copyInfo) : root.editHistoryId;
+            if (!unchanged && root.thumbnails && root.copyInfo && root.copyPreview
+                && root.thumbnails.addCopy(root.copyInfo, root.copyPreview, historyId, root.editPath ? root.editSerial : -1)) {
+                if (root.editPath) {
+                    root.editSerial = root.thumbnails.lastId;
+                    root.committedEdit = root.editor.history;
+                }
+            }
+            if (root.history && root.editPath && !root.captureSettings.closeAfterCopy)
+                root.invalidate();
+            else
+                root.cancel();
         }
     }
 
@@ -289,8 +537,13 @@ Scope {
     Timer {
         interval: root.saveTimeout
         running: root.saving && root.opened
-        onTriggered: root.saveFailed(root.session, root.copyOperation
-            ? Tr.tr("Copying the screenshot timed out.") : Tr.tr("Saving the screenshot timed out."))
+        onTriggered: {
+            if (!root.editing && root.editPicker)
+                root.captureFailed(root.session, root.activeTemp);
+            else
+                root.saveFailed(root.session, root.copyOperation
+                    ? Tr.tr("Copying the screenshot timed out.") : Tr.tr("Saving the screenshot timed out."));
+        }
     }
 
     // Each ScreencopyView reports here. The tint appears only when every screen
@@ -321,6 +574,8 @@ Scope {
             removeTemp(activeTemp);
         if (copyPreview)
             removeTemp(copyPreview);
+        if (editPath)
+            removeTemp(editPath);
     }
 
     LazyLoader {
@@ -329,20 +584,37 @@ Scope {
         active: root.opened
 
         Variants {
-            model: root.screenList
+            id: sessionWindows
+
+            property bool retired
+
+            // Snapshot the monitors. A reopened capture only owns one window;
+            // clearing editPath at teardown must never widen this model.
+            Component.onCompleted: model = Array.from(root.screenList).filter(screen => !root.editPath || screen.name === root.editScreen)
+
+            Connections {
+                target: root
+                function onOpenedChanged(): void {
+                    if (!root.opened)
+                        sessionWindows.retired = true;
+                }
+            }
 
             StyledWindow {
                 id: win
 
                 required property ShellScreen modelData
+                readonly property bool sessionOpen: root.opened && !sessionWindows.retired
+                readonly property bool acceptsInput: sessionOpen && !root.closing
 
                 screen: modelData
                 name: "area-picker"
+                visible: sessionOpen
                 excludeFromCapture: true
                 exclusionMode: ExclusionMode.Ignore
                 WlrLayershell.layer: WlrLayer.Overlay
-                WlrLayershell.keyboardFocus: root.closing ? WlrKeyboardFocus.None : WlrKeyboardFocus.Exclusive
-                mask: root.closing ? empty : null
+                WlrLayershell.keyboardFocus: acceptsInput ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+                mask: acceptsInput ? null : empty
 
                 anchors.top: true
                 anchors.bottom: true
@@ -356,6 +628,7 @@ Scope {
                 Picker {
                     owner: root
                     screen: win.modelData
+                    sessionOpen: win.sessionOpen
                 }
             }
         }

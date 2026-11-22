@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <qlist.h>
 #include <qobject.h>
 #include <qqmlintegration.h>
@@ -7,6 +9,8 @@
 #include <qvariant.h>
 
 namespace caelestia::shell {
+
+class CapturePreviews;
 
 class CUtils : public QObject {
     Q_OBJECT
@@ -17,6 +21,8 @@ class CUtils : public QObject {
     Q_PROPERTY(QString qtVersion READ qtVersion CONSTANT)
 
 public:
+    static CUtils* create(QQmlEngine* engine, QJSEngine* scriptEngine);
+
     // No-op for declaring variable/expression dependencies in QML bindings
     Q_INVOKABLE static void dependency(const QVariant& value);
 
@@ -24,6 +30,12 @@ public:
         QQuickItem* target, const QUrl& path, const QJSValue& onSaved = {}, const QJSValue& onFailed = {});
     Q_INVOKABLE void saveItem(QQuickItem* target, const QUrl& path, const QRect& rect, const QJSValue& onSaved = {},
         const QJSValue& onFailed = {});
+    // One grab feeds a bounded image-provider preview and the full PNG.
+    // `path` is a reserved capture temp file. Return true from onPreview to
+    // retain the preview URL and from onSaved to take ownership of the PNG.
+    Q_INVOKABLE void saveCaptureWithPreview(QQuickItem* target, const QUrl& path, const QRect& rect,
+        const QSize& previewBounds, const QJSValue& onPreview, const QJSValue& onSaved, const QJSValue& onFailed);
+    Q_INVOKABLE void releaseCapturePreview(const QUrl& preview);
 
     Q_INVOKABLE static bool copyFile(const QUrl& source, const QUrl& target, bool overwrite = true);
     Q_INVOKABLE static bool deleteFile(const QUrl& path);
@@ -78,6 +90,14 @@ public:
 
     [[nodiscard]] static QString version();
     [[nodiscard]] static QString qtVersion();
+
+private:
+    CUtils() = default;
+
+    std::shared_ptr<CapturePreviews> capturePreviews;
+
+    void saveItemImpl(QQuickItem* target, const QUrl& path, const QRect& rect, const QSize& previewBounds,
+        const QJSValue& onPreview, const QJSValue& onSaved, const QJSValue& onFailed);
 };
 
 } // namespace caelestia::shell

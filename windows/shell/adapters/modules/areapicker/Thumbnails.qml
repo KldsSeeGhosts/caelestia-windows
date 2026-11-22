@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Windows as Native
@@ -27,9 +28,8 @@ import "../../utils/FileUrls.js" as FileUrls
 // its own from the bottom right corner with the newest at the bottom, and a
 // sixth preview anywhere pushes out the oldest.
 //
-// Files. A capture that was saved is shown from its file. A capture that was
-// only copied is shown from a preview file in the OS temp directory, made by
-// copying the picker's pending preview after a confirmed clipboard write. That file
+// Files. Quick Capture can show a bounded memory preview while its PNG is
+// being written. Other cards show their saved or temporary file. The temp file
 // has the same exact-path scheme as the hand-over files (CUtils.newCaptureTempPath),
 // belongs to the preview alone and is deleted when the preview goes away. If a
 // viewer holds it open, its path goes on a retry list owned by this scope and
@@ -77,7 +77,11 @@ Scope {
     // { width, height }. Fixtures replace it.
     property var dragDistance: () => CUtils.dragDistance()
     property var entries: []
+    // Retain the file reservation if a card goes away before PNG encoding ends.
+    readonly property var pendingCaptures: new Map()
+    property var pins: []
     property int lastId
+    property int detachedCopy
     // Preview files that could not be deleted yet (a viewer holds them open).
     // Not saved anywhere: a shell reload forgets them.
     property var pendingTemps: []
@@ -97,27 +101,38 @@ Scope {
     property var clock: () => Date.now()
 
     readonly property var settings: Logic.settings(GlobalConfig.windows?.capture)
+    readonly property var appearance: Logic.appearance(GlobalConfig.windows?.capture)
     readonly property bool enabled: settings.enabled
     readonly property int seconds: settings.seconds
-    // While the picker is open the panels are hidden and their timeouts wait, so
-    // a preview is never on top of a frozen screen it is not part of.
+    // Cards never draw or accept input over the picker. A reopened editor uses
+    // an existing PNG, so its thumbnail panel can remain mapped and render a
+    // transparent frame instead of re-showing the old contents on return.
     readonly property bool suspended: CaptureUi.picker?.opened ?? false
+    readonly property bool editingCapture: suspended && !!CaptureUi.picker?.editPath
+    readonly property bool showExportPath: !!CaptureUi.picker?.history
     // The panel windows, one per screen that has previews.
     readonly property var windows: panels.instances
     readonly property var activeScreens: Array.from(screenList).filter(screen => entries.some(entry => entry.screen === screen.name))
 
     // `info` is { screen, width, height, dpr }: the screen name, the saved image
     // size in physical pixels and the screen's device pixel ratio.
-    // Both functions return whether a preview was added.
-    function addSaved(info: var, path: string): bool {
+    // Each function returns whether a preview was added.
+    function addSaved(info: var, path: string, historyId = "", editorSerial = -1): bool {
         retryTemps();
         sweepDragFiles();
-        return add(info, path, "", true);
+        return add(info, path, "", true, false, historyId, editorSerial);
+    }
+
+    // Takes ownership of the picker's staged PNG, but only on success.
+    function addCapture(info: var, path: string, historyId = "", editorSerial = -1): bool {
+        retryTemps();
+        sweepDragFiles();
+        return add(info, path, path, false, false, historyId, editorSerial);
     }
 
     // `source` is the picker's pending preview after confirmed clipboard
     // success. The thumbnail keeps its own copy before the picker deletes it.
-    function addCopy(info: var, source: string): bool {
+    function addCopy(info: var, source: string, historyId = "", editorSerial = -1): bool {
         retryTemps();
         sweepDragFiles();
         if (!canAdd(info))
@@ -129,7 +144,7 @@ Scope {
             deleteTemp(temp);
             return false;
         }
-        if (add(info, temp, temp, false))
+        if (add(info, temp, temp, false, true, historyId, editorSerial))
             return true;
         deleteTemp(temp);
         return false;
@@ -139,17 +154,65 @@ Scope {
         return interactionEnabled && enabled && !!info && Array.from(screenList).some(screen => screen.name === info.screen);
     }
 
-    function add(info: var, path: string, temp: string, saved: bool): bool {
+    function previewBounds(info: var): size {
+        const screen = Array.from(screenList).find(screen => screen.name === info.screen);
+        const scale = (screen?.devicePixelRatio || info.dpr || 1) * appearance.scale;
+        const width = Logic.WIDTH * scale;
+        const height = Logic.HEIGHT * scale;
+        if (!appearance.cover || !info.width || !info.height)
+            return Qt.size(Math.ceil(width), Math.ceil(height));
+        // A landscape snip needs more pixels than the box's width to fill its
+        // height without upscaling (and vice versa for portrait snips).
+        const factor = Math.min(1, 768 / Math.max(info.width, info.height),
+            Math.max(width / info.width, height / info.height));
+        return Qt.size(Math.max(1, Math.ceil(info.width * factor)), Math.max(1, Math.ceil(info.height * factor)));
+    }
+
+    function addPendingCapture(info: var, path: string, preview: url, releasedAt: double): var {
+        if (!add(info, path, path, false, false, "", -1, preview, releasedAt))
+            return null;
+        const entry = entries[entries.length - 1];
+        pendingCaptures.set(path, entry);
+        return entry;
+    }
+
+    function completePendingCapture(path: string, ok: bool): bool {
+        const entry = pendingCaptures.get(path);
+        if (!entry)
+            return false;
+        pendingCaptures.delete(path);
+        entry.outputPending = false;
+        if (!ok) {
+            entry.afterReveal = null;
+            if (entries.includes(entry))
+                finish(entry);
+            else
+                discard(entry);
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be saved."), "screenshot_region", Toast.Error);
+            return true;
+        }
+        logCaptureTiming(entry, "png");
+        if (!entries.includes(entry))
+            discard(entry);
+        else if (entry.previewPresented)
+            finishDeferredCapture(entry);
+        return true;
+    }
+
+    function logCaptureTiming(entry: var, phase: string): void {
+        if (!entry.captureReleasedAt)
+            return;
+        const elapsed = Math.max(0, Date.now() - entry.captureReleasedAt);
+        console.log(`CAELESTIA_CAPTURE_HANDOFF id=${entry.serial} phase=${phase} ms=${elapsed} width=${entry.imageWidth} height=${entry.imageHeight} preview=${entry.previewPipeline}`);
+    }
+
+    function add(info: var, path: string, temp: string, saved: bool, copied: bool, historyId: string, editorSerial: int, preview = "", releasedAt = 0): bool {
         if (!canAdd(info) || !path)
             return false;
-        // At most five previews exist in total, as in the classic tool. The oldest
-        // goes first, on whichever screen it is. Each screen still lays out its
-        // own previews. A preview that is being dragged is not pushed out under
-        // the drag: the oldest one that is not goes instead, and the dragged
-        // preview counts toward the limit.
-        const idle = entries.filter(entry => !entry.dragging);
-        const busy = entries.length - idle.length;
-        const doomed = Logic.evictions(idle.map(entry => entry.screen), Logic.MAX_PREVIEWS - busy).map(index => idle[index]);
+        // -1 means a new capture, and 0 means the editor was opened from
+        // history without a card. Otherwise replace its card in a single
+        // update, so the stack never grows and collapses during the handoff.
+        const previous = entries.find(entry => entry.serial === editorSerial && !entry.dragging);
         const entry = entryComponent.createObject(root, {
             serial: ++lastId,
             screen: info.screen,
@@ -157,17 +220,63 @@ Scope {
             imagePath: path,
             temp: temp,
             saved: saved,
-            copied: !saved,
+            copied: copied,
+            historyId: historyId,
+            memorySource: preview,
+            previewPipeline: String(preview) ? "memory" : "file",
+            outputPending: !!String(preview),
+            captureReleasedAt: releasedAt,
+            fromEditor: editorSerial >= 0,
             imageWidth: info.width ?? 0,
             imageHeight: info.height ?? 0,
             dpr: info.dpr > 0 ? info.dpr : 1
         });
         if (!entry)
             return false;
-        entries = entries.filter(other => !doomed.includes(other)).concat([entry]);
-        for (const old of doomed)
-            discard(old);
+        if (previous?.screen === info.screen) {
+            entries = entries.map(other => other === previous ? entry : other);
+        } else {
+            // Capacity is global. A card being dragged is not evicted, but
+            // still counts against the limit.
+            const remaining = previous ? entries.filter(other => other !== previous) : entries;
+            const idle = remaining.filter(other => !other.dragging);
+            const busy = remaining.length - idle.length;
+            const doomed = appearance.stack ? Logic.evictions(idle.map(other => other.screen), Logic.MAX_PREVIEWS - busy).map(index => idle[index]) : idle;
+            entries = remaining.filter(other => !doomed.includes(other)).concat([entry]);
+            for (const old of doomed)
+                discard(old);
+        }
+        if (previous)
+            discard(previous);
         return true;
+    }
+
+    function finishCapture(info: var, path: string, historyId: string, mode: string): var {
+        const saving = mode === "save" || mode === "save-and-copy" || mode === "save-and-copy-path";
+        const copyImage = mode === "copy" || mode === "save-and-copy";
+        const saved = saving ? saveExport(path, saveRoot) : "";
+        if (saving)
+            announceSave(saved);
+        const shown = saved ? addSaved(info, saved, historyId) : addCapture(info, path, historyId);
+        const card = shown ? entries[entries.length - 1] : null;
+        let copied = false;
+        if (copyImage) {
+            if (card) {
+                copyEntry(card);
+                copied = !!card.copyOperation;
+            } else {
+                copied = copyOutput(saved || path);
+            }
+        } else if (saved && mode === "save-and-copy-path") {
+            detachedCopy = clipboard.copyText(saved.replace(/\//g, "\\"));
+        }
+        return { accepted: shown || !!saved || copied, transferred: shown && !saved,
+            path: saved || (shown ? path : ""), saved: !!saved, serial: card?.serial ?? 0 };
+    }
+
+    function copyOutput(path: string): bool {
+        detachedCopy = clipboard.copyImageFile(path);
+        return detachedCopy > 0;
     }
 
     // Starts the exit animation. The card calls finish() when it is done. A
@@ -201,6 +310,10 @@ Scope {
     }
 
     function discard(entry: var): void {
+        releaseMemoryPreview(entry);
+        if (entry.outputPending)
+            return;
+        finishDeferredCapture(entry);
         release(entry);
         // The card is gone. Its drag file, if it made one, now only waits out the
         // grace period since its last drag.
@@ -211,6 +324,25 @@ Scope {
             sweepDragFiles();
         }
         entry.destroy();
+    }
+
+    function releaseMemoryPreview(entry: var): void {
+        const url = entry.memorySource;
+        if (!url.toString())
+            return;
+        // The card is leaving. Keep the stale URL on the retiring delegate so
+        // its Image never switches to a not-yet-written file.
+        CUtils.releaseCapturePreview(url);
+    }
+
+    function finishDeferredCapture(entry: var): void {
+        if (entry?.outputPending)
+            return;
+        const complete = entry?.afterReveal;
+        if (!complete)
+            return;
+        entry.afterReveal = null;
+        complete();
     }
 
     function dragRecord(path: string): var {
@@ -320,12 +452,21 @@ Scope {
         pendingTemps = pendingTemps.filter(path => !tryRemove(path));
     }
 
-    function copyEntry(entry: var): void {
-        if (!entries.includes(entry) || entry.closing || entry.copyOperation)
+    function copyEntry(entry: var, dismiss = false): void {
+        if (!entries.includes(entry) || entry.closing || entry.outputPending)
             return;
+        finishDeferredCapture(entry);
+        if (entry.copyOperation) {
+            if (dismiss)
+                entry.dismissAfterCopy = true;
+            return;
+        }
         entry.copied = false;
+        entry.dismissAfterCopy = dismiss;
         entry.copyStarted = Date.now();
         entry.copyOperation = clipboard.copyImageFile(entry.path);
+        if (!entry.copyOperation)
+            copyResult(entry, false);
     }
 
     function copyResult(entry: var, ok: bool): void {
@@ -338,12 +479,21 @@ Scope {
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be copied."), "screenshot_region", Toast.Error);
         } else {
             entry.copyFailed = false;
+            if (entry.dismissAfterCopy)
+                close(entry);
         }
+        entry.dismissAfterCopy = false;
     }
 
     Connections {
         target: root.clipboard
         function onWriteFinished(id: int, ok: bool, error: string): void {
+            if (id === root.detachedCopy && id > 0) {
+                root.detachedCopy = 0;
+                if (!ok)
+                    Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The clipboard could not be updated."), "screenshot_region", Toast.Error);
+                return;
+            }
             const entry = root.entries.find(item => item.copyOperation === id && !item.closing);
             if (entry)
                 root.copyResult(entry, ok);
@@ -365,10 +515,16 @@ Scope {
     // Writes a copy-only capture to the screenshots folder with the picker's
     // naming, and then shows that file. Returns whether the capture is saved.
     // The thumbnail is on screen, so there is no success toast.
-    function saveEntry(entry: var): bool {
-        if (entry.saved)
+    function saveEntry(entry: var, announce = false): bool {
+        if (entry.outputPending)
+            return false;
+        finishDeferredCapture(entry);
+        if (entry.saved) {
+            if (announce)
+                announceSave(entry.path);
             return true;
-        const dest = saveInto(entry.path, saveRoot + "/Screenshots") || saveInto(entry.path, saveRoot);
+        }
+        const dest = saveExport(entry.path, saveRoot);
         if (!dest) {
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be saved."), "screenshot_region", Toast.Error);
             return false;
@@ -380,7 +536,33 @@ Scope {
         // file released, so it can never be deleted under a card that shows it.
         entry.imagePath = dest;
         release(entry);
+        if (entry.historyId)
+            CaptureUi.picker?.history?.markExported(entry.historyId, dest);
+        if (announce)
+            announceSave(dest);
         return true;
+    }
+
+    function saveExport(source: string, pictures: string): string {
+        const configured = GlobalConfig.windows?.capture?.saveDirectory;
+        if (typeof configured === "string" && configured.trim()) {
+            const directory = configured.trim().replace(/\\/g, "/");
+            return FileUrls.fromLocalPath(directory) ? saveInto(source, directory) : "";
+        }
+        return saveInto(source, pictures + "/Screenshots") || saveInto(source, pictures);
+    }
+
+    function announceSave(path: string): void {
+        if (path)
+            Toaster.toast(Tr.tr("Screenshot saved"), path.replace(/\//g, "\\"), "screenshot_region");
+        else
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("Could not write to the screenshot folder."), "screenshot_region", Toast.Error);
+    }
+
+    function exportHistory(path: string): string {
+        const saved = saveExport(path, saveRoot);
+        announceSave(saved);
+        return saved;
     }
 
     function saveInto(source: string, directory: string): string {
@@ -394,19 +576,60 @@ Scope {
     // Opens the folder that holds the image. A capture that was only copied is
     // saved first, as the classic tool does.
     function reveal(entry: var): void {
-        if (!saveEntry(entry))
+        if (!saveEntry(entry, showExportPath))
             return;
         const folder = entry.path.replace(/\\/g, "/").replace(/\/[^\/]*$/, "");
         if (!openUrl(FileUrls.fromLocalPath(folder)))
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The folder could not be opened."), "screenshot_region", Toast.Error);
     }
 
-    // The card body opens the image with the default application. The editor
-    // does not exist yet; a later change reopens the capture there instead. An
-    // image that was only copied opens from its preview file.
+    function saveAs(entry: var): void {
+        if (entry.outputPending)
+            return;
+        if (CaptureUi.picker?.history?.saveImageAs(entry.path, entry.historyId))
+            close(entry);
+    }
+
+    // Open image in the context menu uses the default application.
     function open(entry: var): void {
+        if (entry.outputPending)
+            return;
         if (!openUrl(FileUrls.fromLocalPath(entry.path)))
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be opened."), "screenshot_region", Toast.Error);
+    }
+
+    function edit(entry: var): void {
+        if (!entries.includes(entry) || entry.closing || entry.dragging || entry.outputPending || suspended || !CaptureUi.picker)
+            return;
+        finishDeferredCapture(entry);
+        const info = { screen: entry.screen, width: entry.imageWidth, height: entry.imageHeight, dpr: entry.dpr };
+        if (!CaptureUi.picker.reopenCapture(entry.path, info, entry.serial, entry.historyId, entry.saved))
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be opened."), "screenshot_region", Toast.Error);
+    }
+
+    function pin(entry: var): void {
+        if (!entries.includes(entry) || entry.closing || entry.dragging || entry.outputPending)
+            return;
+        const screen = Array.from(screenList).find(screen => screen.name === entry.screen);
+        if (!screen)
+            return;
+        const path = CUtils.newCaptureTempPath().replace(/\\/g, "/");
+        if (!path || !CUtils.copyFile(FileUrls.fromLocalPath(entry.path), FileUrls.fromLocalPath(path), true)) {
+            if (path)
+                deleteTemp(path);
+            Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be pinned."), "push_pin", Toast.Error);
+            return;
+        }
+        const pin = { path, screen, width: entry.imageWidth, height: entry.imageHeight, dpr: entry.dpr };
+        pins = pins.concat([pin]);
+        while (pins.length > Logic.MAX_PREVIEWS)
+            unpin(pins[0]);
+        close(entry);
+    }
+
+    function unpin(pin: var): void {
+        pins = pins.filter(other => other.path !== pin.path);
+        deleteTemp(pin.path);
     }
 
     // The card body was pulled past the drag distance: drags the image out of the
@@ -422,7 +645,7 @@ Scope {
     // that the drag file is kept for `dragGraceMs` more, because a target can open
     // the path after the drop (see the note at the top).
     function drag(entry: var, item: Item): bool {
-        if (entry.dragging || !entries.includes(entry))
+        if (entry.dragging || entry.outputPending || !entries.includes(entry))
             return false;
         const file = WindowsFiles.isFile(entry.path) ? dragSource(entry) : "";
         if (!file) {
@@ -471,6 +694,10 @@ Scope {
             if (!names.includes(entry.screen))
                 finish(entry);
         }
+        for (const pin of pins.slice()) {
+            if (!names.includes(pin.screen.name))
+                unpin(pin);
+        }
     }
 
     Component.onCompleted: CaptureUi.thumbnails = root
@@ -481,8 +708,15 @@ Scope {
         // The cards go with this scope, so none of them shows a file any more.
         const gone = entries;
         entries = [];
-        for (const entry of gone)
-            release(entry);
+        for (const entry of gone) {
+            releaseMemoryPreview(entry);
+            if (!entry.outputPending)
+                release(entry);
+        }
+        // The native capture owns any unfinished file until completion.
+        pendingCaptures.clear();
+        for (const pin of pins)
+            deleteTemp(pin.path);
         retryTemps();
         // Nothing is dragged any more, so no drag file has to wait.
         removeAllDragFiles();
@@ -523,21 +757,32 @@ Scope {
         id: entryComponent
 
         QtObject {
+            id: captureEntry
+
             required property int serial
             required property string screen
             property string path
             // The file the card draws. It is `path` until Save moves the capture,
             // and it changes before the preview file is released.
             property string imagePath
+            property url memorySource
+            property string previewPipeline
+            property bool outputPending
+            property double captureReleasedAt
+            property bool previewPresented
             // The preview file made for a copy-only capture, or "".
             property string temp
             // The file made for dragging this copy-only capture, or "". The
             // owner's dragFiles list tracks it and outlives the entry.
             property string dragFile
             property bool saved
+            property string historyId
+            property var afterReveal: null
+            property bool fromEditor
             // An operation belongs to this entry, never to a replacement card.
             // Closing, completion and timeout clear it before accepting results.
             property int copyOperation
+            property bool dismissAfterCopy
             property double copyStarted
             property bool copied
             // Keep a failed copy available until retry, save or explicit close.
@@ -550,6 +795,81 @@ Scope {
             property bool dragging
             // A close came in while it ran.
             property bool closeAfterDrag
+
+            // If an overlay is hidden or the scene graph isn't presenting,
+            // automatic output must still happen, and only once.
+            property Timer revealDeadline: Timer {
+                interval: 180
+                running: !!captureEntry.afterReveal && !captureEntry.outputPending
+                onTriggered: root.finishDeferredCapture(captureEntry)
+            }
+        }
+    }
+
+    Variants {
+        model: root.pins
+
+        StyledWindow {
+            id: pinned
+
+            required property var modelData
+            readonly property real imageWidth: Math.max(1, modelData.width) / modelData.dpr
+            readonly property real imageHeight: Math.max(1, modelData.height) / modelData.dpr
+            readonly property real fit: Math.min(1, screen.width * 0.6 / imageWidth, screen.height * 0.6 / imageHeight)
+
+            screen: modelData.screen
+            name: "capture-pin"
+            anchors { top: true; left: true }
+            margins.left: Math.round((screen.width - implicitWidth) / 2)
+            margins.top: Math.round((screen.height - implicitHeight) / 2)
+            implicitWidth: Math.max(48, Math.round(imageWidth * fit))
+            implicitHeight: Math.max(48, Math.round(imageHeight * fit))
+            exclusionMode: ExclusionMode.Normal
+            exclusiveZone: 0
+            WlrLayershell.layer: WlrLayer.Overlay
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            excludeFromCapture: true
+            visible: !root.suspended
+
+            Image {
+                anchors.fill: parent
+                source: FileUrls.fromLocalPath(pinned.modelData.path)
+                sourceSize: Qt.size(Math.ceil(pinned.width * pinned.screen.devicePixelRatio),
+                    Math.ceil(pinned.height * pinned.screen.devicePixelRatio))
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                cache: false
+            }
+
+            MouseArea {
+                id: move
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                property point origin
+                property point start
+                onPressed: mouse => {
+                    origin = mapToGlobal(mouse.x, mouse.y);
+                    start = Qt.point(pinned.margins.left, pinned.margins.top);
+                }
+                onPositionChanged: mouse => {
+                    if (!pressed)
+                        return;
+                    const at = mapToGlobal(mouse.x, mouse.y);
+                    pinned.margins.left = Math.max(0, Math.min(pinned.screen.width - pinned.width, Math.round(start.x + at.x - origin.x)));
+                    pinned.margins.top = Math.max(0, Math.min(pinned.screen.height - pinned.height, Math.round(start.y + at.y - origin.y)));
+                }
+                onDoubleClicked: root.unpin(pinned.modelData)
+            }
+
+            Controls.ToolButton {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                visible: move.containsMouse || hovered
+                text: "×"
+                Accessible.name: Tr.tr("Unpin screenshot")
+                onClicked: root.unpin(pinned.modelData)
+            }
         }
     }
 
@@ -565,8 +885,8 @@ Scope {
 
             readonly property var stack: root.entries.filter(entry => entry.screen === modelData.name)
             readonly property var area: ({ width: width, height: height })
-            readonly property var size: Logic.previewSize(area)
-            readonly property var rects: Logic.stackRects(area, stack.length, size)
+            readonly property var size: Logic.previewSize(area, root.appearance.scale)
+            readonly property var rects: Logic.stackRects(area, stack.length, size, root.appearance.corner)
             // The cards that exist, for the input mask.
             property var cardItems: []
 
@@ -579,7 +899,7 @@ Scope {
             exclusiveZone: 0
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-            visible: !root.suspended
+            visible: !root.suspended || root.editingCapture
             // Only the cards take presses. One region per card, so the gaps
             // between cards and the rest of the work area reach the windows below.
             mask: Region {
@@ -619,7 +939,7 @@ Scope {
                     owner: root
                     entry: modelData
                     slot: win.rects[win.stack.indexOf(modelData)] ?? ({ x: 0, y: 0, width: 0, height: 0 })
-                    present: win.visible
+                    present: win.visible && !root.suspended
                 }
             }
         }

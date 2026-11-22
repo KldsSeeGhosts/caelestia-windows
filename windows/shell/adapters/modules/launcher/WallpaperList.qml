@@ -1,22 +1,18 @@
 pragma ComponentBehavior: Bound
 
-import "items"
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Caelestia.Config
+import qs.components
 import qs.components.controls
 import qs.components.wallpaper
 import qs.services
 import qs.utils
+import "items"
 
-// Windows adaptation of modules/launcher/WallpaperList.qml.
-//
-// The upstream view is the PathView itself. The Windows picker also has to
-// name the scanned folder and offer Open wallpapers folder / Add wallpaper…,
-// so the view moves inside a column with a header. ContentList still reads the
-// picker through `count`, `currentItem` and the current-index functions, so
-// those are forwarded to the PathView.
+// Keep pointer targets stationary while browsing. Only keyboard navigation
+// or scrolling moves the viewport, never a hover.
 Item {
     id: root
 
@@ -26,15 +22,17 @@ Item {
     required property var content
 
     readonly property int itemWidth: Tokens.sizes.launcher.wallpaperWidth * 0.8 + Tokens.padding.medium * 2
-    readonly property int selectedItemWidth: Tokens.sizes.launcher.wallpaperWidth + Tokens.padding.medium * 2
-    // The gap between the folder bar and the carousel belongs to the header, so
-    // ContentList can reserve the whole block without squeezing the tiles.
-    readonly property real headerHeight: folderBar.implicitHeight + Tokens.spacing.small
-    readonly property alias count: pathView.count
-    readonly property alias currentItem: pathView.currentItem
+    readonly property real headerHeight: folderBar.implicitHeight + keyboardHint.implicitHeight + Tokens.spacing.small * 2
+    readonly property alias count: tiles.count
+    readonly property var pickerScreen: (QsWindow.window as QsWindow)?.screen
+    readonly property bool browsing: visible && enabled && screenState.launcher
+    property int hoveredIndex: -1
+    readonly property int highlightedIndex: hoveredIndex >= 0 ? hoveredIndex : tiles.currentIndex
+    readonly property var highlightedEntry: scriptModel.values[highlightedIndex] ?? null
+    property string keyboardPath: ""
 
     readonly property int numItems: {
-        const screen = (QsWindow.window as QsWindow)?.screen;
+        const screen = pickerScreen;
         if (!screen)
             return 0;
 
@@ -50,7 +48,7 @@ Item {
         if (maxWidth <= 0)
             return 0;
 
-        const maxItemsOnScreen = 1 + Math.floor((maxWidth - selectedItemWidth) / itemWidth);
+        const maxItemsOnScreen = Math.max(1, Math.floor(maxWidth / itemWidth));
         return Math.max(0, Math.min(maxItemsOnScreen, Config.launcher.maxWallpapers, scriptModel.values.length));
     }
 
@@ -58,14 +56,61 @@ Item {
     // header's action row is its real minimum. With a short list the carousel
     // can be narrower than the actions, so without this the path collapsed to the
     // width of the buttons and disappeared.
-    implicitWidth: Math.max(pathView.implicitWidth, folderBar.minimumWidth)
+    implicitWidth: Math.max(numItems * itemWidth, folderBar.minimumWidth)
     implicitHeight: headerHeight + Tokens.sizes.launcher.wallpaperHeight
 
     function decrementCurrentIndex(): void {
-        pathView.decrementCurrentIndex();
+        step(-1);
     }
     function incrementCurrentIndex(): void {
-        pathView.incrementCurrentIndex();
+        step(1);
+    }
+    function step(delta: int): void {
+        if (count < 1)
+            return;
+        const next = (highlightedIndex + delta + count) % count;
+        hoveredIndex = -1;
+        selectIndex(next);
+    }
+    function selectIndex(index: int): void {
+        keyboardPath = scriptModel.values[index]?.path ?? "";
+        tiles.currentIndex = index;
+        if (index >= 0)
+            tiles.positionViewAtIndex(index, ListView.Contain);
+    }
+    function selectInitialItem(): void {
+        hoveredIndex = -1;
+        const preferred = keyboardPath || (!scriptModel.search ? Wallpapers.actualCurrent : "");
+        const index = preferred ? scriptModel.values.findIndex(w => Paths.samePath(w.path, preferred)) : -1;
+        selectIndex(scriptModel.values.length ? Math.max(0, index) : -1);
+    }
+    function pointAt(index: int): void {
+        hoveredIndex = index;
+    }
+    function leave(index: int): void {
+        if (hoveredIndex === index)
+            hoveredIndex = -1;
+    }
+    function apply(entry): void {
+        if (browsing && entry && Wallpapers.setWallpaper(entry.path, Wallpapers.defaultPickerTarget(pickerScreen)))
+            screenState.launcher = false;
+    }
+    function applyCurrent(): void { apply(highlightedEntry); }
+    function updatePreview(): void {
+        if (browsing && pickerScreen && highlightedEntry)
+            Wallpapers.requestPreview(highlightedEntry, pickerScreen, root);
+        else
+            Wallpapers.stopPreview(root);
+    }
+    onHighlightedEntryChanged: updatePreview()
+    onBrowsingChanged: updatePreview()
+    onPickerScreenChanged: updatePreview()
+    Component.onDestruction: Wallpapers.stopPreview(root)
+
+    Timer {
+        id: restoreSelection
+        interval: 0
+        onTriggered: root.selectInitialItem()
     }
 
     ColumnLayout {
@@ -79,92 +124,68 @@ Item {
             Layout.fillWidth: true
         }
 
-        PathView {
-            id: pathView
+        StyledText {
+            id: keyboardHint
+            Layout.fillWidth: true
+            text: Wallpapers.externalWallpaperActive
+                ? "Wallpaper Engine controls the desktop. Click or press Enter to apply."
+                : "Hover or use arrow keys. Click or press Enter to apply."
+            color: Colours.palette.m3onSurfaceVariant
+            font: Tokens.font.label.medium
+            elide: Text.ElideRight
+        }
+
+        ListView {
+            id: tiles
             objectName: "launcherWallpaperCarousel"
 
-            Layout.fillWidth: true
+            Layout.preferredWidth: root.numItems * root.itemWidth
+            Layout.alignment: Qt.AlignHCenter
             Layout.preferredHeight: Tokens.sizes.launcher.wallpaperHeight
-            readonly property real pathWidth: Math.min(width, root.numItems * root.itemWidth)
-            // Odd counts highlight the middle slot. Even counts highlight the
-            // slot just left of centre, so all tile centres stay off the ends.
-            readonly property real highlightPosition: root.numItems > 0
-                ? (Math.floor((root.numItems - 1) / 2) + 0.5) / root.numItems : 0.5
-
-            function selectInitialItem(): void {
-                const actual = scriptModel.search ? -1
-                    : scriptModel.values.findIndex(w => Paths.samePath(w.path, Wallpapers.actualCurrent));
-                currentIndex = scriptModel.values.length ? Math.max(0, actual) : -1;
-            }
+            orientation: ListView.Horizontal
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            snapMode: ListView.SnapToItem
+            keyNavigationEnabled: false
+            reuseItems: true
+            cacheBuffer: 0
 
             model: ScriptModel {
                 id: scriptModel
 
                 readonly property string search: root.search.text.split(" ").slice(1).join(" ")
-
                 values: Wallpapers.query(search)
-                onValuesChanged: pathView.selectInitialItem()
+                onValuesChanged: restoreSelection.restart()
             }
-
-            Component.onCompleted: selectInitialItem()
-            Component.onDestruction: Wallpapers.stopPreview()
-
-            // Windows port: focusing a cloud placeholder must not preview it.
-            // The tile already stays blank; this keeps the desktop renderer off
-            // that path too, and drops whatever preview was showing before.
-            onCurrentItemChanged: {
-                const item = currentItem as WallpaperItem;
-                if (item && root.screenState.launcher)
-                    // Windows scopes the preview to this launcher's display.
-                    Wallpapers.previewEntry(item.modelData, root.QsWindow.window?.screen);
-                else
-                    Wallpapers.stopPreview();
-            }
-
-            implicitWidth: root.numItems > 0 ? root.selectedItemWidth + (root.numItems - 1) * root.itemWidth : 0
-            pathItemCount: root.numItems
-            cacheItemCount: 4
-
-            snapMode: PathView.SnapToItem
-            preferredHighlightBegin: highlightPosition
-            preferredHighlightEnd: highlightPosition
-            highlightRangeMode: PathView.StrictlyEnforceRange
+            Component.onCompleted: restoreSelection.restart()
 
             delegate: WallpaperItem {
-                screenState: root.screenState
+                id: tile
+                required property int index
+                width: root.itemWidth
+                height: tiles.height
+                highlighted: root.highlightedIndex === index
+                onPointed: root.pointAt(index)
+                onUnpointed: root.leave(index)
+                onClicked: root.apply(tile.modelData)
+                ListView.onPooled: root.leave(index)
             }
 
-            path: Path {
-                startX: (pathView.width - pathView.pathWidth) / 2
-                startY: pathView.height / 2
-
-                PathAttribute {
-                    name: "z"
-                    value: 0
+            WheelHandler {
+                target: null
+                property int accumulated: 0
+                onWheel: event => {
+                    const delta = event.angleDelta.y;
+                    if (delta === 0)
+                        return;
+                    if (Math.sign(delta) !== Math.sign(accumulated))
+                        accumulated = 0;
+                    accumulated += delta;
+                    if (Math.abs(accumulated) >= 120) {
+                        root.step(accumulated > 0 ? -1 : 1);
+                        accumulated = 0;
+                    }
                 }
-                PathLine {
-                    x: pathView.width / 2
-                    relativeY: 0
-                }
-                PathAttribute {
-                    name: "z"
-                    value: 1
-                }
-                PathLine {
-                    x: (pathView.width + pathView.pathWidth) / 2
-                    relativeY: 0
-                }
-            }
-
-            CustomMouseArea {
-                function onWheel(event: WheelEvent): void {
-                    if (event.angleDelta.y > 0)
-                        pathView.decrementCurrentIndex();
-                    else if (event.angleDelta.y < 0)
-                        pathView.incrementCurrentIndex();
-                }
-
-                anchors.fill: parent
             }
         }
     }

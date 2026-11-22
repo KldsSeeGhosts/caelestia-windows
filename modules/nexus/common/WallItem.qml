@@ -18,8 +18,24 @@ Item {
     property alias radius: imgWrapper.radius
     property alias imgHeight: imgWrapper.implicitHeight
     property bool fillLabel: true
+    property bool interactivePreview: false
+    readonly property bool previewHighlighted: interactivePreview && visible && enabled
+        && (stateLayer.containsMouse || activeFocus)
 
     signal clicked
+    signal previewRequested
+    signal previewEnded
+
+    onPreviewHighlightedChanged: {
+        if (previewHighlighted)
+            previewRequested();
+        else
+            previewEnded();
+    }
+    activeFocusOnTab: interactivePreview
+    Keys.onReturnPressed: if (interactivePreview) clicked()
+    Keys.onEnterPressed: if (interactivePreview) clicked()
+    Keys.onSpacePressed: if (interactivePreview) clicked()
 
     Layout.fillWidth: true
     implicitHeight: layout.implicitHeight
@@ -42,7 +58,7 @@ Item {
                 anchors.centerIn: parent
 
                 opacity: img.ready ? 0 : 1
-                active: opacity > 0 && root.thumbnailActive
+                active: opacity > 0 && root.thumbnailActive && root.source !== ""
 
                 sourceComponent: StyledRect {
                     implicitWidth: loadingIndicator.implicitSize + Tokens.padding.large * 2
@@ -73,6 +89,15 @@ Item {
                 anchors.fill: parent
                 source: root.thumbnailActive ? root.source : ""
                 playing: root.thumbnailActive && stateLayer.containsMouse
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                visible: root.previewHighlighted
+                color: "transparent"
+                border.width: 2
+                border.color: Colours.palette.m3primary
+                radius: imgWrapper.radius
             }
         }
 

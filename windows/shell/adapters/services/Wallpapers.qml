@@ -90,10 +90,11 @@ Singleton {
         }
         return visibleOwnSource();
     }
-    property bool showPreview: false
-    property string previewPath
-    property string previewScreenId: ""
+    readonly property bool showPreview: activePreview !== null
+    readonly property string previewPath: activePreview?.image ?? ""
     property int previewRevision: 0
+    property var activePreview: null
+    property var pendingPreview: null
     // Only local, verified images live here. Engine previews never replace
     // a display's retained underlay. Keys are opaque physical-target digests.
     property var screenFiles: ({})
@@ -569,7 +570,7 @@ Singleton {
         if (!screen)
             return current;
         const id = Native.Wallpaper.screenTargetId(screen.name);
-        if (!externalWallpaperActive && showPreview && (!previewScreenId || previewScreenId === id))
+        if (previewsOnScreen(screen))
             return previewPath;
         const own = screenFiles[id];
         return own && usableFile(own) ? own : externalWallpaperActive ? handbackWallpaper : visibleOwnSource();
@@ -787,27 +788,50 @@ Singleton {
             return false;
         return setWallpaper(list[Math.floor(Math.random() * list.length)].path, screen);
     }
-    function query(search): var { return list.filter(w => w.relativePath.toLowerCase().includes(search.toLowerCase())); }
+    function query(search): var {
+        const needle = search.trim().toLowerCase();
+        return needle ? list.filter(w => w.relativePath.toLowerCase().includes(needle)) : list;
+    }
+    function previewsOnScreen(screen): bool {
+        if (!showPreview || externalWallpaperActive)
+            return false;
+        if (!activePreview.screenName)
+            return true;
+        if (!screen)
+            return false;
+        return activePreview.screenId ? Native.Wallpaper.screenTargetId(screen.name) === activePreview.screenId
+            : screen.name === activePreview.screenName;
+    }
     // Preview affects only the shell's wallpaper surface, never Windows state.
     // A listed cloud placeholder is not local: previewing its path hydrates it.
     function preview(path, screen): void {
         const listed = list.find(entry => entry && Paths.samePath(entry.path, String(path ?? "")));
-        const image = listed?.engine ? listed.preview : path;
-        if (!image || listed?.onDisk === false) {
-            stopPreview();
-            return;
-        }
-        previewPath = image;
-        previewScreenId = screen ? Native.Wallpaper.screenTargetId(screen.name) : "";
-        showPreview = true;
-        schedulePreviewColours();
+        previewEntry(listed ?? {path: path}, screen);
     }
-    function previewEntry(entry, screen): void {
-        if (!entry || entry.onDisk === false) {
-            stopPreview();
+    function previewImage(entry): string {
+        return !entry || entry.onDisk === false ? "" : String((entry.engine ? entry.preview : entry.path) ?? "");
+    }
+    function requestPreview(entry, screen, owner): void {
+        if (!screen || !previewImage(entry)) {
+            stopPreview(owner);
             return;
         }
-        preview(entry.path, screen);
+        pendingPreview = {entry: entry, screen: screen, owner: owner};
+        previewImageDelay.restart();
+    }
+    function previewEntry(entry, screen, owner): void {
+        const image = previewImage(entry);
+        if (!image) {
+            stopPreview(owner);
+            return;
+        }
+        const name = screen?.name ?? "";
+        const id = name ? Native.Wallpaper.screenTargetId(name) : "";
+        const same = image === previewPath && name === activePreview?.screenName && id === activePreview?.screenId;
+        if (!same || owner !== activePreview?.owner)
+            activePreview = {image: image, screenName: name, screenId: id, owner: owner};
+        if (!same)
+            schedulePreviewColours();
     }
     function schedulePreviewColours(): void {
         previewRevision++;
@@ -816,11 +840,25 @@ Singleton {
         if (showPreview && schemeName === "dynamic" && SchemeGenerator.available && usableFile(previewPath))
             previewColoursDelay.start();
     }
-    function stopPreview(): void {
-        if (!showPreview)
+    function stopPreview(owner): void {
+        if (owner === undefined || owner === pendingPreview?.owner) {
+            previewImageDelay.stop();
+            pendingPreview = null;
+        }
+        if (!showPreview || (owner !== undefined && owner !== activePreview.owner))
             return;
-        showPreview = false;
+        activePreview = null;
         schedulePreviewColours();
+    }
+    Timer {
+        id: previewImageDelay
+        interval: 90
+        onTriggered: {
+            const pending = root.pendingPreview;
+            root.pendingPreview = null;
+            if (pending?.owner && pending.screen)
+                root.previewEntry(pending.entry, pending.screen, pending.owner);
+        }
     }
     Timer {
         id: previewColoursDelay
@@ -845,8 +883,10 @@ Singleton {
         }
         if (WallpaperEngine.items.some(item => item.path === path)) {
             const accepted = WallpaperEngine.open(path, explicit ? target : undefined);
-            if (accepted)
+            if (accepted) {
+                stopPreview();
                 completion.release(target);
+            }
             return accepted;
         }
         const local = Native.FsUtils.canonicalPath(String(path).replace(/^file:\/\/\//, ""));

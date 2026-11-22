@@ -1,9 +1,7 @@
 import QtQuick
 import Quickshell
 import Caelestia.Config
-import Caelestia.State
 import qs.components
-import qs.components.effects
 import qs.services
 import qs.utils
 
@@ -11,59 +9,39 @@ Item {
     id: root
 
     required property var modelData
-    required property ScreenState screenState
+    required property bool highlighted
+    signal pointed()
+    signal unpointed()
+    signal clicked()
 
-    scale: 0.5
-    opacity: 0
-    z: PathView.z ?? 0 // qmllint disable missing-property
-
-    Component.onCompleted: {
-        scale = Qt.binding(() => PathView.isCurrentItem ? 1 : PathView.onPath ? 0.8 : 0);
-        opacity = Qt.binding(() => PathView.onPath ? 1 : 0);
-    }
-
-    implicitWidth: image.width + Tokens.padding.medium * 2
-    implicitHeight: image.height + label.height + Tokens.spacing.extraSmall + Tokens.padding.large + Tokens.padding.medium
-
-    // Windows port: the tile's path label is painted, not exposed.
+    objectName: "launcherWallpaperTile"
     Accessible.role: Accessible.ListItem
     Accessible.selectable: true
-    Accessible.selected: root.PathView.isCurrentItem
+    Accessible.selected: highlighted
     Accessible.name: root.modelData?.relativePath ?? ""
+    Accessible.onPressAction: root.clicked()
 
-    StateLayer {
-        id: stateLayer
-
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: Tokens.spacing.extraSmall
         radius: Tokens.rounding.large
-        onClicked: {
-            Wallpapers.setWallpaper(root.modelData.path, Wallpapers.defaultPickerTarget(root.QsWindow.window?.screen));
-            root.screenState.launcher = false;
-        }
+        color: root.highlighted ? Colours.palette.m3surfaceContainerHigh : "transparent"
+        border.width: root.highlighted ? 2 : 0
+        border.color: Colours.palette.m3primary
     }
 
-    Elevation {
-        anchors.fill: image
-        radius: image.radius
-        opacity: root.PathView.isCurrentItem ? 1 : 0
-        level: 4
-
-        Behavior on opacity {
-            Anim {
-                type: Anim.DefaultEffects
-            }
-        }
-    }
-
-    ClipRect {
+    Rectangle {
         id: image
 
         anchors.horizontalCenter: parent.horizontalCenter
-        y: Tokens.padding.large
+        y: Math.max(Tokens.padding.medium,
+            (parent.height - height - label.implicitHeight - Tokens.spacing.extraSmall) / 2)
         color: Colours.tPalette.m3surfaceContainer
-        radius: Tokens.rounding.large
+        clip: true
 
-        implicitWidth: Tokens.sizes.launcher.wallpaperWidth
-        implicitHeight: implicitWidth / 16 * 9
+        width: Math.max(0, parent.width - Tokens.padding.medium * 2)
+        height: Math.max(0, Math.min(width * 9 / 16,
+            parent.height - label.implicitHeight - Tokens.spacing.extraSmall - Tokens.padding.medium * 2))
 
         MaterialIcon {
             anchors.centerIn: parent
@@ -73,6 +51,7 @@ Item {
         }
 
         Image {
+            objectName: "launcherWallpaperThumbnail"
             anchors.fill: parent
             // Paths.absolutePath percent-encodes each segment, so '#' and '%'
             // in a wallpaper name cannot truncate or corrupt the file URL.
@@ -102,16 +81,17 @@ Item {
         elide: Text.ElideRight
         renderType: Text.QtRendering
         text: root.modelData.relativePath
+        color: root.highlighted ? Colours.palette.m3onSurface : Colours.palette.m3onSurfaceVariant
         font: Tokens.font.label.medium
     }
 
-    Behavior on scale {
-        Anim {}
-    }
-
-    Behavior on opacity {
-        Anim {
-            type: Anim.DefaultEffects
-        }
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onEntered: root.pointed()
+        onPositionChanged: root.pointed()
+        onExited: root.unpointed()
+        onClicked: root.clicked()
     }
 }

@@ -35,6 +35,7 @@ try {
             -Marker CAELESTIA_CAPTURE_PIXELS -MinimumAssertions 250 -TimeoutMs 90000 -LogSuffix $suffix `
             -Environment @{
                 TEMP = $fixtureTemp; TMP = $fixtureTemp
+                CAELESTIA_POWERSHELL = $fixturePowerShell
                 QT_SCALE_FACTOR = $run.Window
                 CAELESTIA_PIXELS_WINDOW_DPR = $run.Window
                 CAELESTIA_PIXELS_CAPTURE_DPR = $run.Capture
