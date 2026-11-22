@@ -285,11 +285,16 @@ function Select-CaelestiaRust {
     if (-not $rustup) { throw "Install rustup and Rust $($spec.rustVersion) with target $($spec.rustTarget), as documented in windows/NATIVE-BUILD.md." }
     $installed = @(& $rustup.Source toolchain list)
     if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate installed Rust toolchains. No authentication or settings changes were attempted.' }
-    foreach ($entry in $installed) {
-        $name = ($entry -split '\s+')[0]
+    $names = @($installed | ForEach-Object { ($_ -split '\s+')[0] })
+    $pinned = "$($spec.rustVersion)-$($spec.rustTarget)"
+    # Probe the expected install first. An exact-version alias is still
+    # permitted if the pinned name is absent or unusable.
+    $candidates = @($names -ceq $pinned) + @($names -cne $pinned)
+    foreach ($name in $candidates) {
         $rust = @(& $rustup.Source run $name rustc --version)
+        if ($LASTEXITCODE -ne 0 -or ($rust -join '') -notmatch ('^rustc ' + [regex]::Escape($spec.rustVersion) + ' ')) { continue }
         $cargo = @(& $rustup.Source run $name cargo --version)
-        if (($rust -join '') -notmatch ('^rustc ' + [regex]::Escape($spec.rustVersion) + ' ') -or
+        if ($LASTEXITCODE -ne 0 -or
             ($cargo -join '') -notmatch ('^cargo ' + [regex]::Escape($spec.cargoVersion) + ' ')) { continue }
         $path = (& $rustup.Source which --toolchain $name rustc).Trim()
         if ($LASTEXITCODE -ne 0) { continue }

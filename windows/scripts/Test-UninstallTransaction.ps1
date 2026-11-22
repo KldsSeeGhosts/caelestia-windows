@@ -4,7 +4,8 @@ param(
     # Negative control: read only this revision's uninstall into the sandbox.
     [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$UninstallSourceRevision = '',
     [ValidatePattern('^$|^[a-f0-9]{40}$')][string]$ManageSourceRevision = '',
-    [switch]$StaleReadOnly
+    [switch]$StaleReadOnly,
+    [int]$LaneCount = 6
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
@@ -212,7 +213,12 @@ function New-Case([string]$Name, [switch]$RealIntegration) {
         $script:caseTemplate = Join-Path $runRoot '.template'
         New-CaseTemplate $script:caseTemplate
     }
-    Copy-Item -LiteralPath $script:caseTemplate -Destination $case -Recurse
+    foreach ($dir in [IO.Directory]::EnumerateDirectories($script:caseTemplate, '*', [IO.SearchOption]::AllDirectories)) {
+        [IO.Directory]::CreateDirectory($dir.Replace($script:caseTemplate, $case)) | Out-Null
+    }
+    foreach ($file in [IO.Directory]::EnumerateFiles($script:caseTemplate, '*', [IO.SearchOption]::AllDirectories)) {
+        [IO.File]::Copy($file, $file.Replace($script:caseTemplate, $case))
+    }
     $prefix = Join-Path $case 'prefix'
     $profile = Join-Path $case 'profile'
     foreach ($id in @('v1', 'v2')) {
@@ -237,6 +243,7 @@ function New-Case([string]$Name, [switch]$RealIntegration) {
         Write-FixtureText (Join-Path $case 'integration\fixture-run') 'owned run value'
         Write-FixtureText (Join-Path $case 'integration\apps-features.json') 'owned Apps & features entry'
     }
+    $script:case = $case
     return $case
 }
 function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [bool]$Purge = $false,
@@ -255,7 +262,8 @@ function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [b
     if ($OperationId) { $arguments += ' -OperationId ' + $OperationId }
     if ($RealIntegration) { $arguments += ' -RealIntegration' }
     if ($IntegrationFailure) { $arguments += ' -IntegrationFailure ' + $IntegrationFailure }
-    $process = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments `
+    if (-not $script:fixturePowerShell) { $script:fixturePowerShell = Get-CaelestiaPowerShellPath }
+    $process = Start-Process -FilePath $script:fixturePowerShell -ArgumentList $arguments `
         -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $control 'stdout.txt') `
         -RedirectStandardError (Join-Path $control 'stderr.txt')
     # Retain the handle before a fast busy refusal exits (Windows PS 5.1).
@@ -454,6 +462,7 @@ function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$
 '@
     $gate = 'if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {'
     $source = Replace-Exactly $source $gate ($injection + "`n" + $gate)
+    $prereqScript = [scriptblock]::Create($source)
     foreach ($scenario in @('declined', 'noninteractive', 'bad-signature', 'wrong-signer', 'wrong-root',
         'network-failure', 'uac-cancelled', 'failure-exit', 'still-missing', 'success', 'reboot', 'newer', 'prompt-consent', 'already-present')) {
         $case = New-Case "prerequisite-$scenario"
@@ -478,7 +487,7 @@ function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$
         $message = ''
         $warnings = @()
         try {
-            & ([scriptblock]::Create($source)) -BundleRoot (Join-Path $case 'bundle') `
+            & $prereqScript -BundleRoot (Join-Path $case 'bundle') `
                 -Prefix (Join-Path $case 'new-prefix') -ProfileRoot (Join-Path $case 'new-profile') `
                 -InstallPrerequisites:($scenario -notin @('declined', 'noninteractive', 'prompt-consent')) `
                 -NonInteractive:($scenario -eq 'noninteractive') -WarningVariable warnings -WarningAction SilentlyContinue
@@ -513,14 +522,148 @@ function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$
     }
 }
 
+# Scenario units are independent: every New-Case clones the immutable template
+# into its own directory whose install-lock key, journal, tasks and HKCU root
+# derive from that path. Units therefore run on parallel runspaces sharing only
+# the extracted helper text; each unit's assertions and scenario names are
+# merged back in declaration order. Falls back to the original sequential flow
+# when there is too little work or the pool cannot start.
+function Invoke-ScenarioLanes([Collections.Generic.List[object]]$Units, [int]$LaneCount = 6) {
+    if ($LaneCount -lt 2 -or $Units.Count -lt 2) {
+        foreach ($unit in $Units) { $splat = $unit.A; & $unit.S @splat }
+        return $null
+    }
+    try { $null = Read-CaelestiaAppExecLink $PSCommandPath } catch { }
+    $selfText = [IO.File]::ReadAllText($PSCommandPath)
+    $tokens = $null; $errors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput($selfText, [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw 'Unit lane extraction could not parse this file.' }
+    $scriptsLiteral = $PSScriptRoot.Replace("'", "''")
+    $defs = foreach ($fn in $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        if ($fn.Name -ceq 'Invoke-ScenarioLanes') { continue }
+        $fn.Extent.Text.Replace('$PSScriptRoot', "'" + $scriptsLiteral + "'")
+    }
+    $laneScript = @'
+param($Ctx)
+$ErrorActionPreference = 'Stop'
+. $Ctx.CommonPath
+$script:assertions = 0
+$script:scenarios = @()
+$script:children = @()
+$script:caseTemplate = $Ctx.CaseTemplate
+$script:caseExecutableHash = $Ctx.CaseExecutableHash
+$runRoot = $Ctx.RunRoot
+$repoRoot = $Ctx.RepoRoot
+$revision = $Ctx.Revision
+$boundary = $Ctx.Boundary
+$importBoundary = $Ctx.ImportBoundary
+$manageText = $Ctx.ManageText
+$uninstallText = $Ctx.UninstallText
+$captureSource = $Ctx.CaptureSource
+__FUNCTIONDEFS__
+while (-not $Ctx.Stop.Value) {
+    $unit = $null
+    if (-not $Ctx.Queue.TryDequeue([ref]$unit)) { break }
+    $result = [ordered]@{ Index = $unit.Index; Assertions = 0; Scenarios = @(); Error = $null }
+    $assertBefore = $script:assertions
+    $scenBefore = $script:scenarios.Count
+    $script:case = $null
+    try {
+        $splat = $unit.Args
+        & ([scriptblock]::Create($unit.Text)) @splat
+    } catch {
+        $result.Error = [ordered]@{
+            Message = (Protect-CaelestiaText $_.Exception.Message)
+            Line = ($unit.Line + $_.InvocationInfo.ScriptLineNumber - 1)
+            Case = $(if ($script:case) { Split-Path -Leaf $script:case } else { 'setup' })
+        }
+        $Ctx.Stop.Value = $true
+    }
+    $result.Assertions = $script:assertions - $assertBefore
+    $result.Scenarios = @($script:scenarios | Select-Object -Skip $scenBefore)
+    $Ctx.Results.Enqueue($result)
+    if ($result.Error) { break }
+}
+foreach ($child in $script:children) {
+    if (-not $child.Process.HasExited) { $child.Process.Kill(); $child.Process.WaitForExit() }
+    foreach ($name in @('stdout.txt', 'stderr.txt')) {
+        $path = Join-Path $child.Control $name
+        if (Test-Path -LiteralPath $path) {
+            $text = [IO.File]::ReadAllText($path)
+            Write-FixtureText $path (Protect-CaelestiaText $text)
+        }
+    }
+    $child.Process.Dispose()
+}
+'@
+    $laneScript = $laneScript.Replace('__FUNCTIONDEFS__', ($defs -join "`n"))
+    $Ctx = @{
+        Queue = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
+        Results = [System.Collections.Concurrent.ConcurrentQueue[object]]::new()
+        Stop = [ref]$false
+        CommonPath = (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
+        CaseTemplate = $script:caseTemplate
+        CaseExecutableHash = $script:caseExecutableHash
+        RunRoot = $runRoot; RepoRoot = $repoRoot; Revision = $revision
+        Boundary = $boundary; ImportBoundary = $importBoundary
+        ManageText = $manageText; UninstallText = $uninstallText; CaptureSource = $captureSource
+    }
+    for ($i = 0; $i -lt $Units.Count; $i++) {
+        $Ctx.Queue.Enqueue(@{
+            Index = $i; Text = $Units[$i].S.ToString(); Args = $Units[$i].A
+            Line = $Units[$i].S.Ast.Extent.StartLineNumber })
+    }
+    $workers = @()
+    $pool = $null
+    $laneCrash = $null
+    try {
+        $pool = [runspacefactory]::CreateRunspacePool(1, [Math]::Min($LaneCount, $Units.Count))
+        $pool.Open()
+    } catch { $pool = $null }
+    if (-not $pool) {
+        foreach ($unit in $Units) { $splat = $unit.A; & $unit.S @splat }
+        return $null
+    }
+    try {
+        foreach ($i in 1..([Math]::Min($LaneCount, $Units.Count))) {
+            $ps = [powershell]::Create()
+            $ps.RunspacePool = $pool
+            $null = $ps.AddScript($laneScript).AddArgument($Ctx)
+            $workers += [pscustomobject]@{ PS = $ps; Async = $ps.BeginInvoke() }
+        }
+        foreach ($worker in $workers) {
+            try { $worker.PS.EndInvoke($worker.Async) }
+            catch { if (-not $laneCrash) { $laneCrash = $_.Exception.Message } }
+            finally { $worker.PS.Dispose() }
+        }
+    } finally {
+        $pool.Close(); $pool.Dispose()
+        foreach ($worker in $workers) { if ($worker.PS) { $worker.PS.Dispose() } }
+    }
+    $merged = @{ Assertions = 0; Scenarios = @(); Error = $null }
+    foreach ($result in @($Ctx.Results.ToArray() | Sort-Object { $_['Index'] })) {
+        $merged.Assertions += [int]$result.Assertions
+        $merged.Scenarios += @($result.Scenarios)
+        if (-not $merged.Error -and $result.Error) { $merged.Error = $result.Error }
+    }
+    if ($laneCrash -and -not $merged.Error) {
+        $merged.Error = @{ Message = (Protect-CaelestiaText $laneCrash); Line = $null; Case = 'setup' }
+    }
+    return $merged
+}
+
 $passed = $false
 $failure = ''
 $failureLine = $null
 $failureCase = $null
 try {
-    if (-not $StaleReadOnly) { Test-PrerequisiteInstallation }
+    $units = [Collections.Generic.List[object]]::new()
+    $script:caseTemplate = Join-Path $runRoot '.template'
+    New-CaseTemplate $script:caseTemplate
+    if (-not $StaleReadOnly) { $units.Add(@{ S = { Test-PrerequisiteInstallation }; A = @{} }) }
     if (-not $StaleReadOnly) {
     foreach ($recovery in @('orphan-queued', 'dead-working', 'expired-queued', 'legacy-queued', 'foreign-task')) {
+        $units.Add(@{ S = { param($recovery)
         $case = New-Case "queue-recovery-$recovery"
         $oldId = Start-QueuedOperation $case
         $journalPath = Join-Path $case 'profile\state\update-operation.json'
@@ -564,7 +707,9 @@ try {
         Assert ((Snapshot $case) -ceq $before) 'Fenced old worker changed the new operation or installation.'
         Assert-Coherent $case
         $script:scenarios += "queue-recovery-$recovery"
+            }; A = @{ recovery = $recovery } })
     }
+        $units.Add(@{ S = {
     $case = New-Case 'live-queued-request-refused'
     $id = Start-QueuedOperation $case
     $before = Snapshot $case
@@ -573,7 +718,9 @@ try {
     Finish-Worker $duplicate
     Assert ((Snapshot $case) -ceq $before) 'Live queued duplicate changed managed state.'
     $script:scenarios += 'live-queued-request-refused'
+        }; A = @{} })
 
+        $units.Add(@{ S = {
     $case = New-Case 'malformed-journal-uninstall'
     Write-FixtureText (Join-Path $case 'profile\state\update-operation.json') '{invalid'
     $uninstall = Start-Worker $case 'Uninstall'
@@ -581,7 +728,9 @@ try {
     Finish-Worker $uninstall
     Assert-Uninstalled $case $false
     $script:scenarios += 'malformed-journal-uninstall'
+        }; A = @{} })
 
+        $units.Add(@{ S = {
     $case = New-Case 'malformed-journal-maintenance-refusal'
     Write-FixtureText (Join-Path $case 'profile\state\update-operation.json') '{invalid'
     $before = Snapshot $case
@@ -590,9 +739,11 @@ try {
     Assert ((Snapshot $case) -ceq $before) 'Unreadable journal refusal changed managed state.'
     Assert-Coherent $case
     $script:scenarios += 'malformed-journal-maintenance-refusal'
+        }; A = @{} })
 
     foreach ($purge in @($false, $true)) {
         foreach ($operation in @('Install', 'Rollback')) {
+        $units.Add(@{ S = { param($purge, $operation)
             $name = "held-$operation-purge-$purge"
             $case = New-Case $name
             $pause = if ($operation -eq 'Install') { 'processes' } else { 'scheme' }
@@ -623,8 +774,10 @@ try {
             Finish-Worker $probe
             Finish-Worker $uninstall
             $script:scenarios += $name
+            }; A = @{ purge = $purge; operation = $operation } })
         }
         foreach ($operation in @('Install', 'Rollback', 'SourceInstall', 'Queue')) {
+        $units.Add(@{ S = { param($purge, $operation)
             $name = "held-Uninstall-vs-$operation-purge-$purge"
             $case = New-Case $name
             $owner = Start-Worker $case 'Uninstall' 'integration' $purge $true
@@ -639,8 +792,10 @@ try {
             Assert-Uninstalled $case $purge
             Finish-Worker $owner
             $script:scenarios += $name
+            }; A = @{ purge = $purge; operation = $operation } })
         }
         foreach ($operation in @('Install', 'Rollback', 'Uninstall')) {
+        $units.Add(@{ S = { param($purge, $operation)
             $name = "abandoned-$operation-purge-$purge"
             $case = New-Case $name
             $pause = switch ($operation) { Install { 'processes' } Rollback { 'scheme' } Uninstall { 'integration' } }
@@ -666,7 +821,9 @@ try {
                 $globalObserver.Dispose()
             }
             $script:scenarios += $name
+            }; A = @{ purge = $purge; operation = $operation } })
         }
+        $units.Add(@{ S = { param($purge)
         $name = "exception-release-purge-$purge"
         $case = New-Case $name
         $before = Snapshot $case
@@ -681,6 +838,7 @@ try {
         Assert-Coherent $case
         Finish-Worker $owner
         $script:scenarios += $name
+            }; A = @{ purge = $purge } })
     }
 
     # An integration-cleanup failure must not strand the uninstall after the
@@ -689,6 +847,7 @@ try {
     # key removal each fail after the tombstone rename. Recovery must restore
     # the prefix and every owned entry byte-for-byte, and a retry must succeed.
     foreach ($failure in @('locked-shortcut', 'registry-denial')) {
+        $units.Add(@{ S = { param($failure)
         $name = "cleanup-failure-$failure"
         $case = New-Case $name -RealIntegration
         $registryRoot = Get-IntegrationRegistryRoot $case
@@ -722,10 +881,13 @@ try {
         } finally {
             if (Test-Path -LiteralPath $registryRoot) { Remove-Item -LiteralPath $registryRoot -Recurse -Force }
         }
+            }; A = @{ failure = $failure } })
     }
+
     # A snapshot that fails on the second shortcut must not leak the backup it
     # already made for the first one. The lock denies reads, so the snapshot copy
     # fails before the tombstone rename and nothing is written.
+        $units.Add(@{ S = {
     $case = New-Case 'snapshot-partial-backup' -RealIntegration
     $registryRoot = Get-IntegrationRegistryRoot $case
     try {
@@ -751,6 +913,8 @@ try {
     } finally {
         if (Test-Path -LiteralPath $registryRoot) { Remove-Item -LiteralPath $registryRoot -Recurse -Force }
     }
+        }; A = @{} })
+        $units.Add(@{ S = {
     $case = New-Case 'busy-before-manifest-read'
     $owner = Start-Worker $case 'Install' 'processes'
     Wait-Marker $owner 'ready'
@@ -768,7 +932,9 @@ try {
     Finish-Worker $owner
     Assert-Coherent $case
     $script:scenarios += 'busy-before-manifest-read'
+        }; A = @{} })
 
+        $units.Add(@{ S = {
     $case = New-Case 'foreign-profile-purge-refusal'
     Write-CaelestiaProfileOwner (Join-Path $case 'profile') (Join-Path $case 'unrelated-prefix') 'foreign' $true
     $before = Snapshot $case
@@ -780,7 +946,9 @@ try {
     Assert ($next.Process.WaitForExit(10000)) 'Refusal worker did not exit.'
     Assert ($next.Process.ExitCode -eq 1) 'Expected refusal exit code.'
     $script:scenarios += 'foreign-profile-purge-refusal'
+        }; A = @{} })
     }
+        $units.Add(@{ S = {
     $case = New-Case 'rollback-read-vs-purge'
     $owner = Start-Worker $case 'Rollback' 'record-read'
     Wait-Marker $owner 'ready'
@@ -803,7 +971,9 @@ try {
     Finish-Worker $owner
     Assert-Coherent $case
     $script:scenarios += 'rollback-read-vs-purge'
+        }; A = @{} })
 
+        $units.Add(@{ S = {
     $case = New-Case 'purged-before-rollback-entry'
     $owner = Start-Worker $case 'Rollback' 'entry'
     Wait-Marker $owner 'ready'
@@ -821,9 +991,11 @@ try {
         Assert ((Snapshot $case) -ceq $before) 'Late maintenance recreated a purged profile or changed integration.'
     }
     $script:scenarios += 'purged-before-rollback-entry'
+        }; A = @{} })
 
     if (-not $StaleReadOnly) {
     foreach ($failureMode in @('Success', 'Injected')) {
+        $units.Add(@{ S = { param($failureMode)
         $case = New-Case "direct-journal-free-$failureMode"
         $journalPath = Join-Path $case 'profile\state\update-operation.json'
         Remove-Item -LiteralPath $journalPath
@@ -836,8 +1008,10 @@ try {
         Assert (-not (Test-Path -LiteralPath (Join-Path $case 'profile\state'))) 'Untracked rollback created its journal directory.'
         Assert-Coherent $case
         $script:scenarios += "direct-journal-free-$failureMode"
+            }; A = @{ failureMode = $failureMode } })
     }
     foreach ($failureMode in @('Success', 'Injected')) {
+        $units.Add(@{ S = { param($failureMode)
         $case = New-Case "direct-preserves-journal-$failureMode"
         $journalPath = Join-Path $case 'profile\state\update-operation.json'
         $before = [IO.File]::ReadAllText($journalPath)
@@ -849,8 +1023,10 @@ try {
         Assert ([IO.File]::ReadAllText($journalPath) -ceq $before) 'Untracked rollback rewrote an existing operation journal.'
         Assert-Coherent $case
         $script:scenarios += "direct-preserves-journal-$failureMode"
+            }; A = @{ failureMode = $failureMode } })
     }
 
+        $units.Add(@{ S = {
     $case = New-Case 'source-installer-held'
     $owner = Start-Worker $case 'SourceInstall' 'processes' -ThrowAtBoundary:$true
     Wait-Marker $owner 'ready'
@@ -865,7 +1041,9 @@ try {
     Assert ((Snapshot $case) -ceq $before) 'Source installer crossed the injected pre-assembly boundary.'
     Assert-Coherent $case
     $script:scenarios += 'source-installer-held'
+        }; A = @{} })
 
+        $units.Add(@{ S = {
     $case = New-Case 'tracked-contention-watchdog'
     $id = Start-QueuedOperation $case
     $taskPath = Join-Path $case "tasks\Caelestia-MaintenanceWatch-$id.json"
@@ -896,8 +1074,10 @@ try {
     Assert ((Snapshot $case) -ceq $before) 'Late tracked worker overwrote a terminal operation.'
     Assert-Coherent $case
     $script:scenarios += 'tracked-contention-watchdog'
+        }; A = @{} })
 
     foreach ($purge in @($false, $true)) {
+        $units.Add(@{ S = { param($purge)
         $case = New-Case "queued-vs-uninstall-purge-$purge"
         $queue = Start-Worker $case 'Queue' 'start-task'
         Wait-Marker $queue 'ready'
@@ -931,8 +1111,10 @@ try {
         Finish-Worker $late
         Assert ((Snapshot $case) -ceq $before) 'Late watchdog resurrected cancelled installation/profile state.'
         $script:scenarios += "queued-vs-uninstall-purge-$purge"
+            }; A = @{ purge = $purge } })
     }
     foreach ($failureMode in @('Success', 'Injected')) {
+        $units.Add(@{ S = { param($failureMode)
         $case = New-Case "tracked-terminal-$failureMode"
         $id = Start-QueuedOperation $case
         $pause = if ($failureMode -eq 'Injected') { 'scheme' } else { '' }
@@ -946,7 +1128,9 @@ try {
         Assert (@(Get-ChildItem -LiteralPath (Join-Path $case 'tasks') -File).Count -eq 0) 'Tracked terminal result left tasks behind.'
         Assert-Coherent $case
         $script:scenarios += "tracked-terminal-$failureMode"
+            }; A = @{ failureMode = $failureMode } })
     }
+        $units.Add(@{ S = {
     $case = New-Case 'foreign-task-preserved'
     $id = Start-QueuedOperation $case
     $taskPath = Join-Path $case "tasks\Caelestia-MaintenanceWatch-$id.json"
@@ -960,6 +1144,8 @@ try {
     Assert ([IO.File]::ReadAllText($taskPath) -ceq $before) 'Uninstall touched a task belonging to another prefix.'
     Assert-Uninstalled $case $true
     $script:scenarios += 'foreign-task-preserved'
+        }; A = @{} })
+        $units.Add(@{ S = {
     $case = New-Case 'interrupted-queue-orphan-watchdog'
     $owner = Start-Worker $case 'Queue' 'after-register-task'
     Wait-Marker $owner 'ready'
@@ -976,7 +1162,9 @@ try {
     Finish-Worker $retry
     Assert-Uninstalled $case $true
     $script:scenarios += 'interrupted-queue-orphan-watchdog'
+        }; A = @{} })
     foreach ($interrupted in @($false, $true)) {
+        $units.Add(@{ S = { param($interrupted)
         $case = New-Case "post-rename-interrupted-$interrupted"
         $prefix = Join-Path $case 'prefix'
         $owner = Start-Worker $case 'Uninstall' 'remove-integration' $true $true (-not $interrupted)
@@ -1010,7 +1198,7 @@ try {
             Finish-Worker $retry
             Assert-Uninstalled $case $true
             $script:scenarios += "post-rename-interrupted-$interrupted"
-            continue
+            return
         }
         # Explicit fixture recovery, not a claim of automatic production crash
         # recovery. Validate exact owned paths before moving the tree back.
@@ -1025,10 +1213,23 @@ try {
         Finish-Worker $retry
         Assert-Uninstalled $case $true
         $script:scenarios += "post-rename-interrupted-$interrupted"
+            }; A = @{ interrupted = $interrupted } })
     }
     }
-    Assert ($script:scenarios.Count -ge $(if ($StaleReadOnly) { 2 } else { 38 })) 'Required transaction scenarios did not execute.'
-    $passed = $true
+    $laneResult = Invoke-ScenarioLanes $units $LaneCount
+    if ($laneResult) {
+        $script:assertions += $laneResult.Assertions
+        $script:scenarios = @($laneResult.Scenarios)
+        if ($laneResult.Error) {
+            $failure = $laneResult.Error.Message
+            $failureLine = $laneResult.Error.Line
+            $failureCase = $laneResult.Error.Case
+        }
+    }
+    if (-not $laneResult.Error) {
+        Assert ($script:scenarios.Count -ge $(if ($StaleReadOnly) { 2 } else { 38 })) 'Required transaction scenarios did not execute.'
+        $passed = $true
+    }
 } catch {
     $failure = Protect-CaelestiaText $_.Exception.Message
     $failureLine = $_.InvocationInfo.ScriptLineNumber

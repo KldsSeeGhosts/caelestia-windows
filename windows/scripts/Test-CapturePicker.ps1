@@ -11,10 +11,6 @@ $fixtureTemp = Join-Path $tempRoot ('caelestia-picker-temp-' + [guid]::NewGuid()
 New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
 $ownedStage = Enter-QmlSharedStage
 try {
-    $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-picker -ShellFixture -UseQuickshell `
-        -Sources @('windows/tests/CapturePickerTest.qml') -FixtureFile 'windows/tests/CapturePickerTest.qml' `
-        -Marker CAELESTIA_CAPTURE_PICKER -MinimumAssertions 150 -TimeoutMs 60000 `
-        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_POWERSHELL = $fixturePowerShell }
     # Every label and icon of the toolbar, its popover and the thumbnail cards
     # lies on a whole device pixel of the window they are shown in. It places the
     # real components itself, with no picker. Each run gives the window a real
@@ -30,8 +26,8 @@ try {
         @{ Window = '1';    Capture = '1.25' }
     )
     # The six DPR combinations are independent offscreen runs over the same
-    # immutable stage. Three bounded workers each run a slice; every run keeps
-    # its own stage overlay, profile, temp view and log suffix.
+    # immutable stage. Two workers run alongside the main picker, keeping the
+    # same limit of three runners. Each run has its own overlay and profile.
     $pixelWorker = {
         param([string]$FixtureScript, [string]$SliceJson, [string]$QtPrefix, [string]$BuildRoot,
             [string]$FixtureTemp, [string]$FixturePowerShell)
@@ -39,11 +35,13 @@ try {
         . $FixtureScript
         foreach ($run in @($SliceJson | ConvertFrom-Json)) {
             $suffix = "window-$($run.Window)-capture-$($run.Capture)"
+            $pixelTemp = Join-Path $FixtureTemp $suffix
+            $null = New-Item -ItemType Directory -Path $pixelTemp
             Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-pixels -ShellFixture -UseQuickshell `
                 -Sources @('windows/tests/CapturePixelsTest.qml') -FixtureFile 'windows/tests/CapturePixelsTest.qml' `
                 -Marker CAELESTIA_CAPTURE_PIXELS -MinimumAssertions 250 -TimeoutMs 90000 -LogSuffix $suffix `
                 -Environment @{
-                    TEMP = $FixtureTemp; TMP = $FixtureTemp
+                    TEMP = $pixelTemp; TMP = $pixelTemp
                     CAELESTIA_POWERSHELL = $FixturePowerShell
                     QT_SCALE_FACTOR = $run.Window
                     CAELESTIA_PIXELS_WINDOW_DPR = $run.Window
@@ -51,22 +49,24 @@ try {
                 }
         }
     }
-    $workerCount = [Math]::Min(3, $pixelRuns.Count)
+    $workerCount = 2
     $groupSize = [Math]::Ceiling($pixelRuns.Count / $workerCount)
     $jobs = @()
-    for ($index = 0; $index -lt $workerCount; $index++) {
-        $slice = @($pixelRuns | Select-Object -Skip ($index * $groupSize) -First $groupSize)
-        if (-not $slice.Count) { continue }
-        $jobs += Start-Job -ScriptBlock $pixelWorker -ArgumentList @(
-            (Join-Path $PSScriptRoot 'Caelestia-QmlFixture.ps1'),
-            ($slice | ConvertTo-Json -Depth 3 -Compress),
-            $QtPrefix, $BuildRoot, $fixtureTemp, $fixturePowerShell)
-    }
     $pixels = @()
     $workerFailure = $null
     try {
-        # Two serial runs per worker plus spawn slack stays well under the
-        # serial cost of all six runs.
+        for ($index = 0; $index -lt $workerCount; $index++) {
+            $slice = @($pixelRuns | Select-Object -Skip ($index * $groupSize) -First $groupSize)
+            if (-not $slice.Count) { continue }
+            $jobs += Start-Job -ScriptBlock $pixelWorker -ArgumentList @(
+                (Join-Path $PSScriptRoot 'Caelestia-QmlFixture.ps1'),
+                ($slice | ConvertTo-Json -Depth 3 -Compress),
+                $QtPrefix, $BuildRoot, $fixtureTemp, $fixturePowerShell)
+        }
+        $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-picker -ShellFixture -UseQuickshell `
+            -Sources @('windows/tests/CapturePickerTest.qml') -FixtureFile 'windows/tests/CapturePickerTest.qml' `
+            -Marker CAELESTIA_CAPTURE_PICKER -MinimumAssertions 150 -TimeoutMs 60000 `
+            -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_POWERSHELL = $fixturePowerShell }
         $null = Wait-Job -Job $jobs -Timeout (($groupSize * 100) + 90)
         foreach ($job in $jobs) {
             if ($job.State -eq 'Failed' -and -not $workerFailure) {

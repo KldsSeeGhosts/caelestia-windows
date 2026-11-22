@@ -74,16 +74,21 @@ foreach ($required in @("$QtPrefix\bin\qtpaths.exe", "$LlvmBin\clang-cl.exe", "$
 $vsInstance = Enter-CaelestiaToolchain -QtPrefix $QtPrefix -LlvmBin $LlvmBin -ToolsBin $ToolsBin
 $vsRoot = $vsInstance.installationPath
 Select-CaelestiaRust
-$toolchain = Get-CaelestiaActualToolchain -QtPrefix $QtPrefix -Cli11Include $Cli11Include
+$report = & (Join-Path $PSScriptRoot 'Test-Environment.ps1') -QtPrefix $QtPrefix -Cli11Include $Cli11Include -Json -Strict
+$reportExit = $LASTEXITCODE
+$report | Set-Content -LiteralPath (Join-Path $logRoot 'environment.json') -Encoding UTF8
+# The strict prerequisite check already probes and asserts the actual tools.
+$environmentReport = ($report -join "`n") | ConvertFrom-Json
+if ($reportExit -ne 0 -or -not $environmentReport.nativeToolchainReady -or -not $environmentReport.toolchain) {
+    throw 'The prerequisite check failed. See logs/environment.json.'
+}
+$toolchain = $environmentReport.toolchain
 $toolchain | Add-Member -NotePropertyName vsInstallationVersion -NotePropertyValue $vsInstance.installationVersion
 $toolchain | ConvertTo-Json -Depth 5 |
     Set-Content -LiteralPath (Join-Path $logRoot 'toolchain.json') -Encoding UTF8
 $manifestTool = Join-Path $env:WindowsSdkDir "bin\$($env:WindowsSDKVersion.TrimEnd('\'))\x64\mt.exe"
 if (-not (Test-Path -LiteralPath $manifestTool)) { throw 'Windows SDK manifest tool is required.' }
 
-$report = & (Join-Path $PSScriptRoot 'Test-Environment.ps1') -QtPrefix $QtPrefix -Cli11Include $Cli11Include -Json -Strict
-$report | Set-Content -LiteralPath (Join-Path $logRoot 'environment.json') -Encoding UTF8
-if ($LASTEXITCODE -ne 0) { throw 'The prerequisite check failed. See logs/environment.json.' }
 if (& git -C "$repoRoot\windows\deps\quickshell" status --porcelain) {
     throw 'The pinned backend has local changes. Backend patches must be committed in an appropriate fork before building.'
 }
@@ -122,9 +127,24 @@ function Invoke-BuildCommand([string]$Name, [string[]]$CommandArguments) {
     # harmless CMake warnings. The native exit code is the failure criterion.
     $ErrorActionPreference = 'Continue'
     $commandClock = [Diagnostics.Stopwatch]::StartNew()
-    & cmake @CommandArguments 2>&1 | ForEach-Object { "$_" } |
-        Tee-Object -FilePath (Join-Path $logRoot "$Name.log")
-    $commandExit = $LASTEXITCODE
+    $useJobserver = $ninjaJobserverName -and $CommandArguments[0] -eq '--build'
+    if ($useJobserver) {
+        $previousMakeFlags = [Environment]::GetEnvironmentVariable('MAKEFLAGS', 'Process')
+        $previousParallelLevel = [Environment]::GetEnvironmentVariable('CMAKE_BUILD_PARALLEL_LEVEL', 'Process')
+        # Ninja honors the jobserver only when CMake does not pass a -j limit.
+        $env:MAKEFLAGS = " --jobserver-auth=$ninjaJobserverName"
+        [Environment]::SetEnvironmentVariable('CMAKE_BUILD_PARALLEL_LEVEL', $null, 'Process')
+    }
+    try {
+        & cmake @CommandArguments 2>&1 | ForEach-Object { "$_" } |
+            Tee-Object -FilePath (Join-Path $logRoot "$Name.log")
+        $commandExit = $LASTEXITCODE
+    } finally {
+        if ($useJobserver) {
+            [Environment]::SetEnvironmentVariable('MAKEFLAGS', $previousMakeFlags, 'Process')
+            [Environment]::SetEnvironmentVariable('CMAKE_BUILD_PARALLEL_LEVEL', $previousParallelLevel, 'Process')
+        }
+    }
     $ErrorActionPreference = 'Stop'
     # Like capture timing, retain only duration and exit status, not arguments.
     [ordered]@{
@@ -142,20 +162,28 @@ $callerDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
 # components strictly in order. A chain runs in a job because one PowerShell
 # pipeline can only wait on one native command at a time.
 $buildStreamScript = {
-    param([string]$Definition, [object[]]$Components, [string]$logRoot, [string]$WorkingDirectory)
+    param([string]$Definition, [object[]]$Components, [string]$logRoot, [string]$WorkingDirectory,
+        [string]$ninjaJobserverName)
     $ErrorActionPreference = 'Stop'
     Set-Location -LiteralPath $WorkingDirectory
     # Reuse the foreground runner verbatim, so the command record, log, timing
     # file and failure message cannot drift between a foreground and a
     # background chain.
     . ([scriptblock]::Create($Definition))
-    foreach ($component in $Components) {
-        try {
-            Invoke-BuildCommand ([string]$component.name) ([string[]]@($component.arguments)) | Out-Null
-        } catch {
-            # The runner already wrote the component's artifacts; report only
-            # its message to the calling stream.
-            return ([pscustomobject][ordered]@{ name = [string]$component.name; message = "$_" })
+    $jobserver = if ($ninjaJobserverName) { [Threading.Semaphore]::OpenExisting($ninjaJobserverName) }
+    try {
+        foreach ($component in $Components) {
+            try {
+                Invoke-BuildCommand ([string]$component.name) ([string[]]@($component.arguments)) | Out-Null
+            } catch {
+                # The runner already wrote the component's artifacts; report only
+                # its message to the calling stream.
+                return ([pscustomobject][ordered]@{ name = [string]$component.name; message = "$_" })
+            }
+        }
+    } finally {
+        if ($jobserver) {
+            try { $null = $jobserver.Release() } finally { $jobserver.Dispose() }
         }
     }
     return
@@ -166,7 +194,7 @@ function Start-BuildStream([string]$Name, [object[]]$Components) {
     return [pscustomobject]@{
         name = $Name
         joined = $false
-        job = Start-Job -Name $Name -ScriptBlock $buildStreamScript -ArgumentList $definition, $Components, $logRoot, $callerDirectory
+        job = Start-Job -Name $Name -ScriptBlock $buildStreamScript -ArgumentList $definition, $Components, $logRoot, $callerDirectory, $ninjaJobserverName
     }
 }
 
@@ -185,17 +213,22 @@ function Wait-BuildStream($Stream) {
 
 # Cargo writes progress to stderr; the native exit code is the failure criterion.
 $captureScript = {
-    param([string]$CargoPath, [string[]]$Arguments, [string]$logRoot, [string]$WorkingDirectory)
+    param([string]$CargoPath, [string[]]$Arguments, [string]$logRoot, [string]$WorkingDirectory,
+        [string]$JobserverName, [int]$ReservedJobs)
     $ErrorActionPreference = 'Stop'
     Set-Location -LiteralPath $WorkingDirectory
     $captureClock = [Diagnostics.Stopwatch]::StartNew()
     $cargoExit = $null
+    $jobserver = if ($JobserverName) { [Threading.Semaphore]::OpenExisting($JobserverName) }
     try {
         $ErrorActionPreference = 'Continue'
         & $CargoPath @Arguments 2>&1 | ForEach-Object { "$_" } |
             Tee-Object -FilePath (Join-Path $logRoot 'build-capture.log') | Out-Null
         $cargoExit = $LASTEXITCODE
     } finally {
+        if ($jobserver) {
+            try { $null = $jobserver.Release($ReservedJobs) } finally { $jobserver.Dispose() }
+        }
         [ordered]@{
             durationSeconds = [Math]::Round($captureClock.Elapsed.TotalSeconds, 6)
             exitCode = $cargoExit
@@ -289,29 +322,29 @@ $fullSourceRevision = if ($fullRevExit -eq 0 -and $rawFullRevision) { "$rawFullR
 #   build-capture (Cargo; consumes only windows/capture and the toolchain)
 #   configure-plugins -> build-plugins -> install-plugins
 #   supervisor compilation -> native inventory (needs qs.exe and each install)
-# No chain consumes another chain's output and each writes its own build
-# directory, so the three chains run at the same time. Components inside a
-# chain keep their order.
+# The two Qt module chains share an install root, so keep them in one stream.
+# The backend and capture can run independently of that stream.
 $m3shapesConfigure = @('-S', $m3shapesPath, '-B', "$BuildRoot\m3shapes") + $common +
     @('-DINSTALL_QMLDIR=qml', "-DCMAKE_INSTALL_PREFIX=$installRoot", '-DM3SHAPES_BUILD_EXAMPLES=OFF')
 $pluginConfigure = @('-S', $repoRoot, '-B', "$BuildRoot\caelestia") + $common +
     @('-DCAELESTIA_PORTABLE_UI=ON', '-DENABLE_MODULES=plugin', '-DINSTALL_QMLDIR=qml',
     "-DCMAKE_INSTALL_PREFIX=$installRoot", "-DVERSION=$sourceVersion", "-DGIT_REVISION=$sourceRevision",
     "-DCAELESTIA_WINDOWS_TESTS=$(if ($PluginTests) { 'ON' } else { 'OFF' })")
-# One -Jobs budget covers every chain that runs at the same time. Hosted CI
-# sizes -Jobs from the processor count and the memory one compile needs, so
-# three chains that each used the whole budget would triple peak memory on a
-# cold build. The backend keeps the largest share. When the budget is smaller
-# than the number of chains, the chains run one after another, each with the
-# whole budget, as the serial build did.
+# Each Ninja stream has one implicit job slot. Put all other C++ slots in
+# Ninja's Windows jobserver so either stream can use idle slots. Cargo keeps
+# its own fixed cap and returns those reserved slots when it exits. The
+# module stream also returns its implicit slot when it finishes.
 $chainCount = if ($SkipCapture) { 2 } else { 3 }
 $overlapChains = $Jobs -ge $chainCount
+$ninjaJobserverName = ''
+$ninjaJobserver = $null
+$ninjaParallelArguments = @('--parallel', "$Jobs")
+$captureJobs = $Jobs
 if ($overlapChains) {
-    $moduleJobs = [Math]::Max(1, [int][Math]::Floor($Jobs / 4))
-    $captureJobs = if ($SkipCapture) { 0 } else { $moduleJobs }
-    $backendJobs = $Jobs - $moduleJobs - $captureJobs
-} else {
-    $moduleJobs = $captureJobs = $backendJobs = $Jobs
+    $captureJobs = if ($SkipCapture) { 0 } else { [Math]::Max(1, [int][Math]::Floor($Jobs / 4)) }
+    $ninjaJobserverName = 'CaelestiaNinja-' + [guid]::NewGuid().ToString('N')
+    $ninjaJobserver = [Threading.Semaphore]::new(($Jobs - $captureJobs - 2), ($Jobs - 1), $ninjaJobserverName)
+    $ninjaParallelArguments = @()
 }
 # A stream that would have failed earlier in the serial build reports first.
 $serialComponentOrder = @('configure-m3shapes', 'build-m3shapes', 'install-m3shapes',
@@ -354,10 +387,10 @@ function Assert-NoBuildStreamFailure {
 try {
     $moduleStream = Start-BuildStream 'module-chains' @(
         [pscustomobject]@{ name = 'configure-m3shapes'; arguments = $m3shapesConfigure }
-        [pscustomobject]@{ name = 'build-m3shapes'; arguments = @('--build', "$BuildRoot\m3shapes", '--parallel', "$moduleJobs") }
+        [pscustomobject]@{ name = 'build-m3shapes'; arguments = @('--build', "$BuildRoot\m3shapes") + $ninjaParallelArguments }
         [pscustomobject]@{ name = 'install-m3shapes'; arguments = @('--install', "$BuildRoot\m3shapes") }
         [pscustomobject]@{ name = 'configure-plugins'; arguments = $pluginConfigure }
-        [pscustomobject]@{ name = 'build-plugins'; arguments = @('--build', "$BuildRoot\caelestia", '--parallel', "$moduleJobs") }
+        [pscustomobject]@{ name = 'build-plugins'; arguments = @('--build', "$BuildRoot\caelestia") + $ninjaParallelArguments }
         [pscustomobject]@{ name = 'install-plugins'; arguments = @('--install', "$BuildRoot\caelestia") }
     )
     $streams.Add($moduleStream)
@@ -417,7 +450,7 @@ try {
             $captureStream = [pscustomobject]@{
                 name = 'build-capture'
                 joined = $false
-                job = Start-Job -Name 'build-capture' -ScriptBlock $captureScript -ArgumentList $cargoPath, $cargoArguments, $logRoot, $callerDirectory
+                job = Start-Job -Name 'build-capture' -ScriptBlock $captureScript -ArgumentList $cargoPath, $cargoArguments, $logRoot, $callerDirectory, $ninjaJobserverName, $captureJobs
             }
             $streams.Add($captureStream)
         } finally {
@@ -438,8 +471,8 @@ try {
         "-DQS_VERSION_FILE:FILEPATH=$nativeVersionPath",
         '-DQS_AUTOSTART_NAME=CaelestiaPrototype', '-DQS_AUTOSTART_ARGS=',
         '-DQS_AUTOSTART_DESCRIPTION=Caelestia compatibility prototype'))
-    Invoke-BuildCommand 'build-backend' @('--build', "$BuildRoot\quickshell", '--target', 'quickshell', '--parallel', "$backendJobs")
-    Invoke-BuildCommand 'build-brightness-probe' @('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe', '--parallel', "$backendJobs")
+    Invoke-BuildCommand 'build-backend' (@('--build', "$BuildRoot\quickshell", '--target', 'quickshell') + $ninjaParallelArguments)
+    Invoke-BuildCommand 'build-brightness-probe' (@('--build', "$BuildRoot\quickshell", '--target', 'brightness-probe') + $ninjaParallelArguments)
     if ($Tests) {
         # Run with: ctest --test-dir <BuildRoot>\quickshell-tests -L '^portable$'
         # (see windows/deps/quickshell/src/windows/test/README.md for the tiers).
@@ -448,7 +481,7 @@ try {
             throw 'The pinned backend has no native fixture project; update windows/deps/quickshell.'
         }
         Invoke-BuildCommand 'configure-backend-tests' (@('-S', $fixtureSource, '-B', "$BuildRoot\quickshell-tests") + $common)
-        Invoke-BuildCommand 'build-backend-tests' @('--build', "$BuildRoot\quickshell-tests", '--parallel', "$backendJobs")
+        Invoke-BuildCommand 'build-backend-tests' (@('--build', "$BuildRoot\quickshell-tests") + $ninjaParallelArguments)
     }
 
     # Join every chain before touching the payload. A component that would
@@ -470,6 +503,7 @@ try {
         Stop-Job -Job $stream.job -ErrorAction SilentlyContinue
         Remove-Job -Job $stream.job -Force -ErrorAction SilentlyContinue
     }
+    if ($ninjaJobserver) { $ninjaJobserver.Dispose() }
 }
 
 # Old payload names must never survive a rebuild in this owned output.

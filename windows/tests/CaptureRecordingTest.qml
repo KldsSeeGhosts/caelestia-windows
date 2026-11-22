@@ -48,12 +48,19 @@ ShellRoot {
         RecordingBar { id: bar; recorder: root.recorder }
     }
     RecordingOverlay { id: overlay; recorder: root.recorder }
+    property double overlayDeadline
     Timer {
         id: verifyOverlay
-        interval: 100
+        interval: 25
+        repeat: true
         onTriggered: {
+            const ready = overlay.active && overlay.displays.length === Quickshell.screens.length
+                && overlay.displays[0]?.borderWindow && overlay.displays[0]?.controlsWindow;
+            if (!ready && Date.now() < root.overlayDeadline)
+                return;
+            stop();
             try {
-                check(overlay.active && overlay.displays.length === Quickshell.screens.length, "overlay restores from helper status");
+                check(ready, "overlay restores from helper status");
                 const display = overlay.displays[0];
                 check(display.borderWindow.excludeFromCapture && display.controlsWindow.excludeFromCapture, "both windows excluded");
                 check(display.borderWindow.mask !== null && display.controlsWindow.mask !== null, "desktop input masks");
@@ -115,8 +122,10 @@ ShellRoot {
             recorder.elapsed = 3600;
             check(bar.timerText === "60:00", "timer beyond an hour");
             const s = Quickshell.screens[0];
+            check(s !== undefined, "the fixture has an offscreen display");
             recorder.shellRegion = { x: s.x + 10, y: s.y + 10, w: 100, h: 100 };
             recorder.state = "recording";
+            overlayDeadline = Date.now() + 5000;
             verifyOverlay.start();
         } catch (e) {
             console.error("CAELESTIA_CAPTURE_RECORDING_FAIL " + e);

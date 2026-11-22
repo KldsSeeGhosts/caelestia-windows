@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
@@ -181,6 +182,28 @@ ShellRoot {
         timer.restart();
     }
 
+    function waitFor(condition, next, description, deadline = Date.now() + 10000): void {
+        if (condition())
+            next();
+        else if (Date.now() >= deadline)
+            throw new Error("Timed out waiting for " + description);
+        else
+            later(25, () => waitFor(condition, next, description, deadline));
+    }
+
+    function pickerClosed(next): void {
+        waitFor(() => !picker.opened, next, "picker to close");
+    }
+
+    function pickerReady(next): void {
+        waitFor(() => {
+            const window = windows()[0];
+            const view = find(window?.contentItem, "areaPickerView");
+            return picker.allReady && areaOf(window)?.opacity === 1
+                && view?.Window.window?.visible && view.width > 0 && view.height > 0;
+        }, next, "frozen view attached to a visible window");
+    }
+
     function find(item, name): var {
         if (!item)
             return null;
@@ -210,7 +233,7 @@ ShellRoot {
     }
 
     function areaOf(window): var {
-        return find(window.contentItem, "areaPicker");
+        return find(window?.contentItem, "areaPicker");
     }
 
     function readyAll(): void {
@@ -280,7 +303,8 @@ ShellRoot {
         check(dismissCalls === 1 && !picker.opened, "panels are dismissed and the picker waits for them");
         check(CaptureUi.screenshot("open") === true && dismissCalls === 1, "a second request while waiting is absorbed");
         surfacesHiddenNow = true;
-        later(300, () => step(openedStep));
+        waitFor(() => picker.opened && windows().length === Quickshell.screens.length
+            && windows().every(window => !!find(window.contentItem, "areaPickerView")), openedStep, "picker windows");
     }
 
     function openedStep(): void {
@@ -313,7 +337,8 @@ ShellRoot {
             check(!find(windows()[0].contentItem, "areaPickerOverlay").visible, "the tint is still hidden one screen short");
         readyAll();
         check(picker.allReady, "ready once every screen has content");
-        later(600, () => step(pointerStep));
+        waitFor(() => windows().every(window => find(window.contentItem, "areaPickerOverlay")?.opacity === 1),
+            pointerStep, "picker tint to finish fading in");
     }
 
     function pointerStep(): void {
@@ -339,22 +364,24 @@ ShellRoot {
             { id: "back", title: "", rect: { x: 50, y: 50, width: 500, height: 400 } }
         ];
         area.moveTo(150, 150);
-        later(500, () => step(() => {
+        waitFor(() => area.rsx === 100 && area.rsy === 100 && area.sw === 300 && area.sh === 200, () => {
             check(area.rsx === 100 && area.rsy === 100 && area.sw === 300 && area.sh === 200, "the topmost window under the pointer");
             check(outline.visible || !area.containsMouse, "the outline follows the target when the pointer is in");
             area.moveTo(500, 400);
-            later(500, () => step(() => backWindow(window, area)));
-        }));
+            backWindow(window, area);
+        }, "the topmost window under the pointer");
     }
 
     function backWindow(window, area): void {
-        check(area.rsx === 50 && area.sw === 500 && area.sh === 400, "the window behind when the front one is not under the pointer");
-        area.moveTo(area.width - 1, area.height - 1);
-        later(500, () => step(() => {
-            check(area.rsx === 0 && area.rsy === 0 && area.sw === area.width && area.sh === area.height,
-                "no window under the pointer selects the whole monitor");
-            drag(window, area);
-        }));
+        waitFor(() => area.rsx === 50 && area.sw === 500 && area.sh === 400, () => {
+            check(area.rsx === 50 && area.sw === 500 && area.sh === 400, "the window behind when the front one is not under the pointer");
+            area.moveTo(area.width - 1, area.height - 1);
+            waitFor(() => area.rsx === 0 && area.rsy === 0 && area.sw === area.width && area.sh === area.height, () => {
+                check(area.rsx === 0 && area.rsy === 0 && area.sw === area.width && area.sh === area.height,
+                    "no window under the pointer selects the whole monitor");
+                drag(window, area);
+            }, "the whole monitor when no window is under the pointer");
+        }, "the window behind the front one");
     }
 
     function drag(window, area): void {
@@ -373,7 +400,9 @@ ShellRoot {
         check(picker.editScreen === window.screen.name && picker.editPicker === area, "on the screen of the selection");
         const logical = picker.editPlan.logical;
         check(logical.x === 20 && logical.y === 30 && logical.width === 60 && logical.height === 40, "with the selection as its region");
-        later(800, () => step(() => noAutoSave(window, area)));
+        waitFor(() => find(window.contentItem, "captureEditor")?.visible
+            && find(window.contentItem, "areaPickerOverlay")?.opacity === 0,
+            () => noAutoSave(window, area), "editor to replace picker tint");
     }
 
     // The screenshots folder is written only when the user chooses Save.
@@ -445,7 +474,7 @@ ShellRoot {
         }
         check(find(bar, "editorTool-text") === null && find(bar, "editorTool-blur") === null, "no tool from a later part");
         check(find(bar, "editor-undo").disabled && find(bar, "editor-redo").disabled, "undo and redo are off with nothing drawn");
-        later(100, () => step(() => toolsStep(window, area)));
+        toolsStep(window, area);
     }
 
     function toolsStep(window, area): void {
@@ -517,7 +546,7 @@ ShellRoot {
         check(picker.editorKey(0x5A, true, false, false) === false && editor.strokes.length === 6, "no undo mid stroke");
         editor.abandon();
         check(!editor.drawing && editor.strokes.length === 6, "an abandoned stroke is dropped, not committed");
-        later(100, () => step(() => clearStep(window, area)));
+        clearStep(window, area);
     }
 
     function clearStep(window, area): void {
@@ -540,7 +569,7 @@ ShellRoot {
         check(editor.clearArmed, "armed again");
         editor.setTool("pencil");
         check(!editor.clearArmed, "choosing a tool disarms it");
-        later(50, () => step(() => clearPointerStep(window, area)));
+        clearPointerStep(window, area);
     }
 
     // The pointer goes onto Clear and presses it. Clear grows, and Qt re-delivers
@@ -559,25 +588,25 @@ ShellRoot {
         const calm = { x: clear.x, y: clear.y, width: clear.width, height: clear.height };
         input.mouseMove(save, save.width / 2, save.height / 2);
         input.mouseMove(clear, clear.width - 1, clear.height - 1);
-        later(150, () => step(() => {
+        waitFor(() => clear.hovered, () => {
             check(clear.hovered, "the pointer is over Clear");
             check(!editor.clearArmed, "and hovering does not arm it");
             input.mouseClick(clear, clear.width - 1, clear.height - 1);
             check(editor.clearArmed && editor.strokes.length === 1, "a click arms Clear");
             check(clear.width > calm.width && clear.x === calm.x && clear.y === calm.y && clear.height === calm.height,
                 "it grows to the right: " + calm.width + " to " + clear.width);
-            later(300, () => step(() => {
+            later(300, () => {
                 check(editor.clearArmed, "Clear is still armed after the resize and the hover that follows it");
                 check(clear.hovered, "and the pointer is still on it");
                 check(editor.strokes.length === 1, "nothing was cleared by arming");
                 input.mouseMove(save, save.width / 2, save.height / 2);
-                later(150, () => step(() => {
+                waitFor(() => !clear.hovered, () => {
                     check(!clear.hovered && !editor.clearArmed && editor.strokes.length === 1, "moving off the button disarms it");
                     check(clear.width === calm.width, "and it shrinks back");
                     clearTimeoutStep(window, area);
-                }));
-            }));
-        }));
+                }, "pointer to leave Clear");
+            });
+        }, "pointer to enter Clear");
     }
 
     function clearTimeoutStep(window, area): void {
@@ -587,11 +616,11 @@ ShellRoot {
         input.mouseMove(clear, 1, 1);
         input.mouseClick(clear, 1, 1);
         check(editor.clearArmed, "armed once more, from its first pixel");
-        later(2800, () => step(() => {
+        waitFor(() => !editor.clearArmed, () => {
             check(!editor.clearArmed && editor.strokes.length === 1, "it disarms after 2.4 s and keeps the stroke");
             input.mouseMove(find(bar, "editor-save"), 2, 2);
-            later(100, () => step(() => inkStep(window, area)));
-        }));
+            inkStep(window, area);
+        }, "Clear confirmation to expire");
     }
 
     function inkStep(window, area): void {
@@ -645,7 +674,7 @@ ShellRoot {
         check(!picker.closing && picker.editing, "a right press does not close the editor");
         area.moveTo(100, 100);
         check(area.rsx === 20 && area.sw === 60, "moving the pointer does not retarget the selection");
-        later(100, () => step(() => saveStep(window, area)));
+        saveStep(window, area);
     }
 
     // Save writes one file with the annotations in it.
@@ -663,7 +692,7 @@ ShellRoot {
         check(picker.saving, "Save starts the export");
         check(find(window.contentItem, "captureEditor").busy, "and the editor is busy");
         const screenName = window.screen.name;
-        later(1500, () => step(() => savedStep(screenName)));
+        pickerClosed(() => savedStep(screenName));
     }
 
     function savedStep(screenName): void {
@@ -711,7 +740,7 @@ ShellRoot {
         check(picker.closing, "Esc starts closing");
         for (const window of list)
             check(window.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "keyboard focus is released while closing");
-        later(1200, () => step(afterEscape));
+        pickerClosed(afterEscape);
     }
 
     function afterEscape(): void {
@@ -722,7 +751,7 @@ ShellRoot {
         const area = areaOf(windows()[0]);
         area.pressAt(Qt.RightButton, 10, 10);
         check(picker.closing, "a right click starts closing");
-        later(1200, () => step(afterRightClick));
+        pickerClosed(afterRightClick);
     }
 
     function afterRightClick(): void {
@@ -733,7 +762,7 @@ ShellRoot {
         // that path to the clipboard.
         check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens the picker");
         readyAll();
-        later(300, () => step(clipboardDrag));
+        pickerReady(clipboardDrag);
     }
 
     // Selects a region and returns the editor's toolbar.
@@ -756,7 +785,7 @@ ShellRoot {
         picker.editor.releaseAt();
         find(bar, "editor-copy").clicked();
         check(picker.saving, "Copy starts the export");
-        later(1200, () => step(afterClipboard));
+        pickerClosed(afterClipboard);
     }
 
     function afterClipboard(): void {
@@ -779,7 +808,7 @@ ShellRoot {
         clipboardRecorder.result = false;
         check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens again");
         readyAll();
-        later(300, () => step(copyFailDrag));
+        pickerReady(copyFailDrag);
     }
 
     function copyFailDrag(): void {
@@ -789,7 +818,7 @@ ShellRoot {
         picker.editor.moveTo(20, 20);
         picker.editor.releaseAt();
         find(bar, "editor-copy").clicked();
-        later(1200, () => step(afterCopyFail));
+        waitFor(() => !picker.saving, afterCopyFail, "clipboard failure");
     }
 
     // A failed export keeps the editor and its annotations, so the user can try
@@ -804,15 +833,15 @@ ShellRoot {
         clipboardRecorder.result = true;
         const bar = find(windows()[0].contentItem, "editorToolbar");
         find(bar, "editor-copy").clicked();
-        later(1200, () => step(() => {
+        pickerClosed(() => {
             check(clipboardRecorder.copied.length === 3 && thumbRecorder.copies.length === 2, "trying again copies and adds the thumbnail");
             check(!picker.opened, "and closes the editor");
 
             // Cancelling removes a leftover hand-over file.
             check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the cancel case");
             readyAll();
-            later(300, () => step(tempCancelStep));
-        }));
+            pickerReady(tempCancelStep);
+        });
     }
 
     property string leftover: ""
@@ -821,13 +850,12 @@ ShellRoot {
         // A save is under way with its own file; Esc invalidates it and removes the file.
         const view = find(windows()[0].contentItem, "areaPickerView");
         leftover = picker.beginClipboard();
-        CUtils.saveItem(view, fileUrl(leftover), Qt.rect(0, 0, 4, 4), () => {}, () => {});
-        later(500, () => step(() => {
+        CUtils.saveItem(view, fileUrl(leftover), Qt.rect(0, 0, 4, 4), () => step(() => {
             check(WindowsFiles.isFile(leftover), "a hand-over file exists before the cancel");
             areaOf(windows()[0]).dismissByKey();
             check(picker.activeTemp === "" && !WindowsFiles.isFile(leftover), "Esc deletes it at once, before the fade ends");
-            later(1200, () => step(afterTempCancel));
-        }));
+            pickerClosed(afterTempCancel);
+        }), () => step(() => { throw new Error("Could not write the hand-over file for the cancel case"); }));
     }
 
     function afterTempCancel(): void {
@@ -841,14 +869,14 @@ ShellRoot {
         picker.saveRoot = savedPath;
         check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the failing save");
         readyAll();
-        later(300, () => step(failingSaveDrag));
+        pickerReady(failingSaveDrag);
     }
 
     function failingSaveDrag(): void {
         const bar = selectRegion(10, 10, 40, 40);
         find(bar, "editor-save").clicked();
         check(picker.saving, "the failing save starts");
-        later(1200, () => step(afterFailingSave));
+        waitFor(() => !picker.saving, afterFailingSave, "failed save");
     }
 
     function afterFailingSave(): void {
@@ -858,23 +886,21 @@ ShellRoot {
         picker.saveRoot = root.saveRoot;
         closePicker(() => {
             // A save that never answers ends in a bounded failure.
-            picker.saveTimeout = 300;
+            picker.saveTimeout = 100;
             check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the stalled save");
             readyAll();
-            later(300, () => step(() => {
-                picker.saving = true;
-                check(picker.opened, "a save is pending");
-                later(1200, () => step(afterStall));
-            }));
+            picker.saving = true;
+            check(picker.opened, "a save is pending");
+            waitFor(() => !picker.saving, afterStall, "stalled save to time out");
         });
     }
 
     function closePicker(next): void {
         picker.cancel();
-        later(1200, () => step(() => {
+        pickerClosed(() => {
             check(!picker.opened && !picker.editing, "the picker closed: opened=" + picker.opened + " editing=" + picker.editing + " closing=" + picker.closing + " saving=" + picker.saving);
             next();
-        }));
+        });
     }
 
     function afterStall(): void {
@@ -884,31 +910,29 @@ ShellRoot {
     }
 
     function stalledClosed(): void {
-
         // Completion first: the operation is terminal at once, so the timeout
         // that is still counting never fires.
-        picker.saveTimeout = 400;
+        picker.saveTimeout = 150;
         check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the completion race");
         readyAll();
-        later(300, () => step(raceCompletion));
+        pickerReady(raceCompletion);
     }
 
     function raceCompletion(): void {
         const started = picker.session;
         const timeouts = toastCount("timed out");
         picker.saving = true;
-        later(150, () => step(() => {
-            picker.fileFinished(started, "C:/race/done.png");
-            check(!picker.saving && picker.session !== started, "completion invalidates the session and clears saving at once");
-            check(toastCount("C:/race/done.png") === 0, "no success toast: the thumbnail is the feedback");
-            picker.fileFinished(started, "C:/race/done.png");
-            picker.saveFailed(started, "late failure");
-            check(toastCount("C:/race/done.png") === 0 && toastWith("late failure") === "", "a second result for the same save is dropped");
-            later(900, () => step(() => {
-                check(toastCount("timed out") === timeouts, "the timeout never fires after a completion");
-                check(!picker.opened, "the picker closed");
-                thumbnailOffStep();
-            }));
+        picker.fileFinished(started, "C:/race/done.png");
+        check(!picker.saving && picker.session !== started, "completion invalidates the session and clears saving at once");
+        check(toastCount("C:/race/done.png") === 0, "no success toast: the thumbnail is the feedback");
+        picker.fileFinished(started, "C:/race/done.png");
+        picker.saveFailed(started, "late failure");
+        check(toastCount("C:/race/done.png") === 0 && toastWith("late failure") === "", "a second result for the same save is dropped");
+        // Observe through the deadline that the canceled timer would have had.
+        later(2 * picker.saveTimeout + 50, () => pickerClosed(() => {
+            check(toastCount("timed out") === timeouts, "the timeout never fires after a completion");
+            check(!picker.opened, "the picker closed");
+            thumbnailOffStep();
         }));
     }
 
@@ -917,39 +941,40 @@ ShellRoot {
     function thumbnailOffStep(): void {
         check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the thumbnail-off case");
         readyAll();
-        later(300, () => step(() => {
+        pickerReady(() => {
             thumbRecorder.enabled = false;
             picker.fileFinished(picker.session, "C:/off/saved.png");
             check(toastCount("Saved to C:/off/saved.png") === 1, "a save with the thumbnail off is announced");
             thumbRecorder.enabled = true;
-            later(1200, () => step(() => {
+            pickerClosed(() => {
                 check(!picker.opened, "and the picker closed");
                 raceTimeout();
-            }));
-        }));
+            });
+        });
     }
 
     function raceTimeout(): void {
         // Timeout first: a completion that arrives afterwards is dropped.
         check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens for the timeout race");
         readyAll();
-        later(300, () => step(() => {
+        pickerReady(() => {
             const started = picker.session;
             const timeouts = toastCount("timed out");
             picker.saving = true;
-            later(700, () => step(() => {
+            waitFor(() => !picker.saving, () => {
                 check(toastCount("timed out") === timeouts + 1, "the timeout shows once");
                 check(picker.session !== started && !picker.saving, "and ends the operation");
                 const saved = thumbRecorder.saved.length;
                 picker.fileFinished(started, "C:/race/late.png", { screen: "x", width: 1, height: 1, dpr: 1 });
                 check(thumbRecorder.saved.length === saved, "a completion after the timeout is dropped");
                 check(picker.opened && !picker.closing, "and the editor stays open after the timeout");
-                later(900, () => step(() => {
+                // A repeated timeout would fire within the next interval.
+                later(2 * picker.saveTimeout + 50, () => {
                     check(toastCount("timed out") === timeouts + 1, "and the timeout does not repeat");
                     closePicker(resultAfterEsc);
-                }));
-            }));
-        }));
+                });
+            }, "save timeout");
+        });
     }
 
     function resultAfterEsc(): void {
@@ -959,22 +984,26 @@ ShellRoot {
         const toasts = toastCount("Copying screenshot to clipboard");
         check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the Esc race");
         readyAll();
-        later(300, () => step(() => {
+        pickerReady(() => {
             const started = picker.session;
             const path = picker.beginClipboard();
             const view = find(windows()[0].contentItem, "areaPickerView");
             areaOf(windows()[0]).dismissByKey();
             check(picker.closing && picker.session !== started, "Esc invalidates the save before its write");
             // The grab was requested after Esc and lands in the next frames.
-            CUtils.saveItem(view, fileUrl(path), Qt.rect(0, 0, 4, 4), saved => picker.copyFinished(started, saved), () => {});
-            later(900, () => step(() => {
+            let finished = false;
+            CUtils.saveItem(view, fileUrl(path), Qt.rect(0, 0, 4, 4), saved => {
+                picker.copyFinished(started, saved);
+                finished = true;
+            }, () => step(() => { throw new Error("Late clipboard write did not complete"); }));
+            waitFor(() => finished && !picker.opened, () => {
                 check(clipboardRecorder.copied.length === copies, "a result after Esc does not copy");
                 check(toastCount("Copying screenshot to clipboard") === toasts, "and shows no toast");
                 check(!WindowsFiles.isFile(path), "and its late file is deleted by the late callback");
                 check(!picker.opened, "the picker closed");
                 overlapStep();
-            }));
-        }));
+            }, "late clipboard result and picker close");
+        });
     }
 
     function overlapStep(): void {
@@ -982,7 +1011,7 @@ ShellRoot {
         // A's file.
         check(CaptureUi.screenshot("openClip") === true && picker.opened, "openClip opens for the overlap");
         readyAll();
-        later(300, () => step(() => {
+        pickerReady(() => {
             const copies = clipboardRecorder.copied.length;
             const sessionA = picker.session - 1; // An earlier, ended session.
             const pathA = CUtils.newCaptureTempPath().split("\\").join("/");
@@ -990,9 +1019,12 @@ ShellRoot {
             const pathB = picker.beginClipboard();
             check(pathA !== "" && pathB !== "" && pathA !== pathB, "each save has its own path: " + pathB);
             const view = find(windows()[0].contentItem, "areaPickerView");
-            CUtils.saveItem(view, fileUrl(pathB), Qt.rect(0, 0, 6, 6), () => {}, () => {});
-            CUtils.saveItem(view, fileUrl(pathA), Qt.rect(0, 0, 6, 6), () => {}, () => {});
-            later(500, () => step(() => {
+            let writes = 0;
+            const written = () => { writes++; };
+            const failed = () => step(() => { throw new Error("Could not write an overlapping hand-over file"); });
+            CUtils.saveItem(view, fileUrl(pathB), Qt.rect(0, 0, 6, 6), written, failed);
+            CUtils.saveItem(view, fileUrl(pathA), Qt.rect(0, 0, 6, 6), written, failed);
+            waitFor(() => writes === 2, () => {
                 check(WindowsFiles.isFile(pathA) && WindowsFiles.isFile(pathB), "both hand-over files exist");
                 picker.copyFinished(sessionA, pathA);
                 check(!WindowsFiles.isFile(pathA), "A's late result deletes A's file");
@@ -1001,12 +1033,12 @@ ShellRoot {
                 picker.copyFinished(sessionB, pathB);
                 check(clipboardRecorder.copied.length === copies + 1 && clipboardRecorder.copied[copies] === pathB, "B copies its own file");
                 check(!WindowsFiles.isFile(pathB), "and deletes it");
-                later(900, () => step(() => {
+                pickerClosed(() => {
                     check(!picker.opened, "the picker closed");
                     uniqueTempPathsStep();
-                }));
-            }));
-        }));
+                });
+            }, "both hand-over files");
+        });
     }
 
     function uniqueTempPathsStep(): void {
@@ -1087,7 +1119,7 @@ ShellRoot {
         check(CaptureUi.screenshot("open") === true && picker.opened, "the picker opens normally afterwards");
         check(windows().length === Quickshell.screens.length, "with a window per screen again");
         readyAll();
-        later(300, () => step(rejectionStep));
+        pickerReady(rejectionStep);
     }
 
     function rejectionStep(): void {
@@ -1115,7 +1147,7 @@ ShellRoot {
         const width = Math.round(window.width);
         CUtils.saveItem(view, fileUrl(edge), Qt.rect(width - 10, 0, 40, 20), () => { clippedSaved++; }, () => { clippedFailed++; });
         CUtils.saveItem(view, fileUrl(gone), Qt.rect(width + 10, 0, 20, 20), () => { clippedSaved++; }, () => { clippedFailed++; });
-        later(700, () => step(() => {
+        waitFor(() => failed + saved >= 4 && clippedSaved + clippedFailed >= 2, () => {
             check(failed === 4 && saved === 0, "no target, a remote URL, no window and an empty item each call onFailed: " + failed);
             check(!WindowsFiles.isFile(root.saveRoot + "/rejected.png"), "and nothing is written");
             check(clippedSaved === 1 && clippedFailed === 1, "a crop past the edge saves and one wholly outside fails: " + clippedSaved + "/" + clippedFailed);
@@ -1126,8 +1158,8 @@ ShellRoot {
             shot.source = "";
             empty.destroy();
             picker.cancel();
-            later(1200, () => step(panelTimeoutStep));
-        }));
+            pickerClosed(panelTimeoutStep);
+        }, "all save callbacks");
     }
 
     function panelTimeoutStep(): void {
@@ -1136,7 +1168,7 @@ ShellRoot {
         glazier.hiddenTimeout = 50;
         surfacesHiddenNow = false;
         check(CaptureUi.screenshot("open") === true, "the request is accepted");
-        later(400, () => step(afterTimeout));
+        waitFor(() => CaptureUi.pending === null, afterTimeout, "panel dismissal to time out");
     }
 
     function afterTimeout(): void {
@@ -1196,7 +1228,7 @@ ShellRoot {
             clipboardRecorder.writeFinished(stale, true, "");
             check(picker.copyOperation === current && picker.saving && thumbRecorder.copies.length === before, "superseded success cannot finish a new session");
         }));
-        later(150, () => step(() => {
+        waitFor(() => !picker.saving, () => {
             check(!picker.saving && picker.opened && picker.editing && !picker.copyOperation, "no-result timeout keeps editor recoverable");
             clipboardRecorder.writeFinished(current, true, "");
             check(picker.opened && thumbRecorder.copies.length === before, "success after timeout is ignored");
@@ -1207,6 +1239,6 @@ ShellRoot {
                 console.log("CAELESTIA_CAPTURE_PICKER_PASS " + assertions);
                 Qt.quit();
             });
-        }));
+        }, "missing clipboard result to time out");
     }
 }

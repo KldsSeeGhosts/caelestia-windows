@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([int]$LaneCount = 7)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-supervisor-stop-' + [guid]::NewGuid().ToString('N'))
@@ -32,15 +32,26 @@ function Wait-Until([scriptblock]$Condition, [string]$Message, [int]$Millisecond
         Start-Sleep -Milliseconds 25
     }
 }
-try {
-    $scripts = Join-Path $root 'scripts'
-    [IO.Directory]::CreateDirectory($scripts) | Out-Null
-    foreach ($name in @('Start-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1')) {
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $scripts
+$lanes = @()
+$case = $null
+$statusPath = $null
+    function Get-PipeEvents([string]$Directory, [string]$Kind) {
+        $path = Join-Path $Directory 'pipe-events.jsonl'
+        if (Test-Path -LiteralPath $path) {
+            foreach ($line in (Get-Content -LiteralPath $path)) {
+                # The fixture may be appending the last frame.
+                try { $message = ConvertFrom-Json -InputObject $line -ErrorAction Stop } catch { continue }
+                if ($message.type -ceq $Kind) { $message }
+            }
+        }
     }
-    # Disposable copies isolate synchronization, Explorer identities and native
-    # restoration. Launcher IPC, Tick/Dispose and process discovery stay real.
-    # Fail closed before executing a copy if any injection no longer matches.
+# Every lane gets a fresh token, so the mutex, recovery event, install-lock key,
+# AppBar journal and the baked Explorer path check stay disjoint while lanes run
+# their supervisors in parallel. The chain still asserts each production
+# constant before shortening it in the disposable copy.
+function New-PatchedSupervisorSource([string]$Token, [string]$CaseRoot) {
+    $mutexName = 'Local\CaelestiaDesktopTakeover-Test-' + $Token
+    $fixtureAppBarKey = 'Software\Quickshell\AppBars-Fixture-' + $Token
     $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs'))
     Assert ($source.Contains('public const int ReadyTimeoutMs = 20000;')) 'Production first-frame budget changed.'
     $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 2500;'
@@ -91,7 +102,7 @@ foreach (var path in Directory.GetFiles(Environment.CurrentDirectory, "slow-read
     # which also owns a Shell_TrayWnd and has the same process name.
     $source = Replace-Exactly $source `
         'return String.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);' `
-        ('return String.Equals(process.ProcessName, "qs", StringComparison.OrdinalIgnoreCase) && process.MainModule.FileName.StartsWith(@"' + $root + '\", StringComparison.OrdinalIgnoreCase);')
+        ('return String.Equals(process.ProcessName, "qs", StringComparison.OrdinalIgnoreCase) && process.MainModule.FileName.StartsWith(@"' + $CaseRoot + '\", StringComparison.OrdinalIgnoreCase);')
     $source = Replace-Exactly $source `
         '(name == "Shell_TrayWnd" || name == "Shell_SecondaryTrayWnd");' `
         'Explorer(owner);'
@@ -307,18 +318,726 @@ namespace Caelestia.Takeover {
 '@
     $boundary = [regex]::Match($source, '(?m)^                if \(!child.HasExited\) \{\r?$').Value
     $source = Replace-Exactly $source ($boundary + "`n") ("                if (isolatedTest) HungExplorerFixture.Reconcile(launch.WorkingDirectory);`n" + $boundary + "`n")
-    [IO.File]::WriteAllText((Join-Path $scripts 'DesktopTakeover.cs'), $source)
+    return $source
+}
+# Disposable copies isolate synchronization, Explorer identities and native
+# restoration. Launcher IPC, Tick/Dispose and process discovery stay real.
+# Fail closed before executing a copy if any injection no longer matches. Each
+# lane owns a separate scripts directory so a case that rewrites the shared
+# helper can never affect a sibling lane.
+function Write-FixtureScripts([string]$Directory, [string]$Token, [string]$CaseRoot) {
+    [IO.Directory]::CreateDirectory($Directory) | Out-Null
+    foreach ($name in @('Start-Caelestia.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-Versions.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $Directory
+    }
+    [IO.File]::WriteAllText((Join-Path $Directory 'DesktopTakeover.cs'), (New-PatchedSupervisorSource $Token $CaseRoot))
     $watch = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Watch-DesktopShell.ps1'))
     $watch = Replace-Exactly $watch `
         '[Caelestia.Takeover.Supervisor]::Run([IO.Path]::GetFullPath($LaunchSpec), $hideTaskbar, $restartOnCrash, ($suppression -ceq ''invisible''), $restartFrozenShell)' `
-        ('[Caelestia.Takeover.Supervisor]::RunIsolatedTest([IO.Path]::GetFullPath($LaunchSpec), "' + $token + '")')
-    [IO.File]::WriteAllText((Join-Path $scripts 'Watch-DesktopShell.ps1'), $watch)
+        ('[Caelestia.Takeover.Supervisor]::RunIsolatedTest([IO.Path]::GetFullPath($LaunchSpec), "' + $Token + '")')
+    [IO.File]::WriteAllText((Join-Path $Directory 'Watch-DesktopShell.ps1'), $watch)
     $restore = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Restore-Desktop.ps1'))
     $restore = Replace-Exactly $restore '[Caelestia.Takeover.Native]::Restore($snapshot, 0)' `
         '[IO.File]::WriteAllText((Join-Path $PSScriptRoot "fixture-restored"), "restored")'
     $restore = Replace-Exactly $restore '[Caelestia.Takeover.Native]::Capture() | ConvertTo-Json -Depth 6' `
         'Write-Output "{}"'
-    [IO.File]::WriteAllText((Join-Path $scripts 'Restore-Desktop.ps1'), $restore)
+    [IO.File]::WriteAllText((Join-Path $Directory 'Restore-Desktop.ps1'), $restore)
+}
+function Invoke-TaskbarsCase {
+    $taskbars = Join-Path $root 'taskbars'
+    [IO.Directory]::CreateDirectory($taskbars) | Out-Null
+    $script:case = $taskbars
+    $decoyExe = Join-Path $root 'decoy.exe'
+    Copy-Item -LiteralPath $fake -Destination $decoyExe
+    $decoy = Start-FixtureProcess $decoyExe '--decoy' $taskbars (Join-Path $taskbars 'decoy')
+    Wait-Until { Test-Path -LiteralPath (Join-Path $taskbars 'decoy-ready') } 'Decoy taskbar did not start.'
+    $taskbar = Start-FixtureProcess $fake '--taskbar' $taskbars (Join-Path $taskbars 'taskbar')
+    Wait-Until {
+        if ($taskbar.HasExited) { throw ('Fake taskbar exited: ' + [IO.File]::ReadAllText((Join-Path $taskbars 'taskbar.err'))) }
+        Test-Path -LiteralPath (Join-Path $taskbars 'taskbar-ready')
+    } 'Fake taskbar did not start.'
+    [Caelestia.Takeover.TaskbarEventFixture]::Verify($taskbars, $taskbar.Id, $decoy.Id)
+    [IO.File]::WriteAllText((Join-Path $taskbars 'taskbars-stop'), 'stop')
+    Assert ($taskbar.WaitForExit(2000) -and $decoy.WaitForExit(2000)) 'Fake taskbars did not stop.'
+    Write-Output 'PASS taskbar events: owner-checked lookup skips a first-in-order decoy; real show events re-hide twice without an audit; fight-loop fallback remains bounded.'
+}
+function Invoke-PipeCase([string]$Mode) {
+        $case = Join-Path $root $mode
+        $script:case = $case
+        $prefix = Join-Path $case 'prefix'
+        $state = Join-Path $case 'state'
+        [IO.Directory]::CreateDirectory($prefix) | Out-Null
+        [IO.Directory]::CreateDirectory($state) | Out-Null
+        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
+        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
+        $spec = Join-Path $state 'launch.json'
+        $statusPath = Join-Path $state 'watchdog.json'
+        $script:statusPath = $statusPath
+        @{
+            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
+            StateDirectory = $state; Environment = @{}; StdoutPath = (Join-Path $state 'shell.out')
+            StderrPath = (Join-Path $state 'shell.err')
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
+        if ($mode -eq 'pipe-valid') {
+            $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar')
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'taskbar-ready') } 'Pipe taskbar did not start.'
+            [IO.File]::WriteAllText((Join-Path $case 'taskbar-show-0'), 'show')
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Pipe taskbar did not show.'
+        }
+        $watchdog = Start-FixtureProcess $powershell `
+            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
+            $case (Join-Path $case 'watchdog')
+        $watchdogs.Add($watchdog)
+        if ($mode -eq 'pipe-valid') {
+            Wait-Until { @(Get-PipeEvents $case 'welcome').Count -eq 1 } 'Pipe hello did not receive v1 welcome.'
+            $welcome = Get-PipeEvents $case 'welcome'
+            Assert ($welcome.v -eq 1 -and $welcome.hideTaskbar -and -not $welcome.taskbarTakenOver -and
+                $welcome.explorerPid -eq $taskbar.Id -and $welcome.explorerEpoch -gt 0 -and
+                $welcome.explorerHwnd -eq [long](Get-Content -LiteralPath (Join-Path $case 'taskbar-ready') -Raw)) 'Welcome had incorrect takeover or Explorer identity.'
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'starting') 'The handshake alone made the child ready.'
+            [IO.File]::WriteAllText((Join-Path $case 'pipe-ready'), 'ready')
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'running' -and $s.shellReady -and $s.livenessSupported
+            } 'Pipe lifecycle ready or GUI pong was ignored.'
+            $owner = [int](Read-CaelestiaSupervisorStatus $statusPath).shellPid
+            $journal = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($fixtureAppBarKey)
+            try {
+                foreach ($entry in @('pipe-journal-only', 'pipe-journal-and-pipe')) {
+                    $handle = [long](Get-Content -LiteralPath (Join-Path $case $entry) -Raw)
+                    $journal.SetValue($handle.ToString('x'), $owner, [Microsoft.Win32.RegistryValueKind]::DWord)
+                }
+            } finally { $journal.Dispose() }
+            Wait-Until { @(Get-PipeEvents $case 'explorer_settled').Count -eq 1 } 'Initial Explorer settlement was not sent.'
+            $settled = Get-PipeEvents $case 'explorer_settled'
+            Assert ($settled.taskbarSuppressed -and $settled.explorerEpoch -eq $welcome.explorerEpoch -and
+                -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer settled before taskbar suppression.'
+            Assert (@(Get-PipeEvents $case 'takeover' | Where-Object takenOver).Count -ge 1) 'Takeover transition was not sent.'
+
+            [IO.File]::WriteAllText((Join-Path $case 'pipe-pause'), 'pause')
+            Wait-Until { -not (Test-Path -LiteralPath (Join-Path $case 'pipe-pause')) } 'Child did not send pipe pause.'
+            Start-Sleep -Milliseconds 750
+            $before = Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw
+            Start-Sleep -Milliseconds 1000
+            Assert ((Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw) -eq $before) 'Probes continued while paused over the pipe.'
+            [IO.File]::WriteAllText((Join-Path $case 'pipe-resume'), 'active')
+            Wait-Until { (Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw) -ne $before } 'Pipe active did not resume GUI probes.'
+            [IO.File]::WriteAllText((Join-Path $case 'stall'), 'stall')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'The unpumped fixture still answered pipe pings.'
+            Remove-Item -LiteralPath (Join-Path $case 'stall')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -eq 0 } 'A resumed GUI did not clear pipe misses.'
+
+            [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
+            Assert ($taskbar.WaitForExit(2000)) 'Original pipe taskbar did not stop.'
+            Remove-Item -LiteralPath @((Join-Path $case 'taskbars-stop'), (Join-Path $case 'taskbar-ready'))
+            $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar-restarted')
+            Wait-Until { @(Get-PipeEvents $case 'explorer_settled').Count -ge 2 } 'Replacement Explorer never settled.'
+            $replacement = @(Get-PipeEvents $case 'explorer_settled')[-1]
+            Assert ($replacement.explorerEpoch -eq $settled.explorerEpoch + 1 -and $replacement.explorerPid -eq $taskbar.Id -and
+                $replacement.taskbarSuppressed -and -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer restart did not reconcile once before settling.'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt'))) 'Authenticated liveness spawned a legacy probe.'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $case 'pipe-dead-appbars'))) 'The supervisor attempted cleanup while the pipe child was alive.'
+        } else {
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'pipe-rejected') } 'Invalid pipe hello was not disconnected.'
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'running' -and $s.shellReady -and $s.livenessSupported
+            } 'Rejected hello did not fall back to stdout readiness and GUI IPC.'
+            Assert (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt')) 'Rejected hello did not launch a legacy probe.'
+        }
+        [IO.File]::WriteAllText((Join-Path $case 'pipe-exit'), 'exit')
+        Assert ($watchdog.WaitForExit(10000) -and $watchdog.ExitCode -eq 0) 'Pipe child did not shut down cleanly.'
+        if ($mode -eq 'pipe-valid') {
+            $dead = @(Get-Content -LiteralPath (Join-Path $case 'pipe-dead-appbars'))
+            $expected = foreach ($entry in @('pipe-lease-kept', 'pipe-journal-only', 'pipe-journal-and-pipe')) {
+                Get-Content -LiteralPath (Join-Path $case $entry) -Raw
+            }
+            Assert ($dead.Count -eq 3 -and -not (Compare-Object $expected $dead)) 'Dead AppBar cleanup did not merge the registry and leases exactly once or removed a released lease.'
+            $journal = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($fixtureAppBarKey)
+            try { Assert ($journal.ValueCount -eq 0) 'AppBar cleanup left stale entries in the disposable journal.' }
+            finally { $journal.Dispose() }
+            [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
+            Assert ($taskbar.WaitForExit(2000)) 'Replacement pipe taskbar did not stop.'
+        }
+        Write-Output "PASS $mode`: v1 pipe lifecycle, liveness and cleanup or clean legacy fallback."
+}
+function Invoke-ReadinessCase([string]$Mode) {
+        $case = Join-Path $root ('readiness-' + $mode)
+        $script:case = $case
+        $prefix = Join-Path $case 'prefix'
+        $profile = Join-Path $case 'profile'
+        $state = Join-Path $profile 'runtime\supervisor-fixture'
+        [IO.Directory]::CreateDirectory($prefix) | Out-Null
+        [IO.Directory]::CreateDirectory($state) | Out-Null
+        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
+        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
+        $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar')
+        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'taskbar-ready') } 'Readiness taskbar did not start.'
+        [IO.File]::WriteAllText((Join-Path $case 'taskbar-show-0'), 'show')
+        Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Readiness taskbar did not show.'
+        $spec = Join-Path $state 'launch.json'
+        @{
+            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
+            StateDirectory = $state; Environment = @{}
+            # No stdout destination proves readiness still drains when logging
+            # is disabled. Other cases exercise the normal persisted log path.
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
+        $statusPath = Join-Path $state 'watchdog.json'
+        $script:statusPath = $statusPath
+        $actions = Join-Path $state 'takeover-actions.txt'
+        $watchdog = Start-FixtureProcess $powershell `
+            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
+            $case (Join-Path $case 'watchdog')
+        $watchdogs.Add($watchdog)
+        if ($mode -eq 'controlled') {
+            Wait-Until {
+                try {
+                    $s = Read-CaelestiaSupervisorStatus $statusPath
+                    $s.phase -eq 'starting' -and $s.shellPid -gt 0
+                } catch { $false }
+            } 'Cold child did not publish starting.'
+            $owned = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
+            $null = $owned.Handle
+            $children.Add($owned)
+            Assert (-not (Test-Path -LiteralPath $actions)) 'Takeover changed Explorer before readiness.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Taskbar hidden before readiness.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Invisible region applied before readiness.'
+            # A slow first frame is not a fixed startup sleep.
+            Start-Sleep -Milliseconds 1200
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'starting') 'Slow start reported running.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'First frame did not publish running.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready taskbar not hidden.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Ready taskbar did not get its invisible region.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($s.shellReady -and $s.taskbarTakenOver) 'Running status lacks readiness/takeover.'
+            [IO.File]::WriteAllText((Join-Path $case 'reload-dip'), 'dip')
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'dip-seen') } 'Reload dip not emitted.'
+            Start-Sleep -Milliseconds 2300
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running') 'Reload dropped the process readiness latch.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Reload flashed the taskbar.'
+            Assert ((Get-Content -LiteralPath $actions -Raw) -notmatch 'release') 'Reload released takeover.'
+            $restartClock = [Diagnostics.Stopwatch]::StartNew()
+            [IO.File]::WriteAllText((Join-Path $case 'exit-1'), 'crash')
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'starting' -and $s.quickCrashes -eq 1 -and $s.shellPid -gt 0
+            } 'Immediate restart did not wait for its own first frame.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Immediate restart flashed Explorer.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Slow restart did not return Explorer after grace.'
+            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Restart grace returned a taskbar with its invisible region still applied.'
+            Assert ($restartClock.ElapsedMilliseconds -ge 1200 -and $restartClock.ElapsedMilliseconds -lt 2700) 'Restart takeover grace was not the fixture grace plus a pump tick/cleanup allowance.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($s.phase -eq 'starting' -and -not $s.taskbarTakenOver -and -not $s.shellReady) 'Slow restart status is not starting/visible.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-2'), 'draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Replacement did not become ready.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready replacement did not retake Explorer.'
+            [IO.File]::WriteAllText((Join-Path $case 'exit-2'), 'crash')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'restart-backoff' } 'Second quick crash did not back off.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Backoff did not return Explorer.'
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'starting' -and $s.quickCrashes -eq 2
+            } 'Backoff replacement did not publish starting.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Backoff replacement hid Explorer before ready.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-3'), 'draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Backoff replacement did not report running.'
+            $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
+            try { $null = $event.Set() } finally { $event.Dispose() }
+            Assert ($watchdog.WaitForExit(12000)) 'Controlled child did not stop within bounded recovery.'
+        } elseif ($mode -eq 'never-ready') {
+            Wait-Until {
+                try { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'waiting-ready' } catch { $false }
+            } 'Live never-ready child did not report waiting-ready.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            $owned = [Diagnostics.Process]::GetProcessById($s.shellPid)
+            $null = $owned.Handle
+            $children.Add($owned)
+            Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 1) 'Discovery lost a waiting-ready owner.'
+            $heartbeat = $s.utc
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Waiting-ready stopped heartbeating.'
+            Repair-CaelestiaStaleSupervisors $profile
+            # Longer than the 2.5 s fixture readiness budget, so the deadline
+            # has fully elapsed. No replacement may appear, even while strict
+            # first-frame readiness stays absent.
+            Start-Sleep -Milliseconds 3500
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert (-not $owned.HasExited -and -not $watchdog.HasExited -and $s.shellPid -eq $owned.Id) 'Readiness deadline or healthy-owner repair stopped/replaced a live child.'
+            Assert ($s.phase -eq 'waiting-ready' -and $s.quickCrashes -eq 0 -and -not $s.forcedChildTermination) 'Missing readiness counted as a crash.'
+            # ConvertFrom-Json already yields a DateTime under PowerShell 7;
+            # parsing its string form reinterprets UTC ticks as local time.
+            $heartbeatAge = ([DateTime]::UtcNow - (ConvertTo-CaelestiaStatusUtc $s.utc).UtcDateTime).TotalSeconds
+            Assert ($heartbeatAge -ge -2 -and $heartbeatAge -lt 3) "Waiting-ready heartbeat age out of range: $heartbeatAge"
+            Assert (-not (Test-Path -LiteralPath $actions) -and
+                [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) -and
+                -not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Waiting-ready touched Explorer.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 1) 'Missing readiness restarted its live child.'
+            [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'very late draw')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Very late readiness was ignored.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Very late readiness did not take over.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Very late readiness did not apply invisible suppression.'
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).shellPid -eq $owned.Id) 'Very late readiness used a replacement child.'
+            $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
+            try { $null = $event.Set() } finally { $event.Dispose() }
+            Assert ($watchdog.WaitForExit(12000)) 'Explicit stop of a late-ready child did not finish.'
+        } else {
+            Assert ($watchdog.WaitForExit(25000)) 'Exited unready child did not exhaust the failed-start policy.'
+            $s = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($s.phase -eq 'crash-give-up' -and $s.quickCrashes -eq 3 -and $watchdog.ExitCode -ne 0) 'Unready start was accepted or skipped crash policy.'
+            Assert (-not (Test-Path -LiteralPath $actions)) 'Never-ready child changed taskbars.'
+            Assert (-not $s.shellReady -and -not $s.taskbarTakenOver) 'Failed start status claims readiness/takeover.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 3) 'Failed start did not use existing retry count.'
+        }
+        Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Terminal stop failed to restore the original taskbar.'
+        Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Terminal stop changed the original taskbar region.'
+        [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
+        Assert ($taskbar.WaitForExit(2000)) 'Readiness taskbar did not stop.'
+        Write-Output "PASS readiness $mode`: first-frame/status gate, taskbar visibility and bounded failure/recovery."
+}
+function Invoke-ModeCase([string]$Mode) {
+        $case = Join-Path $root $mode
+        $script:case = $case
+        $prefix = Join-Path $case 'prefix'
+        $profile = Join-Path $case 'profile'
+        $state = Join-Path $profile 'runtime\supervisor-fixture'
+        [IO.Directory]::CreateDirectory((Join-Path $prefix 'shell')) | Out-Null
+        [IO.Directory]::CreateDirectory($state) | Out-Null
+        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
+        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
+        # A disposable recovery helper proves lookup follows the executable,
+        # not cwd. It does not load the real banner or desktop implementation.
+        @'
+param($StateDirectory, $Command)
+$order = Join-Path $StateDirectory 'restore-order.txt'
+if (Test-Path -LiteralPath $order) {
+    $lines = @(Get-Content -LiteralPath $order)
+    $restart = $lines.Count -ge 1 -and $lines[-1] -eq 'appbars'
+    $terminal = $lines.Count -ge 2 -and $lines[-2] -eq 'desktop' -and $lines[-1] -eq 'rescue'
+    if (-not $restart -and -not $terminal) {
+        throw 'Banner work started before desktop and parked-window restoration.'
+    }
+    Add-Content -LiteralPath $order -Value 'banner'
+    # Deliberately slow work begins only after the desktop has returned.
+    Start-Sleep -Milliseconds 300
+} elseif ((Get-Content -LiteralPath (Join-Path $StateDirectory 'watchdog.json') -Raw | ConvertFrom-Json).phase -eq 'restoring') {
+    throw 'Banner work started without desktop restoration.'
+}
+[IO.File]::WriteAllText((Join-Path $StateDirectory 'banner-recovered.txt'), [Environment]::CurrentDirectory)
+'@ | Set-Content -LiteralPath (Join-Path $prefix 'Banner-Suppression.ps1') -Encoding UTF8
+        '{}' | Set-Content -LiteralPath (Join-Path $state 'banner-suppression.json') -Encoding UTF8
+        @{ product = 'caelestia-windows'; version = 1; prefix = $prefix; profile = $profile } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $prefix 'install.json') -Encoding UTF8
+        $bystander = Start-FixtureProcess $fake '--bystander' $case (Join-Path $case 'bystander')
+        $witness = Start-FixtureProcess $fake '--witness' $case (Join-Path $case 'witness')
+        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-ready') } 'Hidden restore witness did not start.'
+        $explorer = $null
+        $slowRecipients = @()
+        if ($mode -like 'notification-*') {
+            foreach ($number in 1..3) {
+                $slowRecipients += Start-FixtureProcess $fake ("--slow " + $number) $case (Join-Path $case ("slow-" + $number))
+            }
+            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-ready-*').Count -eq 3 } 'Slow notification recipients did not start.'
+        }
+        if ($mode -like 'explorer-*' -or $mode -like 'stuck-*') {
+            $explorer = Start-FixtureProcess $fake '--explorer' $case (Join-Path $case 'fake-explorer')
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-window.txt') } 'Fake Explorer did not create its hidden window.'
+        }
+        $spec = Join-Path $state 'launch.json'
+        @{
+            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
+            StateDirectory = $state; Environment = @{ CAELESTIA_STATE_DIR = $state }; TestWindowOwners = @($witness.Id)
+            RestartFrozenShell = ($mode -ne 'liveness-disabled')
+            InstallLockKey = $token
+            StdoutPath = (Join-Path $state 'shell.out'); StderrPath = (Join-Path $state 'shell.err')
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
+        $statusPath = Join-Path $state 'watchdog.json'
+        $script:statusPath = $statusPath
+        $watchdog = Start-FixtureProcess $powershell `
+            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
+            $case (Join-Path $case 'watchdog')
+        $watchdogs.Add($watchdog)
+        if ($mode -eq 'clean') {
+            Assert ($watchdog.WaitForExit(15000) -and $watchdog.ExitCode -eq 0) 'Unrequested clean exit did not finish.'
+            $status = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($status.phase -eq 'clean-exit' -and $status.quickCrashes -eq 0) 'Clean exit changed the restart policy.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 1) 'Clean exit restarted the child.'
+        } elseif ($mode -eq 'crash') {
+            Assert ($watchdog.WaitForExit(15000)) 'Unrequested crash recovery did not finish.'
+            $status = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($status.phase -eq 'crash-give-up' -and $status.quickCrashes -eq 3 -and $watchdog.ExitCode -eq 7) 'Crash restart policy changed.'
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 3) 'Crash path did not restart its child twice.'
+            Assert (-not $status.forcedChildTermination) 'An unrequested exit was force-terminated.'
+        } else {
+            Wait-Until {
+                try { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } catch { $false }
+            } 'Supervisor did not launch its fake child.'
+            $status = Read-CaelestiaSupervisorStatus $statusPath
+            $owned = [Diagnostics.Process]::GetProcessById($status.shellPid)
+            $null = $owned.Handle
+            $children.Add($owned)
+            if ($mode -like 'liveness-*') {
+                if ($mode -eq 'liveness-legacy') {
+                    # Past the six-miss fixture detection window: a wrongful
+                    # freeze judgment would already have restarted the child.
+                    Start-Sleep -Milliseconds 2500
+                    $s = Read-CaelestiaSupervisorStatus $statusPath
+                    Assert (-not $s.livenessSupported -and -not $s.shellFrozen -and $s.shellPid -eq $owned.Id) 'Legacy shell was judged frozen.'
+                } else {
+                    Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessSupported } 'GUI probe never armed.'
+                    [IO.File]::WriteAllText((Join-Path $case 'stall'), 'stall')
+                    $freezeClock = [Diagnostics.Stopwatch]::StartNew()
+                    if ($mode -in @('liveness-frozen', 'liveness-disabled')) {
+                        if ($mode -eq 'liveness-frozen') {
+                            Wait-Until {
+                                $s = Read-CaelestiaSupervisorStatus $statusPath
+                                $s.phase -eq 'running' -and $s.shellPid -ne $owned.Id
+                            } 'Frozen GUI child was not recovered.' 6500
+                            $s = Read-CaelestiaSupervisorStatus $statusPath
+                            Assert ($owned.HasExited -and $freezeClock.ElapsedMilliseconds -lt 6500) 'Frozen recovery exceeded the fixture bound.'
+                            Assert ($s.lastUnhealthyReason -eq 'gui-unresponsive' -and $s.quickCrashes -eq 1) 'Frozen recovery bypassed status or restart accounting.'
+                            $owned = [Diagnostics.Process]::GetProcessById($s.shellPid)
+                            $null = $owned.Handle
+                            $children.Add($owned)
+                        } else {
+                            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).shellFrozen } 'Disabled automatic restart disabled detection too.' 6500
+                            $s = Read-CaelestiaSupervisorStatus $statusPath
+                            Assert ($s.phase -eq 'frozen' -and -not $owned.HasExited -and $s.shellPid -eq $owned.Id) 'Disabled frozen restart killed the child.'
+                        }
+                    } elseif ($mode -ne 'liveness-quit') {
+                        $updateLock = $null
+                        try {
+                            if ($mode -eq 'liveness-update') {
+                                $updateLock = [Threading.Mutex]::new($true, ('Local\CaelestiaInstall-' + $token))
+                                Start-Sleep -Milliseconds 2500
+                            } elseif ($mode -eq 'liveness-pause') {
+                                [IO.File]::WriteAllText((Join-Path $case 'pause-shell'), 'pause')
+                                Start-Sleep -Milliseconds 2500
+                            } elseif ($mode -eq 'liveness-suspend') {
+                                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'Suspend fixture had no pending misses.'
+                                [IO.File]::WriteAllText((Join-Path $case 'clock-gap'), 'gap')
+                                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'gap-seen') } 'Suspend gap did not reset the policy.' 1000
+                                Start-Sleep -Milliseconds 500
+                            } else { Start-Sleep -Milliseconds 1000 }
+                            Assert (-not $owned.HasExited -and (Read-CaelestiaSupervisorStatus $statusPath).shellPid -eq $owned.Id) 'Recoverable or excluded stall restarted the child.'
+                            Remove-Item -LiteralPath (Join-Path $case 'stall')
+                            [IO.File]::WriteAllText((Join-Path $case 'resume-shell'), 'resume')
+                        } finally {
+                            if ($updateLock) { $updateLock.ReleaseMutex(); $updateLock.Dispose() }
+                        }
+                        Wait-Until {
+                            $s = Read-CaelestiaSupervisorStatus $statusPath
+                            $s.livenessMisses -eq 0 -and $s.phase -eq 'running'
+                        } 'Recovered GUI did not clear the miss window.'
+                        # A wrongful restart needs six fresh misses; the wait
+                        # covers that window with margin.
+                        Start-Sleep -Milliseconds 2200
+                        Assert (-not $owned.HasExited) 'Recovered GUI restarted after its reply.'
+                    } else {
+                        Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'probe-*').Count -gt 0 } 'Quit fixture had no pending GUI probe.'
+                    }
+                }
+                Write-Output "PASS $mode`: GUI-thread probe, conservative recovery or exclusion."
+            }
+            if ($slowRecipients.Count) {
+                $requestClock = [Diagnostics.Stopwatch]::StartNew()
+                [IO.File]::WriteAllText((Join-Path $case 'notification-request'), 'notify')
+                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'notification-started') } 'Settings notification blocked its initiating tick.' 1000
+                Assert ($requestClock.ElapsedMilliseconds -lt 1000) 'Settings notification exceeded its initiating-tick budget.'
+                $heartbeat = (Read-CaelestiaSupervisorStatus $statusPath).utc
+                $responsive = [Diagnostics.Stopwatch]::StartNew()
+                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Settings recipients blocked the heartbeat.' 1800
+                Assert ($responsive.ElapsedMilliseconds -lt 1800) 'Settings notification exceeded the heartbeat budget.'
+                if ($mode -eq 'notification-recovery') {
+                    $clock = [Diagnostics.Stopwatch]::StartNew()
+                    [Caelestia.Takeover.Supervisor]::RecoverActive()
+                    Assert ($watchdog.WaitForExit(1000) -and $clock.ElapsedMilliseconds -lt ($grace + 2500) -and $owned.HasExited) 'Settings recipients blocked recovery.'
+                    Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
+                    [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
+                    foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
+                    [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
+                    Assert ($witness.WaitForExit(2000)) 'Witness did not stop.'
+                    $bystander.Kill()
+                    Write-Output 'PASS settings notification: three slow recipients, advancing heartbeat and bounded recovery.'
+                    return
+                }
+            }
+            if ($explorer) {
+                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-entered') } 'Supervisor did not call the fake window.'
+                $heartbeat = $status.utc
+                Wait-Until {
+                    (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat
+                } 'Fake Explorer blocked the supervisor heartbeat.'
+                if ($mode -eq 'explorer-retry') {
+                    $restoreAttempt = Start-FixtureProcess $powershell `
+                        ('-NoProfile -File "' + $scripts + '\Restore-Desktop.ps1" -InactiveOnly') `
+                        $case (Join-Path $case 'inactive-restore')
+                    Assert ($restoreAttempt.WaitForExit(10000) -and $restoreAttempt.ExitCode -ne 0) 'Inactive recovery did not refuse a live session owner.'
+                    Assert ((Get-Content -LiteralPath (Join-Path $case 'inactive-restore.err') -Raw) -match 'Another desktop supervisor owns this session') 'Inactive recovery reached desktop operations or signaled the live supervisor.'
+                    Assert (-not $watchdog.HasExited) 'Inactive recovery stopped the live supervisor.'
+                    [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
+                    Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-retried') } 'Explorer work did not retry after responsiveness returned.'
+                }
+                if ($mode -eq 'explorer-hung') {
+                    Repair-CaelestiaStaleSupervisors $profile
+                    Assert (-not $watchdog.HasExited -and -not $owned.HasExited) 'Start recovery stopped a supervisor with a healthy heartbeat.'
+                    $owned.Kill()
+                    Assert ($owned.WaitForExit(2000)) 'Fake child did not stop.'
+                    Wait-Until {
+                        $s = Read-CaelestiaSupervisorStatus $statusPath
+                        $s.phase -eq 'running' -and $s.shellPid -ne $owned.Id
+                    } 'Blocked fake Explorer prevented child restart.'
+                    $owned = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
+                    $null = $owned.Handle
+                    $children.Add($owned)
+                }
+                if ($mode -like 'stuck-*') {
+                    # Retain an owned IPC client before freezing the owner.
+                    # Closing the owner's probe job must reap it even though
+                    # forced recovery cannot execute Supervisor.Dispose.
+                    $probeCapture = @{ Process = $null }
+                    Wait-Until {
+                        $candidate = @(Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + $watchdog.Id) |
+                            Where-Object { $_.CommandLine -like '* call shell supervisorProbe *' })
+                        if ($candidate.Count) {
+                            try {
+                                $pending = [Diagnostics.Process]::GetProcessById($candidate[0].ProcessId)
+                                $null = $pending.Handle
+                                if (-not $pending.HasExited -and $pending.Path -eq (Join-Path $prefix 'qs.exe')) {
+                                    $probeCapture.Process = $pending
+                                    return $true
+                                }
+                                $pending.Dispose()
+                            } catch [ArgumentException] {}
+                        }
+                        return $false
+                    } 'Stuck supervisor fixture did not retain a pending probe.'
+                    $pendingProbe = $probeCapture.Process
+                    $children.Add($pendingProbe)
+                    [IO.File]::WriteAllText((Join-Path $case 'block-supervisor'), 'block')
+                    Start-Sleep -Milliseconds 600
+                    $supervisor = @(Get-CaelestiaSupervisors $profile)[0]
+                    # Verify ownership rejection before exercising forced stop.
+                    $wrong = [pscustomobject]@{ Process = $bystander; StatusPath = $statusPath }
+                    $rejected = $false
+                    try { Stop-CaelestiaSupervisor $wrong 0 } catch { $rejected = $true }
+                    Assert ($rejected -and -not $bystander.HasExited) 'Forced recovery accepted an unrelated process.'
+                    $wrongProfile = [pscustomobject]@{
+                        Process = $watchdog
+                        StatusPath = (Join-Path $case 'other-profile\runtime\supervisor-fixture\watchdog.json')
+                    }
+                    $rejected = $false
+                    try { Stop-CaelestiaSupervisor $wrongProfile 0 } catch { $rejected = $true }
+                    Assert ($rejected -and -not $watchdog.HasExited) 'Forced recovery accepted another profile.'
+                    $wrongSession = [pscustomobject]@{
+                        Process = [pscustomobject]@{ Id = $watchdog.Id; HasExited = $false; SessionId = ([Diagnostics.Process]::GetCurrentProcess().SessionId + 1) }
+                        StatusPath = $statusPath
+                    }
+                    $rejected = $false
+                    try { Stop-CaelestiaSupervisor $wrongSession 0 } catch { $rejected = $true }
+                    Assert ($rejected -and -not $watchdog.HasExited) 'Forced recovery accepted another session.'
+                    & {
+                        function Invoke-CimMethod { return [pscustomobject]@{ ReturnValue = 0; Sid = 'S-1-0-0' } }
+                        $rejected = $false
+                        try { Stop-CaelestiaSupervisor $supervisor 0 } catch { $rejected = $true }
+                        Assert ($rejected -and -not $watchdog.HasExited) 'Forced recovery accepted another user SID.'
+                    }
+                    $clock = [Diagnostics.Stopwatch]::StartNew()
+                    if ($mode -eq 'stuck-start') {
+                        # The Start entrypoint uses this exact profile-scoped helper.
+                        # Shorten only the recovery wait in the disposable copy.
+                        $definition = ${function:Stop-CaelestiaSupervisor}.ToString().Replace('[int]$RecoveryTimeoutMs = 60000', '[int]$RecoveryTimeoutMs = 1000')
+                        Set-Item Function:Stop-CaelestiaSupervisor ([scriptblock]::Create($definition))
+                        Repair-CaelestiaStaleSupervisors $profile
+                    } else {
+                        $commonPath = Join-Path $scripts 'Caelestia-InstallCommon.ps1'
+                        $common = Replace-Exactly ([IO.File]::ReadAllText($commonPath)) `
+                            '[int]$RecoveryTimeoutMs = 60000' '[int]$RecoveryTimeoutMs = 1000'
+                        [IO.File]::WriteAllText($commonPath, $common)
+                        $quit = Start-FixtureProcess $powershell `
+                            ('-NoProfile -File "' + $scripts + '\Start-Caelestia.ps1" -Prefix "' + $prefix + '" -Command Quit') `
+                            $case (Join-Path $case 'stuck-quit')
+                        Assert ($quit.WaitForExit(10000) -and $quit.ExitCode -eq 0) ("Stuck Quit failed: " + (Get-Content -LiteralPath (Join-Path $case 'stuck-quit.err') -Raw))
+                        Assert (Test-Path -LiteralPath (Join-Path $scripts 'fixture-restored')) 'Forced Quit skipped emergency snapshot restoration.'
+                    }
+                    Assert ($clock.ElapsedMilliseconds -lt 12000 -and $watchdog.HasExited -and $owned.HasExited) 'Stuck supervisor recovery exceeded its bound or left its child.'
+                    Assert ($pendingProbe.WaitForExit(2000)) 'Forced supervisor stop orphaned its IPC probe.'
+                    Assert (-not $bystander.HasExited -and -not $witness.HasExited) 'Forced recovery killed a bystander.'
+                    Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Forced recovery left profile ownership.'
+                    [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
+                    Remove-Item -LiteralPath (Join-Path $case 'block-supervisor')
+                    $replacement = Start-FixtureProcess $powershell `
+                        ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
+                        $case (Join-Path $case 'replacement')
+                    $watchdogs.Add($replacement)
+                    Wait-Until {
+                        $s = Read-CaelestiaSupervisorStatus $statusPath
+                        $s.phase -eq 'running' -and $s.watchdogPid -eq $replacement.Id
+                    } 'A fresh supervisor could not acquire ownership after forced recovery.'
+                    $replacementChild = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
+                    $null = $replacementChild.Handle
+                    $children.Add($replacementChild)
+                    [Caelestia.Takeover.Supervisor]::RecoverActive()
+                    Assert ($replacement.WaitForExit(2000) -and $replacement.ExitCode -eq 0 -and $replacementChild.HasExited) 'Replacement supervisor did not shut down.'
+                    Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-restored') } 'Replacement supervisor did not restore the journal witness.'
+                    [IO.File]::WriteAllText((Join-Path $case 'fake-stop'), 'stop')
+                    Assert ($explorer.WaitForExit(2000)) 'Fake Explorer did not stop.'
+                    [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
+                    Assert ($witness.WaitForExit(2000)) 'Witness did not stop.'
+                    $bystander.Kill()
+                    Write-Output "PASS supervisor $mode`: bounded profile recovery, owned-child stop and bystander safety."
+                    return
+                }
+            }
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            $quit = Start-FixtureProcess $powershell `
+                ('-NoProfile -File "' + $scripts + '\Start-Caelestia.ps1" -Prefix "' + $prefix + '" -Command Quit') `
+                $case (Join-Path $case 'quit')
+            Assert ($quit.WaitForExit(20000)) 'Quit did not finish within the isolated stop bound.'
+            Assert ($quit.ExitCode -eq 0) ("Quit failed: " + (Get-Content -LiteralPath (Join-Path $case 'quit.err') -Raw))
+            Assert ($watchdog.WaitForExit(1000) -and $watchdog.ExitCode -eq 0) ("Supervisor did not exit successfully after Quit: " + $watchdog.ExitCode + ' ' + (Get-Content -LiteralPath (Join-Path $case 'watchdog.err') -Raw))
+            Assert ($owned.HasExited) 'The owned child survived Quit.'
+            Assert ($clock.ElapsedMilliseconds -lt $grace + 12000) 'Stop exceeded grace plus test startup/cleanup allowance.'
+            $status = Read-CaelestiaSupervisorStatus $statusPath
+            Assert ($status.phase -in @('recovered', 'clean-exit')) 'Quit skipped the normal restore/exit path.'
+            Assert (Test-Path -LiteralPath (Join-Path $prefix 'quit-called.txt')) 'Quit did not attempt IPC.'
+            $forceLog = Join-Path $state 'watchdog-error.log'
+            if ($mode -eq 'normal') {
+                Assert ($owned.ExitCode -eq 0 -and (Test-Path -LiteralPath (Join-Path $prefix 'normal-exit.txt'))) 'Normal child did not exit on its own.'
+                Assert (-not $status.forcedChildTermination -and -not (Test-Path -LiteralPath $forceLog)) 'Normal child was force-terminated.'
+            } else {
+                Assert ($owned.ExitCode -ne 0 -and $status.forcedChildTermination) 'Hung child was not force-terminated.'
+                Assert ((Get-Content -LiteralPath $forceLog -Raw).Trim() -ceq 'forced child termination after requested stop grace expired') 'Forced termination diagnostic was missing or contained unexpected data.'
+                Assert ($clock.ElapsedMilliseconds -ge $grace) 'Hung child was killed before its exit grace.'
+            }
+            $expectedStarts = if ($mode -in @('explorer-hung', 'liveness-frozen')) { 2 } else { 1 }
+            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq $expectedStarts) 'Intentional stop restarted the child.'
+        }
+        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-restored') } 'Supervisor did not restore its hidden parked-window fixture.'
+        Assert (-not $bystander.HasExited -and -not $witness.HasExited) 'Supervisor terminated an unowned same-name process.'
+        Assert (Test-Path -LiteralPath (Join-Path $state 'desktop-before.json')) 'Supervisor did not persist its restore snapshot.'
+        Assert (Test-CaelestiaSamePath (Get-Content -LiteralPath (Join-Path $state 'banner-recovered.txt') -Raw) $case) 'Banner recovery did not find the helper beside qs.exe or use the launch cwd.'
+        Assert (-not (Test-Path -LiteralPath (Join-Path $state 'banner-recovery.log'))) 'Banner recovery failed with cwd outside the payload.'
+        $order = @(Get-Content -LiteralPath (Join-Path $state 'restore-order.txt'))
+        Assert (($order -join ',') -match '^(appbars,banner,)*desktop,rescue,banner$') 'Desktop, parked-window and banner recovery order changed.'
+        Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Exited supervisor still owns the disposable profile.'
+        $mutex = [Threading.Mutex]::new($false, $mutexName)
+        try {
+            $acquired = $false
+            try { $acquired = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { throw 'Supervisor abandoned session ownership instead of releasing it.' }
+            Assert $acquired 'Supervisor did not release isolated session ownership.'
+            $mutex.ReleaseMutex()
+        } finally { $mutex.Dispose() }
+        [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
+        Assert ($witness.WaitForExit(2000)) 'Restore witness did not finish.'
+        $bystander.Kill()
+        $null = $bystander.WaitForExit(2000)
+        if ($explorer) {
+            [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
+            [IO.File]::WriteAllText((Join-Path $case 'fake-stop'), 'stop')
+            Assert ($explorer.WaitForExit(2000)) 'Fake Explorer did not stop.'
+        }
+        if ($slowRecipients.Count) {
+            Assert ($clock.ElapsedMilliseconds -lt ($grace + 6000)) 'Settings recipients blocked Quit.'
+            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
+            [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
+            foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
+        }
+        Write-Output "PASS supervisor $mode`: owned-child shutdown, restore, unrelated-process safety and session release."
+}
+# Each lane runs in its own pwsh process because the patched payload bakes the
+# token into the assembly: one process cannot hold two differently named
+# session mutexes for the same type. The runner reuses this file's function
+# bodies verbatim through AST extraction so cases never drift between the
+# sequential and parallel paths.
+$laneRunnerSource = @'
+[CmdletBinding()]
+param([Parameter(Mandatory)][string]$LaneSpec)
+$ErrorActionPreference = 'Stop'
+$lane = Get-Content -LiteralPath $LaneSpec -Raw | ConvertFrom-Json
+$root = $lane.LaneRoot
+$scripts = $lane.Scripts
+$token = $lane.Token
+$mutexName = 'Local\CaelestiaDesktopTakeover-Test-' + $token
+$fixtureAppBarKey = 'Software\Quickshell\AppBars-Fixture-' + $token
+$powershell = $lane.PowerShell
+. (Join-Path $scripts 'Caelestia-InstallCommon.ps1')
+$children = [Collections.Generic.List[Diagnostics.Process]]::new()
+$watchdogs = [Collections.Generic.List[Diagnostics.Process]]::new()
+$case = $null
+$statusPath = $null
+# Fixture executables must run under this lane's root: the baked Explorer
+# identity check accepts only qs.exe beneath it.
+$fake = Join-Path $root 'qs.exe'
+Copy-Item -LiteralPath $lane.FakeSource -Destination $fake
+$grace = 0
+$exitCode = 1
+try {
+    # Compile the lane payload once so every watchdog, Quit and restore child
+    # takes the validated DLL path instead of recompiling the patched source.
+    $takeoverSource = Join-Path $scripts 'DesktopTakeover.cs'
+    $takeoverDll = Join-Path $scripts 'DesktopTakeover.dll'
+    Add-Type -Path $takeoverSource -OutputAssembly $takeoverDll `
+        -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop
+    [ordered]@{
+        sourceSha256 = (Get-FileHash -LiteralPath $takeoverSource).Hash
+        assemblySha256 = (Get-FileHash -LiteralPath $takeoverDll).Hash
+        clrVersion = [Environment]::Version.ToString()
+        psEdition = [string]$PSVersionTable.PSEdition
+        psVersion = [string]$PSVersionTable.PSVersion
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $scripts 'DesktopTakeover.build.json') -Encoding UTF8
+    Import-CaelestiaDesktopTakeover -ScriptRoot $scripts
+    $grace = [Caelestia.Takeover.Supervisor]::ChildExitGraceMs
+    $tokensAst = $null
+    $errorsAst = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput(
+        [IO.File]::ReadAllText($lane.TestFile), [ref]$tokensAst, [ref]$errorsAst)
+    if ($errorsAst.Count) { throw 'Lane could not parse the fixture file.' }
+    $wanted = @('Assert', 'Replace-Exactly', 'Start-FixtureProcess', 'Wait-Until', 'Get-PipeEvents',
+        'Invoke-TaskbarsCase', 'Invoke-PipeCase', 'Invoke-ReadinessCase', 'Invoke-ModeCase')
+    foreach ($fn in $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+        if ($wanted -contains $fn.Name) { Invoke-Expression $fn.Extent.Text }
+    }
+    foreach ($step in @($lane.Cases)) {
+        $kind, $mode = ([string]$step) -split ':', 2
+        switch ($kind) {
+            'taskbars'  { Invoke-TaskbarsCase }
+            'pipe'      { Invoke-PipeCase $mode }
+            'readiness' { Invoke-ReadinessCase $mode }
+            'mode'      { Invoke-ModeCase $mode }
+            default     { throw "Unknown lane case: $step" }
+        }
+    }
+    $exitCode = 0
+} catch {
+    Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
+    if ($statusPath -and (Test-Path -LiteralPath $statusPath)) { Get-Content -LiteralPath $statusPath }
+    if ($case) {
+        foreach ($log in @('watchdog.out', 'watchdog.err', 'quit.err')) {
+            $path = Join-Path $case $log
+            if (Test-Path -LiteralPath $path) { Get-Content -LiteralPath $path }
+        }
+    }
+} finally {
+    # Mirror the fixture cleanup: signal this lane's recovery event, let a live
+    # watchdog finish its restore, then reap only the processes this lane
+    # launched or captured by handle.
+    try {
+        $recovery = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
+        try { $null = $recovery.Set() } finally { $recovery.Dispose() }
+    } catch [Threading.WaitHandleCannotBeOpenedException] { }
+    foreach ($watchdog in $watchdogs) {
+        if (-not $watchdog.HasExited) { $null = $watchdog.WaitForExit(10000) }
+    }
+    foreach ($process in $children) {
+        try { if (-not $process.HasExited) { $process.Kill(); $null = $process.WaitForExit(2000) } } finally { $process.Dispose() }
+    }
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($fixtureAppBarKey, $false)
+}
+exit $exitCode
+'@
+try {
+    $scripts = Join-Path $root 'scripts'
+    Write-FixtureScripts $scripts $token $root
     Import-CaelestiaDesktopTakeover -ScriptRoot $scripts -SourceOnly
     [Caelestia.Takeover.TaskbarEventFixture]::VerifyNotification()
     [Caelestia.Takeover.TaskbarEventFixture]::VerifyLiveness()
@@ -788,612 +1507,60 @@ public static class SupervisorStopFixture {
     }
 }
 '@
-    $taskbars = Join-Path $root 'taskbars'
-    [IO.Directory]::CreateDirectory($taskbars) | Out-Null
-    $decoyExe = Join-Path $root 'decoy.exe'
-    Copy-Item -LiteralPath $fake -Destination $decoyExe
-    $decoy = Start-FixtureProcess $decoyExe '--decoy' $taskbars (Join-Path $taskbars 'decoy')
-    Wait-Until { Test-Path -LiteralPath (Join-Path $taskbars 'decoy-ready') } 'Decoy taskbar did not start.'
-    $taskbar = Start-FixtureProcess $fake '--taskbar' $taskbars (Join-Path $taskbars 'taskbar')
-    Wait-Until {
-        if ($taskbar.HasExited) { throw ('Fake taskbar exited: ' + [IO.File]::ReadAllText((Join-Path $taskbars 'taskbar.err'))) }
-        Test-Path -LiteralPath (Join-Path $taskbars 'taskbar-ready')
-    } 'Fake taskbar did not start.'
-    [Caelestia.Takeover.TaskbarEventFixture]::Verify($taskbars, $taskbar.Id, $decoy.Id)
-    [IO.File]::WriteAllText((Join-Path $taskbars 'taskbars-stop'), 'stop')
-    Assert ($taskbar.WaitForExit(2000) -and $decoy.WaitForExit(2000)) 'Fake taskbars did not stop.'
-    Write-Output 'PASS taskbar events: owner-checked lookup skips a first-in-order decoy; real show events re-hide twice without an audit; fight-loop fallback remains bounded.'
-    function Get-PipeEvents([string]$Directory, [string]$Kind) {
-        $path = Join-Path $Directory 'pipe-events.jsonl'
-        if (Test-Path -LiteralPath $path) {
-            foreach ($line in (Get-Content -LiteralPath $path)) {
-                # The fixture may be appending the last frame.
-                try { $message = ConvertFrom-Json -InputObject $line -ErrorAction Stop } catch { continue }
-                if ($message.type -ceq $Kind) { $message }
+    if ($LaneCount -lt 2) {
+        # One process, one token: the original fully sequential coverage.
+        Invoke-TaskbarsCase
+        foreach ($mode in @('pipe-valid', 'pipe-bad-token', 'pipe-wrong-pid')) { Invoke-PipeCase $mode }
+        foreach ($mode in @('controlled', 'never-ready', 'early-clean')) { Invoke-ReadinessCase $mode }
+        foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry',
+            'notification-quit', 'notification-recovery', 'liveness-frozen', 'liveness-stall', 'liveness-legacy',
+            'liveness-suspend', 'liveness-quit', 'liveness-disabled', 'liveness-pause', 'liveness-update',
+            'stuck-quit', 'stuck-start')) { Invoke-ModeCase $mode }
+    } else {
+        # Lane roots, tokens and scripts copies are disjoint, so the cases keep
+        # their in-lane order while supervisor lifetimes overlap across lanes.
+        $runnerPath = Join-Path $root 'lane-runner.ps1'
+        [IO.File]::WriteAllText($runnerPath, $laneRunnerSource)
+        $laneCases = [ordered]@{
+            'fixture'   = @('taskbars', 'pipe:pipe-valid', 'pipe:pipe-bad-token', 'pipe:pipe-wrong-pid')
+            'readiness' = @('readiness:controlled', 'readiness:never-ready', 'readiness:early-clean')
+            'modes-1'   = @('mode:hung', 'mode:normal', 'mode:ipc-failure', 'mode:clean', 'mode:crash')
+            'modes-2'   = @('mode:explorer-hung', 'mode:explorer-retry', 'mode:notification-quit', 'mode:notification-recovery')
+            'modes-3'   = @('mode:liveness-legacy', 'mode:liveness-frozen', 'mode:liveness-stall', 'mode:liveness-suspend')
+            'modes-4'   = @('mode:liveness-quit', 'mode:liveness-disabled', 'mode:liveness-pause', 'mode:liveness-update')
+            'modes-5'   = @('mode:stuck-quit', 'mode:stuck-start')
+        }
+        foreach ($name in $laneCases.Keys) {
+            $laneRoot = Join-Path $root ('lane-' + $name)
+            [IO.Directory]::CreateDirectory($laneRoot) | Out-Null
+            $laneScripts = Join-Path $laneRoot 'scripts'
+            $laneToken = [guid]::NewGuid().ToString('N')
+            Write-FixtureScripts $laneScripts $laneToken $laneRoot
+            $specPath = Join-Path $laneRoot 'lane.json'
+            [ordered]@{
+                LaneRoot = $laneRoot; Scripts = $laneScripts; Token = $laneToken
+                PowerShell = $powershell; FakeSource = $fake; TestFile = $PSCommandPath
+                Cases = @($laneCases[$name])
+            } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $specPath -Encoding UTF8
+            $laneProcess = Start-FixtureProcess $powershell `
+                ('-NoProfile -Sta -File "' + $runnerPath + '" -LaneSpec "' + $specPath + '"') `
+                $laneRoot (Join-Path $laneRoot 'lane')
+            $lanes += [pscustomobject]@{
+                Name = $name; Root = $laneRoot; Token = $laneToken
+                Process = $laneProcess; Log = (Join-Path $laneRoot 'lane') }
+        }
+        foreach ($lane in $lanes) { $null = $lane.Process.WaitForExit() }
+        # Replaying in declaration order keeps the PASS sequence deterministic.
+        foreach ($lane in $lanes) {
+            $outPath = $lane.Log + '.out'
+            if (Test-Path -LiteralPath $outPath) {
+                foreach ($line in [IO.File]::ReadAllLines($outPath)) { Write-Output $line }
             }
         }
-    }
-    foreach ($mode in @('pipe-valid', 'pipe-bad-token', 'pipe-wrong-pid')) {
-        $case = Join-Path $root $mode
-        $prefix = Join-Path $case 'prefix'
-        $state = Join-Path $case 'state'
-        [IO.Directory]::CreateDirectory($prefix) | Out-Null
-        [IO.Directory]::CreateDirectory($state) | Out-Null
-        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
-        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
-        $spec = Join-Path $state 'launch.json'
-        $statusPath = Join-Path $state 'watchdog.json'
-        @{
-            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
-            StateDirectory = $state; Environment = @{}; StdoutPath = (Join-Path $state 'shell.out')
-            StderrPath = (Join-Path $state 'shell.err')
-        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
-        if ($mode -eq 'pipe-valid') {
-            $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar')
-            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'taskbar-ready') } 'Pipe taskbar did not start.'
-            [IO.File]::WriteAllText((Join-Path $case 'taskbar-show-0'), 'show')
-            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Pipe taskbar did not show.'
+        foreach ($lane in $lanes) {
+            Assert ($lane.Process.ExitCode -eq 0) ("Supervisor lane '" + $lane.Name + "' exited " + $lane.Process.ExitCode +
+                ': ' + $(if (Test-Path -LiteralPath ($lane.Log + '.err')) { [IO.File]::ReadAllText($lane.Log + '.err').Trim() }))
         }
-        $watchdog = Start-FixtureProcess $powershell `
-            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
-            $case (Join-Path $case 'watchdog')
-        $watchdogs.Add($watchdog)
-        if ($mode -eq 'pipe-valid') {
-            Wait-Until { @(Get-PipeEvents $case 'welcome').Count -eq 1 } 'Pipe hello did not receive v1 welcome.'
-            $welcome = Get-PipeEvents $case 'welcome'
-            Assert ($welcome.v -eq 1 -and $welcome.hideTaskbar -and -not $welcome.taskbarTakenOver -and
-                $welcome.explorerPid -eq $taskbar.Id -and $welcome.explorerEpoch -gt 0 -and
-                $welcome.explorerHwnd -eq [long](Get-Content -LiteralPath (Join-Path $case 'taskbar-ready') -Raw)) 'Welcome had incorrect takeover or Explorer identity.'
-            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'starting') 'The handshake alone made the child ready.'
-            [IO.File]::WriteAllText((Join-Path $case 'pipe-ready'), 'ready')
-            Wait-Until {
-                $s = Read-CaelestiaSupervisorStatus $statusPath
-                $s.phase -eq 'running' -and $s.shellReady -and $s.livenessSupported
-            } 'Pipe lifecycle ready or GUI pong was ignored.'
-            $owner = [int](Read-CaelestiaSupervisorStatus $statusPath).shellPid
-            $journal = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($fixtureAppBarKey)
-            try {
-                foreach ($entry in @('pipe-journal-only', 'pipe-journal-and-pipe')) {
-                    $handle = [long](Get-Content -LiteralPath (Join-Path $case $entry) -Raw)
-                    $journal.SetValue($handle.ToString('x'), $owner, [Microsoft.Win32.RegistryValueKind]::DWord)
-                }
-            } finally { $journal.Dispose() }
-            Wait-Until { @(Get-PipeEvents $case 'explorer_settled').Count -eq 1 } 'Initial Explorer settlement was not sent.'
-            $settled = Get-PipeEvents $case 'explorer_settled'
-            Assert ($settled.taskbarSuppressed -and $settled.explorerEpoch -eq $welcome.explorerEpoch -and
-                -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer settled before taskbar suppression.'
-            Assert (@(Get-PipeEvents $case 'takeover' | Where-Object takenOver).Count -ge 1) 'Takeover transition was not sent.'
-
-            [IO.File]::WriteAllText((Join-Path $case 'pipe-pause'), 'pause')
-            Wait-Until { -not (Test-Path -LiteralPath (Join-Path $case 'pipe-pause')) } 'Child did not send pipe pause.'
-            Start-Sleep -Milliseconds 750
-            $before = Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw
-            Start-Sleep -Milliseconds 1000
-            Assert ((Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw) -eq $before) 'Probes continued while paused over the pipe.'
-            [IO.File]::WriteAllText((Join-Path $case 'pipe-resume'), 'active')
-            Wait-Until { (Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw) -ne $before } 'Pipe active did not resume GUI probes.'
-            [IO.File]::WriteAllText((Join-Path $case 'stall'), 'stall')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'The unpumped fixture still answered pipe pings.'
-            Remove-Item -LiteralPath (Join-Path $case 'stall')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -eq 0 } 'A resumed GUI did not clear pipe misses.'
-
-            [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
-            Assert ($taskbar.WaitForExit(2000)) 'Original pipe taskbar did not stop.'
-            Remove-Item -LiteralPath @((Join-Path $case 'taskbars-stop'), (Join-Path $case 'taskbar-ready'))
-            $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar-restarted')
-            Wait-Until { @(Get-PipeEvents $case 'explorer_settled').Count -ge 2 } 'Replacement Explorer never settled.'
-            $replacement = @(Get-PipeEvents $case 'explorer_settled')[-1]
-            Assert ($replacement.explorerEpoch -eq $settled.explorerEpoch + 1 -and $replacement.explorerPid -eq $taskbar.Id -and
-                $replacement.taskbarSuppressed -and -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer restart did not reconcile once before settling.'
-            Assert (-not (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt'))) 'Authenticated liveness spawned a legacy probe.'
-            Assert (-not (Test-Path -LiteralPath (Join-Path $case 'pipe-dead-appbars'))) 'The supervisor attempted cleanup while the pipe child was alive.'
-        } else {
-            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'pipe-rejected') } 'Invalid pipe hello was not disconnected.'
-            Wait-Until {
-                $s = Read-CaelestiaSupervisorStatus $statusPath
-                $s.phase -eq 'running' -and $s.shellReady -and $s.livenessSupported
-            } 'Rejected hello did not fall back to stdout readiness and GUI IPC.'
-            Assert (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt')) 'Rejected hello did not launch a legacy probe.'
-        }
-        [IO.File]::WriteAllText((Join-Path $case 'pipe-exit'), 'exit')
-        Assert ($watchdog.WaitForExit(10000) -and $watchdog.ExitCode -eq 0) 'Pipe child did not shut down cleanly.'
-        if ($mode -eq 'pipe-valid') {
-            $dead = @(Get-Content -LiteralPath (Join-Path $case 'pipe-dead-appbars'))
-            $expected = foreach ($entry in @('pipe-lease-kept', 'pipe-journal-only', 'pipe-journal-and-pipe')) {
-                Get-Content -LiteralPath (Join-Path $case $entry) -Raw
-            }
-            Assert ($dead.Count -eq 3 -and -not (Compare-Object $expected $dead)) 'Dead AppBar cleanup did not merge the registry and leases exactly once or removed a released lease.'
-            $journal = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($fixtureAppBarKey)
-            try { Assert ($journal.ValueCount -eq 0) 'AppBar cleanup left stale entries in the disposable journal.' }
-            finally { $journal.Dispose() }
-            [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
-            Assert ($taskbar.WaitForExit(2000)) 'Replacement pipe taskbar did not stop.'
-        }
-        Write-Output "PASS $mode`: v1 pipe lifecycle, liveness and cleanup or clean legacy fallback."
-    }
-    # Production Tick, async pipe parsing, status publication, event upkeep and
-    # crash policy run unchanged. Only desktop targets and the render deadline
-    # are isolated above. A real offscreen fake taskbar checks actual visibility.
-    foreach ($mode in @('controlled', 'never-ready', 'early-clean')) {
-        $case = Join-Path $root ('readiness-' + $mode)
-        $prefix = Join-Path $case 'prefix'
-        $profile = Join-Path $case 'profile'
-        $state = Join-Path $profile 'runtime\supervisor-fixture'
-        [IO.Directory]::CreateDirectory($prefix) | Out-Null
-        [IO.Directory]::CreateDirectory($state) | Out-Null
-        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
-        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
-        $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar')
-        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'taskbar-ready') } 'Readiness taskbar did not start.'
-        [IO.File]::WriteAllText((Join-Path $case 'taskbar-show-0'), 'show')
-        Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Readiness taskbar did not show.'
-        $spec = Join-Path $state 'launch.json'
-        @{
-            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
-            StateDirectory = $state; Environment = @{}
-            # No stdout destination proves readiness still drains when logging
-            # is disabled. Other cases exercise the normal persisted log path.
-        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
-        $statusPath = Join-Path $state 'watchdog.json'
-        $actions = Join-Path $state 'takeover-actions.txt'
-        $watchdog = Start-FixtureProcess $powershell `
-            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
-            $case (Join-Path $case 'watchdog')
-        $watchdogs.Add($watchdog)
-        if ($mode -eq 'controlled') {
-            Wait-Until {
-                try {
-                    $s = Read-CaelestiaSupervisorStatus $statusPath
-                    $s.phase -eq 'starting' -and $s.shellPid -gt 0
-                } catch { $false }
-            } 'Cold child did not publish starting.'
-            $owned = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
-            $null = $owned.Handle
-            $children.Add($owned)
-            Assert (-not (Test-Path -LiteralPath $actions)) 'Takeover changed Explorer before readiness.'
-            Assert ([Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Taskbar hidden before readiness.'
-            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Invisible region applied before readiness.'
-            # A slow first frame is not a fixed startup sleep.
-            Start-Sleep -Milliseconds 1200
-            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'starting') 'Slow start reported running.'
-            [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'draw')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'First frame did not publish running.'
-            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready taskbar not hidden.'
-            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Ready taskbar did not get its invisible region.'
-            $s = Read-CaelestiaSupervisorStatus $statusPath
-            Assert ($s.shellReady -and $s.taskbarTakenOver) 'Running status lacks readiness/takeover.'
-            [IO.File]::WriteAllText((Join-Path $case 'reload-dip'), 'dip')
-            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'dip-seen') } 'Reload dip not emitted.'
-            Start-Sleep -Milliseconds 2300
-            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running') 'Reload dropped the process readiness latch.'
-            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Reload flashed the taskbar.'
-            Assert ((Get-Content -LiteralPath $actions -Raw) -notmatch 'release') 'Reload released takeover.'
-            $restartClock = [Diagnostics.Stopwatch]::StartNew()
-            [IO.File]::WriteAllText((Join-Path $case 'exit-1'), 'crash')
-            Wait-Until {
-                $s = Read-CaelestiaSupervisorStatus $statusPath
-                $s.phase -eq 'starting' -and $s.quickCrashes -eq 1 -and $s.shellPid -gt 0
-            } 'Immediate restart did not wait for its own first frame.'
-            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Immediate restart flashed Explorer.'
-            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Slow restart did not return Explorer after grace.'
-            Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Restart grace returned a taskbar with its invisible region still applied.'
-            Assert ($restartClock.ElapsedMilliseconds -ge 1200 -and $restartClock.ElapsedMilliseconds -lt 2700) 'Restart takeover grace was not the fixture grace plus a pump tick/cleanup allowance.'
-            $s = Read-CaelestiaSupervisorStatus $statusPath
-            Assert ($s.phase -eq 'starting' -and -not $s.taskbarTakenOver -and -not $s.shellReady) 'Slow restart status is not starting/visible.'
-            [IO.File]::WriteAllText((Join-Path $case 'ready-2'), 'draw')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Replacement did not become ready.'
-            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready replacement did not retake Explorer.'
-            [IO.File]::WriteAllText((Join-Path $case 'exit-2'), 'crash')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'restart-backoff' } 'Second quick crash did not back off.'
-            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Backoff did not return Explorer.'
-            Wait-Until {
-                $s = Read-CaelestiaSupervisorStatus $statusPath
-                $s.phase -eq 'starting' -and $s.quickCrashes -eq 2
-            } 'Backoff replacement did not publish starting.'
-            Assert ([Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Backoff replacement hid Explorer before ready.'
-            [IO.File]::WriteAllText((Join-Path $case 'ready-3'), 'draw')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Backoff replacement did not report running.'
-            $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
-            try { $null = $event.Set() } finally { $event.Dispose() }
-            Assert ($watchdog.WaitForExit(12000)) 'Controlled child did not stop within bounded recovery.'
-        } elseif ($mode -eq 'never-ready') {
-            Wait-Until {
-                try { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'waiting-ready' } catch { $false }
-            } 'Live never-ready child did not report waiting-ready.'
-            $s = Read-CaelestiaSupervisorStatus $statusPath
-            $owned = [Diagnostics.Process]::GetProcessById($s.shellPid)
-            $null = $owned.Handle
-            $children.Add($owned)
-            Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 1) 'Discovery lost a waiting-ready owner.'
-            $heartbeat = $s.utc
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Waiting-ready stopped heartbeating.'
-            Repair-CaelestiaStaleSupervisors $profile
-            # Longer than the 2.5 s fixture readiness budget, so the deadline
-            # has fully elapsed. No replacement may appear, even while strict
-            # first-frame readiness stays absent.
-            Start-Sleep -Milliseconds 3500
-            $s = Read-CaelestiaSupervisorStatus $statusPath
-            Assert (-not $owned.HasExited -and -not $watchdog.HasExited -and $s.shellPid -eq $owned.Id) 'Readiness deadline or healthy-owner repair stopped/replaced a live child.'
-            Assert ($s.phase -eq 'waiting-ready' -and $s.quickCrashes -eq 0 -and -not $s.forcedChildTermination) 'Missing readiness counted as a crash.'
-            # ConvertFrom-Json already yields a DateTime under PowerShell 7;
-            # parsing its string form reinterprets UTC ticks as local time.
-            $heartbeatAge = ([DateTime]::UtcNow - (ConvertTo-CaelestiaStatusUtc $s.utc).UtcDateTime).TotalSeconds
-            Assert ($heartbeatAge -ge -2 -and $heartbeatAge -lt 3) "Waiting-ready heartbeat age out of range: $heartbeatAge"
-            Assert (-not (Test-Path -LiteralPath $actions) -and
-                [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) -and
-                -not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Waiting-ready touched Explorer.'
-            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 1) 'Missing readiness restarted its live child.'
-            [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'very late draw')
-            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'Very late readiness was ignored.'
-            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Very late readiness did not take over.'
-            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Very late readiness did not apply invisible suppression.'
-            Assert ((Read-CaelestiaSupervisorStatus $statusPath).shellPid -eq $owned.Id) 'Very late readiness used a replacement child.'
-            $event = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
-            try { $null = $event.Set() } finally { $event.Dispose() }
-            Assert ($watchdog.WaitForExit(12000)) 'Explicit stop of a late-ready child did not finish.'
-        } else {
-            Assert ($watchdog.WaitForExit(25000)) 'Exited unready child did not exhaust the failed-start policy.'
-            $s = Read-CaelestiaSupervisorStatus $statusPath
-            Assert ($s.phase -eq 'crash-give-up' -and $s.quickCrashes -eq 3 -and $watchdog.ExitCode -ne 0) 'Unready start was accepted or skipped crash policy.'
-            Assert (-not (Test-Path -LiteralPath $actions)) 'Never-ready child changed taskbars.'
-            Assert (-not $s.shellReady -and -not $s.taskbarTakenOver) 'Failed start status claims readiness/takeover.'
-            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 3) 'Failed start did not use existing retry count.'
-        }
-        Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Terminal stop failed to restore the original taskbar.'
-        Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Terminal stop changed the original taskbar region.'
-        [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
-        Assert ($taskbar.WaitForExit(2000)) 'Readiness taskbar did not stop.'
-        Write-Output "PASS readiness $mode`: first-frame/status gate, taskbar visibility and bounded failure/recovery."
-    }
-    foreach ($mode in @('hung', 'normal', 'ipc-failure', 'clean', 'crash', 'explorer-hung', 'explorer-retry', 'notification-quit', 'notification-recovery',
-        'liveness-frozen', 'liveness-stall', 'liveness-legacy', 'liveness-suspend', 'liveness-quit', 'liveness-disabled', 'liveness-pause', 'liveness-update',
-        'stuck-quit', 'stuck-start')) {
-        $case = Join-Path $root $mode
-        $prefix = Join-Path $case 'prefix'
-        $profile = Join-Path $case 'profile'
-        $state = Join-Path $profile 'runtime\supervisor-fixture'
-        [IO.Directory]::CreateDirectory((Join-Path $prefix 'shell')) | Out-Null
-        [IO.Directory]::CreateDirectory($state) | Out-Null
-        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
-        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
-        # A disposable recovery helper proves lookup follows the executable,
-        # not cwd. It does not load the real banner or desktop implementation.
-        @'
-param($StateDirectory, $Command)
-$order = Join-Path $StateDirectory 'restore-order.txt'
-if (Test-Path -LiteralPath $order) {
-    $lines = @(Get-Content -LiteralPath $order)
-    $restart = $lines.Count -ge 1 -and $lines[-1] -eq 'appbars'
-    $terminal = $lines.Count -ge 2 -and $lines[-2] -eq 'desktop' -and $lines[-1] -eq 'rescue'
-    if (-not $restart -and -not $terminal) {
-        throw 'Banner work started before desktop and parked-window restoration.'
-    }
-    Add-Content -LiteralPath $order -Value 'banner'
-    # Deliberately slow work begins only after the desktop has returned.
-    Start-Sleep -Milliseconds 300
-} elseif ((Get-Content -LiteralPath (Join-Path $StateDirectory 'watchdog.json') -Raw | ConvertFrom-Json).phase -eq 'restoring') {
-    throw 'Banner work started without desktop restoration.'
-}
-[IO.File]::WriteAllText((Join-Path $StateDirectory 'banner-recovered.txt'), [Environment]::CurrentDirectory)
-'@ | Set-Content -LiteralPath (Join-Path $prefix 'Banner-Suppression.ps1') -Encoding UTF8
-        '{}' | Set-Content -LiteralPath (Join-Path $state 'banner-suppression.json') -Encoding UTF8
-        @{ product = 'caelestia-windows'; version = 1; prefix = $prefix; profile = $profile } |
-            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $prefix 'install.json') -Encoding UTF8
-        $bystander = Start-FixtureProcess $fake '--bystander' $case (Join-Path $case 'bystander')
-        $witness = Start-FixtureProcess $fake '--witness' $case (Join-Path $case 'witness')
-        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-ready') } 'Hidden restore witness did not start.'
-        $explorer = $null
-        $slowRecipients = @()
-        if ($mode -like 'notification-*') {
-            foreach ($number in 1..3) {
-                $slowRecipients += Start-FixtureProcess $fake ("--slow " + $number) $case (Join-Path $case ("slow-" + $number))
-            }
-            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-ready-*').Count -eq 3 } 'Slow notification recipients did not start.'
-        }
-        if ($mode -like 'explorer-*' -or $mode -like 'stuck-*') {
-            $explorer = Start-FixtureProcess $fake '--explorer' $case (Join-Path $case 'fake-explorer')
-            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-window.txt') } 'Fake Explorer did not create its hidden window.'
-        }
-        $spec = Join-Path $state 'launch.json'
-        @{
-            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
-            StateDirectory = $state; Environment = @{ CAELESTIA_STATE_DIR = $state }; TestWindowOwners = @($witness.Id)
-            RestartFrozenShell = ($mode -ne 'liveness-disabled')
-            InstallLockKey = $token
-            StdoutPath = (Join-Path $state 'shell.out'); StderrPath = (Join-Path $state 'shell.err')
-        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
-        $statusPath = Join-Path $state 'watchdog.json'
-        $watchdog = Start-FixtureProcess $powershell `
-            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
-            $case (Join-Path $case 'watchdog')
-        $watchdogs.Add($watchdog)
-        if ($mode -eq 'clean') {
-            Assert ($watchdog.WaitForExit(15000) -and $watchdog.ExitCode -eq 0) 'Unrequested clean exit did not finish.'
-            $status = Read-CaelestiaSupervisorStatus $statusPath
-            Assert ($status.phase -eq 'clean-exit' -and $status.quickCrashes -eq 0) 'Clean exit changed the restart policy.'
-            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 1) 'Clean exit restarted the child.'
-        } elseif ($mode -eq 'crash') {
-            Assert ($watchdog.WaitForExit(15000)) 'Unrequested crash recovery did not finish.'
-            $status = Read-CaelestiaSupervisorStatus $statusPath
-            Assert ($status.phase -eq 'crash-give-up' -and $status.quickCrashes -eq 3 -and $watchdog.ExitCode -eq 7) 'Crash restart policy changed.'
-            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq 3) 'Crash path did not restart its child twice.'
-            Assert (-not $status.forcedChildTermination) 'An unrequested exit was force-terminated.'
-        } else {
-            Wait-Until {
-                try { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } catch { $false }
-            } 'Supervisor did not launch its fake child.'
-            $status = Read-CaelestiaSupervisorStatus $statusPath
-            $owned = [Diagnostics.Process]::GetProcessById($status.shellPid)
-            $null = $owned.Handle
-            $children.Add($owned)
-            if ($mode -like 'liveness-*') {
-                if ($mode -eq 'liveness-legacy') {
-                    # Past the six-miss fixture detection window: a wrongful
-                    # freeze judgment would already have restarted the child.
-                    Start-Sleep -Milliseconds 2500
-                    $s = Read-CaelestiaSupervisorStatus $statusPath
-                    Assert (-not $s.livenessSupported -and -not $s.shellFrozen -and $s.shellPid -eq $owned.Id) 'Legacy shell was judged frozen.'
-                } else {
-                    Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessSupported } 'GUI probe never armed.'
-                    [IO.File]::WriteAllText((Join-Path $case 'stall'), 'stall')
-                    $freezeClock = [Diagnostics.Stopwatch]::StartNew()
-                    if ($mode -in @('liveness-frozen', 'liveness-disabled')) {
-                        if ($mode -eq 'liveness-frozen') {
-                            Wait-Until {
-                                $s = Read-CaelestiaSupervisorStatus $statusPath
-                                $s.phase -eq 'running' -and $s.shellPid -ne $owned.Id
-                            } 'Frozen GUI child was not recovered.' 6500
-                            $s = Read-CaelestiaSupervisorStatus $statusPath
-                            Assert ($owned.HasExited -and $freezeClock.ElapsedMilliseconds -lt 6500) 'Frozen recovery exceeded the fixture bound.'
-                            Assert ($s.lastUnhealthyReason -eq 'gui-unresponsive' -and $s.quickCrashes -eq 1) 'Frozen recovery bypassed status or restart accounting.'
-                            $owned = [Diagnostics.Process]::GetProcessById($s.shellPid)
-                            $null = $owned.Handle
-                            $children.Add($owned)
-                        } else {
-                            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).shellFrozen } 'Disabled automatic restart disabled detection too.' 6500
-                            $s = Read-CaelestiaSupervisorStatus $statusPath
-                            Assert ($s.phase -eq 'frozen' -and -not $owned.HasExited -and $s.shellPid -eq $owned.Id) 'Disabled frozen restart killed the child.'
-                        }
-                    } elseif ($mode -ne 'liveness-quit') {
-                        $updateLock = $null
-                        try {
-                            if ($mode -eq 'liveness-update') {
-                                $updateLock = [Threading.Mutex]::new($true, ('Local\CaelestiaInstall-' + $token))
-                                Start-Sleep -Milliseconds 2500
-                            } elseif ($mode -eq 'liveness-pause') {
-                                [IO.File]::WriteAllText((Join-Path $case 'pause-shell'), 'pause')
-                                Start-Sleep -Milliseconds 2500
-                            } elseif ($mode -eq 'liveness-suspend') {
-                                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'Suspend fixture had no pending misses.'
-                                [IO.File]::WriteAllText((Join-Path $case 'clock-gap'), 'gap')
-                                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'gap-seen') } 'Suspend gap did not reset the policy.' 1000
-                                Start-Sleep -Milliseconds 500
-                            } else { Start-Sleep -Milliseconds 1000 }
-                            Assert (-not $owned.HasExited -and (Read-CaelestiaSupervisorStatus $statusPath).shellPid -eq $owned.Id) 'Recoverable or excluded stall restarted the child.'
-                            Remove-Item -LiteralPath (Join-Path $case 'stall')
-                            [IO.File]::WriteAllText((Join-Path $case 'resume-shell'), 'resume')
-                        } finally {
-                            if ($updateLock) { $updateLock.ReleaseMutex(); $updateLock.Dispose() }
-                        }
-                        Wait-Until {
-                            $s = Read-CaelestiaSupervisorStatus $statusPath
-                            $s.livenessMisses -eq 0 -and $s.phase -eq 'running'
-                        } 'Recovered GUI did not clear the miss window.'
-                        # A wrongful restart needs six fresh misses; the wait
-                        # covers that window with margin.
-                        Start-Sleep -Milliseconds 2200
-                        Assert (-not $owned.HasExited) 'Recovered GUI restarted after its reply.'
-                    } else {
-                        Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'probe-*').Count -gt 0 } 'Quit fixture had no pending GUI probe.'
-                    }
-                }
-                Write-Output "PASS $mode`: GUI-thread probe, conservative recovery or exclusion."
-            }
-            if ($slowRecipients.Count) {
-                $requestClock = [Diagnostics.Stopwatch]::StartNew()
-                [IO.File]::WriteAllText((Join-Path $case 'notification-request'), 'notify')
-                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'notification-started') } 'Settings notification blocked its initiating tick.' 1000
-                Assert ($requestClock.ElapsedMilliseconds -lt 1000) 'Settings notification exceeded its initiating-tick budget.'
-                $heartbeat = (Read-CaelestiaSupervisorStatus $statusPath).utc
-                $responsive = [Diagnostics.Stopwatch]::StartNew()
-                Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Settings recipients blocked the heartbeat.' 1800
-                Assert ($responsive.ElapsedMilliseconds -lt 1800) 'Settings notification exceeded the heartbeat budget.'
-                if ($mode -eq 'notification-recovery') {
-                    $clock = [Diagnostics.Stopwatch]::StartNew()
-                    [Caelestia.Takeover.Supervisor]::RecoverActive()
-                    Assert ($watchdog.WaitForExit(1000) -and $clock.ElapsedMilliseconds -lt ($grace + 2500) -and $owned.HasExited) 'Settings recipients blocked recovery.'
-                    Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
-                    [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
-                    foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
-                    [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
-                    Assert ($witness.WaitForExit(2000)) 'Witness did not stop.'
-                    $bystander.Kill()
-                    Write-Output 'PASS settings notification: three slow recipients, advancing heartbeat and bounded recovery.'
-                    continue
-                }
-            }
-            if ($explorer) {
-                Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-entered') } 'Supervisor did not call the fake window.'
-                $heartbeat = $status.utc
-                Wait-Until {
-                    (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat
-                } 'Fake Explorer blocked the supervisor heartbeat.'
-                if ($mode -eq 'explorer-retry') {
-                    $restoreAttempt = Start-FixtureProcess $powershell `
-                        ('-NoProfile -File "' + $scripts + '\Restore-Desktop.ps1" -InactiveOnly') `
-                        $case (Join-Path $case 'inactive-restore')
-                    Assert ($restoreAttempt.WaitForExit(10000) -and $restoreAttempt.ExitCode -ne 0) 'Inactive recovery did not refuse a live session owner.'
-                    Assert ((Get-Content -LiteralPath (Join-Path $case 'inactive-restore.err') -Raw) -match 'Another desktop supervisor owns this session') 'Inactive recovery reached desktop operations or signaled the live supervisor.'
-                    Assert (-not $watchdog.HasExited) 'Inactive recovery stopped the live supervisor.'
-                    [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
-                    Wait-Until { Test-Path -LiteralPath (Join-Path $case 'fake-retried') } 'Explorer work did not retry after responsiveness returned.'
-                }
-                if ($mode -eq 'explorer-hung') {
-                    Repair-CaelestiaStaleSupervisors $profile
-                    Assert (-not $watchdog.HasExited -and -not $owned.HasExited) 'Start recovery stopped a supervisor with a healthy heartbeat.'
-                    $owned.Kill()
-                    Assert ($owned.WaitForExit(2000)) 'Fake child did not stop.'
-                    Wait-Until {
-                        $s = Read-CaelestiaSupervisorStatus $statusPath
-                        $s.phase -eq 'running' -and $s.shellPid -ne $owned.Id
-                    } 'Blocked fake Explorer prevented child restart.'
-                    $owned = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
-                    $null = $owned.Handle
-                    $children.Add($owned)
-                }
-                if ($mode -like 'stuck-*') {
-                    # Retain an owned IPC client before freezing the owner.
-                    # Closing the owner's probe job must reap it even though
-                    # forced recovery cannot execute Supervisor.Dispose.
-                    $probeCapture = @{ Process = $null }
-                    Wait-Until {
-                        $candidate = @(Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + $watchdog.Id) |
-                            Where-Object { $_.CommandLine -like '* call shell supervisorProbe *' })
-                        if ($candidate.Count) {
-                            try {
-                                $pending = [Diagnostics.Process]::GetProcessById($candidate[0].ProcessId)
-                                $null = $pending.Handle
-                                if (-not $pending.HasExited -and $pending.Path -eq (Join-Path $prefix 'qs.exe')) {
-                                    $probeCapture.Process = $pending
-                                    return $true
-                                }
-                                $pending.Dispose()
-                            } catch [ArgumentException] {}
-                        }
-                        return $false
-                    } 'Stuck supervisor fixture did not retain a pending probe.'
-                    $pendingProbe = $probeCapture.Process
-                    $children.Add($pendingProbe)
-                    [IO.File]::WriteAllText((Join-Path $case 'block-supervisor'), 'block')
-                    Start-Sleep -Milliseconds 600
-                    $supervisor = @(Get-CaelestiaSupervisors $profile)[0]
-                    # Verify ownership rejection before exercising forced stop.
-                    $wrong = [pscustomobject]@{ Process = $bystander; StatusPath = $statusPath }
-                    $rejected = $false
-                    try { Stop-CaelestiaSupervisor $wrong 0 } catch { $rejected = $true }
-                    Assert ($rejected -and -not $bystander.HasExited) 'Forced recovery accepted an unrelated process.'
-                    $wrongProfile = [pscustomobject]@{
-                        Process = $watchdog
-                        StatusPath = (Join-Path $case 'other-profile\runtime\supervisor-fixture\watchdog.json')
-                    }
-                    $rejected = $false
-                    try { Stop-CaelestiaSupervisor $wrongProfile 0 } catch { $rejected = $true }
-                    Assert ($rejected -and -not $watchdog.HasExited) 'Forced recovery accepted another profile.'
-                    $wrongSession = [pscustomobject]@{
-                        Process = [pscustomobject]@{ Id = $watchdog.Id; HasExited = $false; SessionId = ([Diagnostics.Process]::GetCurrentProcess().SessionId + 1) }
-                        StatusPath = $statusPath
-                    }
-                    $rejected = $false
-                    try { Stop-CaelestiaSupervisor $wrongSession 0 } catch { $rejected = $true }
-                    Assert ($rejected -and -not $watchdog.HasExited) 'Forced recovery accepted another session.'
-                    & {
-                        function Invoke-CimMethod { return [pscustomobject]@{ ReturnValue = 0; Sid = 'S-1-0-0' } }
-                        $rejected = $false
-                        try { Stop-CaelestiaSupervisor $supervisor 0 } catch { $rejected = $true }
-                        Assert ($rejected -and -not $watchdog.HasExited) 'Forced recovery accepted another user SID.'
-                    }
-                    $clock = [Diagnostics.Stopwatch]::StartNew()
-                    if ($mode -eq 'stuck-start') {
-                        # The Start entrypoint uses this exact profile-scoped helper.
-                        # Shorten only the recovery wait in the disposable copy.
-                        $definition = ${function:Stop-CaelestiaSupervisor}.ToString().Replace('[int]$RecoveryTimeoutMs = 60000', '[int]$RecoveryTimeoutMs = 1000')
-                        Set-Item Function:Stop-CaelestiaSupervisor ([scriptblock]::Create($definition))
-                        Repair-CaelestiaStaleSupervisors $profile
-                    } else {
-                        $commonPath = Join-Path $scripts 'Caelestia-InstallCommon.ps1'
-                        $common = Replace-Exactly ([IO.File]::ReadAllText($commonPath)) `
-                            '[int]$RecoveryTimeoutMs = 60000' '[int]$RecoveryTimeoutMs = 1000'
-                        [IO.File]::WriteAllText($commonPath, $common)
-                        $quit = Start-FixtureProcess $powershell `
-                            ('-NoProfile -File "' + $scripts + '\Start-Caelestia.ps1" -Prefix "' + $prefix + '" -Command Quit') `
-                            $case (Join-Path $case 'stuck-quit')
-                        Assert ($quit.WaitForExit(10000) -and $quit.ExitCode -eq 0) ("Stuck Quit failed: " + (Get-Content -LiteralPath (Join-Path $case 'stuck-quit.err') -Raw))
-                        Assert (Test-Path -LiteralPath (Join-Path $scripts 'fixture-restored')) 'Forced Quit skipped emergency snapshot restoration.'
-                    }
-                    Assert ($clock.ElapsedMilliseconds -lt 12000 -and $watchdog.HasExited -and $owned.HasExited) 'Stuck supervisor recovery exceeded its bound or left its child.'
-                    Assert ($pendingProbe.WaitForExit(2000)) 'Forced supervisor stop orphaned its IPC probe.'
-                    Assert (-not $bystander.HasExited -and -not $witness.HasExited) 'Forced recovery killed a bystander.'
-                    Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Forced recovery left profile ownership.'
-                    [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
-                    Remove-Item -LiteralPath (Join-Path $case 'block-supervisor')
-                    $replacement = Start-FixtureProcess $powershell `
-                        ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
-                        $case (Join-Path $case 'replacement')
-                    $watchdogs.Add($replacement)
-                    Wait-Until {
-                        $s = Read-CaelestiaSupervisorStatus $statusPath
-                        $s.phase -eq 'running' -and $s.watchdogPid -eq $replacement.Id
-                    } 'A fresh supervisor could not acquire ownership after forced recovery.'
-                    $replacementChild = [Diagnostics.Process]::GetProcessById((Read-CaelestiaSupervisorStatus $statusPath).shellPid)
-                    $null = $replacementChild.Handle
-                    $children.Add($replacementChild)
-                    [Caelestia.Takeover.Supervisor]::RecoverActive()
-                    Assert ($replacement.WaitForExit(2000) -and $replacement.ExitCode -eq 0 -and $replacementChild.HasExited) 'Replacement supervisor did not shut down.'
-                    Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-restored') } 'Replacement supervisor did not restore the journal witness.'
-                    [IO.File]::WriteAllText((Join-Path $case 'fake-stop'), 'stop')
-                    Assert ($explorer.WaitForExit(2000)) 'Fake Explorer did not stop.'
-                    [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
-                    Assert ($witness.WaitForExit(2000)) 'Witness did not stop.'
-                    $bystander.Kill()
-                    Write-Output "PASS supervisor $mode`: bounded profile recovery, owned-child stop and bystander safety."
-                    continue
-                }
-            }
-            $clock = [Diagnostics.Stopwatch]::StartNew()
-            $quit = Start-FixtureProcess $powershell `
-                ('-NoProfile -File "' + $scripts + '\Start-Caelestia.ps1" -Prefix "' + $prefix + '" -Command Quit') `
-                $case (Join-Path $case 'quit')
-            Assert ($quit.WaitForExit(20000)) 'Quit did not finish within the isolated stop bound.'
-            Assert ($quit.ExitCode -eq 0) ("Quit failed: " + (Get-Content -LiteralPath (Join-Path $case 'quit.err') -Raw))
-            Assert ($watchdog.WaitForExit(1000) -and $watchdog.ExitCode -eq 0) ("Supervisor did not exit successfully after Quit: " + $watchdog.ExitCode + ' ' + (Get-Content -LiteralPath (Join-Path $case 'watchdog.err') -Raw))
-            Assert ($owned.HasExited) 'The owned child survived Quit.'
-            Assert ($clock.ElapsedMilliseconds -lt $grace + 12000) 'Stop exceeded grace plus test startup/cleanup allowance.'
-            $status = Read-CaelestiaSupervisorStatus $statusPath
-            Assert ($status.phase -in @('recovered', 'clean-exit')) 'Quit skipped the normal restore/exit path.'
-            Assert (Test-Path -LiteralPath (Join-Path $prefix 'quit-called.txt')) 'Quit did not attempt IPC.'
-            $forceLog = Join-Path $state 'watchdog-error.log'
-            if ($mode -eq 'normal') {
-                Assert ($owned.ExitCode -eq 0 -and (Test-Path -LiteralPath (Join-Path $prefix 'normal-exit.txt'))) 'Normal child did not exit on its own.'
-                Assert (-not $status.forcedChildTermination -and -not (Test-Path -LiteralPath $forceLog)) 'Normal child was force-terminated.'
-            } else {
-                Assert ($owned.ExitCode -ne 0 -and $status.forcedChildTermination) 'Hung child was not force-terminated.'
-                Assert ((Get-Content -LiteralPath $forceLog -Raw).Trim() -ceq 'forced child termination after requested stop grace expired') 'Forced termination diagnostic was missing or contained unexpected data.'
-                Assert ($clock.ElapsedMilliseconds -ge $grace) 'Hung child was killed before its exit grace.'
-            }
-            $expectedStarts = if ($mode -in @('explorer-hung', 'liveness-frozen')) { 2 } else { 1 }
-            Assert (@(Get-Content -LiteralPath (Join-Path $prefix 'child-starts.txt')).Count -eq $expectedStarts) 'Intentional stop restarted the child.'
-        }
-        Wait-Until { Test-Path -LiteralPath (Join-Path $case 'witness-restored') } 'Supervisor did not restore its hidden parked-window fixture.'
-        Assert (-not $bystander.HasExited -and -not $witness.HasExited) 'Supervisor terminated an unowned same-name process.'
-        Assert (Test-Path -LiteralPath (Join-Path $state 'desktop-before.json')) 'Supervisor did not persist its restore snapshot.'
-        Assert (Test-CaelestiaSamePath (Get-Content -LiteralPath (Join-Path $state 'banner-recovered.txt') -Raw) $case) 'Banner recovery did not find the helper beside qs.exe or use the launch cwd.'
-        Assert (-not (Test-Path -LiteralPath (Join-Path $state 'banner-recovery.log'))) 'Banner recovery failed with cwd outside the payload.'
-        $order = @(Get-Content -LiteralPath (Join-Path $state 'restore-order.txt'))
-        Assert (($order -join ',') -match '^(appbars,banner,)*desktop,rescue,banner$') 'Desktop, parked-window and banner recovery order changed.'
-        Assert (@(Get-CaelestiaSupervisors $profile).Count -eq 0) 'Exited supervisor still owns the disposable profile.'
-        $mutex = [Threading.Mutex]::new($false, $mutexName)
-        try {
-            $acquired = $false
-            try { $acquired = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { throw 'Supervisor abandoned session ownership instead of releasing it.' }
-            Assert $acquired 'Supervisor did not release isolated session ownership.'
-            $mutex.ReleaseMutex()
-        } finally { $mutex.Dispose() }
-        [IO.File]::WriteAllText((Join-Path $case 'witness-stop'), 'stop')
-        Assert ($witness.WaitForExit(2000)) 'Restore witness did not finish.'
-        $bystander.Kill()
-        $null = $bystander.WaitForExit(2000)
-        if ($explorer) {
-            [IO.File]::WriteAllText((Join-Path $case 'fake-release'), 'release')
-            [IO.File]::WriteAllText((Join-Path $case 'fake-stop'), 'stop')
-            Assert ($explorer.WaitForExit(2000)) 'Fake Explorer did not stop.'
-        }
-        if ($slowRecipients.Count) {
-            Assert ($clock.ElapsedMilliseconds -lt ($grace + 6000)) 'Settings recipients blocked Quit.'
-            Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'slow-returned-*').Count -eq 3 } 'Multiple settings recipients did not finish.'
-            [IO.File]::WriteAllText((Join-Path $case 'slow-stop'), 'stop')
-            foreach ($recipient in $slowRecipients) { Assert ($recipient.WaitForExit(2000)) 'Settings recipient did not stop.' }
-        }
-        Write-Output "PASS supervisor $mode`: owned-child shutdown, restore, unrelated-process safety and session release."
     }
 } catch {
     Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
@@ -1406,8 +1573,15 @@ if (Test-Path -LiteralPath $order) {
     }
     throw
 } finally {
-    # On an assertion failure let the isolated owner reap its child too, even
-    # if the failure happened before the test captured that child's handle.
+    # Release every lane recovery event so an isolated owner can reap its own
+    # child even when the failure happened before a handle was captured.
+    foreach ($lane in $lanes) {
+        try {
+            $recovery = [Threading.EventWaitHandle]::OpenExisting(
+                'Local\CaelestiaDesktopTakeover-Test-' + $lane.Token + '-Recovery')
+            try { $null = $recovery.Set() } finally { $recovery.Dispose() }
+        } catch [Threading.WaitHandleCannotBeOpenedException] { }
+    }
     try {
         $recovery = [Threading.EventWaitHandle]::OpenExisting($mutexName + '-Recovery')
         try { $null = $recovery.Set() } finally { $recovery.Dispose() }
@@ -1416,9 +1590,20 @@ if (Test-Path -LiteralPath $order) {
         if (-not $watchdog.HasExited) { $null = $watchdog.WaitForExit(10000) }
     }
     # Every handle here belongs to a process this fixture started or the
-    # supervisor's recorded child. Never discover or terminate by process name.
+    # supervisor's recorded child. Lane roots are killed by tree so no
+    # watchdog, fake taskbar or probe survives a failed assertion. Never
+    # discover or terminate by process name.
     foreach ($process in $children) {
-        try { if (-not $process.HasExited) { $process.Kill(); $null = $process.WaitForExit(2000) } } finally { $process.Dispose() }
+        try {
+            if (-not $process.HasExited) {
+                $null = & taskkill /PID $process.Id /T /F 2>$null
+                $null = $process.WaitForExit(5000)
+            }
+        } finally { $process.Dispose() }
+    }
+    foreach ($lane in $lanes) {
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey(
+            'Software\Quickshell\AppBars-Fixture-' + $lane.Token, $false)
     }
     [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($fixtureAppBarKey, $false)
     $safeRoot = Resolve-CaelestiaDirectory $root
