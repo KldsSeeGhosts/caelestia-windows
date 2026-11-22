@@ -36,5 +36,15 @@ try {
 }
 $result | ConvertTo-Json -Depth 8
 $history | ConvertTo-Json -Depth 8
-if (-not $result.passed) { throw "Capture thumbnail fixture failed. See $($result.stderr)." }
-if (-not $history.passed) { throw "Screenshot history fixture failed. See $($history.stdout) and $($history.stderr)." }
+foreach ($fixture in @($result, $history)) {
+    if ($fixture.passed) { continue }
+    $reason = if ($fixture.diagnostics.Count) { $fixture.diagnostics | Select-Object -First 4 }
+        else { 'No failure marker. The last fixture messages follow.' }
+    Write-Output $reason
+    if (-not $fixture.diagnostics.Count) {
+        foreach ($log in @($fixture.stdout, $fixture.stderr)) {
+            Get-Content -LiteralPath $log -Tail 4
+        }
+    }
+    throw "Capture fixture failed (exit=$($fixture.exitCode), timedOut=$($fixture.timedOut)). See $($fixture.stdout) and $($fixture.stderr)."
+}

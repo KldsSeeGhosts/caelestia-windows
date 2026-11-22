@@ -10,17 +10,22 @@ test("Nexus and launcher picks do not infer a target from their window", () => {
     for (const file of [
         "modules/nexus/pages/wallandstyle/WallpaperSelect.qml",
         "modules/nexus/pages/wallandstyle/WallpaperCategory.qml",
-        "modules/launcher/Content.qml",
-        "modules/launcher/items/WallpaperItem.qml"
     ]) {
         const source = read(base + file);
         assert.doesNotMatch(source, /(?:setWallpaper|setRandom|captureScreen)\([^\n]*, root\.QsWindow/,
             `${file} still scopes a pick to its window`);
-        if (file.includes("nexus/"))
-            assert.match(source, /Wallpapers\.setWallpaper\([^\n]*root\.nState\.wallpaperTarget/);
-        else
-            assert.match(source, /Wallpapers\.setWallpaper\([^\n]*Wallpapers\.defaultPickerTarget/);
+        assert.match(source, /Wallpapers\.setWallpaper\([^\n]*root\.nState\.wallpaperTarget/);
     }
+    const content = read(base + "modules/launcher/Content.qml");
+    const list = read(base + "modules/launcher/WallpaperList.qml");
+    const tile = read(base + "modules/launcher/items/WallpaperItem.qml");
+    assert.match(content, /list\.currentList\?\.applyCurrent\(\)/);
+    assert.match(list, /function applyCurrent\(\): void \{ apply\(highlightedEntry\); \}/);
+    assert.match(tile, /onClicked: root\.clicked\(\)/);
+    assert.match(list, /onClicked: root\.apply\(tile\.modelData\)/);
+    assert.match(list, /Wallpapers\.setWallpaper\(entry\.path, Wallpapers\.defaultPickerTarget\(pickerScreen\)\)/);
+    for (const source of [content, tile])
+        assert.doesNotMatch(source, /Wallpapers\.setWallpaper\(/);
     assert.match(read(base + "modules/launcher/services/Actions.qml"),
         /Wallpapers\.choose\(Wallpapers\.defaultPickerTarget/);
 });
