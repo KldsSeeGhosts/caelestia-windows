@@ -7,10 +7,18 @@ $ErrorActionPreference = 'Stop'
 $controlRoot = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-clipboard-guard-' + [guid]::NewGuid().ToString('N'))
 $controlRoot = [IO.Path]::GetFullPath($controlRoot)
 New-Item -ItemType Directory -Path $controlRoot | Out-Null
+$ownedStage = Enter-QmlSharedStage
 try {
     $stage = Join-Path $controlRoot 'stage'
     $profile = Join-Path $controlRoot 'profile'
-    & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot $profile | Out-Null
+    $sharedStage = $env:CAELESTIA_TEST_SHARED_STAGE
+    if ($sharedStage -and (Test-Path -LiteralPath (Join-Path $sharedStage 'shell.qml') -PathType Leaf)) {
+        # The baseline staged tree is immutable; only the guard loop below
+        # needs fresh staging to prove the legacy-reference rejection.
+        Copy-QmlStageOverlay $sharedStage $stage
+    } else {
+        & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot $profile | Out-Null
+    }
     $control = Join-Path $stage 'LegacyClipboardControl.qml'
     foreach ($reference in @('Native.Clipboard', 'Quickshell.Windows.Clipboard')) {
         "import QtQuick`nQtObject { property var legacy: $reference }" |
@@ -30,6 +38,7 @@ try {
         (Split-Path -Leaf $controlRoot) -like 'caelestia-clipboard-guard-*') {
         Remove-Item -LiteralPath $controlRoot -Recurse -Force
     }
+    Exit-QmlSharedStage $ownedStage
 }
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-backend-api -ShellFixture -UseQuickshell `
     -Sources @('windows/tests/CaptureBackendApiTest.qml') -FixtureFile 'windows/tests/CaptureBackendApiTest.qml' `

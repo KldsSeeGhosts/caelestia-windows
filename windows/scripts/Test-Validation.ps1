@@ -13,34 +13,35 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-# One inventory for both the unsharded Unit suite and hosted shards. Hosted
-# run 42705595080 measured Test-CIAcceleration at 127s, Test-PairContract and
-# toolchain-modules at 91s and 34s, and all remaining checks together at about
-# 139s. Keep this order for unsharded runs.
+# One inventory for both the unsharded Unit suite and hosted shards. After the
+# socket-retry, fixture-template and staging fixes, the previously dominant
+# checks are seconds long, so the 23 tests split evenly 8/8/7. Shard 3 keeps
+# every check that needs full git history or Node: version metadata reads
+# tags and the fetched Pages ref, and `javascript` pairs with setup-node.
 $unitTests = @(
+    @{ name = 'Test-CIAcceleration'; shard = 1; kind = 'script' }
+    @{ name = 'Test-CaptureIntegration'; shard = 1; kind = 'script' }
+    @{ name = 'Test-CIChanges'; shard = 1; kind = 'script' }
+    @{ name = 'Test-SchemeProbeGuard'; shard = 1; kind = 'script' }
+    @{ name = 'Test-KsgSettingsImport'; shard = 1; kind = 'script' }
+    @{ name = 'warning-baseline'; shard = 1; kind = 'python'; arguments = @('-B', 'windows/tests/WarningBaseline.test.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
+    @{ name = 'quota-providers'; shard = 1; kind = 'python'; arguments = @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
+    @{ name = 'performance-method'; shard = 1; kind = 'python'; arguments = @('-B', 'windows/bench/test_method.py', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
+    @{ name = 'Test-PairContract'; shard = 2; kind = 'script' }
+    @{ name = 'toolchain-modules'; shard = 2; kind = 'python'; arguments = @('-B', 'windows/tests/ToolchainModules.test.py'); outputDirectory = 'toolchain-modules' }
+    @{ name = 'Test-Toolchain'; shard = 2; kind = 'script' }
+    @{ name = 'Test-NexusPipeline'; shard = 2; kind = 'script'; extra = @('-Python', $Python) }
+    @{ name = 'llvm-extraction'; shard = 2; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/LlvmExtract.test.py'); outputDirectory = 'llvm-extraction' }
+    @{ name = 'Test-PublicDocs'; shard = 2; kind = 'script' }
+    @{ name = 'Test-RepositoryPolicy'; shard = 2; kind = 'script' }
+    @{ name = 'Test-ShellLifecycle'; shard = 2; kind = 'script' }
     @{ name = 'dependencies'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/TestDependencies.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
-    @{ name = 'Test-PublicDocs'; shard = 3; kind = 'script' }
     @{ name = 'public-release-metadata'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/TestPublicReleaseMetadata.py') }
-    @{ name = 'Test-Toolchain'; shard = 3; kind = 'script' }
     @{ name = 'Test-Versioning'; shard = 3; kind = 'script' }
     @{ name = 'history-version'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/test_history_version.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
-    @{ name = 'Test-PairContract'; shard = 2; kind = 'script' }
-    @{ name = 'Test-NexusPipeline'; shard = 3; kind = 'script'; extra = @('-Python', $Python) }
-    @{ name = 'Test-CaptureIntegration'; shard = 3; kind = 'script' }
-    @{ name = 'llvm-extraction'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/LlvmExtract.test.py'); outputDirectory = 'llvm-extraction' }
-    @{ name = 'toolchain-modules'; shard = 2; kind = 'python'; arguments = @('-B', 'windows/tests/ToolchainModules.test.py'); outputDirectory = 'toolchain-modules' }
-    @{ name = 'warning-baseline'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/WarningBaseline.test.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
-    @{ name = 'Test-CIChanges'; shard = 3; kind = 'script' }
-    @{ name = 'Test-CIAcceleration'; shard = 1; kind = 'script' }
-    @{ name = 'Test-SchemeProbeGuard'; shard = 3; kind = 'script' }
-    @{ name = 'Test-KsgSettingsImport'; shard = 3; kind = 'script' }
-    @{ name = 'Test-ShellLifecycle'; shard = 3; kind = 'script' }
     @{ name = 'Test-DesktopSupervisorStop'; shard = 3; kind = 'script' }
     @{ name = 'Test-ValidationCounts'; shard = 3; kind = 'script' }
-    @{ name = 'Test-RepositoryPolicy'; shard = 3; kind = 'script' }
     @{ name = 'javascript'; shard = 3; kind = 'node'; testCountPattern = '(?m)^# tests ([0-9]+)\s*$' }
-    @{ name = 'quota-providers'; shard = 3; kind = 'python'; arguments = @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/quota_providers', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
-    @{ name = 'performance-method'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/bench/test_method.py', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
 )
 # One inventory for both the unsharded suite and hosted shards. Warm hosted
 # 42421527915/2 measured VersionedInstall at 139.45s and the remainder at
@@ -64,7 +65,7 @@ if ($Shard) {
         throw "Shard $Shard does not match the $Suite suite."
     }
 }
-if ($QmlJobs -ne 1 -and $Suite -ne 'Shell') { throw 'QmlJobs applies only to Shell.' }
+if ($QmlJobs -ne 1 -and $Suite -notin @('Shell', 'Services')) { throw 'QmlJobs applies only to the QML suites.' }
 if (@($unitTests | Where-Object { $_.shard -isnot [int] -or $_.shard -notin @(1, 2, 3) }).Count -or
     @($unitTests.name | Select-Object -Unique).Count -ne $unitTests.Count) {
     throw 'Every unit test requires exactly one valid shard assignment and a unique name.'
@@ -262,12 +263,15 @@ Push-Location -LiteralPath $repoRoot
 try {
     if ($Suite -eq 'Unit') {
         # Fail before running any test when a script cannot even parse.
-        foreach ($file in @((Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File) +
-            (Get-ChildItem -LiteralPath "$repoRoot\windows\ci" -Filter '*.ps1' -File))) {
-            $tokens = $null
-            $parseErrors = $null
-            $null = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
-            if ($parseErrors.Count) { throw "PowerShell syntax check failed: $($file.Name)" }
+        # A sharded run parses every script once, under the first shard only.
+        if (-not $Shard -or $Shard -eq '1/3') {
+            foreach ($file in @((Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.ps1' -File) +
+                (Get-ChildItem -LiteralPath "$repoRoot\windows\ci" -Filter '*.ps1' -File))) {
+                $tokens = $null
+                $parseErrors = $null
+                $null = [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
+                if ($parseErrors.Count) { throw "PowerShell syntax check failed: $($file.Name)" }
+            }
         }
         $map = Get-Content -LiteralPath "$repoRoot\windows\shell\sources.json" -Raw | ConvertFrom-Json
         if (@($map.PSObject.Properties.Name | Where-Object { $_ -match '(^|/)(tests?|fixtures|validation)/|Test\.qml$' }).Count) {
@@ -297,7 +301,17 @@ try {
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }
         $fixtureArguments = @('-QtPrefix', $QtPrefix)
         if ($BuildRoot) { $fixtureArguments += @('-BuildRoot', $BuildRoot) }
-        if ($Suite -eq 'Shell' -and $QmlJobs -gt 1) {
+        if ($Suite -eq 'Shell' -and (Test-Path -LiteralPath "$repoRoot\windows\shell\sources.json" -PathType Leaf)) {
+            # One verified staging of the immutable shell graph serves every
+            # fixture in this suite; each fixture links it into a private
+            # overlay instead of repeating the copy/hash/scan. Synthetic
+            # scheduler harnesses ship no production map and stage nothing.
+            $sharedStage = Join-Path $OutputRoot 'shared-stage'
+            & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $sharedStage `
+                -ProfileRoot (Join-Path $OutputRoot 'shared-profile') -Prototype shell-live | Out-Null
+            $env:CAELESTIA_TEST_SHARED_STAGE = $sharedStage
+        }
+        if ($QmlJobs -gt 1) {
             Invoke-ParallelScriptChecks $scripts $fixtureArguments
         } else {
             foreach ($name in $scripts) { Invoke-ScriptCheck $name $fixtureArguments }

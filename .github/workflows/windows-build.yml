@@ -92,7 +92,9 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ inputs.shell_sha || github.sha }}
-          fetch-depth: 0
+          # Shard 3 alone reads history: version metadata, tags and the Pages
+          # ref. The other shards run file-only checks on the merge commit.
+          fetch-depth: ${{ matrix.shard == 3 && 0 || 1 }}
           persist-credentials: false
       - name: Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -145,7 +147,9 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ inputs.shell_sha || github.sha }}
-          fetch-depth: 0
+          # Shard 1 runs only the versioned-install check, which reads no git
+          # history. Shard 2 keeps the full clone for rollback contracts.
+          fetch-depth: ${{ matrix.shard == 1 && 1 || 0 }}
           persist-credentials: false
       - name: Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -483,8 +487,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Backend tier inventory failed.' }
       - name: First-party capture Rust regressions
         run: |
+          $captureArguments = @()
+          if ($env:CI_COMPILER_LAUNCHER) {
+            # The fixture objects cache already restores and saves this
+            # directory and its default-port server, so capture Rust objects
+            # ride the same warm cache with no extra save step.
+            $captureArguments = @('-CompilerLauncher', $env:CI_COMPILER_LAUNCHER,
+              '-RustCacheDirectory', 'C:\sccache-fixtures')
+          }
           & pwsh -NoProfile -NonInteractive -File "$env:GITHUB_WORKSPACE\windows\scripts\Test-CaptureRust.ps1" `
-            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs $env:BUILD_JOBS
+            -ToolRoot $env:TOOL_ROOT -OutputRoot C:\ci-capture -Jobs $env:BUILD_JOBS @captureArguments
           if ($LASTEXITCODE -ne 0) { throw 'Capture Rust regressions failed or were empty.' }
       - name: Capture Rust result and native acceptance inventory
         if: always()
@@ -1008,7 +1020,7 @@ jobs:
     name: Windows validation
     if: always()
     needs: [scope, checks, packaging, reuse, fixtures, build, pair]
-    runs-on: windows-2022
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require every applicable gate

@@ -196,17 +196,21 @@ try {
             originRevision = $captureSource.originRevision
         }
     }
-    $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-    $js = Invoke-OwnedProcess $node ('--test --test-reporter=tap "' + "$repoRoot\windows\tests\StagedClipboardModels.test.js" + '"') 'javascript' $repoRoot @{}
-    $count = [regex]::Match($js.text, '(?m)^# tests ([0-9]+)\s*$')
-    $passes = [regex]::Match($js.text, '(?m)^# pass ([0-9]+)\s*$')
-    $skips = [regex]::Match($js.text, '(?m)^# skipped ([0-9]+)\s*$')
-    $passed = -not $js.timedOut -and $js.exitCode -eq 0 -and $count.Success -and [int]$count.Groups[1].Value -eq 8 `
-        -and $passes.Success -and $passes.Groups[1].Value -eq $count.Groups[1].Value -and $skips.Success -and [int]$skips.Groups[1].Value -eq 0
-    $results.Add([ordered]@{ name = 'javascript'; passed = $passed; exitCode = $js.exitCode; timedOut = $js.timedOut
-        tests = if ($count.Success) { [int]$count.Groups[1].Value } else { 0 }; seconds = $js.seconds; skipped = 0 })
-    Write-Output ("{0} javascript ({1} tests)" -f $(if ($passed) { 'PASS' } else { 'FAIL' }), $results[0].tests)
-    if (-not $passed) { Write-Output $js.text }
+    if ($PureOnly) {
+        # The portable lane keeps its own Node check. In the default lane the
+        # Unit suite's javascript inventory already runs the same file.
+        $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        $js = Invoke-OwnedProcess $node ('--test --test-reporter=tap "' + "$repoRoot\windows\tests\StagedClipboardModels.test.js" + '"') 'javascript' $repoRoot @{}
+        $count = [regex]::Match($js.text, '(?m)^# tests ([0-9]+)\s*$')
+        $passes = [regex]::Match($js.text, '(?m)^# pass ([0-9]+)\s*$')
+        $skips = [regex]::Match($js.text, '(?m)^# skipped ([0-9]+)\s*$')
+        $passed = -not $js.timedOut -and $js.exitCode -eq 0 -and $count.Success -and [int]$count.Groups[1].Value -eq 8 `
+            -and $passes.Success -and $passes.Groups[1].Value -eq $count.Groups[1].Value -and $skips.Success -and [int]$skips.Groups[1].Value -eq 0
+        $results.Add([ordered]@{ name = 'javascript'; passed = $passed; exitCode = $js.exitCode; timedOut = $js.timedOut
+            tests = if ($count.Success) { [int]$count.Groups[1].Value } else { 0 }; seconds = $js.seconds; skipped = 0 })
+        Write-Output ("{0} javascript ({1} tests)" -f $(if ($passed) { 'PASS' } else { 'FAIL' }), $results[0].tests)
+        if (-not $passed) { Write-Output $js.text }
+    }
     if (-not $PureOnly) {
         if (-not $QtPrefix) { throw 'QtPrefix is required for QML fixtures; use PureOnly for the portable JavaScript lane.' }
         $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path

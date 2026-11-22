@@ -28,23 +28,24 @@ windows/scripts/Test-FileUrls.ps1 `
 
 `QtPrefix` is required. `BuildRoot` defaults to `windows/.local/build`;
 `OutputRoot` defaults to `CAELESTIA_TEST_OUTPUT_ROOT` or the system temporary
-directory's `validation-erm630` child. Every invocation creates a new
-`file-urls-<guid>` child, retains only that run's synthetic data/stage/profile
-and logs, and never cleans up an older run. Outputs inside the checkout or
-on UNC paths are rejected. No fixed drive letter is required.
+directory's `caelestia-file-urls-<guid>` child. Every invocation creates a new
+`file-urls-<guid>` child and removes its run-local staging tree before exit,
+retaining only that run's synthetic data, logs and summary. Outputs inside
+the checkout or on UNC paths are rejected. No fixed drive letter is required.
 
 The dedicated runner emits and saves `summary.json` (schema 1, suite
 `FileUrls`) with the exact source SHA and dirty flag, parsed Node
-tests/pass/fail/cancelled/skipped/todo counts, QML assertion count, exit/timeout
+QML assertion count, exit/timeout
 state, runner hash, sanitized commands and diagnostics. Paths in that receipt
-use `$REPO_ROOT`, `$OUTPUT_ROOT`, `$BUILD_ROOT`, `$QT_PREFIX`, `$NODE_DIR`
+use `$REPO_ROOT`, `$OUTPUT_ROOT`, `$BUILD_ROOT`, `$QT_PREFIX`
 and, when selected, `$RUNTIME_PREFIX`.
 It exits nonzero on missing/inconsistent counts, failures, skips or todos,
 or a failed QML fixture. Raw logs and retained fixture trees are local-only,
 not sanitized upload artifacts. Suite/CI registration belongs to the
 validation owner, not this dedicated runner.
 
-The Node suite executes the actual production JS helper and clipboard model.
+The Node suite `FileUrls.test.js` executes the actual production JS helper and
+clipboard model once, in the Unit suite's `javascript` lane.
 The offscreen QML fixture uses the production `Paths.qml` and clipboard model,
 the actual Qt `QUrl` conversion methods, the native `CUtils.copyFile`, and Qt
 `Image` loading. Its filesystem test data are a generated 2x2 PNG and its copy

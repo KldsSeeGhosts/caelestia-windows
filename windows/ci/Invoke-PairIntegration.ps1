@@ -90,8 +90,10 @@ $env:QT_QUICK_BACKEND = 'software'
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $common = @('-NoProfile', '-NonInteractive', '-File')
 function Get-ServicesArguments([string]$OutputRoot) {
-    return $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Services',
+    $arguments = $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Services',
         '-BuildRoot', $BuildRoot, '-QtPrefix', $qt, '-OutputRoot', $OutputRoot)
+    if ($QmlJobs -gt 1) { $arguments += @('-QmlJobs', "$QmlJobs") }
+    return $arguments
 }
 function Get-ShellArguments {
     $arguments = $common + @("$scripts\Test-Validation.ps1", '-Suite', 'Shell',
@@ -101,7 +103,7 @@ function Get-ShellArguments {
 }
 function Get-PluginArguments {
     return @('--test-dir', "$BuildRoot\caelestia", '--output-on-failure',
-        '--timeout', '60', '--no-tests=error', '--output-junit', "$Results\plugins.raw.xml")
+        '--timeout', '60', '--no-tests=error', '--parallel', '4', '--output-junit', "$Results\plugins.raw.xml")
 }
 function Invoke-Logged([string]$Log, [string]$Executable, [string[]]$CommandArguments) {
     $code = 1

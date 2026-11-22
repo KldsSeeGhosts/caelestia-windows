@@ -4,11 +4,65 @@
 . (Join-Path $PSScriptRoot 'Caelestia-Toolchain.ps1')
 Initialize-CaelestiaToolchainModules
 
+# A shared stage is the verified Stage-ShellPrototype output the validation
+# harness stages once per suite. Standalone multi-fixture scripts stage their
+# own once with Enter-QmlSharedStage instead of repeating the full copy, hash
+# and scan per fixture.
+function Enter-QmlSharedStage {
+    [CmdletBinding()]
+    param()
+    if ($env:CAELESTIA_TEST_SHARED_STAGE) { return $null }
+    $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-shared-stage-' + [guid]::NewGuid().ToString('N'))
+    & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $root -ProfileRoot "$root-profile" | Out-Null
+    $env:CAELESTIA_TEST_SHARED_STAGE = $root
+    return $root
+}
+
+function Exit-QmlSharedStage($Handle) {
+    if ($null -eq $Handle) { return }
+    Remove-Item Env:CAELESTIA_TEST_SHARED_STAGE -ErrorAction SilentlyContinue
+    $resolved = [IO.Path]::GetFullPath($Handle)
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\'
+    if ($resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -and
+        (Split-Path -Leaf $resolved) -like 'caelestia-shared-stage-*') {
+        Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Mirrors a verified stage into a private overlay with hard links, so every
+# fixture still owns its stage without re-reading, re-hashing and re-scanning
+# the production graph and bundled fonts. Fall back to a byte copy whenever
+# links are unavailable (different volume, limited filesystem).
+function Copy-QmlStageOverlay([string]$Source, [string]$Destination) {
+    foreach ($directory in @(Get-ChildItem -LiteralPath $Source -Recurse -Directory -Force)) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $Destination $directory.FullName.Substring($Source.Length)) | Out-Null
+    }
+    foreach ($file in @(Get-ChildItem -LiteralPath $Source -Recurse -File -Force)) {
+        $target = Join-Path $Destination $file.FullName.Substring($Source.Length)
+        $linked = $false
+        try {
+            $null = New-Item -ItemType HardLink -Path $target -Target $file.FullName -ErrorAction Stop
+            $linked = $true
+        } catch { }
+        if (-not $linked) { Copy-Item -LiteralPath $file.FullName -Destination $target -Force }
+    }
+}
+
+# Copies one fixture payload file over a possibly linked staged file. Copy-Item
+# would open the link target for writing and corrupt the shared stage.
+function Copy-QmlOverlayItem([string]$Source, [string]$Destination) {
+    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
+    Copy-Item -LiteralPath $Source -Destination $Destination
+}
+
 function Invoke-QmlFixture {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$QtPrefix,
         [string]$BuildRoot,
+        # Verified shared Stage-ShellPrototype output. Defaults to the harness
+        # environment; an invalid or missing root stages privately as before.
+        [string]$StageRoot,
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string[]]$Sources,
         [Parameter(Mandatory)][string]$FixtureFile,
@@ -36,6 +90,16 @@ function Invoke-QmlFixture {
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
     if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
     $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
+    if (-not $StageRoot) { $StageRoot = $env:CAELESTIA_TEST_SHARED_STAGE }
+    $sharedStage = $null
+    if ($StageRoot) {
+        $candidate = [IO.Path]::GetFullPath($StageRoot)
+        if ((Test-Path -LiteralPath (Join-Path $candidate 'shell.qml') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'sources.json') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'modules') -PathType Container)) {
+            $sharedStage = $candidate
+        }
+    }
     # A verified installed release can supply the native runner for local
     # regression work. All staging, profiles and writes remain disposable.
     $nativeQml = Join-Path $BuildRoot 'install\qml'
@@ -69,7 +133,11 @@ function Invoke-QmlFixture {
     New-Item -ItemType Directory -Force -Path $stage, $logRoot | Out-Null
     try {
     if ($ShellFixture) {
-        & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot (Join-Path $run 'profile') -Prototype shell-live | Out-Null
+        if ($sharedStage) {
+            Copy-QmlStageOverlay $sharedStage $stage
+        } else {
+            & "$PSScriptRoot\Stage-ShellPrototype.ps1" -Destination $stage -ProfileRoot (Join-Path $run 'profile') -Prototype shell-live | Out-Null
+        }
     }
     if ($FakeDirectories.Count -gt 0) {
         # Shell fakes overlay the staged prototype at its root. A pure-service
@@ -77,7 +145,15 @@ function Invoke-QmlFixture {
         # staged beside the run directory instead.
         $fakeRoot = if ($ShellFixture) { $stage } else { $run }
         foreach ($directory in $FakeDirectories) {
-            Copy-Item -Path (Join-Path $repoRoot "$directory\*") -Destination $fakeRoot -Recurse -Force
+            $sourceDir = Join-Path $repoRoot $directory
+            foreach ($item in @(Get-ChildItem -LiteralPath $sourceDir -Recurse -Force)) {
+                $destination = Join-Path $fakeRoot $item.FullName.Substring($sourceDir.Length)
+                if ($item.PSIsContainer) {
+                    New-Item -ItemType Directory -Force -Path $destination | Out-Null
+                } else {
+                    Copy-QmlOverlayItem $item.FullName $destination
+                }
+            }
         }
     }
     $profile = Join-Path $run 'profile'
@@ -91,7 +167,7 @@ function Invoke-QmlFixture {
         $relative = if ($KeepRelativePaths) { $source } else { Split-Path -Leaf $source }
         $target = Join-Path $stage $relative
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-        Copy-Item -LiteralPath (Join-Path $repoRoot $source) -Destination $target
+        Copy-QmlOverlayItem (Join-Path $repoRoot $source) $target
         [ordered]@{ source = $source; staged = $relative }
     }
 

@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$QtPrefix, [Parameter(Mandatory)][string]$BuildRoot, [string]$ScreenshotPath)
 $ErrorActionPreference = 'Stop'
-& "$PSScriptRoot\Test-UpdatesStatus.ps1"
+# Test-UpdatesStatus owns the installed-status contract on its own Unit lane;
+# this script only runs the offscreen page fixture.
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name updates-page -ShellFixture -UseQuickshell `
     -Sources @('windows/tests/UpdatesPageTest.qml') -FixtureFile 'windows/tests/UpdatesPageTest.qml' `

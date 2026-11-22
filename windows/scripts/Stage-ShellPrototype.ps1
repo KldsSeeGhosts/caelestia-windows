@@ -35,12 +35,10 @@ foreach ($entry in $manifest.PSObject.Properties) {
     $files[$entry.Name] = $entry.Value
 }
 $sourceLock = Get-Content -LiteralPath (Join-Path $repoRoot 'windows/sources.lock.json') -Raw | ConvertFrom-Json
+$expectedFontHashes = @{}
 foreach ($font in $sourceLock.fonts) {
     foreach ($fontFile in $font.files) {
-        $path = Join-Path $repoRoot $fontFile.path
-        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $fontFile.sha256.ToLowerInvariant()) {
-            throw "Bundled font checksum mismatch: $($fontFile.path)"
-        }
+        $expectedFontHashes[$fontFile.path] = $fontFile.sha256.ToLowerInvariant()
         $destRel = if ($fontFile.path.StartsWith('windows/')) { $fontFile.path.Substring('windows/'.Length) } else { $fontFile.path }
         $files[$fontFile.path] = $destRel
     }
@@ -59,6 +57,12 @@ $hashes = foreach ($entry in $files.GetEnumerator()) {
     # both files to hash every unchanged asset, including the bundled fonts.
     $bytes = [IO.File]::ReadAllBytes($source)
     $sourceHash = [BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-', '')
+    # The lock-pinned font checksum rides the same single read; a second
+    # hashing pass over the payload was removed, not the verification.
+    if ($expectedFontHashes.ContainsKey($entry.Key) -and
+        $sourceHash.ToLowerInvariant() -ne $expectedFontHashes[$entry.Key]) {
+        throw "Bundled font checksum mismatch: $($entry.Key)"
+    }
     [IO.File]::WriteAllBytes($target, $bytes)
     $transformed = $entry.Value -in @('shell.qml', 'modules/bar/components/workspaces/Workspace.qml')
     if ($entry.Value -eq 'shell.qml') {

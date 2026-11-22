@@ -9,6 +9,7 @@ $fixturePowerShell = Get-CaelestiaPowerShellPath
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
 $fixtureTemp = Join-Path $tempRoot ('caelestia-picker-temp-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
+$ownedStage = Enter-QmlSharedStage
 try {
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-picker -ShellFixture -UseQuickshell `
         -Sources @('windows/tests/CapturePickerTest.qml') -FixtureFile 'windows/tests/CapturePickerTest.qml' `
@@ -28,25 +29,66 @@ try {
         @{ Window = '1.25'; Capture = '1.5' },
         @{ Window = '1';    Capture = '1.25' }
     )
-    $pixels = foreach ($run in $pixelRuns) {
-        $suffix = "window-$($run.Window)-capture-$($run.Capture)"
-        Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-pixels -ShellFixture -UseQuickshell `
-            -Sources @('windows/tests/CapturePixelsTest.qml') -FixtureFile 'windows/tests/CapturePixelsTest.qml' `
-            -Marker CAELESTIA_CAPTURE_PIXELS -MinimumAssertions 250 -TimeoutMs 90000 -LogSuffix $suffix `
-            -Environment @{
-                TEMP = $fixtureTemp; TMP = $fixtureTemp
-                CAELESTIA_POWERSHELL = $fixturePowerShell
-                QT_SCALE_FACTOR = $run.Window
-                CAELESTIA_PIXELS_WINDOW_DPR = $run.Window
-                CAELESTIA_PIXELS_CAPTURE_DPR = $run.Capture
-            }
+    # The six DPR combinations are independent offscreen runs over the same
+    # immutable stage. Three bounded workers each run a slice; every run keeps
+    # its own stage overlay, profile, temp view and log suffix.
+    $pixelWorker = {
+        param([string]$FixtureScript, [string]$SliceJson, [string]$QtPrefix, [string]$BuildRoot,
+            [string]$FixtureTemp, [string]$FixturePowerShell)
+        $ErrorActionPreference = 'Stop'
+        . $FixtureScript
+        foreach ($run in @($SliceJson | ConvertFrom-Json)) {
+            $suffix = "window-$($run.Window)-capture-$($run.Capture)"
+            Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-pixels -ShellFixture -UseQuickshell `
+                -Sources @('windows/tests/CapturePixelsTest.qml') -FixtureFile 'windows/tests/CapturePixelsTest.qml' `
+                -Marker CAELESTIA_CAPTURE_PIXELS -MinimumAssertions 250 -TimeoutMs 90000 -LogSuffix $suffix `
+                -Environment @{
+                    TEMP = $FixtureTemp; TMP = $FixtureTemp
+                    CAELESTIA_POWERSHELL = $FixturePowerShell
+                    QT_SCALE_FACTOR = $run.Window
+                    CAELESTIA_PIXELS_WINDOW_DPR = $run.Window
+                    CAELESTIA_PIXELS_CAPTURE_DPR = $run.Capture
+                }
+        }
     }
+    $workerCount = [Math]::Min(3, $pixelRuns.Count)
+    $groupSize = [Math]::Ceiling($pixelRuns.Count / $workerCount)
+    $jobs = @()
+    for ($index = 0; $index -lt $workerCount; $index++) {
+        $slice = @($pixelRuns | Select-Object -Skip ($index * $groupSize) -First $groupSize)
+        if (-not $slice.Count) { continue }
+        $jobs += Start-Job -ScriptBlock $pixelWorker -ArgumentList @(
+            (Join-Path $PSScriptRoot 'Caelestia-QmlFixture.ps1'),
+            ($slice | ConvertTo-Json -Depth 3 -Compress),
+            $QtPrefix, $BuildRoot, $fixtureTemp, $fixturePowerShell)
+    }
+    $pixels = @()
+    $workerFailure = $null
+    try {
+        # Two serial runs per worker plus spawn slack stays well under the
+        # serial cost of all six runs.
+        $null = Wait-Job -Job $jobs -Timeout (($groupSize * 100) + 90)
+        foreach ($job in $jobs) {
+            if ($job.State -eq 'Failed' -and -not $workerFailure) {
+                $workerFailure = ($job.ChildJobs[0].JobStateInfo.Reason.ErrorRecord | Out-String)
+            }
+            $pixels += @(Receive-Job -Job $job -ErrorAction SilentlyContinue |
+                Where-Object { $null -ne $_ -and $null -ne $_.passed })
+        }
+    } finally {
+        foreach ($job in $jobs) {
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($workerFailure) { throw "Capture device pixel worker failed: $workerFailure" }
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureTemp)
     if ($resolved.StartsWith($tempRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
         (Split-Path -Leaf $resolved) -like 'caelestia-picker-temp-*') {
         Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
     }
+    Exit-QmlSharedStage $ownedStage
 }
 $result | ConvertTo-Json -Depth 8
 $pixels | ConvertTo-Json -Depth 8

@@ -42,13 +42,15 @@ try {
     # Fail closed before executing a copy if any injection no longer matches.
     $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs'))
     Assert ($source.Contains('public const int ReadyTimeoutMs = 20000;')) 'Production first-frame budget changed.'
-    $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 5000;'
+    $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 2500;'
     # Assert production thresholds before shortening only time in the fixture.
     foreach ($pair in @(
         @('ProbeIntervalMs = 60000', 'ProbeIntervalMs = 300'),
         @('RetryIntervalMs = 15000', 'RetryIntervalMs = 300'),
         @('ProbeTimeoutMs = 5000', 'ProbeTimeoutMs = 200'),
-        @('FreezeWindowMs = 120000', 'FreezeWindowMs = 2000')
+        @('FreezeWindowMs = 120000', 'FreezeWindowMs = 2000'),
+        @('public const int ChildExitGraceMs = 5000;', 'public const int ChildExitGraceMs = 1200;'),
+        @('public const int RestartTakeoverGraceMs = 2000;', 'public const int RestartTakeoverGraceMs = 1200;')
     )) {
         $source = Replace-Exactly $source $pair[0] $pair[1]
     }
@@ -454,7 +456,9 @@ namespace Caelestia.Takeover {
     }
     Write-Output 'PASS launch environment: taskbar shortcut filter only while the taskbar is hidden; only the shell crash relaunch is disabled.'
     $grace = [Caelestia.Takeover.Supervisor]::ChildExitGraceMs
-    Assert ($grace + 45000 + 2000 + 1000 -lt [Caelestia.Takeover.Supervisor]::RecoveryBoundMs) 'Child grace consumes the restore budget.'
+    # The injection pins the production value; check the restore budget
+    # against it, not the shortened fixture constant.
+    Assert (5000 + 45000 + 2000 + 1000 -lt [Caelestia.Takeover.Supervisor]::RecoveryBoundMs) 'Child grace consumes the restore budget.'
 
     # A console fake stands in for qs. The witness owns a hidden, offscreen
     # window only, never a visible window, AppBar, shortcut or taskbar change.
@@ -517,7 +521,10 @@ public sealed class SlowSettingsWindow : NativeWindow, IDisposable {
         if (message.Msg == 0x001A) {
             if (Marshal.PtrToStringUni(message.LParam) != "TraySettings") throw new Exception("Notification payload lifetime lost.");
             File.WriteAllText("slow-entered-" + number, "entered");
-            Thread.Sleep(2500);
+            // Longer than the 300 ms fixture probe interval, so the send is
+            // genuinely slow, yet three serial recipients still finish inside
+            // the shortened fixture recovery window.
+            Thread.Sleep(400);
             File.WriteAllText("slow-returned-" + number, "returned");
         }
         base.WndProc(ref message);
@@ -739,7 +746,7 @@ public static class SupervisorStopFixture {
             Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Immediate restart flashed Explorer.'
             Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Slow restart did not return Explorer after grace.'
             Assert (-not [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Restart grace returned a taskbar with its invisible region still applied.'
-            Assert ($restartClock.ElapsedMilliseconds -ge 2000 -and $restartClock.ElapsedMilliseconds -lt 3500) 'Restart takeover grace was not two seconds plus a pump tick/cleanup allowance.'
+            Assert ($restartClock.ElapsedMilliseconds -ge 1200 -and $restartClock.ElapsedMilliseconds -lt 2700) 'Restart takeover grace was not the fixture grace plus a pump tick/cleanup allowance.'
             $s = Read-CaelestiaSupervisorStatus $statusPath
             Assert ($s.phase -eq 'starting' -and -not $s.taskbarTakenOver -and -not $s.shellReady) 'Slow restart status is not starting/visible.'
             [IO.File]::WriteAllText((Join-Path $case 'ready-2'), 'draw')
@@ -770,9 +777,10 @@ public static class SupervisorStopFixture {
             $heartbeat = $s.utc
             Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).utc -ne $heartbeat } 'Waiting-ready stopped heartbeating.'
             Repair-CaelestiaStaleSupervisors $profile
-            # More than three fixture readiness budgets. No replacement may
-            # appear, even while strict first-frame readiness stays absent.
-            Start-Sleep -Milliseconds 10000
+            # Longer than the 2.5 s fixture readiness budget, so the deadline
+            # has fully elapsed. No replacement may appear, even while strict
+            # first-frame readiness stays absent.
+            Start-Sleep -Milliseconds 3500
             $s = Read-CaelestiaSupervisorStatus $statusPath
             Assert (-not $owned.HasExited -and -not $watchdog.HasExited -and $s.shellPid -eq $owned.Id) 'Readiness deadline or healthy-owner repair stopped/replaced a live child.'
             Assert ($s.phase -eq 'waiting-ready' -and $s.quickCrashes -eq 0 -and -not $s.forcedChildTermination) 'Missing readiness counted as a crash.'
@@ -889,7 +897,9 @@ if (Test-Path -LiteralPath $order) {
             $children.Add($owned)
             if ($mode -like 'liveness-*') {
                 if ($mode -eq 'liveness-legacy') {
-                    Start-Sleep -Milliseconds 4500
+                    # Past the six-miss fixture detection window: a wrongful
+                    # freeze judgment would already have restarted the child.
+                    Start-Sleep -Milliseconds 2500
                     $s = Read-CaelestiaSupervisorStatus $statusPath
                     Assert (-not $s.livenessSupported -and -not $s.shellFrozen -and $s.shellPid -eq $owned.Id) 'Legacy shell was judged frozen.'
                 } else {
@@ -918,10 +928,10 @@ if (Test-Path -LiteralPath $order) {
                         try {
                             if ($mode -eq 'liveness-update') {
                                 $updateLock = [Threading.Mutex]::new($true, ('Local\CaelestiaInstall-' + $token))
-                                Start-Sleep -Milliseconds 4500
+                                Start-Sleep -Milliseconds 2500
                             } elseif ($mode -eq 'liveness-pause') {
                                 [IO.File]::WriteAllText((Join-Path $case 'pause-shell'), 'pause')
-                                Start-Sleep -Milliseconds 4500
+                                Start-Sleep -Milliseconds 2500
                             } elseif ($mode -eq 'liveness-suspend') {
                                 Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'Suspend fixture had no pending misses.'
                                 [IO.File]::WriteAllText((Join-Path $case 'clock-gap'), 'gap')
@@ -938,7 +948,9 @@ if (Test-Path -LiteralPath $order) {
                             $s = Read-CaelestiaSupervisorStatus $statusPath
                             $s.livenessMisses -eq 0 -and $s.phase -eq 'running'
                         } 'Recovered GUI did not clear the miss window.'
-                        Start-Sleep -Milliseconds 3000
+                        # A wrongful restart needs six fresh misses; the wait
+                        # covers that window with margin.
+                        Start-Sleep -Milliseconds 2200
                         Assert (-not $owned.HasExited) 'Recovered GUI restarted after its reply.'
                     } else {
                         Wait-Until { @(Get-ChildItem -LiteralPath $case -Filter 'probe-*').Count -gt 0 } 'Quit fixture had no pending GUI probe.'

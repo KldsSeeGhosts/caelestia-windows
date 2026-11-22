@@ -29,6 +29,49 @@ def run_git(root, *args):
 
 
 class PairTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # The template repositories are identical for every test. Build them
+        # once and copy the tree per test instead of spawning git hundreds of
+        # times. Commits in the template carry no test state.
+        cls._template_temp = tempfile.TemporaryDirectory(
+            prefix="pair-template-", dir=os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT"))
+        template = Path(cls._template_temp.name) / "shell"
+        backend = template / "windows/deps/quickshell"
+        backend.mkdir(parents=True)
+        for root, key in ((backend, "backend"), (template, "shell")):
+            run_git(root, "init", "--quiet")
+            run_git(root, "remote", "add", "origin", "https://github.com/" + p.REPOS[key])
+        (backend / "source.txt").write_text("fixture")
+        cls.commit(backend)
+        cls.backend_sha = run_git(backend, "rev-parse", "HEAD")
+        run_git(backend, "update-ref", "refs/remotes/origin/main", cls.backend_sha)
+        p.write(template / "windows/sources.lock.json", {"quickshell": {
+            "revision": cls.backend_sha, "repository": "https://github.com/" + p.REPOS["backend"]},
+            "m3shapes": {"revision": "d" * 40}, "glazier": {
+                "revision": "e" * 40, "originRevision": "e" * 40,
+                "representation": "in-tree", "sourceRevision": "shell",
+                "path": "windows/capture", "cargoLockPath": "windows/capture/Cargo.lock",
+                "cargoLockSha256": hashlib.sha256(b"synthetic capture lock\n").hexdigest(),
+                "executable": "caelestia-capture.exe"}})
+        (template / "windows/capture").mkdir()
+        (template / "windows/capture/Cargo.lock").write_bytes(b"synthetic capture lock\n")
+        p.write(template / "windows/toolchain.json", {"id": "synthetic"})
+        p.write(template / "windows/ci/pair-contract.json", {})
+        p.write(template / "windows/ci/Invoke-PairIntegration.ps1", {})
+        p.write(template / "windows/toolchain/python-bootstrap.lock.txt", {})
+        p.write(template / "windows/toolchain/python-tools.lock.txt", {})
+        run_git(template, "add", "windows")
+        run_git(template, "update-index", "--add", "--cacheinfo",
+                "160000," + cls.backend_sha + ",windows/deps/quickshell")
+        cls.commit(template)
+        cls.sha = run_git(template, "rev-parse", "HEAD")
+        cls.template = template
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._template_temp.cleanup()
+
     def setUp(self):
         parent = os.environ.get("CAELESTIA_TEST_OUTPUT_ROOT")
         self.temp = tempfile.TemporaryDirectory(prefix="pair-contract-", dir=parent)
@@ -36,34 +79,9 @@ class PairTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.shell = self.root / "shell"
         self.backend = self.shell / "windows/deps/quickshell"
-        self.backend.mkdir(parents=True)
-        for root, key in ((self.backend, "backend"), (self.shell, "shell")):
-            run_git(root, "init", "--quiet")
-            run_git(root, "remote", "add", "origin", "https://github.com/" + p.REPOS[key])
-        (self.backend / "source.txt").write_text("fixture")
-        self.commit(self.backend)
-        self.backend_sha = run_git(self.backend, "rev-parse", "HEAD")
-        run_git(self.backend, "update-ref", "refs/remotes/origin/main", self.backend_sha)
-        self.put("windows/sources.lock.json", {"quickshell": {
-            "revision": self.backend_sha, "repository": "https://github.com/" + p.REPOS["backend"]},
-            "m3shapes": {"revision": "d" * 40}, "glazier": {
-                "revision": "e" * 40, "originRevision": "e" * 40,
-                "representation": "in-tree", "sourceRevision": "shell",
-                "path": "windows/capture", "cargoLockPath": "windows/capture/Cargo.lock",
-                "cargoLockSha256": hashlib.sha256(b"synthetic capture lock\n").hexdigest(),
-                "executable": "caelestia-capture.exe"}})
-        (self.shell / "windows/capture").mkdir()
-        (self.shell / "windows/capture/Cargo.lock").write_bytes(b"synthetic capture lock\n")
-        self.put("windows/toolchain.json", {"id": "synthetic"})
-        self.put("windows/ci/pair-contract.json", {})
-        self.put("windows/ci/Invoke-PairIntegration.ps1", {})
-        self.put("windows/toolchain/python-bootstrap.lock.txt", {})
-        self.put("windows/toolchain/python-tools.lock.txt", {})
-        run_git(self.shell, "add", "windows")
-        run_git(self.shell, "update-index", "--add", "--cacheinfo",
-                "160000," + self.backend_sha + ",windows/deps/quickshell")
-        self.commit(self.shell)
-        self.sha = run_git(self.shell, "rev-parse", "HEAD")
+        shutil.copytree(self.template, self.shell)
+        self.backend_sha = type(self).backend_sha
+        self.sha = type(self).sha
         self.args = argparse.Namespace(mode="pinned", backend_sha="", shell_sha=self.sha,
             shell=str(self.shell), candidate_root=str(self.root / "candidate"),
             results=str(self.root / "results"), github_output="")
@@ -72,7 +90,8 @@ class PairTests(unittest.TestCase):
     def put(self, name, value):
         p.write(self.shell / name, value)
 
-    def commit(self, root):
+    @staticmethod
+    def commit(root):
         run_git(root, "add", "--all")
         run_git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                 "commit", "--quiet", "-m", "synthetic")
@@ -386,6 +405,51 @@ class PairTests(unittest.TestCase):
                 "-Results", str(results), "-JUnit", str(results / "integration.xml"),
                 "-Python", sys.executable, *extra]
 
+    def integration_arguments(self, results, *extra, build=None):
+        return self.integration_command(results, *extra, build=build)[5:]
+
+    def run_refusal_batch(self, script, cases):
+        # A single pwsh evaluates cases that must all refuse before launch.
+        # Every case throws from parameter validation, so no in-process `exit`
+        # can terminate the driver; a regression that slips past the guards
+        # still fails because its expected row is missing or mismatched.
+        rows = [{"id": index, "arguments": case["arguments"], "env": case.get("env", {})}
+                for index, case in enumerate(cases)]
+        (self.root / "refusal-cases.json").write_text(json.dumps(rows))
+        driver = self.root / "refusal-driver.ps1"
+        driver.write_text(
+            "$results = foreach ($case in @(Get-Content -LiteralPath $env:REFUSAL_CASES -Raw | ConvertFrom-Json)) {\n"
+            " foreach ($prop in $case.env.PSObject.Properties) {\n"
+            "  [Environment]::SetEnvironmentVariable($prop.Name, [string]$prop.Value, 'Process') }\n"
+            " $code = 0\n"
+            " $text = ''\n"
+            # An array splat binds positionally; rebuild the flat -Name value
+            # list into a hashtable so parameters bind exactly as the hosted
+            # per-process launches bind them.
+            " $caseArgs = [ordered]@{}\n"
+            " for ($i = 0; $i -lt $case.arguments.Count; $i++) {\n"
+            "  $name = [string]$case.arguments[$i]\n"
+            "  if (-not $name.StartsWith('-')) { continue }\n"
+            "  if ($i + 1 -lt $case.arguments.Count -and\n"
+            "      -not ([string]$case.arguments[$i + 1]).StartsWith('-')) {\n"
+            "   $caseArgs[$name.Substring(1)] = [string]$case.arguments[++$i]\n"
+            "  } else { $caseArgs[$name.Substring(1)] = $true }\n"
+            " }\n"
+            " try { $text = (& $env:REFUSAL_SCRIPT @caseArgs 2>&1 | Out-String)\n"
+            "   if ($LASTEXITCODE) { $code = [int]$LASTEXITCODE }\n"
+            " } catch { $code = 1; $text = $_ | Out-String }\n"
+            " [pscustomobject]@{ id = [int]$case.id; exitCode = $code; text = $text }\n"
+            "}\n"
+            "$results | ConvertTo-Json -Depth 3 -Compress\n")
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(driver)],
+                                env={**os.environ, "REFUSAL_SCRIPT": str(script),
+                                     "REFUSAL_CASES": str(self.root / "refusal-cases.json")},
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, result.returncode, result.stderr)
+        outcomes = {row["id"]: row for row in json.loads(result.stdout)}
+        self.assertEqual(len(cases), len(outcomes))
+        return outcomes
+
     def synthetic_scripts(self, validation):
         self.put("windows/toolchain.json", {
             "qtDirectory": "fixture-qt", "llvmDirectory": "fixture-llvm",
@@ -453,9 +517,10 @@ class PairTests(unittest.TestCase):
             "New-Item -ItemType File -Force -Path $env:PREFLIGHT_LAUNCH_MARKER | Out-Null\n")
         # Both directions, equality, normalized dot segments, trailing
         # separators and case differences must refuse before creating output.
-        for index, kind in enumerate((
-                "build-equal", "build-child", "build-parent", "build-case", "build-dots",
-                "results-equal", "results-case", "tools-child", "source-parent", "source-child")):
+        kinds = ("build-equal", "build-child", "build-parent", "build-case", "build-dots",
+                 "results-equal", "results-case", "tools-child", "source-parent", "source-child")
+        case_rows = []
+        for index, kind in enumerate(kinds):
             base = self.root / f"case-{index}"
             base.mkdir()
             results, build, marker = base / "results", base / "build", base / "launched"
@@ -471,16 +536,21 @@ class PairTests(unittest.TestCase):
                 "source-parent": (self.root, build, "outside both source roots"),
                 "source-child": (self.shell / "early", build, "outside both source roots"),
             }[kind]
-            with self.subTest(case=kind):
-                result = subprocess.run(self.integration_command(
+            case_rows.append({"kind": kind, "marker": marker, "results": results,
+                "build": build, "message": message,
+                "arguments": self.integration_arguments(
                     results, "-ServicesPreflightRoot", str(preflight), build=build),
-                    capture_output=True, timeout=30,
-                    env=dict(os.environ, PREFLIGHT_LAUNCH_MARKER=str(marker)))
-                self.assertNotEqual(0, result.returncode)
-                self.assertIn(message, (result.stdout + result.stderr).decode(errors="replace"))
-                self.assertFalse(marker.exists())
-                self.assertFalse(results.exists())
-                self.assertFalse(build.exists())
+                "env": {"PREFLIGHT_LAUNCH_MARKER": str(marker)}})
+        outcomes = self.run_refusal_batch(
+            ROOT / "windows/ci/Invoke-PairIntegration.ps1", case_rows)
+        for index, row in enumerate(case_rows):
+            with self.subTest(case=row["kind"]):
+                outcome = outcomes[index]
+                self.assertNotEqual(0, outcome["exitCode"], outcome["text"])
+                self.assertIn(row["message"], outcome["text"])
+                self.assertFalse(row["marker"].exists())
+                self.assertFalse(row["results"].exists())
+                self.assertFalse(row["build"].exists())
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell boundary")
     def test_preflight_refuses_junction_ancestor(self):
@@ -832,8 +902,8 @@ class PairTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/windows-build.yml").read_text()
         validation = workflow.split("\n  validation:\n")[1].split("\n  candidate:\n")[0]
         block = re.search(r"        run: \|\n((?:          [^\n]*\n|\n)+)", validation)[1]
-        harness = self.root / "validation.ps1"
-        harness.write_text("$ErrorActionPreference = 'Stop'\n" + block)
+        gate_names = ("SCOPE", "CHECKS", "PACKAGING", "BUILD", "FIXTURES", "PAIR",
+                      "REUSE", "REUSE_MODE", "NATIVE_REQUIRED")
         base = {**os.environ, "SCOPE": "success", "CHECKS": "success", "PACKAGING": "success",
                 "BUILD": "success", "FIXTURES": "success", "PAIR": "success",
                 "REUSE": "skipped", "REUSE_MODE": "", "NATIVE_REQUIRED": "full"}
@@ -853,12 +923,41 @@ class PairTests(unittest.TestCase):
                   for outcome in ("failure", "cancelled", "skipped")]
         cases += [({**skipped, gate: outcome}, False) for gate in ("FIXTURES", "BUILD", "PAIR")
                   for outcome in ("success", "failure", "cancelled")]
-        for changes, passed in cases:
+        # One pwsh evaluates every gate combination. Spawning per case cost
+        # most of a second each; the block itself is pure environment logic.
+        block_file = self.root / "validation-block.ps1"
+        block_file.write_text(block)
+        case_rows = []
+        for index, (changes, passed) in enumerate(cases):
+            environment = {**base, **changes}
+            case_rows.append({"id": index, "expected": passed,
+                              "env": {name: environment.get(name, "") for name in gate_names},
+                              "changes": changes})
+        (self.root / "validation-cases.json").write_text(json.dumps(case_rows))
+        driver = self.root / "validation-driver.ps1"
+        driver.write_text(
+            "$ErrorActionPreference = 'Stop'\n"
+            "$block = [scriptblock]::Create([IO.File]::ReadAllText($env:VALIDATION_BLOCK))\n"
+            "$gateNames = @('SCOPE', 'CHECKS', 'PACKAGING', 'BUILD', 'FIXTURES', 'PAIR',\n"
+            "  'REUSE', 'REUSE_MODE', 'NATIVE_REQUIRED')\n"
+            "$results = foreach ($case in @(Get-Content -LiteralPath $env:VALIDATION_CASES -Raw | ConvertFrom-Json)) {\n"
+            " foreach ($name in $gateNames) {\n"
+            "  [Environment]::SetEnvironmentVariable($name, [string]$case.env.$name, 'Process') }\n"
+            " $code = 0\n"
+            " try { & $block | Out-Null } catch { $code = 1 }\n"
+            " [pscustomobject]@{ id = [int]$case.id; exitCode = $code }\n"
+            "}\n"
+            "$results | ConvertTo-Json -Compress\n")
+        result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(driver)],
+                                env={**os.environ, "VALIDATION_BLOCK": str(block_file),
+                                     "VALIDATION_CASES": str(self.root / "validation-cases.json")},
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, result.returncode, result.stderr)
+        outcomes = {row["id"]: row["exitCode"] for row in json.loads(result.stdout)}
+        self.assertEqual(len(cases), len(outcomes))
+        for index, (changes, passed) in enumerate(cases):
             with self.subTest(changes=changes):
-                result = subprocess.run(["pwsh", "-NoProfile", "-NonInteractive",
-                                         "-File", str(harness)], env={**base, **changes},
-                                        capture_output=True)
-                self.assertEqual(passed, result.returncode == 0, result.stderr.decode(errors="replace"))
+                self.assertEqual(passed, outcomes[index] == 0)
 
     def test_reuse_discovers_newest_validated_trusted_ancestor_and_live_artifact(self):
         newest, older = "a" * 40, "c" * 40
