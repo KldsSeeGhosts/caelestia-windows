@@ -71,8 +71,16 @@ try {
     $legacy = & $powerShell -NoProfile -NonInteractive -File $manager -Prefix $prefix -Command SetChannel `
         -Channel development -AcceptDevelopment | ConvertFrom-Json
     Assert ($LASTEXITCODE -eq 0 -and $legacy.channel -ceq 'development') 'A retained client cannot select the existing feed.'
-    $null = & $powerShell -NoProfile -NonInteractive -File $manager -Prefix $prefix -Command CheckUpdate -Channel preview 2>&1
-    Assert ($LASTEXITCODE -ne 0) 'A retired feed was accepted.'
+    # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+    # Capture the expected refusal without letting the outer Stop preference
+    # terminate this fixture before we can check it.
+    $rejection = & {
+        $ErrorActionPreference = 'Continue'
+        $PSNativeCommandUseErrorActionPreference = $false
+        & $powerShell -NoProfile -NonInteractive -File $manager -Prefix $prefix -Command CheckUpdate -Channel preview 2>&1
+    }
+    Assert ($LASTEXITCODE -ne 0 -and ($rejection | Out-String) -match 'The requested update feed is not supported') `
+        'A retired feed was not explicitly refused.'
     Write-Output "PASS updates Status contract: $count assertions, including retained channel preferences."
 } finally {
     $resolved = Resolve-CaelestiaDirectory $root

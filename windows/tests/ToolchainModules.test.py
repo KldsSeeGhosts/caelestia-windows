@@ -161,9 +161,9 @@ if ($env:PSModulePath -cne $originalModulePath) {{ throw 'Entry point changed PS
     checked = run("child-updates-status-contract", no_autoload + f"""
 & {quote(helper.with_name('Test-UpdatesStatus.ps1'))}
 """, True)
-    if checked.returncode != 0 or "PASS updates Status contract: 27 assertions" not in checked.stdout:
+    if checked.returncode != 0 or "PASS updates Status contract: 41 assertions" not in checked.stdout:
         raise AssertionError(checked.stdout)
-    print("PASS inherited-path installed-status contract: 27 assertions")
+    print("PASS inherited-path installed-status contract: 41 assertions")
 
     for inherited in (False, True):
         name = "inherited" if inherited else "normal"
