@@ -524,10 +524,11 @@ namespace Caelestia.Takeover {
             return (T)ConvertTo(value, typeof(T));
         }
         public static object DeserializeObject(string json) { return Parse(json); }
-        static object Parse(string json) {
+        internal static object DeserializeControlFrame(string json) { return Parse(json, true); }
+        static object Parse(string json, bool strict = false) {
             if (json == null) throw new InvalidOperationException("JSON input is null.");
             if (json.Length > MaxJsonLength) throw new InvalidOperationException("JSON input exceeds the 2 MiB limit.");
-            var reader = new Reader(json);
+            var reader = new Reader(json, strict);
             reader.SkipWhitespace();
             var value = reader.ReadValue();
             reader.SkipWhitespace();
@@ -536,9 +537,10 @@ namespace Caelestia.Takeover {
         }
         sealed class Reader {
             readonly string text;
+            readonly bool strict;
             int position;
             int depth;
-            public Reader(string text) { this.text = text ?? ""; }
+            public Reader(string text, bool strict) { this.text = text ?? ""; this.strict = strict; }
             public bool End { get { return position >= text.Length; } }
             public void SkipWhitespace() {
                 while (position < text.Length && (text[position] == ' ' || text[position] == '\t'
@@ -557,13 +559,14 @@ namespace Caelestia.Takeover {
             }
             Dictionary<string, object> ReadObject() {
                 if (++depth > MaxDepth) throw new InvalidOperationException("JSON recursion limit exceeded.");
-                var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                var result = new Dictionary<string, object>(strict ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
                 position++; // consume {
                 SkipWhitespace();
                 if (position < text.Length && text[position] == '}') { position++; depth--; return result; }
                 while (true) {
                     SkipWhitespace();
                     string key = ReadString();
+                    if (strict && result.ContainsKey(key)) throw new FormatException("Duplicate JSON key.");
                     SkipWhitespace();
                     Expect(':');
                     SkipWhitespace();
@@ -597,6 +600,7 @@ namespace Caelestia.Takeover {
                 while (position < text.Length) {
                     char c = text[position++];
                     if (c == '"') return builder.ToString();
+                    if (strict && c < ' ') throw new FormatException("Unescaped JSON control character.");
                     if (c != '\\') { builder.Append(c); continue; }
                     if (position >= text.Length) break;
                     char esc = text[position++];
@@ -663,18 +667,25 @@ namespace Caelestia.Takeover {
             object ReadNumber() {
                 int start = position;
                 if (position < text.Length && text[position] == '-') position++;
+                int whole = position;
                 while (position < text.Length && text[position] >= '0' && text[position] <= '9') position++;
+                if (strict && (position == whole || (position - whole > 1 && text[whole] == '0')))
+                    throw new FormatException("Invalid JSON integer.");
                 bool isDouble = false;
                 if (position < text.Length && text[position] == '.') {
                     isDouble = true;
                     position++;
+                    int fraction = position;
                     while (position < text.Length && text[position] >= '0' && text[position] <= '9') position++;
+                    if (strict && position == fraction) throw new FormatException("Missing JSON fraction.");
                 }
                 if (position < text.Length && (text[position] == 'e' || text[position] == 'E')) {
                     isDouble = true;
                     position++;
                     if (position < text.Length && (text[position] == '+' || text[position] == '-')) position++;
+                    int exponent = position;
                     while (position < text.Length && text[position] >= '0' && text[position] <= '9') position++;
+                    if (strict && position == exponent) throw new FormatException("Missing JSON exponent.");
                 }
                 var token = text.Substring(start, position - start);
                 if (isDouble) return double.Parse(token, CultureInfo.InvariantCulture);
@@ -1167,7 +1178,9 @@ namespace Caelestia.Takeover {
             return IntPtr.Zero;
         }
         public static uint ExplorerTaskbarOwner() {
-            var window = ExplorerTaskbar();
+            return WindowOwner(ExplorerTaskbar());
+        }
+        internal static uint WindowOwner(IntPtr window) {
             if (window == IntPtr.Zero) return 0;
             uint owner;
             GetWindowThreadProcessId(window, out owner);
@@ -1287,32 +1300,86 @@ namespace Caelestia.Takeover {
                 Record(action);
             }
         }
-        // The backend records AppBar HWND -> PID here. Never remove a live
-        // registration or a registration belonging to a different live shell.
+        // The pipe leases cover registrations that never reached the journal.
+        // Both sources are owned by the supervisor STA during cleanup.
+        static readonly Dictionary<int, HashSet<long>> appBarLeases = new Dictionary<int, HashSet<long>>();
         static readonly HashSet<int> deferredAppBarOwners = new HashSet<int>();
+        internal static void ObserveAppBarLease(int owner, long handle, bool removed) {
+            HashSet<long> leases;
+            if (!appBarLeases.TryGetValue(owner, out leases)) {
+                if (removed) return;
+                appBarLeases[owner] = leases = new HashSet<long>();
+            }
+            if (removed) { leases.Remove(handle); return; }
+            uint windowOwner = WindowOwner(new IntPtr(handle));
+            if ((windowOwner == 0 || windowOwner == (uint)owner) && leases.Count < 1024) leases.Add(handle);
+        }
         public static void RetryStaleAppBars() {
             foreach (var owner in new List<int>(deferredAppBarOwners)) RemoveStaleAppBars(owner);
         }
         public static int RemoveStaleAppBars(int owner) {
+            return CleanupDeadAppBars(owner);
+        }
+        static RegistryKey OpenAppBarJournal() {
+            try { return Registry.CurrentUser.OpenSubKey(@"Software\Quickshell\AppBars", true); }
+            catch (UnauthorizedAccessException) { return null; }
+            catch (System.Security.SecurityException) { return null; }
+            catch (IOException) { return null; }
+        }
+        internal static int CleanupDeadAppBars(int owner) {
             deferredAppBarOwners.Remove(owner);
             int removed = 0;
-            using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Quickshell\AppBars", true)) {
-                if (key == null) return 0;
-                foreach (var name in key.GetValueNames()) {
-                    long handle;
-                    if (!Int64.TryParse(name, System.Globalization.NumberStyles.HexNumber, null, out handle)) continue;
-                    if (owner != 0 && Convert.ToInt64(key.GetValue(name)) != owner) continue;
-                    var window = new IntPtr(handle);
+            using (var key = OpenAppBarJournal()) {
+                var candidates = new Dictionary<long, string>();
+                if (key != null) {
+                    try {
+                        foreach (var name in key.GetValueNames()) {
+                            long handle;
+                            if (!Int64.TryParse(name, NumberStyles.HexNumber, null, out handle) || handle == 0) continue;
+                            var journalOwner = key.GetValue(name);
+                            if (owner != 0 && (!(journalOwner is int) || (int)journalOwner != owner)) continue;
+                            candidates[handle] = name;
+                        }
+                    } catch (UnauthorizedAccessException) {}
+                      catch (System.Security.SecurityException) {}
+                      catch (IOException) {}
+                }
+                foreach (var entry in appBarLeases) {
+                    if (owner != 0 && owner != entry.Key) continue;
+                    foreach (var handle in entry.Value)
+                        if (!candidates.ContainsKey(handle)) candidates.Add(handle, null);
+                }
+                foreach (var candidate in candidates) {
+                    if (IntPtr.Size == 4 && (candidate.Key < Int32.MinValue || candidate.Key > UInt32.MaxValue)) continue;
+                    var window = new IntPtr(IntPtr.Size == 4 ? unchecked((int)candidate.Key) : candidate.Key);
                     if (IsWindow(window)) continue;
-                    var data = AppBar(window);
                     ulong ignored;
-                    if (!TryAppBar(1, data, out ignored)) {
+                    if (!TryAppBar(1, AppBar(window), out ignored)) {
                         deferredAppBarOwners.Add(owner);
-                        continue; // retry from the retained registry journal
+                        continue;
                     }
-                    key.DeleteValue(name, false);
+                    if (candidate.Value != null) {
+                        try { key.DeleteValue(candidate.Value, false); }
+                        catch (UnauthorizedAccessException) {}
+                        catch (System.Security.SecurityException) {}
+                        catch (IOException) {}
+                    }
+                    foreach (var entry in appBarLeases) {
+                        if (owner == 0 || entry.Key == owner) entry.Value.Remove(candidate.Key);
+                    }
                     removed++;
                 }
+            }
+            foreach (var pid in new List<int>(appBarLeases.Keys)) {
+                if (owner != 0 && owner != pid) continue;
+                // A reused HWND belongs to its new owner. Leave any live
+                // same-owner handle alone and retry only retained leases.
+                appBarLeases[pid].RemoveWhere(handle => {
+                    uint liveOwner = WindowOwner(new IntPtr(handle));
+                    return liveOwner != 0 && liveOwner != (uint)pid;
+                });
+                if (appBarLeases[pid].Count == 0) appBarLeases.Remove(pid);
+                else deferredAppBarOwners.Add(owner);
             }
             return removed;
         }
@@ -1491,6 +1558,7 @@ namespace Caelestia.Takeover {
         // supervisor owns the restart, so a crash keeps its minidump and desktop cleanup and skips
         // only the shell's own relaunch.
         public static void Apply(System.Collections.Specialized.StringDictionary variables, bool hide) {
+            SupervisorControl.RemoveInherited(variables);
             variables.Remove(DisableCrashHandler);
             variables[DisableCrashRelaunch] = "1";
             variables.Remove(TaskbarShortcutFilter);
@@ -1512,12 +1580,15 @@ namespace Caelestia.Takeover {
         public bool Paused { get { return Interlocked.CompareExchange(ref paused, 0, 0) != 0; } }
         public int PauseGeneration { get { return Interlocked.CompareExchange(ref pauseGeneration, 0, 0); } }
         public void Observe(string line) {
-            if (line != null && record.IsMatch(line)) Interlocked.Exchange(ref ready, 1);
-            if (line != null && pauseRecord.IsMatch(line)) {
-                // Publish the reset before making a resume eligible again.
-                Interlocked.Increment(ref pauseGeneration);
-                Interlocked.Exchange(ref paused, line.EndsWith("_PAUSED", StringComparison.Ordinal) ? 1 : 0);
-            }
+            if (line != null && record.IsMatch(line)) ObserveLifecycle("ready");
+            if (line != null && pauseRecord.IsMatch(line))
+                ObserveLifecycle(line.EndsWith("_PAUSED", StringComparison.Ordinal) ? "paused" : "active");
+        }
+        internal void ObserveLifecycle(string state) {
+            if (state == "ready") { Interlocked.Exchange(ref ready, 1); return; }
+            // Publish the reset before making a resume eligible again.
+            Interlocked.Increment(ref pauseGeneration);
+            Interlocked.Exchange(ref paused, state == "paused" ? 1 : 0);
         }
         static readonly System.Text.RegularExpressions.Regex pauseRecord = new System.Text.RegularExpressions.Regex(
             @"^(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})?\s*INFO qml: CAELESTIA_SHELL_(?:PAUSED|ACTIVE)$");
@@ -1526,8 +1597,8 @@ namespace Caelestia.Takeover {
     // Milliseconds come from QPC, never wall time. Only an exact, current nonce
     // can arm/reset detection. Unsupported older shells remain unarmed forever.
     public sealed class ShellLiveness {
-        // A healthy shell is probed once a minute, because each probe starts
-        // an IPC client process. Probes tighten only after a miss.
+        // Probe a healthy shell once a minute. Legacy probes start an IPC
+        // client process, so only probe more often after a miss.
         public const int ProbeIntervalMs = 60000;
         public const int RetryIntervalMs = 15000;
         public const int ProbeTimeoutMs = 5000;
@@ -1654,6 +1725,322 @@ namespace Caelestia.Takeover {
         }
     }
 
+    sealed class SupervisorControl : IDisposable {
+        const string PipeVariable = "CAELESTIA_SUPERVISOR_PIPE";
+        const string TokenVariable = "CAELESTIA_SUPERVISOR_TOKEN";
+        const int MaxFrame = 16 * 1024, MaxQueue = 64, HelloTimeoutMs = 5000;
+        const int IoPending = 997, PipeConnected = 535;
+        const uint PipeAccessDuplex = 3, FileFlagOverlapped = 0x40000000, FirstPipeInstance = 0x00080000;
+        const uint PipeTypeByte = 0, PipeReadModeByte = 0, PipeRejectRemoteClients = 8;
+        static readonly Encoding utf8 = Encoding.GetEncoding(65001, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        static readonly IntPtr invalid = new IntPtr(-1);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct SecurityAttributes {
+            public int Size;
+            public IntPtr Descriptor;
+            public int Inherit;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        struct Overlapped {
+            public IntPtr Internal, InternalHigh;
+            public uint Offset, OffsetHigh;
+            public IntPtr Event;
+        }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        static extern IntPtr CreateNamedPipeW(string name, uint openMode, uint pipeMode, uint instances,
+            uint outputBuffer, uint inputBuffer, uint defaultTimeout, ref SecurityAttributes security);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool ConnectNamedPipe(IntPtr pipe, IntPtr overlapped);
+        [DllImport("kernel32.dll")] static extern bool DisconnectNamedPipe(IntPtr pipe);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeClientProcessId(IntPtr pipe, out uint pid);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool ReadFile(IntPtr pipe, IntPtr bytes, int size, out int read, IntPtr overlapped);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteFile(IntPtr pipe, IntPtr bytes, int size, out int written, IntPtr overlapped);
+        [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetOverlappedResult(IntPtr pipe, IntPtr overlapped, out int transferred, bool wait);
+        [DllImport("kernel32.dll")] static extern bool CancelIoEx(IntPtr pipe, IntPtr overlapped);
+        [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll")] static extern IntPtr LocalFree(IntPtr memory);
+        [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+        [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info, int size, out int required);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        static extern bool ConvertSidToStringSidW(IntPtr sid, out IntPtr text);
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, uint revision, out IntPtr descriptor, IntPtr size);
+        [DllImport("bcrypt.dll")] static extern int BCryptGenRandom(IntPtr algorithm, byte[] buffer, int size, uint flags);
+
+        static string CurrentUserSid() {
+            IntPtr token;
+            if (!OpenProcessToken(GetCurrentProcess(), 8, out token)) return null; // TOKEN_QUERY
+            try {
+                int size;
+                GetTokenInformation(token, 1, IntPtr.Zero, 0, out size); // TokenUser
+                if (size <= 0) return null;
+                var buffer = Marshal.AllocHGlobal(size);
+                try {
+                    if (!GetTokenInformation(token, 1, buffer, size, out size)) return null;
+                    IntPtr text;
+                    if (!ConvertSidToStringSidW(Marshal.ReadIntPtr(buffer), out text)) return null;
+                    try { return Marshal.PtrToStringUni(text); }
+                    finally { LocalFree(text); }
+                } finally { Marshal.FreeHGlobal(buffer); }
+            } finally { CloseHandle(token); }
+        }
+        static string RandomHex(int count) {
+            var bytes = new byte[count];
+            if (BCryptGenRandom(IntPtr.Zero, bytes, bytes.Length, 2) != 0) return null;
+            return BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+        }
+        internal static void RemoveInherited(System.Collections.Specialized.StringDictionary environment) {
+            environment.Remove(PipeVariable);
+            environment.Remove(TokenVariable);
+        }
+        internal static SupervisorControl Create(int watchdogPid, System.Collections.Specialized.StringDictionary environment) {
+            var sid = CurrentUserSid();
+            var suffix = RandomHex(8);
+            var secret = RandomHex(16);
+            if (sid == null || suffix == null || secret == null) return null;
+            string name = @"\\.\pipe\CaelestiaSupervisor-" + watchdogPid.ToString(CultureInfo.InvariantCulture) + "-" + suffix;
+            IntPtr descriptor;
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptorW("D:(A;;GA;;;SY)(A;;GA;;;" + sid + ")",
+                1, out descriptor, IntPtr.Zero)) return null;
+            IntPtr pipe;
+            try {
+                var security = new SecurityAttributes { Size = Marshal.SizeOf(typeof(SecurityAttributes)), Descriptor = descriptor };
+                pipe = CreateNamedPipeW(name, PipeAccessDuplex | FileFlagOverlapped | FirstPipeInstance,
+                    PipeTypeByte | PipeReadModeByte | PipeRejectRemoteClients, 1, MaxFrame, MaxFrame, 0, ref security);
+            } finally { LocalFree(descriptor); }
+            if (pipe == invalid) return null;
+            environment[PipeVariable] = name;
+            environment[TokenVariable] = secret;
+            return new SupervisorControl(pipe, secret);
+        }
+
+        internal sealed class Message {
+            internal string Type, Value;
+            internal long Hwnd;
+            internal List<object> Capabilities;
+        }
+        readonly IntPtr pipe;
+        readonly string secret;
+        readonly object gate = new object();
+        readonly ManualResetEvent stop = new ManualResetEvent(false);
+        readonly AutoResetEvent wake = new AutoResetEvent(false);
+        readonly Queue<Message> inbound = new Queue<Message>();
+        readonly Queue<byte[]> outbound = new Queue<byte[]>();
+        volatile bool online;
+        Thread worker;
+
+        SupervisorControl(IntPtr pipe, string secret) { this.pipe = pipe; this.secret = secret; }
+        internal bool Online { get { return online; } }
+        internal void Start(int expectedPid) {
+            worker = new Thread(delegate() { Run(expectedPid); }) { IsBackground = true, Name = "Supervisor control pipe" };
+            worker.Start();
+        }
+        internal bool Send(object message) {
+            byte[] frame = utf8.GetBytes(TakeoverJson.Serialize(message) + "\n");
+            lock (gate) {
+                if (!online || stop.WaitOne(0)) return false;
+                if (frame.Length > MaxFrame + 1 || outbound.Count >= MaxQueue) { stop.Set(); return false; }
+                outbound.Enqueue(frame);
+                wake.Set();
+                return true;
+            }
+        }
+        internal Message[] Drain() {
+            lock (gate) {
+                var messages = inbound.ToArray();
+                inbound.Clear();
+                return messages;
+            }
+        }
+        bool Receive(Message message) {
+            lock (gate) {
+                if (inbound.Count >= MaxQueue) return false;
+                inbound.Enqueue(message);
+                if (message.Type == "hello") online = true;
+                return true;
+            }
+        }
+        static object Field(Dictionary<string, object> fields, string key) {
+            object value;
+            return fields.TryGetValue(key, out value) ? value : null;
+        }
+        bool TokenMatches(string supplied) {
+            if (supplied == null || supplied.Length != secret.Length) return false;
+            // For equal-length tokens, inspect every character regardless of
+            // where a mismatch occurs. Compare the exact text, not its case.
+            int difference = 0;
+            for (int i = 0; i < secret.Length; ++i) difference |= supplied[i] ^ secret[i];
+            return difference == 0;
+        }
+        Message ParseFrame(byte[] frame, int size, int expectedPid, bool authenticated) {
+            Dictionary<string, object> fields;
+            try {
+                fields = TakeoverJson.DeserializeControlFrame(utf8.GetString(frame, 0, size)) as Dictionary<string, object>;
+            } catch (FormatException) { return null; }
+              catch (OverflowException) { return null; }
+              catch (ArgumentException) { return null; }
+              catch (InvalidOperationException) { return null; }
+            if (fields == null || !Object.Equals(Field(fields, "v"), 1)) return null;
+            var type = Field(fields, "type") as string;
+            if (!authenticated) {
+                if (type != "hello" || !TokenMatches(Field(fields, "token") as string)
+                    || !Object.Equals(Field(fields, "pid"), expectedPid)) return null;
+                var caps = Field(fields, "capabilities") as List<object>;
+                if (caps == null || caps.Exists(value => !(value is string))) return null;
+                return new Message { Type = type, Capabilities = caps };
+            }
+            if (type == "pong") {
+                var nonce = Field(fields, "nonce") as string;
+                return String.IsNullOrEmpty(nonce) ? null : new Message { Type = type, Value = nonce };
+            }
+            if (type == "lifecycle") {
+                var state = Field(fields, "state") as string;
+                if (state == "ready" || state == "paused" || state == "active")
+                    return new Message { Type = type, Value = state };
+            }
+            if (type == "appbar") {
+                var op = Field(fields, "op") as string;
+                var hwnd = Field(fields, "hwnd");
+                var edge = Field(fields, "edge");
+                var rect = Field(fields, "rect") as List<object>;
+                if ((op == "register" || op == "update" || op == "remove")
+                    && (hwnd is int || hwnd is long) && edge is int && (int)edge >= 0 && (int)edge <= 3
+                    && rect != null && rect.Count == 4 && !rect.Exists(value => !(value is int))) {
+                    long handle = Convert.ToInt64(hwnd);
+                    if (handle != 0 && (IntPtr.Size == 8 || (handle >= Int32.MinValue && handle <= Int32.MaxValue)))
+                        return new Message { Type = type, Value = op, Hwnd = handle };
+                }
+            }
+            return null;
+        }
+
+        sealed class Operation : IDisposable {
+            internal readonly ManualResetEvent Event = new ManualResetEvent(false);
+            internal readonly byte[] Buffer;
+            internal readonly IntPtr Native;
+            readonly GCHandle pinned;
+            internal bool Pending;
+            internal Operation(int size) {
+                Buffer = new byte[size];
+                pinned = GCHandle.Alloc(Buffer, GCHandleType.Pinned);
+                Native = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Overlapped)));
+            }
+            internal void Prepare() {
+                Event.Reset();
+                Marshal.StructureToPtr(new Overlapped { Event = Event.SafeWaitHandle.DangerousGetHandle() }, Native, false);
+            }
+            internal IntPtr At(int offset) { return IntPtr.Add(pinned.AddrOfPinnedObject(), offset); }
+            internal bool Complete(IntPtr pipe, out int count, bool wait) {
+                Pending = false;
+                return GetOverlappedResult(pipe, Native, out count, wait);
+            }
+            public void Dispose() { Marshal.FreeHGlobal(Native); pinned.Free(); Event.Dispose(); }
+        }
+
+        void Run(int expectedPid) {
+            try {
+                using (var read = new Operation(4096))
+                using (var write = new Operation(MaxFrame + 1)) {
+                    try { Exchange(expectedPid, read, write); }
+                    finally {
+                        CancelIoEx(pipe, IntPtr.Zero);
+                        int ignored;
+                        if (read.Pending) read.Complete(pipe, out ignored, true);
+                        if (write.Pending) write.Complete(pipe, out ignored, true);
+                    }
+                }
+            } finally {
+                lock (gate) online = false;
+                DisconnectNamedPipe(pipe);
+                CloseHandle(pipe);
+            }
+        }
+        void Exchange(int expectedPid, Operation read, Operation write) {
+            var clock = Stopwatch.StartNew();
+            read.Prepare();
+            if (!ConnectNamedPipe(pipe, read.Native)) {
+                int error = Marshal.GetLastWin32Error();
+                if (error == IoPending) {
+                    read.Pending = true;
+                    if (WaitHandle.WaitAny(new WaitHandle[] { stop, read.Event }, HelloTimeoutMs) != 1) return;
+                    int ignored;
+                    if (!read.Complete(pipe, out ignored, false)) return;
+                } else if (error != PipeConnected) return;
+            }
+            uint clientPid;
+            if (!GetNamedPipeClientProcessId(pipe, out clientPid) || clientPid != (uint)expectedPid) return;
+
+            byte[] frame = new byte[MaxFrame];
+            int length = 0, writeOffset = 0, writeLength = 0;
+            bool authenticated = false;
+            Func<int, bool> receive = delegate(int count) {
+                if (count == 0) return false;
+                for (int i = 0; i < count; ++i) {
+                    byte b = read.Buffer[i];
+                    if (b == 10) {
+                        var message = ParseFrame(frame, length, expectedPid, authenticated);
+                        if (message == null || !Receive(message)) return false;
+                        authenticated = true;
+                        length = 0;
+                    } else if (length == MaxFrame) return false;
+                    else frame[length++] = b;
+                }
+                return true;
+            };
+            var events = new WaitHandle[] { stop, read.Event, wake };
+            while (!stop.WaitOne(0)) {
+                int remaining = HelloTimeoutMs - (int)Math.Min(clock.ElapsedMilliseconds, HelloTimeoutMs);
+                if (!authenticated && remaining <= 0) return;
+                bool immediate = false;
+                int count;
+                if (!read.Pending) {
+                    read.Prepare();
+                    if (ReadFile(pipe, read.At(0), read.Buffer.Length, out count, read.Native)) {
+                        if (!receive(count)) return;
+                        immediate = true;
+                    } else if (Marshal.GetLastWin32Error() == IoPending) read.Pending = true;
+                    else return;
+                }
+                if (!write.Pending && writeOffset == writeLength) {
+                    byte[] next = null;
+                    lock (gate) { if (outbound.Count != 0) next = outbound.Dequeue(); }
+                    if (next != null) {
+                        next.CopyTo(write.Buffer, 0);
+                        writeOffset = 0;
+                        writeLength = next.Length;
+                    }
+                }
+                if (!write.Pending && writeOffset < writeLength) {
+                    write.Prepare();
+                    if (WriteFile(pipe, write.At(writeOffset), writeLength - writeOffset, out count, write.Native)) {
+                        if (count == 0) return;
+                        writeOffset += count;
+                        immediate = true;
+                    } else if (Marshal.GetLastWin32Error() == IoPending) write.Pending = true;
+                    else return;
+                }
+                if (!read.Pending) read.Event.Reset();
+                events[2] = write.Pending ? (WaitHandle)write.Event : wake;
+                int signaled = WaitHandle.WaitAny(events, immediate ? 0 : authenticated ? Timeout.Infinite : remaining);
+                if (signaled == 0) return;
+                if (signaled == 1 && (!read.Complete(pipe, out count, false) || !receive(count))) return;
+                if (signaled == 2 && write.Pending) {
+                    if (!write.Complete(pipe, out count, false) || count == 0) return;
+                    writeOffset += count;
+                }
+            }
+        }
+        public void Dispose() {
+            stop.Set();
+            if (worker != null) worker.Join();
+            else CloseHandle(pipe);
+            wake.Dispose();
+            stop.Dispose();
+        }
+    }
+
     public sealed class Supervisor : NativeWindow, IDisposable {
         readonly Launch launch;
         readonly bool hide, restart, invisible;
@@ -1677,6 +2064,16 @@ namespace Caelestia.Takeover {
         readonly Func<int, bool> rescueFilter;
         Process child;
         ShellReadiness childReadiness;
+        ShellReadiness pipeReadiness;
+        SupervisorControl control;
+        bool controlAuthenticated, controlLiveness, controlLifecycle, controlExplorer, controlAppBars;
+        bool lastPipeProbe, lastPipePause;
+        string pendingPong;
+        uint explorerPid;
+        long explorerHwnd;
+        int explorerEpoch, settledExplorerEpoch = -1;
+        bool explorerPassPending;
+        DateTime nextExplorerObservation, nextExplorerPass;
         ShellLiveness liveness = new ShellLiveness();
         Process probe;
         ProbeJob probeJob;
@@ -1986,6 +2383,77 @@ namespace Caelestia.Takeover {
             SuppressRegions();
             nextTaskbarAudit = DateTime.UtcNow.AddSeconds(5);
         }
+        void ObserveExplorer() {
+            nextExplorerObservation = DateTime.UtcNow.AddSeconds(1);
+            var hwnd = Native.ExplorerTaskbar();
+            var pid = Native.WindowOwner(hwnd);
+            // A gap with no tray is part of the restart, not a second epoch.
+            if (pid == 0 || (hwnd.ToInt64() == explorerHwnd && pid == explorerPid)) return;
+            explorerHwnd = hwnd.ToInt64();
+            explorerPid = pid;
+            ++explorerEpoch;
+            explorerPassPending = true;
+            nextExplorerPass = DateTime.MinValue;
+            SendTakeover();
+        }
+        void SettleExplorer(bool initial = false) {
+            if (!explorerPassPending || (!childBecameReady && !takeover)) return;
+            if (initial || (explorerPid != 0 && DateTime.UtcNow >= nextExplorerPass)) {
+                MaintainTaskbars(true);
+                nextExplorerPass = DateTime.UtcNow.AddSeconds(1);
+            }
+            if (takeover && (explorerPid == 0 || Native.WindowOwner(new IntPtr(explorerHwnd)) != explorerPid
+                || Native.Taskbars().Exists(bar => bar.Visible))) return;
+            explorerPassPending = false;
+            settledExplorerEpoch = explorerEpoch;
+            SendExplorerSettled();
+        }
+        void SendTakeover() {
+            if (controlAuthenticated && controlExplorer)
+                control.Send(new { v = 1, type = "takeover", takenOver = takeover, hideTaskbar = hide,
+                    explorerPid, explorerHwnd, explorerEpoch });
+        }
+        void SendExplorerSettled() {
+            if (controlAuthenticated && controlExplorer && settledExplorerEpoch == explorerEpoch)
+                control.Send(new { v = 1, type = "explorer_settled", explorerPid, explorerHwnd, explorerEpoch,
+                    taskbarSuppressed = takeover });
+        }
+        bool ChildReady { get { return childReadiness.Ready || pipeReadiness.Ready; } }
+        void DrainControl() {
+            if (control == null) return;
+            foreach (var message in control.Drain()) {
+                switch (message.Type) {
+                case "hello":
+                    ObserveExplorer();
+                    controlAuthenticated = true;
+                    controlLiveness = message.Capabilities.Contains("liveness");
+                    controlLifecycle = message.Capabilities.Contains("lifecycle");
+                    controlExplorer = message.Capabilities.Contains("explorer-epoch");
+                    controlAppBars = message.Capabilities.Contains("appbar-lease");
+                    control.Send(new { v = 1, type = "welcome", hideTaskbar = hide, taskbarTakenOver = takeover,
+                        explorerPid, explorerHwnd, explorerEpoch });
+                    SendExplorerSettled();
+                    break;
+                case "lifecycle":
+                    if (controlLifecycle) pipeReadiness.ObserveLifecycle(message.Value);
+                    break;
+                case "appbar":
+                    if (controlAppBars) Native.ObserveAppBarLease(ownedPid, message.Hwnd, message.Value == "remove");
+                    break;
+                case "pong":
+                    if (controlLiveness && lastPipeProbe && message.Value == liveness.Nonce)
+                        pendingPong = message.Value;
+                    break;
+                }
+            }
+        }
+        void CloseControl() {
+            if (control == null) return;
+            control.Dispose();
+            DrainControl();
+            control = null;
+            controlAuthenticated = controlLiveness = controlLifecycle = controlExplorer = controlAppBars = false;
+        }
         protected override void WndProc(ref Message message) {
             if (message.Msg == 0x02B1) { // WM_WTSSESSION_CHANGE
                 int reason = message.WParam.ToInt32();
@@ -2019,16 +2487,17 @@ namespace Caelestia.Takeover {
                 // Quickshell's tray hook also sends TaskbarCreated to re-announce
                 // icons under the same owner. Only a new Explorer taskbar owner
                 // or an escaped taskbar needs another suppression pass.
-                uint owner = Native.ExplorerTaskbarOwner();
-                maintain = owner != showHook.Owner;
+                ObserveExplorer();
+                maintain = explorerPassPending || explorerPid != showHook.Owner;
                 if (!maintain) {
                     foreach (var bar in Native.Taskbars())
                         if (bar.Visible) { maintain = true; break; }
                 }
             }
-            if (maintain && child != null && !child.HasExited && takeover) {
+            if (maintain && child != null && !child.HasExited && (takeover || explorerPassPending && childBecameReady)) {
                 try {
-                    MaintainTaskbars(true);
+                    if (explorerPassPending) SettleExplorer();
+                    else MaintainTaskbars(true);
                 } catch (Exception error) {
                     Fail(error, "");
                 }
@@ -2099,6 +2568,10 @@ namespace Caelestia.Takeover {
             liveness.Reset(MonotonicMilliseconds());
             frozenTermination = false;
             lastPauseGeneration = 0;
+            lastPipeProbe = lastPipePause = false;
+            pendingPong = null;
+            pipeReadiness = new ShellReadiness();
+            settledExplorerEpoch = -1;
             var info = new ProcessStartInfo(launch.Executable, launch.Arguments) {
                 WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false, CreateNoWindow = true
             };
@@ -2131,7 +2604,10 @@ namespace Caelestia.Takeover {
                 };
             // Snapshot is durable before the child can register AppBars, but
             // Explorer remains untouched until every monitor has drawn.
-            process.Start();
+            using (var current = Process.GetCurrentProcess())
+                control = SupervisorControl.Create(current.Id, info.EnvironmentVariables);
+            try { process.Start(); }
+            finally { SupervisorControl.RemoveInherited(info.EnvironmentVariables); }
             child = process;
             childReadiness = readiness;
             childBecameReady = waitingReady = false;
@@ -2139,6 +2615,7 @@ namespace Caelestia.Takeover {
             childDrain = drain;
             drainDeadline = 0;
             ownedPid = child.Id;
+            if (control != null) control.Start(ownedPid);
             if (rescueOwners != null) rescueOwners.Add(child.Id);
             if (info.RedirectStandardOutput) child.BeginOutputReadLine();
             if (info.RedirectStandardError) child.BeginErrorReadLine();
@@ -2149,17 +2626,20 @@ namespace Caelestia.Takeover {
         void TakeOver() {
             takeoverGraceDeadline = 0;
             taskbarRestorePending = false;
-            if (!hide) return;
             // Includes secondary suppression, regions, show hook and audit.
-            if (!takeover) {
+            if (hide && !takeover) {
                 tookOver = takeover = true;
                 Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
             }
-            MaintainTaskbars(true);
+            ObserveExplorer();
+            SendTakeover();
+            explorerPassPending = true;
+            SettleExplorer(true);
         }
         void ReleaseTakeover() {
             if (!takeover && !taskbarRestorePending) return;
             takeover = false;
+            SendTakeover();
             showHook.Dispose();
             showPolicy.Reset();
             // The replacement may already have live AppBars. Never remove
@@ -2189,19 +2669,30 @@ namespace Caelestia.Takeover {
         }
         void MaintainLiveness() {
             long now = MonotonicMilliseconds();
-            int generation = childReadiness.PauseGeneration;
-            if (generation != lastPauseGeneration) {
+            var pong = pendingPong;
+            pendingPong = null;
+            bool usePipe = controlLiveness && control.Online;
+            bool usePipePause = controlLifecycle && control.Online && pipeReadiness.PauseGeneration != 0;
+            var readiness = usePipePause ? pipeReadiness : childReadiness;
+            int generation = readiness.PauseGeneration;
+            if (generation != lastPauseGeneration || usePipe != lastPipeProbe || usePipePause != lastPipePause) {
                 lastPauseGeneration = generation;
+                // An authenticated pipe and a legacy IPC endpoint each have
+                // to prove support before their missing replies count.
+                if (usePipe != lastPipeProbe) liveness = new ShellLiveness();
+                lastPipeProbe = usePipe;
+                lastPipePause = usePipePause;
                 liveness.Reset(now);
                 CancelProbe();
             }
-            bool eligible = childBecameReady && !childReadiness.Paused && !sessionPaused && !powerPaused
+            bool eligible = childBecameReady && !readiness.Paused && !sessionPaused && !powerPaused
                 && !endingSession;
             if (!liveness.Advance(now, eligible)) {
                 CancelProbe();
                 if (statusPhase == "frozen") Status("running", child.Id);
                 return;
             }
+            if (usePipe && pong != null) liveness.Accept(pong);
             if (probe != null && !probeExpired && probe.HasExited && probeOutput.IsCompleted) {
                 if (probe.ExitCode == 0 && !probeOutput.IsFaulted && !probeOutput.IsCanceled)
                     liveness.Accept(probeOutput.Result.Trim());
@@ -2232,12 +2723,17 @@ namespace Caelestia.Takeover {
             // supervisor that started in a locked or disconnected session.
             if (!isolatedTest && !SupervisorSession.Unlocked()) { liveness.Reset(now); return; }
             string nonce = liveness.Issue(now);
+            if (usePipe) {
+                if (!control.Send(new { v = 1, type = "ping", nonce })) liveness.Reset(now);
+                return;
+            }
             var info = new ProcessStartInfo(launch.Executable,
                 "ipc --pid " + child.Id + " call shell supervisorProbe " + nonce) {
                 WorkingDirectory = launch.WorkingDirectory, UseShellExecute = false,
                 CreateNoWindow = true, RedirectStandardOutput = true
             };
             foreach (var entry in launch.Environment) info.EnvironmentVariables[entry.Key] = entry.Value;
+            SupervisorControl.RemoveInherited(info.EnvironmentVariables);
             // An IPC launch failure is not evidence about the GUI event loop.
             var candidate = new Process { StartInfo = info };
             try {
@@ -2276,6 +2772,7 @@ namespace Caelestia.Takeover {
                     else nextStart = DateTime.UtcNow.AddSeconds(1); // locked snapshot: retry, no takeover
                     return;
                 }
+                DrainControl();
                 if (!child.HasExited) {
                     if (recovering) {
                         if (!forcedChildTermination && Stopwatch.GetTimestamp() >= stopDeadline) {
@@ -2306,9 +2803,11 @@ namespace Caelestia.Takeover {
                         Native.RetryStaleAppBars();
                         if (taskbarRestorePending) ReleaseTakeover();
                     }
+                    if (DateTime.UtcNow >= nextExplorerObservation) ObserveExplorer();
+                    SettleExplorer();
                     if (!childBecameReady) {
                         long now = Stopwatch.GetTimestamp();
-                        if (childReadiness.Ready) {
+                        if (ChildReady) {
                             childBecameReady = true;
                             TakeOver();
                             Status("running", child.Id);
@@ -2350,7 +2849,8 @@ namespace Caelestia.Takeover {
                 if (recovering) { Finish("recovered", 0); return; }
                 // A very short-lived child can draw and exit between ticks.
                 // Drain first so a final readiness record is not lost.
-                childBecameReady |= childReadiness.Ready;
+                CloseControl();
+                childBecameReady |= ChildReady;
                 int code = frozenTermination ? 1 : child.ExitCode;
                 // A zero exit before the first frame is a failed start, for
                 // example a duplicate instance that bows out. A shell that
@@ -2450,6 +2950,7 @@ namespace Caelestia.Takeover {
                 }
             } finally {
                 try {
+                    CloseControl();
                     if (!childCleanupComplete) {
                         try { RestoreDesktop(); }
                         finally { RestoreBanners(); }

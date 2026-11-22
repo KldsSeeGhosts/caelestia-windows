@@ -8,6 +8,7 @@ $children = [Collections.Generic.List[Diagnostics.Process]]::new()
 $watchdogs = [Collections.Generic.List[Diagnostics.Process]]::new()
 $token = [guid]::NewGuid().ToString('N')
 $mutexName = 'Local\CaelestiaDesktopTakeover-Test-' + $token
+$fixtureAppBarKey = 'Software\Quickshell\AppBars-Fixture-' + $token
 $powershell = Get-CaelestiaPowerShellPath
 
 function Assert($Condition, [string]$Message) {
@@ -139,6 +140,18 @@ public static class HungExplorerFixture {
     }
 }
 public sealed class Supervisor : NativeWindow, IDisposable {
+'@
+    # Exercise the real dead-HWND selection, but intercept the native remove.
+    # This test never queries the real AppBar journal or sends ABM_REMOVE.
+    $source = Replace-Exactly $source '@"Software\Quickshell\AppBars"' ('@"' + $fixtureAppBarKey + '"')
+    $source = Replace-Exactly $source 'if (!TryAppBar(1, AppBar(window), out ignored)) {' @'
+                    ignored = 0;
+                    File.AppendAllText("pipe-dead-appbars", window.ToInt64().ToString() + "\n");
+                    if (ignored != 0) {
+'@
+    $source = Replace-Exactly $source 'void RestoreDesktop() {' @'
+        void RestoreDesktop() {
+            if (isolatedTest) Native.CleanupDeadAppBars(ownedPid);
 '@
     $source += @'
 
@@ -467,8 +480,12 @@ namespace Caelestia.Takeover {
     # uses the shared inbox csc.exe wrapper to produce a runnable fake.
     New-CaelestiaTestExecutable -OutputPath $fake -ReferencedAssemblies @('System.Windows.Forms.dll') -Source @'
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 public sealed class StopFixtureWindow : NativeWindow, IDisposable {
@@ -561,6 +578,110 @@ public sealed class FakeTaskbarWindow : IDisposable {
     public void Dispose() { DestroyWindow(window); GC.KeepAlive(proc); }
 }
 public static class SupervisorStopFixture {
+    sealed class LeaseWindow : NativeWindow, IDisposable {
+        public LeaseWindow() {
+            CreateHandle(new CreateParams { Caption = "hidden lease fixture", Style = unchecked((int)0x80000000), ExStyle = 0x08000080 });
+        }
+        public void Dispose() { DestroyHandle(); }
+    }
+    static void AppBar(StreamWriter output, string op, IntPtr hwnd) {
+        output.WriteLine("{\"v\":1,\"type\":\"appbar\",\"op\":\"" + op
+            + "\",\"hwnd\":" + hwnd.ToInt64() + ",\"edge\":1,\"rect\":[0,0,100,24]}");
+    }
+    static void Lifecycle(StreamWriter output, string state) {
+        output.WriteLine("{\"v\":1,\"type\":\"lifecycle\",\"state\":\"" + state + "\"}");
+    }
+    static int PipeChild(string mode) {
+        int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+        string path = Environment.GetEnvironmentVariable("CAELESTIA_SUPERVISOR_PIPE") ?? "";
+        string token = Environment.GetEnvironmentVariable("CAELESTIA_SUPERVISOR_TOKEN") ?? "";
+        if (!Regex.IsMatch(path, @"^\\\\\.\\pipe\\CaelestiaSupervisor-\d+-[0-9a-f]{16}$")
+            || !Regex.IsMatch(token, "^[0-9a-f]{32}$")) return 81;
+        using (var pipe = new NamedPipeClientStream(".", path.Substring(@"\\.\pipe\".Length), PipeDirection.InOut, PipeOptions.Asynchronous)) {
+            pipe.Connect(3000);
+            var input = new StreamReader(pipe, new UTF8Encoding(false, true));
+            var output = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true, NewLine = "\n" };
+            if (mode == "pipe-bad-token") token = (token[0] == '0' ? '1' : '0') + token.Substring(1);
+            output.WriteLine("{\"v\":1,\"type\":\"hello\",\"token\":\"" + token + "\",\"pid\":"
+                + (mode == "pipe-wrong-pid" ? pid + 1 : pid)
+                + ",\"capabilities\":[\"liveness\",\"explorer-epoch\",\"appbar-lease\",\"lifecycle\"]}");
+            if (mode != "pipe-valid") {
+                bool rejected;
+                try { rejected = input.ReadLine() == null; } catch (IOException) { rejected = true; }
+                if (!rejected) return 82;
+                File.WriteAllText("pipe-rejected", "closed");
+                Console.WriteLine("  INFO qml: CAELESTIA_SHELL_READY");
+                Console.Out.Flush();
+                while (!File.Exists("pipe-exit")) {
+                    Application.DoEvents();
+                    foreach (string request in Directory.GetFiles(".", "probe-*")) {
+                        string nonce = File.ReadAllText(request);
+                        if (nonce.Length == 0) continue;
+                        File.WriteAllText("reply-" + nonce, nonce);
+                        File.Delete(request);
+                    }
+                    Thread.Sleep(10);
+                }
+                return 0;
+            }
+
+            var queue = new Queue<string>();
+            var reader = new Thread(delegate() {
+                try {
+                    string frame;
+                    while ((frame = input.ReadLine()) != null) lock (queue) queue.Enqueue(frame);
+                } catch (IOException) {} catch (ObjectDisposedException) {}
+            }) { IsBackground = true };
+            reader.Start();
+            using (var kept = new LeaseWindow())
+            using (var removed = new LeaseWindow())
+            using (var journalOnly = new LeaseWindow())
+            using (var journalAndPipe = new LeaseWindow()) {
+                var seenWelcome = false;
+                int pongs = 0;
+                while (!File.Exists("pipe-exit")) {
+                    Application.DoEvents();
+                    string frame = null;
+                    if (!File.Exists("stall")) {
+                        lock (queue) { if (queue.Count != 0) frame = queue.Dequeue(); }
+                    }
+                    if (frame != null) {
+                        var kind = Regex.Match(frame, "\"type\":\"([a-z_]+)\"").Groups[1].Value;
+                        if (!seenWelcome && kind != "welcome") return 83;
+                        seenWelcome = true;
+                        if (kind == "ping") {
+                            string nonce = Regex.Match(frame, "\"nonce\":\"([0-9a-f]+)\"").Groups[1].Value;
+                            if (nonce.Length == 0) return 84;
+                            output.WriteLine("{\"v\":1,\"type\":\"pong\",\"nonce\":\"" + nonce + "\"}");
+                            File.WriteAllText("pipe-pongs", (++pongs).ToString());
+                        } else File.AppendAllText("pipe-events.jsonl", frame + "\n");
+                    }
+                    if (seenWelcome && File.Exists("pipe-ready")) {
+                        AppBar(output, "register", kept.Handle);
+                        AppBar(output, "update", kept.Handle);
+                        AppBar(output, "register", removed.Handle);
+                        AppBar(output, "remove", removed.Handle);
+                        AppBar(output, "register", journalAndPipe.Handle);
+                        File.WriteAllText("pipe-lease-kept", kept.Handle.ToInt64().ToString());
+                        File.WriteAllText("pipe-journal-only", journalOnly.Handle.ToInt64().ToString());
+                        File.WriteAllText("pipe-journal-and-pipe", journalAndPipe.Handle.ToInt64().ToString());
+                        Lifecycle(output, "ready");
+                        File.Delete("pipe-ready");
+                    }
+                    if (seenWelcome && File.Exists("pipe-pause")) {
+                        Lifecycle(output, "paused");
+                        File.Delete("pipe-pause");
+                    }
+                    if (seenWelcome && File.Exists("pipe-resume")) {
+                        Lifecycle(output, "active");
+                        File.Delete("pipe-resume");
+                    }
+                    Thread.Sleep(10);
+                }
+            }
+        }
+        return 0;
+    }
     [STAThread] public static int Main(string[] args) {
         if (args[0] == "--slow") {
             using (var window = new SlowSettingsWindow(args[1])) {
@@ -600,6 +721,7 @@ public static class SupervisorStopFixture {
         string mode = File.ReadAllText(Path.Combine(prefix, "mode.txt"));
         if (args[0] == "--child") {
             File.AppendAllText(Path.Combine(prefix, "child-starts.txt"), "start\n");
+            if (mode.StartsWith("pipe-")) return PipeChild(mode);
             int attempt = File.ReadAllLines(Path.Combine(prefix, "child-starts.txt")).Length;
             bool reported = false;
             if (mode != "controlled" && mode != "never-ready" && mode != "early-clean") {
@@ -653,6 +775,7 @@ public static class SupervisorStopFixture {
             }
         }
         if (args.Length >= 2 && args[args.Length - 2] == "supervisorProbe") {
+            if (mode.StartsWith("pipe-")) File.AppendAllText(Path.Combine(prefix, "legacy-probes.txt"), "probe\n");
             string nonce = args[args.Length - 1];
             File.WriteAllText("probe-" + nonce, nonce);
             while (!File.Exists("reply-" + nonce)) Thread.Sleep(10);
@@ -680,6 +803,114 @@ public static class SupervisorStopFixture {
     [IO.File]::WriteAllText((Join-Path $taskbars 'taskbars-stop'), 'stop')
     Assert ($taskbar.WaitForExit(2000) -and $decoy.WaitForExit(2000)) 'Fake taskbars did not stop.'
     Write-Output 'PASS taskbar events: owner-checked lookup skips a first-in-order decoy; real show events re-hide twice without an audit; fight-loop fallback remains bounded.'
+    function Get-PipeEvents([string]$Directory, [string]$Kind) {
+        $path = Join-Path $Directory 'pipe-events.jsonl'
+        if (Test-Path -LiteralPath $path) {
+            foreach ($line in (Get-Content -LiteralPath $path)) {
+                # The fixture may be appending the last frame.
+                try { $message = ConvertFrom-Json -InputObject $line -ErrorAction Stop } catch { continue }
+                if ($message.type -ceq $Kind) { $message }
+            }
+        }
+    }
+    foreach ($mode in @('pipe-valid', 'pipe-bad-token', 'pipe-wrong-pid')) {
+        $case = Join-Path $root $mode
+        $prefix = Join-Path $case 'prefix'
+        $state = Join-Path $case 'state'
+        [IO.Directory]::CreateDirectory($prefix) | Out-Null
+        [IO.Directory]::CreateDirectory($state) | Out-Null
+        Copy-Item -LiteralPath $fake -Destination (Join-Path $prefix 'qs.exe')
+        [IO.File]::WriteAllText((Join-Path $prefix 'mode.txt'), $mode)
+        $spec = Join-Path $state 'launch.json'
+        $statusPath = Join-Path $state 'watchdog.json'
+        @{
+            Executable = (Join-Path $prefix 'qs.exe'); Arguments = '--child'; WorkingDirectory = $case
+            StateDirectory = $state; Environment = @{}; StdoutPath = (Join-Path $state 'shell.out')
+            StderrPath = (Join-Path $state 'shell.err')
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $spec -Encoding UTF8
+        if ($mode -eq 'pipe-valid') {
+            $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar')
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'taskbar-ready') } 'Pipe taskbar did not start.'
+            [IO.File]::WriteAllText((Join-Path $case 'taskbar-show-0'), 'show')
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Pipe taskbar did not show.'
+        }
+        $watchdog = Start-FixtureProcess $powershell `
+            ('-NoProfile -Sta -File "' + $scripts + '\Watch-DesktopShell.ps1" -LaunchSpec "' + $spec + '"') `
+            $case (Join-Path $case 'watchdog')
+        $watchdogs.Add($watchdog)
+        if ($mode -eq 'pipe-valid') {
+            Wait-Until { @(Get-PipeEvents $case 'welcome').Count -eq 1 } 'Pipe hello did not receive v1 welcome.'
+            $welcome = Get-PipeEvents $case 'welcome'
+            Assert ($welcome.v -eq 1 -and $welcome.hideTaskbar -and -not $welcome.taskbarTakenOver -and
+                $welcome.explorerPid -eq $taskbar.Id -and $welcome.explorerEpoch -gt 0 -and
+                $welcome.explorerHwnd -eq [long](Get-Content -LiteralPath (Join-Path $case 'taskbar-ready') -Raw)) 'Welcome had incorrect takeover or Explorer identity.'
+            Assert ((Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'starting') 'The handshake alone made the child ready.'
+            [IO.File]::WriteAllText((Join-Path $case 'pipe-ready'), 'ready')
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'running' -and $s.shellReady -and $s.livenessSupported
+            } 'Pipe lifecycle ready or GUI pong was ignored.'
+            $owner = [int](Read-CaelestiaSupervisorStatus $statusPath).shellPid
+            $journal = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($fixtureAppBarKey)
+            try {
+                foreach ($entry in @('pipe-journal-only', 'pipe-journal-and-pipe')) {
+                    $handle = [long](Get-Content -LiteralPath (Join-Path $case $entry) -Raw)
+                    $journal.SetValue($handle.ToString('x'), $owner, [Microsoft.Win32.RegistryValueKind]::DWord)
+                }
+            } finally { $journal.Dispose() }
+            Wait-Until { @(Get-PipeEvents $case 'explorer_settled').Count -eq 1 } 'Initial Explorer settlement was not sent.'
+            $settled = Get-PipeEvents $case 'explorer_settled'
+            Assert ($settled.taskbarSuppressed -and $settled.explorerEpoch -eq $welcome.explorerEpoch -and
+                -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer settled before taskbar suppression.'
+            Assert (@(Get-PipeEvents $case 'takeover' | Where-Object takenOver).Count -ge 1) 'Takeover transition was not sent.'
+
+            [IO.File]::WriteAllText((Join-Path $case 'pipe-pause'), 'pause')
+            Wait-Until { -not (Test-Path -LiteralPath (Join-Path $case 'pipe-pause')) } 'Child did not send pipe pause.'
+            Start-Sleep -Milliseconds 750
+            $before = Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw
+            Start-Sleep -Milliseconds 1000
+            Assert ((Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw) -eq $before) 'Probes continued while paused over the pipe.'
+            [IO.File]::WriteAllText((Join-Path $case 'pipe-resume'), 'active')
+            Wait-Until { (Get-Content -LiteralPath (Join-Path $case 'pipe-pongs') -Raw) -ne $before } 'Pipe active did not resume GUI probes.'
+            [IO.File]::WriteAllText((Join-Path $case 'stall'), 'stall')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -gt 0 } 'The unpumped fixture still answered pipe pings.'
+            Remove-Item -LiteralPath (Join-Path $case 'stall')
+            Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).livenessMisses -eq 0 } 'A resumed GUI did not clear pipe misses.'
+
+            [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
+            Assert ($taskbar.WaitForExit(2000)) 'Original pipe taskbar did not stop.'
+            Remove-Item -LiteralPath @((Join-Path $case 'taskbars-stop'), (Join-Path $case 'taskbar-ready'))
+            $taskbar = Start-FixtureProcess $fake '--taskbar' $case (Join-Path $case 'taskbar-restarted')
+            Wait-Until { @(Get-PipeEvents $case 'explorer_settled').Count -ge 2 } 'Replacement Explorer never settled.'
+            $replacement = @(Get-PipeEvents $case 'explorer_settled')[-1]
+            Assert ($replacement.explorerEpoch -eq $settled.explorerEpoch + 1 -and $replacement.explorerPid -eq $taskbar.Id -and
+                $replacement.taskbarSuppressed -and -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer restart did not reconcile once before settling.'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt'))) 'Authenticated liveness spawned a legacy probe.'
+            Assert (-not (Test-Path -LiteralPath (Join-Path $case 'pipe-dead-appbars'))) 'The supervisor attempted cleanup while the pipe child was alive.'
+        } else {
+            Wait-Until { Test-Path -LiteralPath (Join-Path $case 'pipe-rejected') } 'Invalid pipe hello was not disconnected.'
+            Wait-Until {
+                $s = Read-CaelestiaSupervisorStatus $statusPath
+                $s.phase -eq 'running' -and $s.shellReady -and $s.livenessSupported
+            } 'Rejected hello did not fall back to stdout readiness and GUI IPC.'
+            Assert (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt')) 'Rejected hello did not launch a legacy probe.'
+        }
+        [IO.File]::WriteAllText((Join-Path $case 'pipe-exit'), 'exit')
+        Assert ($watchdog.WaitForExit(10000) -and $watchdog.ExitCode -eq 0) 'Pipe child did not shut down cleanly.'
+        if ($mode -eq 'pipe-valid') {
+            $dead = @(Get-Content -LiteralPath (Join-Path $case 'pipe-dead-appbars'))
+            $expected = foreach ($entry in @('pipe-lease-kept', 'pipe-journal-only', 'pipe-journal-and-pipe')) {
+                Get-Content -LiteralPath (Join-Path $case $entry) -Raw
+            }
+            Assert ($dead.Count -eq 3 -and -not (Compare-Object $expected $dead)) 'Dead AppBar cleanup did not merge the registry and leases exactly once or removed a released lease.'
+            $journal = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($fixtureAppBarKey)
+            try { Assert ($journal.ValueCount -eq 0) 'AppBar cleanup left stale entries in the disposable journal.' }
+            finally { $journal.Dispose() }
+            [IO.File]::WriteAllText((Join-Path $case 'taskbars-stop'), 'stop')
+            Assert ($taskbar.WaitForExit(2000)) 'Replacement pipe taskbar did not stop.'
+        }
+        Write-Output "PASS $mode`: v1 pipe lifecycle, liveness and cleanup or clean legacy fallback."
+    }
     # Production Tick, async pipe parsing, status publication, event upkeep and
     # crash policy run unchanged. Only desktop targets and the render deadline
     # are isolated above. A real offscreen fake taskbar checks actual visibility.
@@ -1189,6 +1420,7 @@ if (Test-Path -LiteralPath $order) {
     foreach ($process in $children) {
         try { if (-not $process.HasExited) { $process.Kill(); $null = $process.WaitForExit(2000) } } finally { $process.Dispose() }
     }
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey($fixtureAppBarKey, $false)
     $safeRoot = Resolve-CaelestiaDirectory $root
     Assert ((Split-Path -Parent $safeRoot) -eq [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -and
         (Split-Path -Leaf $safeRoot) -like 'caelestia-supervisor-stop-*') 'Unsafe supervisor fixture cleanup path.'

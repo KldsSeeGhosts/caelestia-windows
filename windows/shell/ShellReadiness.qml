@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell.Windows as Native
 
 QtObject {
     id: root
@@ -20,10 +21,11 @@ QtObject {
     onTakeoverReadyChanged: {
         if (takeoverReady && !reported) {
             reported = true;
-            // No paths, monitor names or state. The watchdog reads this through
-            // its async stdout drain. Each QML root reports once, including a
-            // soft reload, but never sends a transient not-ready transition.
+            // Each QML root reports once, including a soft reload, and never
+            // sends a transient not-ready transition. Keep the stdout marker
+            // for watchdogs that don't have an authenticated pipe.
             console.info("CAELESTIA_SHELL_READY");
+            Native.Supervisor?.reportReady?.();
             takeoverReported();
         }
     }
