@@ -119,7 +119,10 @@ StyledRect {
         Services.RunningApps.previewWindowId = lastActive(group);
         hoverCenter = item.mapToItem(root, 0, root.rowSize / 2).y;
         popouts.currentName = "activewindow";
-        popouts.currentCenter = mapToItem(bar, 0, hoverCenter).y;
+        // A plain currentCenter write would destroy the bar's shared binding;
+        // anchor through the bar's stored hover item instead.
+        bar.hoveredItem = root;
+        bar.hoveredAnchorY = hoverCenter;
         popouts.hasCurrent = true;
         // Last: changing the popout above resets a pin.
         popouts.pinned = true;

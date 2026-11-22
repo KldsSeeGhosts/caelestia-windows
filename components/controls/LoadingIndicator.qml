@@ -35,6 +35,7 @@ MaterialShape {
     }
     readonly property real springMaxVelocity: {
         const wn = Math.sqrt(stiffness);
+        const z = dampingRatio;
         const factor = Math.exp(-z * Math.acos(z) / Math.sqrt(1 - z * z));
         return wn * factor;
     }
@@ -55,13 +56,14 @@ MaterialShape {
     implicitSize: 38
     color: Colours.palette.m3primary
     toShape: shapes[0]
+    rotation: cRotation + lRotation + thisLRotation
 
     ElapsedTimer {
         id: timer
     }
 
     FrameAnimation {
-        running: root.animated && !root.springSettled
+        running: root.animated && root.visible && !root.springSettled
         onTriggered: {
             const t = timer.elapsed();
 
@@ -80,7 +82,7 @@ MaterialShape {
         interval: 650
         repeat: true
         triggeredOnStart: true
-        running: root.animated
+        running: root.animated && root.visible
         onTriggered: {
             root.beginBatchUpdate();
             root.fromShape = root.toShape;
@@ -88,10 +90,8 @@ MaterialShape {
             root.toShape = root.shapes[root.shapeIndex];
             root.morphProgress = 0;
 
-            root.rotation = root.rotation;
             root.lRotation = (root.lRotation + root.thisLRotation) % 360;
             root.thisLRotation = 0;
-            root.rotation = Qt.binding(() => root.cRotation + root.lRotation + root.thisLRotation);
 
             root.springSettled = false;
             timer.restart();
@@ -102,7 +102,7 @@ MaterialShape {
     RotationAnimation on cRotation {
         id: rotateAnim
 
-        running: root.animated
+        running: root.animated && root.visible
         from: 0
         to: 360
         easing.type: Easing.Linear

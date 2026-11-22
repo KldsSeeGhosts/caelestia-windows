@@ -184,7 +184,9 @@ StyledWindow {
     Item {
         anchors.fill: parent
         opacity: root.surfaceColour.a
-        layer.enabled: true
+        // Fullscreen drops the shadow entirely; keeping the layer would hold a
+        // full-screen FBO and the blur ping-pong textures for nothing.
+        layer.enabled: root.shadowOpacity > 0
         layer.effect: MultiEffect {
             shadowEnabled: true
             blurMax: 15

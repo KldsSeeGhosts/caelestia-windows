@@ -1,5 +1,6 @@
 #include "windowsclipboardworker.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -70,7 +71,9 @@ constexpr qsizetype MAX_NAME_HEX = 16;
 // Per-item WinRT reads are awaited in short slices so a provider that never
 // completes cannot hold the worker, a newer request or shutdown. The total
 // bound covers one history refresh; preview and open reads get their own.
-constexpr int ITEM_READ_POLL_MS = 10;
+// Each slice waits on a completion event instead of sleeping, so an idle
+// wait burns nothing and a completed read wakes immediately.
+constexpr int ITEM_READ_SLICE_MS = 50;
 constexpr int ITEM_READ_TOTAL_TIMEOUT_MS = 3000;
 constexpr int ITEM_READ_TIMEOUT_MS = 3000;
 
@@ -144,6 +147,22 @@ QString extensionFor(const QByteArray& bytes) {
 template <typename T>
 [[nodiscard]] ItemReadStatus awaitItemRead(const IAsyncOperation<T>& operation,
     const std::function<bool()>& cancelled, ULONGLONG deadline, T& value) {
+    // The Completed handler fires on an arbitrary callback thread, possibly
+    // after this function has returned on cancel/timeout, so it owns a share
+    // of the event handle it signals.
+    const std::shared_ptr<void> event(CreateEventW(nullptr, TRUE, FALSE, nullptr), &CloseHandle);
+    if (!event)
+        return ItemReadStatus::Failed;
+
+    try {
+        operation.Completed(
+            [event](const IAsyncOperation<T>&, AsyncStatus) { SetEvent(event.get()); });
+    } catch (const winrt::hresult_error&) {
+        return ItemReadStatus::Failed;
+    } catch (...) {
+        return ItemReadStatus::Failed;
+    }
+
     for (;;) {
         AsyncStatus status = AsyncStatus::Started;
         try {
@@ -184,7 +203,14 @@ template <typename T>
             }
             return ItemReadStatus::TimedOut;
         }
-        Sleep(ITEM_READ_POLL_MS);
+
+        const ULONGLONG now = GetTickCount64();
+        const DWORD slice = static_cast<DWORD>(std::min<ULONGLONG>(deadline - now, ITEM_READ_SLICE_MS));
+        const DWORD wait = WaitForSingleObject(event.get(), slice);
+        if (wait == WAIT_FAILED)
+            return ItemReadStatus::Failed;
+        // WAIT_OBJECT_0 and WAIT_TIMEOUT both fall through to the status
+        // check above; cancellation and the deadline stay responsive.
     }
 }
 

@@ -12,7 +12,7 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $BuildRoot) { $BuildRoot = Join-Path $repoRoot 'windows\.local\build' }
 if (-not $OutputRoot) {
     $OutputRoot = if ($env:CAELESTIA_TEST_OUTPUT_ROOT) { $env:CAELESTIA_TEST_OUTPUT_ROOT }
-        else { Join-Path ([IO.Path]::GetTempPath()) 'validation-erm630' }
+        else { Join-Path ([IO.Path]::GetTempPath()) ('caelestia-file-urls-' + [guid]::NewGuid().ToString('N')) }
 }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 if ($OutputRoot -eq $repoRoot -or
@@ -24,7 +24,6 @@ if ($OutputRoot.StartsWith('\\') -or $OutputRoot.StartsWith('//')) {
 }
 $QtPrefix = (Resolve-Path -LiteralPath $QtPrefix).Path
 $BuildRoot = (Resolve-Path -LiteralPath $BuildRoot).Path
-$node = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $runRoot = Join-Path $OutputRoot ('file-urls-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $runRoot | Out-Null
 
@@ -33,8 +32,7 @@ function ConvertTo-SafeReceiptText([string]$Text) {
         @{ path = $runRoot; label = '$OUTPUT_ROOT' },
         @{ path = $repoRoot; label = '$REPO_ROOT' },
         @{ path = $BuildRoot; label = '$BUILD_ROOT' },
-        @{ path = $QtPrefix; label = '$QT_PREFIX' },
-        @{ path = (Split-Path -Parent $node); label = '$NODE_DIR' }
+        @{ path = $QtPrefix; label = '$QT_PREFIX' }
     )
     if ($env:CAELESTIA_TEST_RUNTIME_PREFIX) {
         $mappings += @{ path = [IO.Path]::GetFullPath($env:CAELESTIA_TEST_RUNTIME_PREFIX); label = '$RUNTIME_PREFIX' }
@@ -55,14 +53,6 @@ $summary = [ordered]@{
     passed = $false
     sourceRevision = (& git -C $repoRoot rev-parse HEAD).Trim()
     sourceDirty = [bool](& git -C $repoRoot status --porcelain)
-    nodeCommand = @('$NODE_DIR/node.exe', '--test', '--test-reporter=tap', '$REPO_ROOT/windows/tests/FileUrls.test.js')
-    nodeExitCode = $null
-    nodeTests = $null
-    nodePassed = $null
-    nodeFailed = $null
-    nodeCancelled = $null
-    nodeSkipped = $null
-    nodeTodo = $null
     qmlAssertions = 0
     qtVersion = $null
     runnerSha256 = $null
@@ -105,28 +95,8 @@ try {
         $bitmap.Dispose()
     }
 
-    # Harmless native stderr must not become a PowerShell terminating error.
-    $ErrorActionPreference = 'Continue'
-    $nodeOutput = @(& $node --test --test-reporter=tap (Join-Path $repoRoot 'windows\tests\FileUrls.test.js') 2>&1 |
-        ForEach-Object { "$_" })
-    $summary.nodeExitCode = $LASTEXITCODE
-    $ErrorActionPreference = 'Stop'
-    $nodeOutput | Set-Content -LiteralPath (Join-Path $runRoot 'node.log') -Encoding UTF8
-    $countFields = [ordered]@{
-        tests = 'nodeTests'; pass = 'nodePassed'; fail = 'nodeFailed'
-        cancelled = 'nodeCancelled'; skipped = 'nodeSkipped'; todo = 'nodeTodo'
-    }
-    foreach ($name in $countFields.Keys) {
-        $counts = [regex]::Matches(($nodeOutput -join "`n"), "(?m)^# $name ([0-9]+)\s*$")
-        if ($counts.Count -ne 1) { throw "Missing or ambiguous Node TAP count: $name." }
-        $summary[$countFields[$name]] = [int]$counts[0].Groups[1].Value
-    }
-    if ($summary.nodeExitCode -ne 0 -or $summary.nodeTests -ne 9 -or
-        $summary.nodePassed -ne $summary.nodeTests -or $summary.nodeFailed -ne 0 -or
-        $summary.nodeCancelled -ne 0 -or $summary.nodeSkipped -ne 0 -or $summary.nodeTodo -ne 0) {
-        throw 'Node file-URL regressions failed, were skipped, or reported inconsistent counts.'
-    }
-
+    # FileUrls.test.js runs once in the Unit suite's javascript lane; this
+    # script owns only the offscreen Qt boundary fixture.
     . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
     $env:CAELESTIA_TEST_OUTPUT_ROOT = $runRoot
     $env:TEMP = $temporary
@@ -164,6 +134,13 @@ try {
 } finally {
     foreach ($name in $previousEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], 'Process')
+    }
+    # The fixture stage is kept under this run's redirected TEMP (-Keep); drop
+    # it so every invocation leaves only its summary and logs behind.
+    $resolvedTemp = [IO.Path]::GetFullPath($temporary)
+    if ($resolvedTemp.StartsWith([IO.Path]::GetFullPath($runRoot) + '\', [StringComparison]::OrdinalIgnoreCase) -and
+        (Test-Path -LiteralPath $resolvedTemp)) {
+        Remove-Item -LiteralPath $resolvedTemp -Recurse -Force -ErrorAction SilentlyContinue
     }
     $summary | ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath (Join-Path $runRoot 'summary.json') -Encoding UTF8

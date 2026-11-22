@@ -5,10 +5,20 @@ param(
     # New directory outside the checkout. Contains owned Cargo target and logs.
     [Parameter(Mandatory)][string]$OutputRoot,
     [ValidateRange(1, 64)][int]$Jobs = 2,
+    # Opt-in compiler cache for the Rust test build. Requires CompilerLauncher.
+    [string]$CompilerLauncher,
+    [string]$RustCacheDirectory,
     # Diagnostic subset only; an empty execution is always a failure.
     [string]$Filter
 )
 $ErrorActionPreference = 'Stop'
+if ($CompilerLauncher -and (-not [IO.Path]::IsPathRooted($CompilerLauncher) -or
+    -not (Test-Path -LiteralPath $CompilerLauncher -PathType Leaf))) {
+    throw 'CompilerLauncher must name an existing absolute executable path.'
+}
+if ($RustCacheDirectory -and (-not $CompilerLauncher -or -not [IO.Path]::IsPathRooted($RustCacheDirectory))) {
+    throw 'RustCacheDirectory requires an absolute path and CompilerLauncher.'
+}
 $repoRoot = (Resolve-Path -LiteralPath "$PSScriptRoot\..\..").Path
 . "$PSScriptRoot\Caelestia-Toolchain.ps1"
 . "$repoRoot\windows\capture\Source.ps1"
@@ -61,10 +71,31 @@ try {
     Select-CaelestiaRust
     $receipt.toolchain = Get-CaelestiaActualToolchain -QtPrefix $qt -Cli11Include (Join-Path $ToolRoot $spec.cli11Directory)
     Save-CaptureReceipt
+    $rustCacheEnvironment = @{}
+    if ($RustCacheDirectory) {
+        foreach ($name in @('RUSTC_WRAPPER', 'CARGO_INCREMENTAL', 'SCCACHE_DIR', 'SCCACHE_SERVER_PORT')) {
+            $rustCacheEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+        }
+        $env:RUSTC_WRAPPER = $CompilerLauncher
+        $env:CARGO_INCREMENTAL = '0'
+        # A running sccache server keeps its original cache dir, so a differing
+        # directory needs a separate server; the shared one takes no port.
+        if ($RustCacheDirectory -cne $env:SCCACHE_DIR) {
+            $env:SCCACHE_DIR = $RustCacheDirectory
+            $env:SCCACHE_SERVER_PORT = '4229'
+        }
+    }
     $arguments = @('test', '--locked', '--no-run', '--message-format=json',
         '--jobs', "$Jobs", '--target', $spec.rustTarget,
         '--manifest-path', "$($source.path)\Cargo.toml", '--target-dir', "$OutputRoot\target")
     $build = Invoke-CaptureNative 'cargo' $arguments 'compile'
+    if ($rustCacheEnvironment.Count -and $env:SCCACHE_SERVER_PORT -eq '4229') {
+        # Stop the dedicated server so its stats flush and it cannot idle on.
+        $null = Invoke-CaptureNative $CompilerLauncher @('--stop-server') 'rust-cache-stop'
+    }
+    foreach ($name in $rustCacheEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, $rustCacheEnvironment[$name], 'Process')
+    }
     if ($build.exitCode -ne 0) { $receipt.failure = 'compile-failed'; throw 'Capture test compilation failed.' }
     $artifacts = @($build.lines | ForEach-Object {
         if ($_.StartsWith('{')) {

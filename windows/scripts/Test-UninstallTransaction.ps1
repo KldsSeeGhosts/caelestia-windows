@@ -56,8 +56,9 @@ function Write-FixtureText([string]$Path, [string]$Text) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
     [IO.File]::WriteAllText($Path, $Text, [Text.UTF8Encoding]::new($false))
 }
-function New-Case([string]$Name, [switch]$RealIntegration) {
-    $case = Join-Path $runRoot $Name
+# The invariant part of a case is identical across every scenario, so it is
+# built once and cloned. Only the install records embed per-case paths.
+function New-CaseTemplate([string]$Case) {
     $prefix = Join-Path $case 'prefix'
     $profile = Join-Path $case 'profile'
     $scripts = Join-Path $case 'scripts'
@@ -192,10 +193,34 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
         Write-FixtureText (Join-Path $runtime 'Start-CaelestiaEntry.ps1') $launcher
         Write-FixtureText (Join-Path $runtime 'Start-Caelestia.ps1') $launcher
         Write-FixtureText (Join-Path $runtime 'qs.exe') $id
+        $script:caseExecutableHash[$id] = (Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe')).Hash
+    }
+    Write-FixtureText (Join-Path $profile 'config\sentinel.txt') 'owned profile content'
+    Write-FixtureText (Join-Path $profile 'cache\sentinel.txt') 'owned cache content'
+    Write-FixtureText (Join-Path $case 'localappdata\quickshell\cache\crashes\other\other-123.dmp') 'shared crash content'
+    Write-FixtureText (Join-Path $profile 'state\update-operation.json') '{"schema":1,"phase":"fixture"}'
+    Write-FixtureText (Join-Path $case 'unrelated-profile\sentinel.txt') 'unrelated profile content'
+    Write-FixtureText (Join-Path $case 'integration\shortcut.lnk') 'owned shortcut'
+    Write-FixtureText (Join-Path $case 'integration\switch-back.lnk') 'owned switch-back shortcut'
+    Write-FixtureText (Join-Path $case 'integration\desktop.lnk') 'owned desktop shortcut'
+}
+$script:caseExecutableHash = @{}
+$script:caseTemplate = $null
+function New-Case([string]$Name, [switch]$RealIntegration) {
+    $case = Join-Path $runRoot $Name
+    if (-not $script:caseTemplate) {
+        $script:caseTemplate = Join-Path $runRoot '.template'
+        New-CaseTemplate $script:caseTemplate
+    }
+    Copy-Item -LiteralPath $script:caseTemplate -Destination $case -Recurse
+    $prefix = Join-Path $case 'prefix'
+    $profile = Join-Path $case 'profile'
+    foreach ($id in @('v1', 'v2')) {
+        $runtime = Join-Path $prefix "versions\$id"
         $record = @{
             product = 'caelestia-windows'; version = 1; prefix = $runtime; installRoot = $prefix; versionId = $id
             profile = $profile; installId = 'erm629-fixture'; sourceRevision = $revision
-            executableSha256 = (Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe')).Hash
+            executableSha256 = $script:caseExecutableHash[$id]
         }
         Write-FixtureText (Join-Path $runtime 'install.json') ($record | ConvertTo-Json)
     }
@@ -203,11 +228,6 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
     Write-CaelestiaJsonAtomic (Join-Path $prefix 'install.json') (New-CaelestiaRootRecord $prefix $current 'v1')
     Copy-CaelestiaRootEntries $prefix (Join-Path $prefix 'versions\v2')
     Write-CaelestiaProfileOwner $profile $prefix 'erm629-fixture' $true
-    Write-FixtureText (Join-Path $profile 'config\sentinel.txt') 'owned profile content'
-    Write-FixtureText (Join-Path $profile 'cache\sentinel.txt') 'owned cache content'
-    Write-FixtureText (Join-Path $case 'localappdata\quickshell\cache\crashes\other\other-123.dmp') 'shared crash content'
-    Write-FixtureText (Join-Path $profile 'state\update-operation.json') '{"schema":1,"phase":"fixture"}'
-    Write-FixtureText (Join-Path $case 'unrelated-profile\sentinel.txt') 'unrelated profile content'
     # Prefix-derived per-user entries, simulated as data. The fixture boundary
     # proves the real uninstall calls the single integration cleanup, and
     # Assert-Uninstalled proves this whole directory is emptied. The real-
@@ -217,9 +237,6 @@ Add-Content -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'boundaries.t
         Write-FixtureText (Join-Path $case 'integration\fixture-run') 'owned run value'
         Write-FixtureText (Join-Path $case 'integration\apps-features.json') 'owned Apps & features entry'
     }
-    Write-FixtureText (Join-Path $case 'integration\shortcut.lnk') 'owned shortcut'
-    Write-FixtureText (Join-Path $case 'integration\switch-back.lnk') 'owned switch-back shortcut'
-    Write-FixtureText (Join-Path $case 'integration\desktop.lnk') 'owned desktop shortcut'
     return $case
 }
 function Start-Worker([string]$Case, [string]$Operation, [string]$Pause = '', [bool]$Purge = $false,

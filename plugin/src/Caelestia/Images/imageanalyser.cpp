@@ -2,6 +2,7 @@
 
 #include <qfuturewatcher.h>
 #include <qimage.h>
+#include <qimagereader.h>
 #include <qloggingcategory.h>
 #include <qquickitemgrabresult.h>
 #include <qquickwindow.h>
@@ -139,7 +140,10 @@ void ImageAnalyser::update() {
     }
 
     if (m_sourceItem) {
-        const QSharedPointer<const QQuickItemGrabResult> grabResult = m_sourceItem->grabToImage();
+        // Grab straight at the analysis size so Qt does not read back a
+        // full-resolution GPU texture for a 128px histogram.
+        const QSize grabSize = m_rescaleSize > 0 ? QSize(m_rescaleSize, m_rescaleSize) : QSize();
+        const QSharedPointer<const QQuickItemGrabResult> grabResult = m_sourceItem->grabToImage(grabSize);
         if (!grabResult) {
             QObject::connect(m_sourceItem, &QQuickItem::windowChanged, this, &ImageAnalyser::requestUpdate,
                 Qt::SingleShotConnection);
@@ -155,7 +159,13 @@ void ImageAnalyser::update() {
             Qt::SingleShotConnection);
     } else {
         m_futureWatcher->setFuture(QtConcurrent::run([=, this](QPromise<AnalyseResult>& promise) {
-            const QImage image(m_source);
+            QImageReader reader(m_source);
+            // Decode at the analysis size when the format supports scaled
+            // reads instead of materializing the full-resolution image first.
+            if (m_rescaleSize > 0) {
+                reader.setScaledSize(QSize(m_rescaleSize, m_rescaleSize));
+            }
+            const QImage image = reader.read();
             analyse(promise, image, m_rescaleSize);
         }));
     }

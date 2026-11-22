@@ -19,6 +19,18 @@ ColumnLayout {
     required property bool fullscreen
     readonly property int vPadding: Tokens.padding.large
 
+    // The popout anchor is the item hovered last plus its cached offset.
+    // Installing one binding on popouts.currentCenter avoids a Qt.binding()
+    // closure allocation on every pointer pixel of hover travel.
+    property Item hoveredItem
+    property real hoveredAnchorY
+
+    Binding {
+        target: root.popouts
+        property: "currentCenter"
+        value: root.hoveredItem ? root.hoveredItem.mapToItem(root, 0, root.hoveredAnchorY).y : 0
+    }
+
     // Windows: expose the tray's expanded/collapsed state so a screenshot can
     // wait for the collapsing height animation. The Linux tray has no
     // collapseSettled property and defaults to settled.
@@ -68,6 +80,7 @@ ColumnLayout {
             closeTray();
 
         if (!ch) {
+            hoveredItem = null;
             popouts.hasCurrent = false;
             return;
         }
@@ -79,8 +92,9 @@ ColumnLayout {
             const items = (ch.item as StatusIcons).items;
             const icon = items.childAt(items.width / 2, mapToItem(items, 0, y).y);
             if (icon) {
+                hoveredItem = icon;
+                hoveredAnchorY = icon.implicitHeight / 2;
                 popouts.currentName = icon.name;
-                popouts.currentCenter = Qt.binding(() => icon.mapToItem(root, 0, icon.implicitHeight / 2).y);
                 popouts.hasCurrent = true;
             }
         } else if (id === "tray" && Config.bar.popouts.tray) {
@@ -89,24 +103,27 @@ ColumnLayout {
                 const index = Math.floor(((y - top - tray.padding * 2 + tray.spacing) / tray.layout.implicitHeight) * tray.items.count);
                 const trayItem = tray.items.itemAt(index);
                 if (trayItem) {
+                    hoveredItem = trayItem;
+                    hoveredAnchorY = trayItem.implicitHeight / 2;
                     popouts.currentName = `traymenu${index}`;
-                    popouts.currentCenter = Qt.binding(() => trayItem.mapToItem(root, 0, trayItem.implicitHeight / 2).y);
                     popouts.hasCurrent = true;
                 } else {
+                    hoveredItem = null;
                     popouts.hasCurrent = false;
                 }
             } else {
+                hoveredItem = null;
                 popouts.hasCurrent = false;
                 tray.expanded = true;
             }
         } else if (id === "activeWindow" && Config.bar.popouts.activeWindow && Config.bar.activeWindow.showOnHover) {
             const entry = ch.item as Item;
+            hoveredItem = entry;
             popouts.currentName = id.toLowerCase();
             // Windows: the running-app strip anchors the shared popout on the
             // row being pointed at through hoverCenter. Entries without that
             // property keep their own centre, as upstream does.
-            const anchor = "hoverCenter" in entry ? entry.hoverCenter : entry.implicitHeight / 2;
-            popouts.currentCenter = entry.mapToItem(root, 0, anchor).y;
+            hoveredAnchorY = "hoverCenter" in entry ? entry.hoverCenter : entry.implicitHeight / 2;
             popouts.hasCurrent = true;
         }
     }

@@ -66,8 +66,17 @@ class CiShardsAndTiming(unittest.TestCase):
         self.assertIn("Test-DesktopSupervisorStop", third)
         self.assertIn("history-version", third)
         self.assertIn("public-release-metadata", third)
-        self.assertEqual(["Test-CIAcceleration"], first)
-        self.assertEqual(["Test-PairContract", "toolchain-modules"], second)
+        # Even 8/8/7 split. Shard 3 keeps every check that needs full git
+        # history or Node so fetch-depth: 1 and setup-node stay conditional.
+        self.assertCountEqual(
+            ["Test-CIAcceleration", "Test-CaptureIntegration", "Test-CIChanges",
+             "Test-SchemeProbeGuard", "Test-KsgSettingsImport", "warning-baseline",
+             "quota-providers", "performance-method"], first)
+        self.assertCountEqual(
+            ["Test-PairContract", "toolchain-modules", "Test-Toolchain",
+             "Test-NexusPipeline", "llvm-extraction", "Test-PublicDocs",
+             "Test-RepositoryPolicy", "Test-ShellLifecycle"], second)
+        self.assertIn("javascript", third)
         self.assertCountEqual(full, first + second + third)
         self.assertEqual(len(full), len(set(first + second + third)))
         source = script.read_text()

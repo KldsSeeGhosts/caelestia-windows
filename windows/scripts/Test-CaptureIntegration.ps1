@@ -81,8 +81,6 @@ Assert-True (-not $nativeJob.Contains('Test-CaptureRust.ps1') -and -not $nativeJ
 Assert-True (-not $fixturesJob.Contains('New-NexusCandidate.ps1') -and -not $fixturesJob.Contains(' finalize ')) 'Capture validation must not wait for candidate assembly or receipt finalization.'
 Assert-True (-not $nativeJob.Contains('Invoke-WindowsFixtureGate.ps1') -and -not $nativeJob.Contains(' finalize ')) 'Production integration runs independently of fixtures and finalization.'
 Assert-True ((Get-Content "$PSScriptRoot\New-CaelestiaRelease.ps1" -Raw).Contains("if (`$build.backendMode -cne 'pinned')")) 'Candidate-release refusal guard must remain.'
-& node "$repo\windows\tests\CaptureIntegration.test.js"
-if ($LASTEXITCODE -ne 0) { throw 'Capture adapter integration checks failed.' }
-& node "$repo\windows\tests\GlazierRecorderLogic.test.js"
-if ($LASTEXITCODE -ne 0) { throw 'Existing recorder ownership checks failed.' }
+# CaptureIntegration.test.js and GlazierRecorderLogic.test.js run once in the
+# Unit suite's javascript lane; rerunning them here only repeated the work.
 Write-Output "PASS capture source/provenance contract ($script:assertions assertions)"

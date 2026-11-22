@@ -143,11 +143,12 @@ void BlobGroup::requestAnimationTurn() {
 
 void BlobGroup::deliverAnimationTurn() {
     m_animationTurnPending = false;
-    // A requester can settle, move to another group or be destroyed before delivery.
+    // A requester can settle, move to another group or be destroyed before
+    // delivery. Only the animating shapes and their smoothing neighbours need
+    // repainting; a single panel's spring must not dirty every shape.
     for (auto* shape : std::as_const(m_shapes)) {
         if (shape->m_physicsActive) {
-            markDirty();
-            return;
+            markShapeDirty(shape);
         }
     }
 }

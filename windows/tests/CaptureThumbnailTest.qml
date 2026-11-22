@@ -1501,14 +1501,20 @@ ShellRoot {
         thumbs.closeAll();
         later(1500, () => step(() => {
             check(thumbs.entries.length === 0 && panels().length === 0, "everything is closed");
-            countTemp(left => countDragDirs(dirs => {
+            // A retiring card can still hold its preview file for one more
+            // event-loop turn. The retry list is the owner's cleanup path, so
+            // drain it before asserting that the temp directory is empty.
+            waitFor(() => {
+                thumbs.retryTemps();
+                return thumbs.pendingTemps.length === 0;
+            }, () => countTemp(left => countDragDirs(dirs => {
                 check(left === 0, "no hand-over or preview file is left in the temp directory: " + left);
                 check(dirs === 0 && thumbs.dragFiles.length === 0, "and no drag file or directory: " + dirs);
                 GlobalConfig.windows = {};
                 CaptureUi.glazierProvider = Glazier;
                 console.log("CAELESTIA_CAPTURE_THUMBNAIL_PASS " + assertions);
                 Qt.quit();
-            }));
+            })), 100);
         }));
     }
 }

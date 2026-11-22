@@ -43,13 +43,21 @@ Item {
     property int captureSerial: 0
     property bool displayingPreview: false
 
+    function releaseCaptures(): void {
+        // A finished transition leaves each capture holding a full-screen
+        // texture provider; dropping the source frees it while idle.
+        capture1.sourceItem = null;
+        capture2.sourceItem = null;
+        transition.from = null;
+    }
+
     function applyDirect(): void {
         transitionAnim.stop();
         ++captureSerial;
         capture1.visible = false;
         capture2.visible = false;
-        transition.from = null;
         transitionProgress = 1;
+        releaseCaptures();
         live.source = source;
     }
 
@@ -101,6 +109,7 @@ Item {
         duration: root.shader.duration * Tokens.anim.durations.scale
         easing: root.shader.easing
         to: 1
+        onFinished: root.releaseCaptures()
     }
 
     ShaderEffectSource {

@@ -70,23 +70,43 @@ try {
         $worker = [powershell]::Create()
         $null = $worker.AddScript({
             param($Listener, $Bytes)
-            $client = $Listener.AcceptTcpClient()
-            $stream = $client.GetStream()
-            $null = $stream.Read((New-Object byte[] 4096), 0, 4096)
-            $stream.Write($Bytes, 0, $Bytes.Length)
-            $stream.Flush()
-            $client.Close()
-            'served'
+            # curl retries on transient failures. A listener that serves one
+            # request and stays open makes every retry hang until max-time;
+            # serve each retry on a fresh connection, then report the count.
+            $served = 0
+            try {
+                while ($served -lt 4) {
+                    $client = $Listener.AcceptTcpClient()
+                    try {
+                        $stream = $client.GetStream()
+                        $null = $stream.Read((New-Object byte[] 4096), 0, 4096)
+                        $stream.Write($Bytes, 0, $Bytes.Length)
+                        $stream.Flush()
+                    } finally {
+                        $client.Close()
+                    }
+                    $served++
+                }
+            } catch [Net.Sockets.SocketException] {
+                # The listener was stopped while waiting for the next request.
+            }
+            $served
         }).AddArgument($listener).AddArgument($Response)
         [pscustomobject]@{ Listener = $listener; Worker = $worker; Handle = $worker.BeginInvoke()
             Url = "http://127.0.0.1:$($listener.LocalEndpoint.Port)" }
     }
     function Stop-FakeRelease($Server) {
-        $served = $Server.Handle.AsyncWaitHandle.WaitOne(10000)
+        # Stop first so a worker idle in AcceptTcpClient wakes immediately.
         $Server.Listener.Stop()
-        if ($served) { $null = $Server.Worker.EndInvoke($Server.Handle) } else { $null = $Server.Worker.Stop() }
+        if (-not $Server.Handle.AsyncWaitHandle.WaitOne(10000)) {
+            $null = $Server.Worker.Stop()
+            $Server.Worker.Dispose()
+            return $false
+        }
+        $served = 0
+        foreach ($count in @($Server.Worker.EndInvoke($Server.Handle))) { $served = [int]$count }
         $Server.Worker.Dispose()
-        return $served
+        return $served -ge 1
     }
     function Invoke-Prepare([string]$Name, [string]$Url) {
         $tools = Join-Path $root "sccache-$Name"

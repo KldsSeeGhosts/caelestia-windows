@@ -85,7 +85,7 @@ Item {
         Anim on waveProgress {
             id: waveProgAnim
 
-            running: true
+            running: root.visible
             paused: root.wavePaused || wave.amplitudeMultiplier === 0
             from: 0
             to: 1

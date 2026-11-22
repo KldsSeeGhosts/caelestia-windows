@@ -40,6 +40,14 @@ private:
 
     int m_bars;
     QVector<double> m_values;
+    // Scratch for the smoothing pass; m_values is copied into it so neither
+    // buffer is ever reallocated on the per-chunk path.
+    QVector<double> m_scratch;
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    // Set once an idle capture's bars have fully decayed; the FFT is then
+    // skipped until real audio resumes.
+    bool m_idleSettled = false;
+#endif
 
     void reload();
     void initCava();

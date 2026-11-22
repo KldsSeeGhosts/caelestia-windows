@@ -170,7 +170,7 @@ class ParallelQmlTests(unittest.TestCase):
         shell = integration.split("function Get-ShellArguments", 1)[1].split(
             "function Get-PluginArguments", 1)[0]
         self.assertIn("@('-QmlJobs', \"$QmlJobs\")", shell)
-        self.assertNotIn("QmlJobs", integration.split("function Get-ServicesArguments", 1)[1].split(
+        self.assertIn("@('-QmlJobs', \"$QmlJobs\")", integration.split("function Get-ServicesArguments", 1)[1].split(
             "function Get-ShellArguments", 1)[0])
 
 

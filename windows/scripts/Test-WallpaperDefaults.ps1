@@ -41,6 +41,10 @@ foreach ($required in @(
 # wallpaper source resolved once per start. Separate profiles are how the fresh
 # restart, upgrade, pick restart, damaged-record and retry paths are exercised
 # for real.
+# The immutable staged graph is staged once and linked into every fixture's
+# private overlay. A harness-provided stage is reused as-is.
+$ownedStage = Enter-QmlSharedStage
+try {
 $fixtures = @(
     [ordered]@{ name = 'wallpaper-defaults'; source = 'windows/tests/WallpaperDefaultsTest.qml'
         marker = 'CAELESTIA_WALLPAPER_DEFAULTS'; minimum = 95 },
@@ -88,4 +92,7 @@ foreach ($fixture in $fixtures) {
     if (-not $result.passed) {
         throw "Wallpaper fixture '$($fixture.name)' failed. See $($result.stderr)."
     }
+}
+} finally {
+    Exit-QmlSharedStage $ownedStage
 }

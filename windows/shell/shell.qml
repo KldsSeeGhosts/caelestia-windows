@@ -170,8 +170,9 @@ ShellRoot {
     Connections {
         target: Glazier
         function reportSupervisorPause(): void {
-            console.info(Glazier.quitPending || Glazier.reloadCallback
-                ? "CAELESTIA_SHELL_PAUSED" : "CAELESTIA_SHELL_ACTIVE");
+            const paused = Boolean(Glazier.quitPending || Glazier.reloadCallback);
+            console.info(paused ? "CAELESTIA_SHELL_PAUSED" : "CAELESTIA_SHELL_ACTIVE");
+            Native.Supervisor?.reportPaused?.(paused);
         }
         function onQuitPendingChanged(): void { reportSupervisorPause(); }
         function onReloadCallbackChanged(): void { reportSupervisorPause(); }

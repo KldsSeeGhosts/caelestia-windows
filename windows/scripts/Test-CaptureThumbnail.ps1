@@ -10,6 +10,7 @@ $fixturePowerShell = Get-CaelestiaPowerShellPath
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\')
 $fixtureTemp = Join-Path $tempRoot ('caelestia-thumbnail-temp-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixtureTemp | Out-Null
+$ownedStage = Enter-QmlSharedStage
 try {
     $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name capture-thumbnail -ShellFixture -UseQuickshell `
         -Sources @('windows/tests/CaptureThumbnailTest.qml') -FixtureFile 'windows/tests/CaptureThumbnailTest.qml' `
@@ -33,6 +34,7 @@ try {
         (Split-Path -Leaf $resolved) -like 'caelestia-thumbnail-temp-*') {
         Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction SilentlyContinue
     }
+    Exit-QmlSharedStage $ownedStage
 }
 $result | ConvertTo-Json -Depth 8
 $history | ConvertTo-Json -Depth 8

@@ -1,5 +1,7 @@
 #include "windowsfocusguard.hpp"
 
+#include <dwmapi.h>
+
 #include <qloggingcategory.h>
 #include <qtimer.h>
 
@@ -21,6 +23,14 @@ WindowsFocusGuard::~WindowsFocusGuard() {
 WindowsFocusGuard::NativeWindow WindowsFocusGuard::identify(HWND hwnd) {
     NativeWindow identity;
     if (!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd))
+        return identity;
+
+    // A minimized window cannot take the foreground, and a cloaked window
+    // lives on another virtual desktop; neither is a valid restore target.
+    if (IsIconic(hwnd))
+        return identity;
+    DWORD cloaked = 0;
+    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked))) && cloaked != 0)
         return identity;
 
     identity.thread = GetWindowThreadProcessId(hwnd, &identity.process);
@@ -272,6 +282,10 @@ void WindowsFocusGuard::queueRestore(quint64 generation) {
             return;
         }
 
+        // Let the saved application accept a foreground switch it would
+        // otherwise refuse; the request still goes through SetForegroundWindow
+        // once, with no retry or input attachment.
+        AllowSetForegroundWindow(saved.process);
         const bool accepted = SetForegroundWindow(saved.hwnd) != FALSE;
         const bool foreground = GetForegroundWindow() == saved.hwnd;
         report(foreground ? QStringLiteral("restore-succeeded")

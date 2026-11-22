@@ -29,6 +29,7 @@ qml_module(caelestia-windows
         user32
         ole32
         shell32
+        dwmapi
         windowsapp
 )
 
@@ -75,7 +76,7 @@ if(CAELESTIA_WINDOWS_TESTS)
     add_executable(windowsfocusguard-tests test/windowsfocusguard_test.cpp windowsfocusguard.hpp)
     target_include_directories(windowsfocusguard-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_definitions(windowsfocusguard-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(windowsfocusguard-tests PRIVATE Qt::Core Qt::Gui Qt::Quick Qt::Qml Qt::Test user32)
+    target_link_libraries(windowsfocusguard-tests PRIVATE Qt::Core Qt::Gui Qt::Quick Qt::Qml Qt::Test user32 dwmapi)
 
     add_executable(wasapi-format-tests Audio/test/wasapiformat_test.cpp Audio/wasapiformat.cpp Audio/wasapiformat.hpp)
     target_include_directories(wasapi-format-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Audio")

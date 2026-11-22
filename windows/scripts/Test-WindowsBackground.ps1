@@ -2,6 +2,8 @@
 param([Parameter(Mandatory)][string]$QtPrefix, [string]$BuildRoot)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
+$ownedStage = Enter-QmlSharedStage
+try {
 foreach ($case in @(
     @{ Name = 'underlay'; File = 'WindowsBackgroundTest.qml'; Marker = 'CAELESTIA_BACKGROUND_UNDERLAY'; Floor = 100; Fakes = @() },
     @{ Name = 'legacy'; File = 'WindowsBackgroundLegacyTest.qml'; Marker = 'CAELESTIA_BACKGROUND_LEGACY'; Floor = 10; Fakes = @('windows/tests/fakes/background-legacy') },
@@ -14,4 +16,7 @@ foreach ($case in @(
         -Marker $case.Marker -MinimumAssertions $case.Floor
     $result | ConvertTo-Json -Depth 8
     if (-not $result.passed) { throw "Background $($case.Name) fixture failed. See $($result.stderr)." }
+}
+} finally {
+    Exit-QmlSharedStage $ownedStage
 }
