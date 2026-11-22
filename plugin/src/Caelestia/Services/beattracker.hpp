@@ -33,6 +33,10 @@ private:
 #ifdef CAELESTIA_WINDOWS_AUDIO
     ::caelestia::shell::windows::OnsetDetector m_detector;
     float* m_in;
+    // Feeding silence reproduces no onsets; after the detector's flux history
+    // is flushed the per-chunk FFT is skipped until real audio resumes.
+    int m_idleChunks = 0;
+    bool m_idleSettled = false;
 #else
     aubio_tempo_t* m_tempo;
     fvec_t* m_in;

@@ -10,6 +10,7 @@
 #include <qsignalspy.h>
 #include <qtimer.h>
 #include <qt_windows.h>
+#include <dwmapi.h>
 
 #include <QtTest/QtTest>
 
@@ -20,6 +21,8 @@ struct Window {
     DWORD process = 0;
     DWORD thread = 1;
     LONG_PTR exStyle = 0;
+    bool iconic = false;
+    DWORD cloaked = 0;
 };
 
 QHash<HWND, Window> windows;
@@ -28,6 +31,7 @@ DWORD tick = 1000;
 DWORD currentProcess = 1000;
 bool acceptForeground = true;
 QList<HWND> foregroundRequests;
+QList<DWORD> foregroundGrants;
 
 void reset() {
     windows.clear();
@@ -35,6 +39,7 @@ void reset() {
     tick = 1000;
     acceptForeground = true;
     foregroundRequests.clear();
+    foregroundGrants.clear();
 }
 
 HWND add(HWND hwnd, DWORD process, bool visible = true) {
@@ -55,6 +60,26 @@ static BOOL mock_IsWindow(HWND hwnd) {
 static BOOL mock_IsWindowVisible(HWND hwnd) {
     const auto found = mock::windows.constFind(hwnd);
     return found != mock::windows.constEnd() && found->visible ? TRUE : FALSE;
+}
+
+static BOOL mock_IsIconic(HWND hwnd) {
+    const auto found = mock::windows.constFind(hwnd);
+    return found != mock::windows.constEnd() && found->iconic ? TRUE : FALSE;
+}
+
+static HRESULT mock_DwmGetWindowAttribute(HWND hwnd, DWORD attribute, PVOID out, DWORD size) {
+    if (attribute != DWMWA_CLOAKED || out == nullptr || size != sizeof(DWORD))
+        return E_INVALIDARG;
+    const auto found = mock::windows.constFind(hwnd);
+    if (found == mock::windows.constEnd())
+        return E_HANDLE;
+    *static_cast<DWORD*>(out) = found->cloaked;
+    return S_OK;
+}
+
+static BOOL mock_AllowSetForegroundWindow(DWORD process) {
+    mock::foregroundGrants.append(process);
+    return TRUE;
 }
 
 static DWORD mock_GetWindowThreadProcessId(HWND hwnd, DWORD* process) {
@@ -99,6 +124,9 @@ static BOOL mock_SetForegroundWindow(HWND hwnd) {
 // headers are included first, so only the production source sees the macros.
 #define IsWindow mock_IsWindow
 #define IsWindowVisible mock_IsWindowVisible
+#define IsIconic mock_IsIconic
+#define DwmGetWindowAttribute mock_DwmGetWindowAttribute
+#define AllowSetForegroundWindow mock_AllowSetForegroundWindow
 #define GetWindowThreadProcessId mock_GetWindowThreadProcessId
 #define GetForegroundWindow mock_GetForegroundWindow
 #define GetCurrentProcessId mock_GetCurrentProcessId
@@ -110,6 +138,9 @@ static BOOL mock_SetForegroundWindow(HWND hwnd) {
 
 #undef IsWindow
 #undef IsWindowVisible
+#undef IsIconic
+#undef DwmGetWindowAttribute
+#undef AllowSetForegroundWindow
 #undef GetWindowThreadProcessId
 #undef GetForegroundWindow
 #undef GetCurrentProcessId

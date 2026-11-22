@@ -231,8 +231,10 @@ Scope {
         // the destination is captured before this window takes focus.
         if (!opened) {
             ClipboardHistory.setActive(false);
+            idleClearTimer.restart();
             return;
         }
+        idleClearTimer.stop();
         ClipboardHistory.refresh();
         Qt.callLater(root.rebuildDisplay);
         focusTimer.restart();
@@ -283,6 +285,21 @@ Scope {
         onTriggered: {
             if (root.opened)
                 root.searchBar?.forceActiveFocus();
+        }
+    }
+
+    // The display rows retain every visible clipboard text; drop them once
+    // the picker has stayed closed for a while. Reopening rebuilds the model
+    // from the next snapshot in onOpenedChanged.
+    Timer {
+        id: idleClearTimer
+
+        interval: 30000
+        onTriggered: {
+            if (!root.opened) {
+                root.selectedIndex = -1;
+                displayModel.clear();
+            }
         }
     }
 
@@ -874,7 +891,7 @@ Scope {
                                             border.width: 2
                                             border.color: Colours.palette.m3outline
 
-                                            layer.enabled: true
+                                            layer.enabled: parent.visible
                                             layer.effect: MultiEffect {
                                                 shadowEnabled: true
                                                 blurMax: 16
@@ -1009,7 +1026,7 @@ Scope {
                         border.width: 1
                         z: 10
 
-                        layer.enabled: true
+                        layer.enabled: visible
                         layer.effect: MultiEffect {
                             shadowEnabled: true
                             blurMax: 32

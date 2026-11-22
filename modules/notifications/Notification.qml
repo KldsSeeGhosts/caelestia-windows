@@ -212,36 +212,42 @@ StyledRect {
                 }
             }
 
-            Shape {
+            // Most notifications have no progress hint; the CurveRenderer
+            // shape only exists while one is actually reported.
+            Loader {
                 id: progressIndicator
 
                 anchors.centerIn: appIcon
-                width: appIcon.implicitWidth + progressShape.strokeWidth * 2
-                height: appIcon.implicitHeight + progressShape.strokeWidth * 2
-                preferredRendererType: Shape.CurveRenderer
+                active: ((root.modelData.hints.value ?? 0) > 0)
 
-                ShapePath {
-                    id: progressShape
+                sourceComponent: Shape {
+                    width: appIcon.implicitWidth + progressShape.strokeWidth * 2
+                    height: appIcon.implicitHeight + progressShape.strokeWidth * 2
+                    preferredRendererType: Shape.CurveRenderer
 
-                    capStyle: ShapePath.RoundCap
-                    fillColor: "transparent"
-                    strokeWidth: 2
-                    strokeColor: Colours.palette.m3primary
+                    ShapePath {
+                        id: progressShape
 
-                    PathAngleArc {
-                        id: progressArc
+                        capStyle: ShapePath.RoundCap
+                        fillColor: "transparent"
+                        strokeWidth: 2
+                        strokeColor: Colours.palette.m3primary
 
-                        radiusX: progressIndicator.width / 2 - root.Tokens.padding.extraSmall / 2
-                        centerX: progressIndicator.width / 2
-                        radiusY: progressIndicator.height / 2 - root.Tokens.padding.extraSmall / 2
-                        centerY: progressIndicator.height / 2
+                        PathAngleArc {
+                            id: progressArc
 
-                        startAngle: -90
-                        sweepAngle: ((root.modelData.hints.value ?? 0) / 100) * 360
+                            radiusX: width / 2 - root.Tokens.padding.extraSmall / 2
+                            centerX: width / 2
+                            radiusY: height / 2 - root.Tokens.padding.extraSmall / 2
+                            centerY: height / 2
 
-                        Behavior on sweepAngle {
-                            Anim {
-                                easing: Tokens.anim.emphasizedDecel
+                            startAngle: -90
+                            sweepAngle: ((root.modelData.hints.value ?? 0) / 100) * 360
+
+                            Behavior on sweepAngle {
+                                Anim {
+                                    easing: Tokens.anim.emphasizedDecel
+                                }
                             }
                         }
                     }

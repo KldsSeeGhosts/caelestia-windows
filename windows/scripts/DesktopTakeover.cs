@@ -90,23 +90,65 @@ namespace Caelestia.Takeover {
     // subsequent hang. Keep at most one outstanding native call, never queue
     // retries, and never hold the supervisor's message pump waiting for it.
     public sealed class BoundedExplorerCall {
-        int busy;
+        // One persistent worker owns every serialized call; a timed-out call
+        // still occupies the gate until it finishes, exactly like the old
+        // per-call thread whose Join returned early.
+        readonly object gate = new object();
+        readonly AutoResetEvent workReady = new AutoResetEvent(false);
+        readonly ManualResetEvent workDone = new ManualResetEvent(false);
+        Thread worker;
+        Func<object> pending;
+        object value;
+        Exception failure;
+        bool executing;
         public bool Try<T>(Func<T> action, out T result) {
             result = default(T);
-            if (Interlocked.CompareExchange(ref busy, 1, 0) != 0) return false;
-            T value = default(T);
-            Exception failure = null;
-            var worker = new Thread(delegate() {
-                try { value = action(); }
-                catch (Exception error) { failure = error; }
-                finally { Interlocked.Exchange(ref busy, 0); }
-            });
-            worker.IsBackground = true;
-            worker.Start();
-            if (!worker.Join(100)) return false;
-            if (failure != null) throw failure;
-            result = value;
+            lock (gate) {
+                if (pending != null || executing) return false;
+                pending = delegate { return action(); };
+                failure = null;
+                value = null;
+                workDone.Reset();
+                if (worker == null) {
+                    worker = new Thread(Work);
+                    worker.IsBackground = true;
+                    worker.Start();
+                }
+            }
+            workReady.Set();
+            if (!workDone.WaitOne(100)) return false;
+            Exception error;
+            object outcome;
+            lock (gate) {
+                error = failure;
+                outcome = value;
+            }
+            if (error != null) throw error;
+            result = (T)outcome;
             return true;
+        }
+        void Work() {
+            while (true) {
+                workReady.WaitOne();
+                Func<object> action;
+                lock (gate) {
+                    action = pending;
+                    pending = null;
+                    executing = action != null;
+                }
+                if (action == null) continue;
+                try {
+                    object produced = action();
+                    lock (gate) { value = produced; }
+                } catch (Exception error) {
+                    lock (gate) { failure = error; }
+                } finally {
+                    // Signal inside the gate: a caller that observes
+                    // executing == false must never still see this call's
+                    // completion event.
+                    lock (gate) { executing = false; workDone.Set(); }
+                }
+            }
         }
     }
     // Same 100 ms caller budget as AppBar/region work, with one owned worker.
@@ -1964,11 +2006,27 @@ namespace Caelestia.Takeover {
                 CancelProbe();
             }
             // WM_SETTINGCHANGE and WM_DISPLAYCHANGE also cover work-area,
-            // taskbar preference and monitor topology changes.
-            if ((message.Msg == taskbarCreated || message.Msg == 0x001A || message.Msg == 0x007E)
-                && child != null && !child.HasExited && takeover) {
+            // taskbar preference and monitor topology changes. The broadcast
+            // reaches every section though, so only the sections that can
+            // expose a taskbar justify a full suppression pass.
+            bool maintain = message.Msg == 0x007E; // WM_DISPLAYCHANGE
+            if (message.Msg == 0x001A) { // WM_SETTINGCHANGE
+                maintain = message.WParam.ToInt32() == 0x002F; // SPI_SETWORKAREA
+                if (!maintain && message.LParam != IntPtr.Zero)
+                    maintain = Marshal.PtrToStringUni(message.LParam) == "TraySettings";
+            }
+            if (message.Msg == taskbarCreated) {
                 // Quickshell's tray hook also sends TaskbarCreated to re-announce
-                // icons. Rebind only when Explorer's process actually changed.
+                // icons under the same owner. Only a new Explorer taskbar owner
+                // or an escaped taskbar needs another suppression pass.
+                uint owner = Native.ExplorerTaskbarOwner();
+                maintain = owner != showHook.Owner;
+                if (!maintain) {
+                    foreach (var bar in Native.Taskbars())
+                        if (bar.Visible) { maintain = true; break; }
+                }
+            }
+            if (maintain && child != null && !child.HasExited && takeover) {
                 try {
                     MaintainTaskbars(true);
                 } catch (Exception error) {

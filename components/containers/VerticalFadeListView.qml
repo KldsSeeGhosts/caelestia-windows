@@ -25,7 +25,9 @@ StyledListView {
     flickableDirection: Flickable.VerticalFlick
     orientation: ListView.Vertical
 
-    layer.enabled: true
+    // The gradient mask costs a full-size FBO; non-scrollable content shows
+    // neither fade and can render directly.
+    layer.enabled: root.topFadeOpacity < 1 || root.bottomFadeOpacity < 1
     layer.effect: Mask {
         maskSource: mask
 
@@ -35,6 +37,8 @@ StyledListView {
             anchors.fill: parent
             visible: false
             layer.enabled: true
+            // The mask is a 1D vertical ramp; a single pixel column is enough.
+            layer.textureSize: Qt.size(1, 256)
 
             gradient: Gradient {
                 orientation: Gradient.Vertical

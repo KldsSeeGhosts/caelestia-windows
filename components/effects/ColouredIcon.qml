@@ -13,23 +13,28 @@ IconImage {
 
     layer.enabled: true
     layer.effect: Colouriser {
-        sourceColor: analyser.dominantColour
+        sourceColor: analyser.item?.dominantColour ?? Qt.color("transparent")
         colorizationColor: root.colour
     }
 
     layer.onEnabledChanged: {
         if (layer.enabled && status === Image.Ready)
-            analyser.requestUpdate();
+            analyser.item?.requestUpdate();
     }
 
     onStatusChanged: {
         if (layer.enabled && status === Image.Ready)
-            analyser.requestUpdate();
+            analyser.item?.requestUpdate();
     }
 
-    ImageAnalyser {
+    // grabToImage() readbacks are only needed while this icon is actually
+    // recoloured; an un-layered icon never instantiates the analyser.
+    Loader {
         id: analyser
 
-        sourceItem: root
+        active: root.layer.enabled
+        sourceComponent: ImageAnalyser {
+            sourceItem: root
+        }
     }
 }

@@ -70,7 +70,7 @@ ProgressBar {
         gap: root.Tokens.spacing.extraSmall
 
         Anim on progress {
-            running: root.indeterminateAnimState !== StyledProgressBar.Stopped
+            running: root.visible && root.indeterminateAnimState !== StyledProgressBar.Stopped
             from: 0
             to: 1
             duration: manager.duration
@@ -224,7 +224,7 @@ ProgressBar {
         color: root.fgColour
 
         Anim on waveProgress {
-            running: true
+            running: root.visible
             paused: wave.amplitudeMultiplier === 0 || root.wavePaused
             from: 0
             to: 1

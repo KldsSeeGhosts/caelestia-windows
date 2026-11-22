@@ -44,12 +44,18 @@ void CavaProcessor::process() {
     // A loopback capture that has gone idle raises no packet event. Hold the
     // last window for a few device periods, then feed the analyzer silence
     // instead of replaying it forever.
+    const bool idle = AudioCollector::instance().captureIdle();
+    if (idle && m_idleSettled) {
+        // Bars already decayed to zero on silence: no FFT, no allocation.
+        return;
+    }
     int count;
-    if (AudioCollector::instance().captureIdle()) {
+    if (idle) {
         std::fill(m_in, m_in + ac::k_chunkSize, 0.0);
         count = static_cast<int>(ac::k_chunkSize);
     } else {
         count = static_cast<int>(AudioCollector::instance().readChunk(m_in));
+        m_idleSettled = false;
     }
 
     // Windows: run the ported FFT/bar plan instead of libcava.
@@ -61,29 +67,50 @@ void CavaProcessor::process() {
     cava_execute(m_in, count, m_out, m_plan);
 #endif
 
-    // Apply monstercat filter
-    QVector<double> values(m_bars);
+    // Apply monstercat filter into the persistent scratch buffer so the
+    // per-chunk path never heap-allocates a QVector<double>(m_bars).
+    if (m_scratch.size() != m_bars) {
+        m_scratch.fill(0.0, m_bars);
+    }
 
     // Left to right pass
     const double inv = 1.0 / 1.5;
     double carry = 0.0;
     for (int i = 0; i < m_bars; ++i) {
         carry = std::max(m_out[i], carry * inv);
-        values[i] = carry;
+        m_scratch[i] = carry;
     }
 
     // Right to left pass and combine
     carry = 0.0;
     for (int i = m_bars - 1; i >= 0; --i) {
         carry = std::max(m_out[i], carry * inv);
-        values[i] = std::max(values[i], carry);
+        m_scratch[i] = std::max(m_scratch[i], carry);
     }
 
     // Update values
-    if (values != m_values) {
-        m_values = std::move(values);
+    if (m_scratch != m_values) {
+        if (m_values.size() != m_scratch.size()) {
+            m_values = m_scratch;
+        } else {
+            std::copy(m_scratch.cbegin(), m_scratch.cend(), m_values.begin());
+        }
         emit valuesChanged(m_values);
     }
+
+#ifdef CAELESTIA_WINDOWS_AUDIO
+    if (idle) {
+        // Once every bar is indistinguishable from silence, the silence
+        // frames that follow cannot change the output; skip them entirely.
+        m_idleSettled = true;
+        for (int i = 0; i < m_bars; ++i) {
+            if (m_scratch[i] > 1e-4) {
+                m_idleSettled = false;
+                break;
+            }
+        }
+    }
+#endif
 }
 
 void CavaProcessor::setBars(int bars) {

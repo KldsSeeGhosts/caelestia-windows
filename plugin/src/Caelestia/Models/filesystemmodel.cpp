@@ -59,8 +59,15 @@ bool FileSystemEntry::isDir() const {
 
 bool FileSystemEntry::isImage() const {
     if (!m_isImageInitialised) {
-        const QImageReader reader(m_path);
-        m_isImage = reader.canRead();
+        // canRead() opens and sniffs the file; the extension gate keeps that
+        // cost off entries that cannot decode anyway.
+        static const QSet<QString> k_extensions = [] {
+            QSet<QString> set;
+            for (const auto& format : QImageReader::supportedImageFormats())
+                set << QString::fromUtf8(format).toLower();
+            return set;
+        }();
+        m_isImage = k_extensions.contains(m_fileInfo.suffix().toLower()) && QImageReader(m_path).canRead();
         m_isImageInitialised = true;
     }
     return m_isImage;
@@ -69,7 +76,12 @@ bool FileSystemEntry::isImage() const {
 QString FileSystemEntry::mimeType() const {
     if (!m_mimeTypeInitialised) {
         static const QMimeDatabase k_db;
-        m_mimeType = k_db.mimeTypeForFile(m_path).name();
+        // MatchExtension alone never sniffs file contents; only an extension
+        // the database cannot resolve pays for the content lookup.
+        auto mime = k_db.mimeTypeForFile(m_path, QMimeDatabase::MatchExtension);
+        if (!mime.isValid() || mime.isDefault())
+            mime = k_db.mimeTypeForFile(m_path);
+        m_mimeType = mime.name();
         m_mimeTypeInitialised = true;
     }
     return m_mimeType;
@@ -89,8 +101,13 @@ FileSystemModel::FileSystemModel(QObject* parent)
     , m_watchChanges(true)
     , m_showHidden(false)
     , m_filter(Filter::NoFilter) {
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, &FileSystemModel::watchDirIfRecursive);
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, &FileSystemModel::updateEntriesForDir);
+    // A directoryChanged burst triggers one debounced update per touched
+    // directory; each update's single traversal also collects the
+    // subdirectories to watch instead of scanning a second time.
+    m_debounceTimer.setSingleShot(true);
+    m_debounceTimer.setInterval(100);
+    connect(&m_debounceTimer, &QTimer::timeout, this, &FileSystemModel::processPendingDirs);
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, &FileSystemModel::onDirChanged);
 }
 
 int FileSystemModel::rowCount(const QModelIndex& parent) const {
@@ -226,35 +243,20 @@ QQmlListProperty<FileSystemEntry> FileSystemModel::entries() {
     return { this, &m_entries };
 }
 
-void FileSystemModel::watchDirIfRecursive(const QString& path) {
-    if (m_recursive && m_watchChanges) {
-        const auto currentDir = m_dir;
-        const bool showHidden = m_showHidden;
-        auto future = QtConcurrent::run([showHidden, path] {
-            QDir::Filters filters = QDir::Dirs | QDir::NoDotAndDotDot;
-            if (showHidden) {
-                filters |= QDir::Hidden;
-            }
+void FileSystemModel::onDirChanged(const QString& dir) {
+    m_pendingDirs.insert(dir);
+    m_debounceTimer.start();
+}
 
-            QDirIterator iter(path, filters, QDirIterator::Subdirectories);
-            QStringList dirs;
-            while (iter.hasNext()) {
-                dirs << iter.next();
-            }
-            return dirs;
-        });
-        future.then(this, [currentDir, showHidden, this](const QStringList& paths) {
-            if (currentDir == m_dir && showHidden == m_showHidden && !paths.isEmpty()) {
-                // Ignore if dir or showHidden has changed
-                const auto failed = m_watcher.addPaths(paths);
-                if (!failed.isEmpty())
-                    qWarning() << "FileSystemModel: failed to watch" << failed.size() << "directories, e.g." << failed.first();
-            }
-        });
+void FileSystemModel::processPendingDirs() {
+    const auto dirs = std::exchange(m_pendingDirs, {});
+    for (const auto& dir : dirs) {
+        updateEntriesForDir(dir);
     }
 }
 
 void FileSystemModel::update() {
+    m_pendingDirs.clear();
     updateWatcher();
     updateEntries();
 }
@@ -270,7 +272,6 @@ void FileSystemModel::updateWatcher() {
 
     if (!m_watcher.addPath(m_path))
         qWarning() << "FileSystemModel: failed to watch" << m_path;
-    watchDirIfRecursive(m_path);
 }
 
 void FileSystemModel::updateEntries() {
@@ -303,6 +304,8 @@ void FileSystemModel::updateEntriesForDir(const QString& dir) {
 
     const bool isRoot = dir == m_path;
     const QString prefix = dir.endsWith(u'/') ? dir : dir + u'/';
+    const auto currentDir = m_dir;
+    const bool watchSubdirs = recursive && m_watchChanges;
     QSet<QString> oldPaths;
     for (const auto& entry : std::as_const(m_entries)) {
         if (isRoot || entry->path().startsWith(prefix))
@@ -311,11 +314,12 @@ void FileSystemModel::updateEntriesForDir(const QString& dir) {
 
     auto future = QtConcurrent::run([=](QPromise<PathDiff>& promise) {
         const auto flags = recursive ? QDirIterator::Subdirectories : QDirIterator::NoIteratorFlags;
-        const auto newPaths = scanDir(dir, filtersFor(filter, nameFilters, showHidden), flags, promise);
-        if (!newPaths)
+        const auto scan = scanDir(dir, filtersFor(filter, nameFilters, showHidden), flags, watchSubdirs, promise);
+        if (!scan)
             return;
 
-        promise.addResult({ .removed = oldPaths - *newPaths, .added = *newPaths - oldPaths });
+        promise.addResult({ .removed = oldPaths - scan->paths, .added = scan->paths - oldPaths,
+            .subdirs = scan->subdirs });
     });
 
     if (m_futures.contains(dir))
@@ -334,8 +338,24 @@ void FileSystemModel::updateEntriesForDir(const QString& dir) {
 
     future
         .then(this,
-            [untrack, this](const PathDiff& result) {
+            [untrack, currentDir, watchSubdirs, this](const PathDiff& result) {
                 untrack();
+                // New subdirectories surfaced by the same traversal; no second
+                // scan. Ignore them when the model moved to another root.
+                if (watchSubdirs && currentDir == m_dir && !result.subdirs.isEmpty()) {
+                    const auto watched = m_watcher.directories();
+                    QStringList fresh;
+                    for (const auto& subdir : result.subdirs) {
+                        if (!watched.contains(subdir))
+                            fresh << subdir;
+                    }
+                    if (!fresh.isEmpty()) {
+                        const auto failed = m_watcher.addPaths(fresh);
+                        if (!failed.isEmpty())
+                            qWarning() << "FileSystemModel: failed to watch" << failed.size() << "directories, e.g."
+                                       << failed.first();
+                    }
+                }
                 if (!result.removed.isEmpty() || !result.added.isEmpty())
                     applyChanges(result.removed, result.added);
             })
@@ -353,12 +373,16 @@ FileSystemModel::ScanFilters FileSystemModel::filtersFor(
     const bool dirs = filter.testFlag(Filter::Dirs);
 
     if (!allFiles && (images || videos)) {
+        QSet<QString> imageExtensions;
         if (images) {
             const auto formats = QImageReader::supportedImageFormats();
-            for (const auto& format : formats)
+            for (const auto& format : formats) {
                 filters.nameFilters << u"*."_s + QString::fromUtf8(format);
+                imageExtensions << QString::fromUtf8(format).toLower();
+            }
         }
 
+        QSet<QString> videoExtensions;
         QSet<QString> videoMimeTypes;
         if (videos) {
             // Windows: enumerate known video types, playback belongs to the OS.
@@ -374,12 +398,23 @@ FileSystemModel::ScanFilters FileSystemModel::filtersFor(
                     continue;
                 videoMimeTypes << mimeType.name();
                 filters.nameFilters << mimeType.globPatterns();
+                for (const auto& pattern : mimeType.globPatterns()) {
+                    const auto dot = pattern.lastIndexOf(u'.');
+                    if (dot >= 0)
+                        videoExtensions << pattern.sliced(dot + 1).toLower();
+                }
             }
         }
 
-        filters.filterFn = [images, videoMimeTypes](const QString& path) {
-            return (images && QImageReader(path).canRead()) ||
-                   videoMimeTypes.contains(QMimeDatabase().mimeTypeForFile(path).name());
+        // canRead()/mimeTypeForFile() both open the file; the extension gate
+        // keeps that cost off files that cannot match anyway.
+        filters.filterFn = [images, imageExtensions, videoExtensions,
+                               videoMimeTypes](const QString& path, const QFileInfo& info) {
+            const auto suffix = info.suffix().toLower();
+            if (images && imageExtensions.contains(suffix) && QImageReader(path).canRead())
+                return true;
+            return !videoMimeTypes.isEmpty() && videoExtensions.contains(suffix)
+                && videoMimeTypes.contains(QMimeDatabase().mimeTypeForFile(path).name());
         };
     }
 
@@ -397,30 +432,44 @@ FileSystemModel::ScanFilters FileSystemModel::filtersFor(
     return filters;
 }
 
-std::optional<QSet<QString>> FileSystemModel::scanDir(const QString& dir, const ScanFilters& filters,
-    QDirIterator::IteratorFlags flags, const QPromise<PathDiff>& promise) {
-    std::optional<QDirIterator> iter;
-    if (filters.nameFilters.isEmpty())
-        iter.emplace(dir, filters.filters, flags);
-    else
-        iter.emplace(dir, filters.nameFilters, filters.filters, flags);
+std::optional<FileSystemModel::ScanResult> FileSystemModel::scanDir(const QString& dir, const ScanFilters& filters,
+    QDirIterator::IteratorFlags flags, bool collectDirs, const QPromise<PathDiff>& promise) {
+    // Name filters are matched manually so the single traversal can collect
+    // every subdirectory for the watcher; iterator-level name filters would
+    // hide non-matching directories from the watch list.
+    // The iterator itself must yield directories for that collection, so
+    // widen the filter when watching; collected dirs are only reported to
+    // the watcher, never added to the model unless the caller's own filter
+    // already includes them.
+    auto iterFilters = filters.filters;
+    if (collectDirs)
+        iterFilters |= QDir::Dirs | QDir::NoDotAndDotDot;
+    QDirIterator iter(dir, iterFilters, flags);
 
-    QSet<QString> paths;
-    while (iter->hasNext()) {
+    ScanResult result;
+    while (iter.hasNext()) {
         if (promise.isCanceled())
             return std::nullopt;
 
-        const QString path = iter->next();
-        if (filters.filterFn && !filters.filterFn(path))
+        const QString path = iter.next();
+        const QFileInfo info = iter.fileInfo();
+        const bool isDir = info.isDir();
+        if (collectDirs && isDir)
+            result.subdirs << path;
+        if (isDir && !filters.filters.testFlag(QDir::Dirs))
+            continue;
+        if (!filters.nameFilters.isEmpty() && !QDir::match(filters.nameFilters, info.fileName()))
+            continue;
+        if (filters.filterFn && !filters.filterFn(path, info))
             continue;
 
-        paths.insert(path);
+        result.paths.insert(path);
     }
 
     if (promise.isCanceled())
         return std::nullopt;
 
-    return paths;
+    return result;
 }
 
 void FileSystemModel::applyChanges(const QSet<QString>& removedPaths, const QSet<QString>& addedPaths) {

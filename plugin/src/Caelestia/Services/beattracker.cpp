@@ -29,10 +29,22 @@ void BeatProcessor::process() {
     // the detector silence instead of replaying the last window as a beat.
     quint32 count;
     if (AudioCollector::instance().captureIdle()) {
+        if (m_idleSettled) {
+            // The flux history is all silence: no onset can be reported, so
+            // the FFT has nothing left to do.
+            return;
+        }
         std::fill(m_in, m_in + ac::k_chunkSize, 0.0f);
         count = ac::k_chunkSize;
+        // OnsetDetector keeps kHistory (43) flux frames; after that many
+        // silence chunks nothing in its window can still produce an onset.
+        if (++m_idleChunks >= 48) {
+            m_idleSettled = true;
+        }
     } else {
         count = AudioCollector::instance().readChunk(m_in);
+        m_idleChunks = 0;
+        m_idleSettled = false;
     }
 
     // The detector needs doubles; the collector window is 512 mono samples.

@@ -10,6 +10,8 @@
 #include <qobject.h>
 #include <qqmlintegration.h>
 #include <qqmllist.h>
+#include <qset.h>
+#include <qtimer.h>
 
 namespace caelestia::shell::models {
 
@@ -130,12 +132,19 @@ private:
     struct PathDiff {
         QSet<QString> removed;
         QSet<QString> added;
+        // Subdirectories found by the same traversal, for watcher top-up.
+        QStringList subdirs;
     };
 
     struct ScanFilters {
         QStringList nameFilters;
         QDir::Filters filters;
-        std::function<bool(const QString&)> filterFn = nullptr;
+        std::function<bool(const QString&, const QFileInfo&)> filterFn = nullptr;
+    };
+
+    struct ScanResult {
+        QSet<QString> paths;
+        QStringList subdirs;
     };
 
     QDir m_dir;
@@ -144,6 +153,10 @@ private:
     QHash<QString, QFuture<PathDiff>> m_futures;
     QHash<QString, quint64> m_scanGenerations;
     quint64 m_scanCounter = 0;
+    // directoryChanged bursts coalesce here so a batch of writes costs one
+    // traversal per touched directory, not one per signal.
+    QTimer m_debounceTimer;
+    QSet<QString> m_pendingDirs;
 
     QString m_path;
     bool m_recursive;
@@ -153,14 +166,15 @@ private:
     Filters m_filter;
     QStringList m_nameFilters;
 
-    void watchDirIfRecursive(const QString& path);
+    void onDirChanged(const QString& dir);
+    void processPendingDirs();
     void update();
     void updateWatcher();
     void updateEntries();
     void updateEntriesForDir(const QString& dir);
     [[nodiscard]] static ScanFilters filtersFor(Filters filter, const QStringList& nameFilters, bool showHidden);
-    [[nodiscard]] static std::optional<QSet<QString>> scanDir(const QString& dir, const ScanFilters& filters,
-        QDirIterator::IteratorFlags flags, const QPromise<PathDiff>& promise);
+    [[nodiscard]] static std::optional<ScanResult> scanDir(const QString& dir, const ScanFilters& filters,
+        QDirIterator::IteratorFlags flags, bool collectDirs, const QPromise<PathDiff>& promise);
     void applyChanges(const QSet<QString>& removedPaths, const QSet<QString>& addedPaths);
     [[nodiscard]] bool compareEntries(const FileSystemEntry* a, const FileSystemEntry* b) const;
 };

@@ -50,6 +50,12 @@ QtObject {
     property var extraOpts: ({})
 
     property var _regexCache: ({})
+    // Non-reactive search caches. Finder construction and fuzzy preparation
+    // both walk the whole list; redoing them per keystroke made the launcher
+    // stutter, so they are rebuilt only when the ordered list or the key spec
+    // changes. A plain JS map keeps them out of the binding graph entirely.
+    property var _fzfCache: ({})
+    property var _fuzzyCache: ({})
 
     // --- Native lifecycle -------------------------------------------------
     // The Windows backend has no per-scan result. `scanCompleted` becomes true
@@ -237,6 +243,7 @@ QtObject {
             keywords: listText(entry.keywords),
             runInTerminal: entry.runInTerminal === true,
             icon: typeof entry.icon === "string" ? entry.icon : "",
+            favourite: isFavourite(entry.id),
             frequency: frequencyFor(entry.id)
         };
     }
@@ -263,10 +270,8 @@ QtObject {
     }
 
     function compareWrappers(a, b): int {
-        const aFavourite = isFavourite(a.id);
-        const bFavourite = isFavourite(b.id);
-        if (aFavourite !== bFavourite)
-            return aFavourite ? -1 : 1;
+        if (a.favourite !== b.favourite)
+            return a.favourite ? -1 : 1;
         if (a.frequency !== b.frequency)
             return b.frequency - a.frequency;
         return compareNames(a.name, b.name);
@@ -300,8 +305,16 @@ QtObject {
         if (!search)
             return [...list];
 
+        const currentList = list;
+        const cacheKey = spec.keys.join("") + "" + JSON.stringify(extraOpts ?? {});
+
         if (useFuzzy) {
-            const prepared = fuzzyPrepare(spec);
+            let fuzzyCache = _fuzzyCache[cacheKey];
+            if (!fuzzyCache || fuzzyCache.source !== currentList) {
+                fuzzyCache = { source: currentList, prepared: fuzzyPrepare(spec) };
+                _fuzzyCache[cacheKey] = fuzzyCache;
+            }
+            const prepared = fuzzyCache.prepared;
             if (prepared.length === 0)
                 return [];
             return Fuzzy.go(search, prepared, Object.assign({
@@ -311,20 +324,23 @@ QtObject {
             }, extraOpts)).map(result => result.obj._item);
         }
 
-        const finder = new Fzf.Finder(list, Object.assign({
-            selector: item => root.selectorText(spec, item)
-        }, extraOpts));
+        let finderCache = _fzfCache[cacheKey];
+        if (!finderCache || finderCache.source !== currentList) {
+            finderCache = {
+                source: currentList,
+                finder: new Fzf.Finder(currentList, Object.assign({
+                    selector: item => root.selectorText(spec, item)
+                }, extraOpts))
+            };
+            _fzfCache[cacheKey] = finderCache;
+        }
+        const finder = finderCache.finder;
         return finder.find(search).sort((a, b) => {
             if (a.score === b.score)
                 return selectorText(spec, a.item).trim().length - selectorText(spec, b.item).trim().length;
             return b.score - a.score;
         }).map(result => result.item);
     }
-
-    // Kept for consumers that read the upstream Searcher state.
-    readonly property var fuzzyPrepped: useFuzzy ? fuzzyPrepare({
-        keys: keys
-    }) : []
 
     function transformSearch(search: string): string {
         return search;

@@ -25,14 +25,30 @@ Item {
         anchors.fill: parent
         active: root.opacity > 0 && Config.background.visualiser.blur
 
-        sourceComponent: MultiEffect {
-            source: root.wallpaper
-            maskSource: wrapper
-            maskEnabled: true
-            blurEnabled: true
-            blur: 1
-            blurMax: 32
-            autoPaddingEnabled: false
+        sourceComponent: Item {
+            anchors.fill: parent
+
+            // An inline MultiEffect.source value has no visual parent and
+            // keeps a window reference on the wallpaper when a per-screen
+            // window is recreated. Keep this capture parented; do not fold it
+            // back into the source property.
+            ShaderEffectSource {
+                id: visualiserBlurSource
+
+                anchors.fill: parent
+                sourceItem: root.wallpaper
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                source: visualiserBlurSource
+                maskSource: wrapper
+                maskEnabled: true
+                blurEnabled: true
+                blur: 1
+                blurMax: 32
+                autoPaddingEnabled: false
+            }
         }
     }
 
