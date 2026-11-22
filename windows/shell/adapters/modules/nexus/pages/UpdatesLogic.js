@@ -1,5 +1,6 @@
-// The manual destination is not a release check or an automatic update channel.
-var defaultReleasesUrl = "https://github.com/KldsSeeGhosts/caelestia-windows/releases";
+// These are the two entry points for the same published release.
+var defaultReleasesUrl = "https://kldsseeghosts.github.io/caelestia-windows/#install";
+var releaseFeed = "development"; // Existing authenticated protocol identity.
 
 function text(value) {
     return typeof value === "string" ? value : "";
@@ -8,7 +9,8 @@ function text(value) {
 function normalize(data) {
     var value = data && typeof data === "object" ? data : {};
     var candidate = text(value.manualReleaseUrl || value.releasesUrl);
-    var releasesUrl = /^https:\/\/github\.com\/KldsSeeGhosts\/caelestia-windows\/releases(?:\/tag\/[A-Za-z0-9._-]+)?$/.test(candidate)
+    var releasesUrl = candidate === defaultReleasesUrl ||
+            /^https:\/\/github\.com\/KldsSeeGhosts\/caelestia-windows\/releases(?:\/tag\/[A-Za-z0-9._-]+)?$/.test(candidate)
         ? candidate : defaultReleasesUrl;
     var previous = text(value.previous);
     return {
@@ -16,7 +18,6 @@ function normalize(data) {
         sourceRevision: text(value.sourceRevision),
         releaseVersion: text(value.releaseVersion),
         displayVersion: text(value.displayVersion),
-        channel: ["development", "preview", "stable"].indexOf(value.channel) >= 0 ? value.channel : "preview",
         updatesConfigured: value.updatesConfigured === true,
         previous: previous,
         previousDisplayVersion: text(value.previousDisplayVersion),
@@ -86,7 +87,7 @@ function parseCheck(exitCode, output) {
         var states = ["available", "not-newer", "not-configured", "offline", "http", "too-large",
             "bad-signature", "bad-metadata", "expired", "clock", "replay", "unsupported", "busy"];
         if (!data || data.schema !== 1 || states.indexOf(data.state) < 0 ||
-                ["development", "preview", "stable"].indexOf(data.channel) < 0)
+                data.channel !== releaseFeed)
             return null;
         var available = null;
         if (data.state === "available") {
@@ -113,7 +114,7 @@ function parseCheck(exitCode, output) {
 
 function checkLabel(state) {
     var labels = {
-        "not-newer": "No newer build on this channel",
+        "not-newer": "Up to date",
         "not-configured": "Updates aren't set up for this build",
         "offline": "Couldn't check (offline)",
         "clock": "Your clock looks wrong",

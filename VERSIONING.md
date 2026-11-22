@@ -62,7 +62,10 @@ on PR creation, updates and title edits. It adds no new required check.
 Review the final title before merging. Editing a PR title after merge cannot
 alter the title stored in the merge commit. Labels have no versioning role.
 
-Preview and stable promote identical tested development artifacts. They do not
+The one public release uses the existing `vX.Y.Z-development` tag and
+development metadata identity. The website and Nexus show the plain version.
+Preview and stable promotion remain inactive. Their historical contract is
+to promote identical tested development artifacts. They do not
 rewrite native VERSIONINFO, manifests or build identity. For build `0.3.0`,
 development uses `v0.3.0-development` and preview uses `v0.3.0-preview`.
 Stable requires tested bytes at least `1.0.0` and uses `v1.0.0`.

@@ -1,14 +1,12 @@
 # Signing roadmap
 
-The [verified public release table](../release/PUBLIC-RELEASE.md) records the
-recommended release's actual unsigned status. Neither this roadmap nor an
-authenticated development-channel pointer gives its application files an
-Authenticode publisher signature.
+The [public release guide](../release/PUBLIC-RELEASE.md) describes the unsigned
+package. Neither this roadmap nor an authenticated update pointer gives its
+application files an Authenticode publisher signature.
 
-Design note for a signing pipeline that can produce a signed stable release.
-Nothing in this document is implemented. The development channel stays unsigned;
-only stable releases will be signed, and only after this work lands and my
-SignPath application is accepted.
+This is an inactive design for a signed stable release, not a planned release
+requirement. Nothing in this document is implemented. The single public
+release stays unsigned.
 
 The standalone verifier in
 [Test-AuthenticodeSignatures.ps1](../scripts/Test-AuthenticodeSignatures.ps1)

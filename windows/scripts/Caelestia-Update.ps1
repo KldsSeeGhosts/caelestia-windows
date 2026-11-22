@@ -146,20 +146,10 @@ function Expand-CaelestiaUpdate([string]$Zip, [string]$Destination, [string]$Roo
     }
 }
 
-function Get-CaelestiaUpdateChannel([string]$Profile, [string]$AppVersion = '') {
-    $path = Join-Path $Profile 'state\updates\settings.json'
-    Assert-CaelestiaUpdatePath $path
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        if ($AppVersion) {
-            $parsed = ConvertTo-CaelestiaSemVer $AppVersion
-            if ($parsed.Major -cne '0') { return 'stable' }
-        }
-        return 'preview'
-    }
-    $settings = Read-CaelestiaStrictJsonFile $path
-    Assert-CaelestiaFields $settings @('schema', 'channel')
-    if ($settings.schema -ne 1 -or $settings.channel -cnotin @('development', 'preview', 'stable')) { throw 'Invalid channel settings.' }
-    return $settings.channel
+function Get-CaelestiaUpdateChannel {
+    # Keep the original metadata role, signing key and replay history. The
+    # single public feed ignores old picker preferences without rewriting them.
+    return 'development'
 }
 
 function Invoke-CaelestiaUpdateCheck($Trust, [string]$Channel, [string]$CurrentVersion,
@@ -274,7 +264,7 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
     $record = Read-CaelestiaInstall $Prefix
     if ($record.version -ne 2 -or $record.current -cne $ExpectedCurrent) { throw 'The selected version changed.' }
     $current = Read-CaelestiaInstall (Get-CaelestiaVersionPrefix $Prefix $record.current)
-    if ((Get-CaelestiaUpdateChannel $record.profile $current.appVersion) -cne $Channel) { throw 'The selected channel changed.' }
+    if ((Get-CaelestiaUpdateChannel) -cne $Channel) { throw 'The requested update feed is not supported.' }
     & $Progress 'checking'
     $check = Invoke-CaelestiaUpdateCheck $Trust $Channel $current.releaseId (Get-CaelestiaUpdateStatePath)
     if ($check.state -cne 'available' -or $check.available.buildVersion -cne $ExpectedBuild) {
@@ -309,9 +299,8 @@ function Invoke-CaelestiaUpdateInstall([string]$Prefix, [string]$ExpectedCurrent
         $autostart = $null -ne (Get-ItemProperty -LiteralPath (Get-CaelestiaAutostartKey) -Name $integration.RunName -ErrorAction SilentlyContinue)
         & $Progress 'installing'
         $selected = Read-CaelestiaInstall $Prefix
-        if ($selected.installId -cne $record.installId -or $selected.current -cne $ExpectedCurrent -or
-            (Get-CaelestiaUpdateChannel $record.profile $current.appVersion) -cne $Channel) {
-            throw 'The selected version, owner or channel changed before activation.'
+        if ($selected.installId -cne $record.installId -or $selected.current -cne $ExpectedCurrent) {
+            throw 'The selected version or owner changed before activation.'
         }
         & (Join-Path $bundle 'Install-CaelestiaRelease.ps1') -BundleRoot $bundle -Prefix $Prefix `
             -ExpectedManifestSha256 $release.manifestSha256 -Restart -Autostart:$autostart | Out-Null

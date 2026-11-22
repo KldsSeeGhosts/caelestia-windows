@@ -1,18 +1,18 @@
-# Preview limitations
+# Known limitations
 
-The [verified public release table](../release/PUBLIC-RELEASE.md) links the
-recommended preview's version-pinned limitations and qualification scope.
+The [public release guide](../release/PUBLIC-RELEASE.md) explains how to find
+the exact published build and its release notes.
 This main-branch document describes current source and is not evidence that
 an older public package passed newer checks.
 
-This is a Windows 11 x64 preview, not a certification for every Windows build,
+This is a Windows 11 x64 package, not a certification for every Windows build,
 display, device, assistive technology or security-policy configuration.
 Release-specific build and package results belong to the matching GitHub
 release and Actions runs.
 
 - **Unsigned packages:** Windows security policy may block the scripts or
   executables. Do not disable Smart App Control, antivirus or organizational
-  protections to run a preview. A self-signed certificate is not a trusted
+  protections to run it. A self-signed certificate is not a trusted
   publisher signature.
 - **PowerShell 7 required:** the desktop shell and its maintenance scripts run
   under PowerShell 7.4 or newer (x64). Install it before running the product.

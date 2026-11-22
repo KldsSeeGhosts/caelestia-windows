@@ -27,7 +27,7 @@ Requirements: Windows 11 64-bit (24H2 or newer recommended for virtual desktop s
 <details open>
   <summary><b>For humans (prebuilt release)</b></summary>
 
-1. Download the recommended Windows x64 ZIP and its checksum from the [verified public release table](windows/release/PUBLIC-RELEASE.md) (it pins the reviewed `0.1.0-preview.2` preview rather than GitHub's generic latest release; newer development builds live on [GitHub Releases](https://github.com/KldsSeeGhosts/caelestia-windows/releases)).
+1. Open [Download Caelestia](https://kldsseeghosts.github.io/caelestia-windows/#install) for the Windows x64 ZIP and its SHA-256. It is the same release offered in Nexus. See [public releases](windows/release/PUBLIC-RELEASE.md) for verification and older downloads.
 2. Check the published SHA-256, unzip the archive, and double-click `Install.cmd`. The prebuilt package needs no Git, Qt SDK, compiler, or Python for basic use, though it does require Microsoft's free [Visual C++ x64 Redistributable](https://aka.ms/vc14/vc_redist.x64.exe) (14.44.35211.0 or newer).
 3. Start **Caelestia** from the Start menu, or run without optional Python provisioning:
 
@@ -35,7 +35,7 @@ Requirements: Windows 11 64-bit (24H2 or newer recommended for virtual desktop s
    & "$env:LOCALAPPDATA\Programs\caelestia-windows\Start-Caelestia.ps1" -PreparedSchemeRuntime
    ```
 
-- **Unsigned preview note:** Preview packages are unsigned. If Smart App Control, antivirus, or an organizational policy blocks a preview, do not disable your protections. See [Release installation](windows/docs/INSTALL-RELEASE.md) for verification, install, update, rollback, and policy limits, and read [preview limitations](windows/docs/KNOWN-LIMITATIONS.md) before use.
+- **Unsigned package:** If Smart App Control, antivirus, or an organizational policy blocks the package, do not disable your protections. See [Release installation](windows/docs/INSTALL-RELEASE.md) for verification and installation, and read the [known limitations](windows/docs/KNOWN-LIMITATIONS.md) before use.
 - **Autostart, update, uninstall:** Autostart is off by default (pass `-Autostart` to enable). See [the user guide](windows/docs/USER-GUIDE.md#install-uninstall-and-autostart) for uninstall, `-Purge`, and migrating from `ksg-shell`.
 
 </details>
@@ -45,22 +45,19 @@ Requirements: Windows 11 64-bit (24H2 or newer recommended for virtual desktop s
 
 Use these non-interactive steps when an agent is asked to install Caelestia for Windows on a user's machine. Never disable Smart App Control, antivirus, or UAC, and never guess credentials or elevate silently.
 
-**Option A: Install from the verified public release (`v0.1.0-preview.2`)**
+**Option A: Install the published release**
 
 ```powershell
-# 1. Read windows/release/public-release.json for the exact asset URL and SHA-256
-$zipUrl = 'https://github.com/KldsSeeGhosts/caelestia-windows/releases/download/v0.1.0-preview.2/caelestia-windows-0.1.0-preview.2-windows-x64.zip'
-$expectedSha = 'b74649cbebd7d3e4d188f9882db8921cda9dd792344a80698969b16d53f91715'
-$tmp = Join-Path $env:TEMP 'caelestia-install-preview2'
-New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-Invoke-WebRequest -Uri $zipUrl -OutFile "$tmp\caelestia.zip"
-if ((Get-FileHash -Algorithm SHA256 "$tmp\caelestia.zip").Hash.ToLowerInvariant() -ne $expectedSha) { throw 'SHA-256 mismatch' }
-Expand-Archive -Path "$tmp\caelestia.zip" -DestinationPath $tmp -Force
-
-# 2. Verify and install per user (runs on inbox Windows PowerShell 5.1 on a clean machine; pass -InstallPrerequisites if VC++ x64 14.44.35211.0+ or PowerShell 7.4+ x64 is missing and the user approves UAC)
-$bundle = (Get-ChildItem -Path $tmp -Directory | Select-Object -First 1).FullName
-& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$bundle\Install-CaelestiaRelease.ps1" -NonInteractive
+# From a reviewed checkout. This verifies the release and downloads the ZIP,
+# but does not install it. Use a new output directory outside the checkout.
+$download = Join-Path $env:TEMP ('caelestia-release-' + [guid]::NewGuid().ToString('N'))
+powershell.exe -NoProfile -NonInteractive -File windows\ci\Get-NexusBootstrapRelease.ps1 -OutputDirectory $download
 ```
+
+Extract the downloaded ZIP and use the printed installer command with its
+authenticated manifest digest. Add `-NonInteractive` for unattended
+installation. Install prerequisites or request the user's approval before
+passing `-InstallPrerequisites`.
 
 **Option B: Build and install from source**
 
@@ -83,9 +80,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\windows\scripts\Install-Caelesti
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
-
-Development (`v*-dev.*`) and preview (`v*-preview.*`, `v*-rc.*`) releases are unsigned. My plan is that stable releases (`vMAJOR.MINOR.PATCH`, 1.0.0 or newer) will be signed through SignPath Foundation once a signing pipeline exists. No release is signed today and no stable release exists. The intended signed set is only the files this project builds: Qt DLLs keep Qt's signature, M3Shapes stays third-party, `qs.exe` remains an unsigned upstream build, and `Install.cmd` and the ZIP are not signed. [CODE-SIGNING-POLICY.md](windows/docs/CODE-SIGNING-POLICY.md) lists the intended artifacts, team roles and privacy statement; [SIGNING-ROADMAP.md](windows/docs/SIGNING-ROADMAP.md) lists the pipeline work that must land first.
+Caelestia's Windows packages are unsigned. Nexus verifies which exact package
+the project published and checks its hashes before installation. That does not
+give the executables a Windows publisher signature. See the
+[code-signing policy](windows/docs/CODE-SIGNING-POLICY.md).
 
 ## Usage
 
@@ -98,7 +96,10 @@ The shell adds a vertical bar on the left, a launcher, a dashboard, notification
 
 ## Updating
 
-The recommended Preview 2 has no automatic updater. Public preview/stable downloads require manual installation. Authenticated development-channel publication is separate and does not activate preview/stable promotion. See [UPDATES.md](UPDATES.md) for current source capabilities and remaining acceptance gates.
+Open **Settings > Updates** in Nexus and choose **Check for updates**. Nexus
+offers the same version as the download page. It does not check or install
+without your action. Older builds without an updater need one manual install.
+See [UPDATES.md](UPDATES.md) for verification and compatibility.
 
 To update manually, run the installer from a newer verified build. If the shell is running, add `-Restart`. The installer then stages the new version, swaps it in, restarts the shell and rolls back if the new version fails to start. Without `-Restart`, quit the shell first.
 

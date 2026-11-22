@@ -27,6 +27,7 @@ ShellRoot {
     property int assertions: 0
     property int opened: 0
     property string target: ""
+    readonly property string publicDownload: "https://kldsseeghosts.github.io/caelestia-windows/#install"
     property var input
     property Component inputComponent: Component { TestCase { when: false } }
     Nexus.NexusState { id: navigation }
@@ -60,7 +61,7 @@ ShellRoot {
         try {
             check(!page.available, "fixture must not have an installed prefix");
             check(!page.statusProcess.running, "fixture started a real status process");
-            check(page.releasesUrl === "https://github.com/KldsSeeGhosts/caelestia-windows/releases", "manual target missing when status unavailable");
+            check(page.releasesUrl === publicDownload, "manual target missing when status unavailable");
             check(!page.canRollback, "uninstalled session offered rollback");
             check(!page.detailsExpanded && !find(page, "updateDetails").visible, "Details must start collapsed");
             const primary = find(page, "primaryUpdateButton");
@@ -81,7 +82,7 @@ ShellRoot {
             page.statusProcess.exited(1, 0);
             check(page.loadState === "error" && page.info === null, "unavailable command did not clear stale status");
             check(page.notice.indexOf("status could not be read") !== -1 || !page.available, "unavailable status has no useful explanation");
-            check(page.releasesUrl === "https://github.com/KldsSeeGhosts/caelestia-windows/releases", "status error removed manual downloads");
+            check(page.releasesUrl === publicDownload, "status error removed manual downloads");
             const button = find(page, "manualReleasesButton");
             check(button !== null && !button.disabled, "manual action missing or disabled offline");
             check(button.activeFocusOnTab && button.Accessible.role === Accessible.Button, "manual action is not a keyboard button");
@@ -95,18 +96,22 @@ ShellRoot {
             root.input.keyClick(Qt.Key_Space);
             check(root.opened === 2, "Space did not activate the manual action");
             check(!page.statusProcess.running, "manual action started a status/download process");
-            check(!page.checkProcess.running && !page.channelProcess.running, "page open started a network or settings operation");
+            check(!page.checkProcess.running, "page open started a network operation");
+            for (const retired of ["channel-preview", "channel-stable", "channel-development", "confirmDevelopment"])
+                check(find(page, retired) === null, "retired channel control is still available: " + retired);
             const status = find(page, "updateStatusLabel");
             check(status !== null, "main card status is missing");
             for (const state of ["not-newer", "not-configured", "offline", "http", "too-large",
                 "bad-signature", "bad-metadata", "expired", "clock", "replay", "unsupported", "busy"]) {
-                page.checkResult = {state: state, channel: "preview", available: null};
+                page.checkResult = {state: state, channel: "development", available: null};
                 check(status.text !== "", "empty update label for " + state);
             }
-            page.checkResult = {state: "available", channel: "preview", available: {
-                displayVersion: "0.2.0-preview.1", buildVersion: "0.2.0-dev.1.57.1", size: 100, notesUrl: page.releasesUrl
-            }};
+            const candidate = {displayVersion: "0.5.0", buildVersion: "0.5.0", size: 100, notesUrl: page.releasesUrl};
+            page.checkResult = {state: "available", channel: "preview", available: candidate};
+            check(primary.text === "Check for updates", "the page offered a different feed");
+            page.checkResult = {state: "available", channel: "development", available: candidate};
             check(primary.text === "Update now", "available update did not replace primary check action");
+            check(page.availableUpdate.displayVersion === "0.5.0", "the page changed the published version");
             check(primary.disabled, "available metadata bypassed installed-prefix guard");
             page.info = {schema: 1, displayVersion: "0.2.0-dev.1.283.1"};
             page.loadState = "ready";
@@ -135,12 +140,9 @@ ShellRoot {
             UpdateManager.operationState = "idle";
             UpdateManager.progressTotal = 0;
             page.detailsExpanded = false;
-            page.confirmingDevelopment = true;
-            check(find(page, "confirmDevelopment").visible, "development warning has no explicit confirmation");
-            check(!page.channelProcess.running, "showing development warning changed channel");
             const screenshot = Quickshell.env("CAELESTIA_UPDATES_SCREENSHOT");
             if (screenshot) {
-                page.confirmingDevelopment = false;
+                page.info = {schema: 1, displayVersion: "0.5.0"};
                 UpdateManager.operationState = "waiting";
                 UpdateManager.operationKind = "update";
                 UpdateManager.step = "downloading";

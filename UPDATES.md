@@ -5,15 +5,15 @@
 Shipped trust is configured for development activation with root fingerprint
 `f9f6c4d0f94cedcd81a6abb84b1b60b1e58b59c54cb723d4f583e22d24602893`,
 root version 1 and threshold 1. Explicit checks now use authenticated network
-transport. Development publication and freshness require the owner setup below.
-Preview/stable promotion and freshness stay inactive.
-The first independent hosted exact-main candidate run and disposable Windows 11
-acceptance remain release gates.
-A source merge never changes an installed shell.
+transport. Caelestia has one published Windows release at a time. The
+[download page](https://kldsseeghosts.github.io/caelestia-windows/#install) and
+Nexus use the same release pointer. See [public releases](windows/release/PUBLIC-RELEASE.md)
+for manual verification and historical packages.
 
-Public previews remain manual downloads. The [verified public release table](windows/release/PUBLIC-RELEASE.md)
-pins the recommended preview, exact assets, hashes and unsigned status.
-This recommendation is not an authenticated preview/stable update channel.
+The feed still uses `development` in signed metadata and `-development` in
+immutable GitHub tags. Those are protocol identifiers, not choices in Nexus.
+Preview and stable promotion stay inactive. A source merge never changes an
+installed shell.
 
 ## Version-format migration
 
@@ -32,26 +32,17 @@ See [VERSIONING.md](VERSIONING.md#semver-migration-bridge) for ordering and
 channel-tag rules. Rolling back to an older client restores its format limit.
 Do not clear trust or highwater state to bypass it.
 
-## After owner activation
+## Check for updates
 
-Open Nexus, Updates, choose a channel, and explicitly check. Opening the page
-does not check automatically. Development requires a second acceptance click.
-Preview is the pre-1.0 default; stable is the default from 1.0 when no channel
-was selected. Explicit channel selection persists across updates and rollback.
-Stable only accepts deliberate 1.0-or-newer promotion, never development
-fallback.
+Open **Settings > Updates** in Nexus and select **Check for updates**. Opening
+the page does not check automatically. When a newer release is available,
+**Update now** downloads, verifies, installs and restarts Caelestia. The
+maintenance service owns the request after Nexus closes. If its result is
+unconfirmed, refresh the selected version before trying again.
 
-An available update shows its channel alias and immutable artifact build
-separately. Confirmation downloads, verifies and restarts through the existing
-versioned installer. The maintenance singleton owns the request after Nexus
-closes. If its result is unconfirmed, refresh the selected version instead of
-queueing another request.
-
-Only a strictly newer artifact is offered. A channel switch to an older or
-identical build does not reinstall or downgrade. The installed alias describes
-the deployment that installed it; checking another channel does not rewrite
-artifact identity. Manual bootstrap without an alias receipt truthfully shows
-the development build.
+Nexus offers only a strictly newer package. Old channel preferences are ignored
+by current builds, but remain on disk for older retained versions. This does
+not change an installed version's identity or reset its update trust history.
 
 Settings stay in the existing profile. This client supports profile schema 1
 only and refuses a different schema, rather than silently migrating or
@@ -89,20 +80,15 @@ disposable Windows 11 profile or VM:
 3. Verify current/previous identity and unchanged settings, then check,
    update, rollback and update again through Nexus.
 
-This work does not alter the user's existing Preview 2 install. Live bootstrap
-requires separate explicit authorization.
+The helper does not alter an existing installation. Live installation requires
+the user's approval.
 
 ## Operator setup
 
-This is DSSE with a custom role policy, not full TUF. Metadata authentication is
-separate from Authenticode. Development and preview payloads remain unsigned.
-The owner's decision is that stable releases will be signed through SignPath
-Foundation, but no release is signed today and no signing pipeline or credential
-exists. See the
-[code signing policy](windows/docs/CODE-SIGNING-POLICY.md) for the intended
-signed set, roles and verification steps, and
-[SIGNING-ROADMAP.md](windows/docs/SIGNING-ROADMAP.md) for what a real signing
-pipeline still needs.
+This is DSSE with a custom role policy, not full TUF. It authenticates the
+release metadata and its package digests. It does not add a Windows publisher
+signature. The public package is unsigned, and no Authenticode pipeline is
+required. See the [code signing policy](windows/docs/CODE-SIGNING-POLICY.md).
 
 Perform these owner actions in order. This source change does not create
 GitHub settings, credentials, metadata branches or releases.
