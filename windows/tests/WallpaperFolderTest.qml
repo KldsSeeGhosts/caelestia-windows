@@ -7,6 +7,7 @@ import Caelestia.Config
 import qs.components
 import qs.components.controls
 import qs.components.wallpaper
+import qs.components.widgets
 import qs.modules.launcher
 import qs.modules.nexus as Nexus
 import qs.modules.nexus.pages as Pages
@@ -112,6 +113,9 @@ ShellRoot {
 
     readonly property Component inputComponent: Component {
         TestCase { when: false }
+    }
+    readonly property Component wallpaperRenderer: Component {
+        WallpaperImpl { width: 320; height: 180; z: -1 }
     }
     readonly property Component folderComponent: Component {
         WallpaperFolder {}
@@ -782,7 +786,7 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
                 "the launcher picker does not reserve the carousel below the header");
             root.check(root.picker.count === 0, "the empty production scan produced wallpaper tiles");
             // The offscreen display has room for two tiles. Check actual
-            // delegate positions, not just the PathView's model count.
+            // delegate positions, not just the model count.
             Wallpapers.files = [root.realSourcePath, root.cleanupSourcePath].map(path => ({
                 path, relativePath: WallpaperFolderService.wallpaperName(path), parentDir: Paths.wallsdir, onDisk: true
             }));
@@ -794,6 +798,34 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
             root.picker.incrementCurrentIndex();
             root.waitFor(() => carousel.currentIndex !== previousSelection && !carousel.moving && root.twoTilesFit(carousel),
                 3000, "keyboard navigation did not keep both wallpaper tiles visible");
+            launcherScreenState.launcher = true;
+            const desktop = root.wallpaperRenderer.createObject(host);
+            const liveImage = root.find(desktop, "desktopWallpaperImage");
+            const firstTile = carousel.itemAtIndex(0);
+            const secondTile = carousel.itemAtIndex(1);
+            root.waitFor(() => root.find(firstTile, "launcherWallpaperThumbnail")?.status === Image.Ready
+                && root.find(secondTile, "launcherWallpaperThumbnail")?.status === Image.Ready,
+                3000, "visible wallpaper thumbnails did not decode");
+            const firstPosition = firstTile.mapToItem(carousel, 0, 0);
+            const secondPosition = secondTile.mapToItem(carousel, 0, 0);
+            root.input.mouseMove(firstTile, firstTile.width / 2, firstTile.height / 2);
+            root.waitFor(() => firstTile.highlighted && !secondTile.highlighted
+                && Wallpapers.previewPath === root.realSourcePath && liveImage.source === root.realSourcePath && liveImage.ready,
+                3000, "hover did not highlight and render the first wallpaper preview");
+            root.check(firstTile.mapToItem(carousel, 0, 0) === firstPosition
+                && secondTile.mapToItem(carousel, 0, 0) === secondPosition, "hover moved the tiles under the pointer");
+            root.check(firstTile.Accessible.selected && !secondTile.Accessible.selected, "hover highlight was not exposed to accessibility");
+            root.picker.incrementCurrentIndex();
+            root.waitFor(() => secondTile.highlighted && !firstTile.highlighted && Wallpapers.previewPath === root.cleanupSourcePath
+                && liveImage.source === root.cleanupSourcePath && liveImage.ready,
+                3000, "keyboard navigation did not replace the hover preview");
+            root.check(!Wallpapers.controlsEnabled, "fixture must not apply to the desktop");
+            root.picker.applyCurrent(); // Enter calls this same method.
+            root.check(launcherScreenState.launcher, "refusing to apply closed the picker");
+            launcherScreenState.launcher = false;
+            root.waitFor(() => !Wallpapers.showPreview && liveImage.source === Wallpapers.currentForScreen(win.screen),
+                3000, "closing the launcher did not restore the saved desktop");
+            desktop.destroy();
             Wallpapers.files = [];
             root.productionPickerActive = false;
             root.picker = null;
@@ -811,6 +843,12 @@ if (($attributes -band [IO.FileAttributes]::Hidden) -ne 0) {
             root.check(nexusPath !== null && nexusPath.width > 0, "the Nexus folder path has no width");
             const nexusEmpty = root.find(root.nexusPage, "nexusWallpaperEmpty");
             root.check(nexusEmpty !== null && nexusEmpty.folderEmpty, "the Nexus page has no empty-folder explanation");
+            const featured = root.find(root.nexusPage, "wallpaperFeatured");
+            featured.forceActiveFocus();
+            root.waitFor(() => featured.previewHighlighted && Wallpapers.previewPath === featured.source,
+                3000, "focusing a Nexus card did not preview it");
+            host.forceActiveFocus();
+            root.waitFor(() => !Wallpapers.showPreview, 3000, "leaving a Nexus card kept its preview");
 
             // Exercise selector signals only. The separate defaults/IPC
             // fixtures apply picks with a recording native facade. This real

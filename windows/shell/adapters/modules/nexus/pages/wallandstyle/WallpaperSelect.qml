@@ -28,6 +28,7 @@ import qs.modules.nexus.common
 // of the Linux `caelestia wallpaper -r` process.
 PageBase {
     id: root
+    readonly property var previewDisplay: nState?.wallpaperTarget ?? (QsWindow.window as QsWindow)?.screen
 
     readonly property var localWalls: Wallpapers.list.filter(w => Wallpapers.getCategoryFor(w) === "")
     readonly property var categories: {
@@ -146,15 +147,20 @@ PageBase {
         }
 
         WallItem {
+            id: featured
             objectName: "wallpaperFeatured"
             imgHeight: Math.round(width * 0.3)
             radius: Tokens.rounding.extraLarge
             source: Quickshell.shellPath("assets/wallpaper.webp")
             text: Tr.tr("Featured wallpaper")
             fillLabel: false
+            interactivePreview: true
+            onPreviewRequested: Wallpapers.requestPreview({path: source}, root.previewDisplay, featured)
+            onPreviewEnded: Wallpapers.stopPreview(featured)
+            Component.onDestruction: Wallpapers.stopPreview(featured)
             onClicked: {
-                Wallpapers.setWallpaper(Quickshell.shellPath("assets/wallpaper.webp"), root.nState.wallpaperTarget);
-                root.nState.closeSubPage();
+                if (Wallpapers.setWallpaper(source, root.nState.wallpaperTarget))
+                    root.nState.closeSubPage();
             }
         }
 
@@ -162,6 +168,17 @@ PageBase {
             Layout.topMargin: Tokens.spacing.large
             text: Tr.tr("Local wallpapers")
             font: Tokens.font.title.small
+        }
+
+        StyledText {
+            visible: root.localWalls.length > 0
+            Layout.fillWidth: true
+            text: Wallpapers.externalWallpaperActive
+                ? Tr.tr("Wallpaper Engine controls the desktop. Select a wallpaper to apply it.")
+                : Tr.tr("Hover or focus a wallpaper to preview it. Select it to apply.")
+            font: Tokens.font.label.medium
+            color: Colours.palette.m3onSurfaceVariant
+            wrapMode: Text.WordWrap
         }
 
         GridLayout {
@@ -186,6 +203,7 @@ PageBase {
                 }
 
                 WallItem {
+                    id: card
                     required property var modelData
 
                     // Empty placeholders for sizing
@@ -201,9 +219,13 @@ PageBase {
                     // tries to decode project.json as an image.
                     source: !modelData ? "" : modelData.preview ? Paths.absolutePath(String(modelData.preview)) : modelData.engine ? "" : String(modelData.path ?? "")
                     text: modelData?.name ?? ""
+                    interactivePreview: !!modelData
+                    onPreviewRequested: Wallpapers.requestPreview(modelData, root.previewDisplay, card)
+                    onPreviewEnded: Wallpapers.stopPreview(card)
+                    Component.onDestruction: Wallpapers.stopPreview(card)
                     onClicked: {
-                        Wallpapers.setWallpaper(modelData.path, root.nState.wallpaperTarget);
-                        root.nState.closeSubPage();
+                        if (Wallpapers.setWallpaper(modelData.path, root.nState.wallpaperTarget))
+                            root.nState.closeSubPage();
                     }
                 }
             }

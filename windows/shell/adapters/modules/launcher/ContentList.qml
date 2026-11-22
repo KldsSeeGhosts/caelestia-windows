@@ -102,7 +102,11 @@ Item {
         id: wallpaperList
 
         asynchronous: true
-        active: root.animState === "wallpapers"
+        // Incubate while the previous view fades out, but don't preview
+        // until the picker is the visible launcher view.
+        active: root.showWallpapers || root.animState === "wallpapers"
+        visible: root.animState === "wallpapers"
+        enabled: root.showWallpapers && visible
 
         anchors.top: parent.top
         anchors.bottom: parent.bottom

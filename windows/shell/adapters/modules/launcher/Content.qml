@@ -68,12 +68,13 @@ Item {
         placeholderText: Tr.tr("Type \"%1\" for commands").arg(GlobalConfig.launcher.actionPrefix)
 
         onAccepted: {
+            if (list.showWallpapers) {
+                list.currentList?.applyCurrent();
+                return;
+            }
             const currentItem = list.currentList?.currentItem;
             if (currentItem) {
-                if (list.showWallpapers) {
-                    Wallpapers.setWallpaper(currentItem.modelData.path, Wallpapers.defaultPickerTarget(root.QsWindow.window?.screen));
-                    root.screenState.launcher = false;
-                } else if (text.startsWith(GlobalConfig.launcher.actionPrefix)) {
+                if (text.startsWith(GlobalConfig.launcher.actionPrefix)) {
                     if (text.startsWith(`${GlobalConfig.launcher.actionPrefix}calc `))
                         currentItem.onClicked();
                     else
@@ -87,6 +88,18 @@ Item {
 
         Keys.onUpPressed: list.currentList?.decrementCurrentIndex()
         Keys.onDownPressed: list.currentList?.incrementCurrentIndex()
+        Keys.onLeftPressed: event => {
+            event.accepted = list.showWallpapers && text.trim() === `${GlobalConfig.launcher.actionPrefix}wallpaper`
+                && event.modifiers === Qt.NoModifier;
+            if (event.accepted)
+                list.currentList?.decrementCurrentIndex();
+        }
+        Keys.onRightPressed: event => {
+            event.accepted = list.showWallpapers && text.trim() === `${GlobalConfig.launcher.actionPrefix}wallpaper`
+                && event.modifiers === Qt.NoModifier;
+            if (event.accepted)
+                list.currentList?.incrementCurrentIndex();
+        }
 
         Keys.onEscapePressed: root.screenState.launcher = false
 
@@ -121,11 +134,6 @@ Item {
                 if (!root.screenState.session)
                     search.forceActiveFocus();
             }
-            function onLauncherChanged(): void {
-                if (!root.screenState.launcher && list.showWallpapers)
-                    Wallpapers.stopPreview();
-            }
-
             target: root.screenState
         }
     }

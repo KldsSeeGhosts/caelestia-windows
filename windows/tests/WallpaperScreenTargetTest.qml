@@ -41,6 +41,18 @@ QtObject {
             Wallpapers.stopPreview();
             check(Wallpapers.currentForScreen(secondary) === "C:/walls/picked.jpg", "preview changed committed choice");
 
+            const oldPicker = {};
+            const nextPicker = {};
+            const newDisplay = {name: "not-yet-mapped"};
+            Wallpapers.previewEntry({path: "C:/walls/preview.jpg"}, secondary, oldPicker);
+            Wallpapers.previewEntry({path: "C:/walls/preview.jpg"}, newDisplay, nextPicker);
+            Wallpapers.stopPreview(oldPicker);
+            check(Wallpapers.currentForScreen(newDisplay) === "C:/walls/preview.jpg", "old picker cleared a newer preview");
+            check(Wallpapers.currentForScreen(primary) === "C:/walls/primary.jpg"
+                && Wallpapers.currentForScreen(secondary) === "C:/walls/picked.jpg", "unmapped target leaked its preview");
+            Wallpapers.stopPreview(nextPicker);
+            check(!Wallpapers.showPreview, "active picker could not stop its own preview");
+
             const captured = Wallpapers.captureScreen(secondary);
             Native.Wallpaper.screenIds = {primary: "primary-id"};
             check(!Wallpapers.setWallpaper("C:/walls/picked.jpg", captured), "removed display accepted");

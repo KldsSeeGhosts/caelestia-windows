@@ -41,8 +41,9 @@ Item {
             && WallpaperEngine.desktopHandedBack;
     }
     property int captureSerial: 0
+    property bool displayingPreview: false
 
-    function applyHandback(): void {
+    function applyDirect(): void {
         transitionAnim.stop();
         ++captureSerial;
         capture1.visible = false;
@@ -58,13 +59,20 @@ Item {
         target: Qt.platform.os === "windows" && typeof WallpaperEngine !== "undefined" ? WallpaperEngine : null
         function onDesktopHandedBackChanged(): void {
             if (root.engineHandedBack())
-                root.applyHandback();
+                root.applyDirect();
         }
     }
 
     onSourceChanged: {
-        if (engineHandedBack()) {
-            applyHandback();
+        const previewing = Qt.platform.os === "windows" && typeof Wallpapers.previewsOnScreen === "function"
+            && Wallpapers.previewsOnScreen(root.QsWindow.window?.screen);
+        const skipCapture = previewing || displayingPreview;
+        displayingPreview = previewing;
+        // Browsing isn't a committed wallpaper change. Send the latest
+        // source straight to the async image instead of waiting for a shader
+        // capture of the previous frame before the decode can even start.
+        if (engineHandedBack() || skipCapture) {
+            applyDirect();
             return;
         }
         transitionAnim.stop();
@@ -141,6 +149,7 @@ Item {
 
     Visual {
         id: live
+        objectName: "desktopWallpaperImage"
 
         anchors.fill: parent
         playing: PersistentState.wallpaperPlaying
@@ -151,7 +160,7 @@ Item {
         layer.enabled: Qt.platform.os === "windows" || root.transitionProgress < 1
 
         onReadyChanged: {
-            if (ready && source === root.source)
+            if (ready && source === root.source && root.transitionProgress < 1)
                 transitionAnim.start();
         }
     }
