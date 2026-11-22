@@ -20,6 +20,7 @@ ShellRoot {
     // Stage-ShellPrototype also rejects all legacy singleton references across
     // the production QML tree, with an empty explicit allowlist.
     AreaPicker {
+        history: null
         id: picker
         interactionEnabled: false
     }

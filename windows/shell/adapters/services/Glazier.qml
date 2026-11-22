@@ -229,6 +229,7 @@ Singleton {
     IpcHandler {
         target: "screenshot"
         function capture(): bool { return CaptureUi.screenshot("open"); }
+        function history(): bool { return CaptureUi.showHistory(); }
         function isAvailable(): bool { return CaptureUi.shellAvailable; }
     }
     IpcHandler {

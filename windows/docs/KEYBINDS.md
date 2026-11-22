@@ -137,9 +137,10 @@ chord, replace the `PrintScreen` / `Win+Shift+S` / `Win+Shift+R` entries in your
 `caelestia:screenshot`, `caelestia:screenshotFreeze` or `caelestia:record`
 name is already used.
 
-The launcher also offers **Screenshot** and **Record screen**. IPC callers can
+The launcher also offers **Screenshot**, **Screenshot history**, and **Record screen**. IPC callers can
 use `screenshot capture` or the upstream `picker open`, `openFreeze`,
-`openClip`, and `openFreezeClip` functions. All open the shell's frozen picker and editor.
+`openClip`, and `openFreezeClip` functions. All open the shell's frozen picker.
+Use `screenshot history` to open the history window.
 
 #### Shell screenshot picker
 
@@ -150,48 +151,68 @@ the shell picker.
 
 The picker freezes every screen first, then lets you drag a region, click a
 window to select it, or click where no window is to select the whole monitor.
-Esc or a right click cancels. Releasing the mouse opens the editor over the
-selection and saves nothing. The `open`, `openFreeze`, `openClip` and
-`openFreezeClip` names all do this. The
-selection cannot span monitors, and the picker always freezes the screen.
+Esc or a right click cancels. Releasing the mouse copies the image and shows a
+thumbnail by default. The selection cannot span monitors. To change the
+automatic action, open **Screenshot history** and choose **Quick Capture**.
+It can copy the image, save it, do both, save and copy the path, or leave it
+in the thumbnail and history without exporting.
 
 The editor has Pencil (`P`), Highlighter (`H`), Line (`L`), Arrow (`A`),
 Rectangle (`R`) and Circle (`C`), a colour and size popover (nine colours, S, M
 and L), Undo (`Ctrl+Z`), Redo (`Ctrl+Y` or `Ctrl+Shift+Z`), Clear (press twice),
-Copy (`Ctrl+C`), Save (`Ctrl+S`) and Close (`Esc`, which first closes an open
-popover). The toolbar sits below the selection, above it when there is no room,
+Copy (`Ctrl+C`), Save (`Ctrl+S`), Done (`Enter`), and Close (`Esc`, which
+first closes an open popover). The toolbar sits below the selection, above it when there is no room,
 or inside it, and it can be dragged. Text, Blur, numbered steps, the ruler, the
 eraser and zoom are not there yet.
 
-Nothing is written until you choose Save. Save writes the image with its
-annotations to `Pictures\Screenshots` (or `Pictures` if that folder cannot be created) as
-`annotate-%Y-%m-%d_%H-%M-%S.png`, adding ` (2)`, ` (3)` for a repeat. Copy puts
-it on the clipboard. Each closes the editor and shows the thumbnail, which is
-the only confirmation: there is no success toast. With the thumbnail turned off,
-Save shows a toast with the file name, as the classic tool does. A failed Save
-or Copy shows an error and keeps the editor open.
+**Done** updates the same capture, with its editable strokes, and returns to
+the thumbnail. It does not change the clipboard or write an exported file.
+**Copy** copies the edited image. **Save** exports a PNG and shows its path.
+Neither closes the reopened editor. A later Save makes a new copy instead of
+overwriting an earlier export. Canceling discards changes made since the last
+Done, Copy, or Save.
 
-After a capture the picker shows a thumbnail at the bottom right of the work
-area, as the classic tool does. Up to five exist in total, across all monitors.
+The default export folder is the Windows Pictures known folder's
+`Screenshots` subfolder. If that folder cannot be written, the default falls
+back to Pictures. Files are named `annotate-%Y-%m-%d_%H-%M-%S.png`, adding
+` (2)`, ` (3)` for collisions. **Change folder** in Screenshot history
+sets the export location. **Save as…** lets you choose a name and location
+for a single export.
+
+After a capture the picker shows a rounded thumbnail at the bottom right of
+the work area. The image fills the frame by default. The crop only affects the
+preview, not the full image sent to the clipboard, editor, or saved file.
+Up to five thumbnails exist in total, across all monitors.
 Each monitor stacks its own upward with the newest at the bottom, and a sixth
-removes the oldest one wherever it is. Hovering shows buttons for Copy, Save (only for a capture that was
-copied and not saved), Show in folder and Close, and pauses the timeout. Clicking
-the card opens the image with the default application, because reopening it in
-the editor is not built yet. Press the card and move to drag the image into another app.
-A saved capture drags its saved file. A copied capture drags a temporary copy with a normal
+removes the oldest one wherever it is. The pencil opens the editor. Canceling the
+editor leaves the last committed thumbnail intact. Hovering pauses the timeout
+and shows Copy and Save in the center, plus Close, Pin, Edit, and the folder
+action in the corners. Copy and Save dismiss the thumbnail after success.
+Click the image to dismiss it, or right-click for options such as **Open image**
+and **Save as…**. A short swipe toward the screen edge also dismisses it.
+Drag away from the edge to drop the full image into another app. A saved
+capture drags its saved file. An unsaved
+capture drags a temporary copy with a normal
 screenshot name, removed once its card has closed and 5 minutes have passed since the last drag. Dragging never saves to
 the screenshots folder.
-Two keys in `shell.json` control it:
+Thumbnail options in `shell.json` include:
 
 ```json
-{"windows":{"capture":{"thumbnail":true,"thumbnailSeconds":6}}}
+{"windows":{"capture":{"thumbnail":true,"thumbnailSeconds":5,"thumbnailCorner":"bottom-right","thumbnailScale":1,"thumbnailStacking":true,"thumbnailLetterbox":false}}}
 ```
 
-`thumbnail` set to `false` turns the thumbnail off. `thumbnailSeconds` is how long
-a thumbnail stays, and `0` keeps it until it is closed. A capture that was only
-copied keeps a preview file in the temp directory until its thumbnail closes.
-Save writes it to `Pictures\Screenshots` with the picker's naming, without a toast. Show in
-folder saves it first and opens the folder.
+`thumbnail: false` hides the card without disabling automatic output or
+history. A `thumbnailSeconds` value of `0` keeps cards until closed. Set
+`thumbnailStacking: false` to replace older cards and `thumbnailLetterbox: true`
+to show the whole image with letterboxing. `quickCaptureOpenEditor` and
+`closeEditorAfterCopy` are both off unless enabled.
+
+Screenshot history is a private cache under
+`<profile>\state\caelestia\screenshot-history`. It keeps the latest 10 captures
+by default, with a conservative 256 MiB storage budget. Set **Keep** to `0`
+to turn it off. **Clear history** deletes the cache entries, not exported
+PNGs. A thumbnail can have its own temporary PNG while visible. Startup
+cleanup removes Caelestia scratch files and drag copies older than 24 hours.
 
 A development or recovery build can be pointed at another Glazier with an
 absolute path in `%LOCALAPPDATA%\caelestia-windows\config\glazier.json`:

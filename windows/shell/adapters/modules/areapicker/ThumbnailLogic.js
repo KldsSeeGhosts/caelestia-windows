@@ -4,16 +4,14 @@
 //
 // All sizes are logical (device independent) pixels. The thumbnail panel covers
 // the work area of one screen, so a rectangle here is relative to the panel's
-// top left corner. The stack follows the classic capture tool's behaviour. The
-// hover buttons have no sizes of their own: the shell passes the measured size
-// of its Caelestia controls, and this file places them on whole device pixels.
+// top left corner.
 
 var MAX_PREVIEWS = 5;
-var GAP = 12;
-var WIDTH = 260;
-var HEIGHT = 174;
-var IMAGE_INSET = 20;
-var DEFAULT_SECONDS = 6;
+var GAP = 8;
+var EDGE = 16;
+var WIDTH = 240;
+var HEIGHT = 160;
+var DEFAULT_SECONDS = 5;
 // How far a preview drifts to the right while it enters and leaves.
 var DRIFT = 60;
 
@@ -33,24 +31,37 @@ function settings(capture) {
     return { enabled: enabled, seconds: seconds };
 }
 
+function appearance(capture) {
+    var c = capture || {};
+    return {
+        scale: typeof c.thumbnailScale === "number" && isFinite(c.thumbnailScale) ? Math.max(0.5, Math.min(2, c.thumbnailScale)) : 1,
+        corner: ["top-left", "top-right", "bottom-left", "bottom-right"].includes(c.thumbnailCorner) ? c.thumbnailCorner : "bottom-right",
+        stack: c.thumbnailStacking !== false,
+        cover: c.thumbnailLetterbox !== true
+    };
+}
+
 // One preview. The width never exceeds the work area minus a gap on each side,
 // and the height is a fifth of what is left after six gaps, so five previews
 // always fit the work area.
-function previewSize(work) {
-    var width = Math.min(WIDTH, Math.max(1, work.width - 2 * GAP));
-    var height = Math.min(HEIGHT, Math.max(1, Math.floor((work.height - GAP * (MAX_PREVIEWS + 1)) / MAX_PREVIEWS)));
-    return { width: width, height: height };
+function previewSize(work, scale) {
+    var factor = Math.min(scale || 1, (work.width - 2 * EDGE) / WIDTH,
+        (work.height - 2 * EDGE - GAP * (MAX_PREVIEWS - 1)) / (MAX_PREVIEWS * HEIGHT));
+    return { width: Math.max(1, Math.round(WIDTH * factor)), height: Math.max(1, Math.floor(HEIGHT * factor)) };
 }
 
 // The rectangle of each preview in a stack of `count`. Index 0 is the oldest and
 // sits highest; the newest (index count - 1) sits at the bottom right corner,
-// `GAP` away from both edges.
-function stackRects(work, count, size) {
+// `EDGE` away from both edges.
+function stackRects(work, count, size, corner) {
     var rects = [];
-    var x = Math.max(0, work.width - GAP - size.width);
+    var left = corner && corner.endsWith("-left");
+    var top = corner && corner.startsWith("top-");
+    var x = left ? Math.max(0, Math.min(EDGE, work.width - size.width)) : Math.max(0, work.width - EDGE - size.width);
     for (var i = 0; i < count; i++) {
         var fromBottom = count - 1 - i;
-        rects.push({ x: x, y: work.height - GAP - size.height - fromBottom * (size.height + GAP), width: size.width, height: size.height });
+        var y = top ? EDGE + fromBottom * (size.height + GAP) : work.height - EDGE - size.height - fromBottom * (size.height + GAP);
+        rects.push({ x: x, y: y, width: size.width, height: size.height });
     }
     return rects;
 }
@@ -69,24 +80,24 @@ function evictions(screens, max) {
     return result;
 }
 
-// The size the image is drawn at inside a card, in logical pixels. `image` is in
-// physical pixels and `dpr` converts it. The image keeps its aspect, stays
-// `inset` away from every card edge and is never scaled up. Without a known size
-// the whole inner box is returned, for a caller that fits it by aspect.
-function fitImage(card, image, dpr) {
-    var boxWidth = Math.max(1, card.width - 2 * IMAGE_INSET);
-    var boxHeight = Math.max(1, card.height - 2 * IMAGE_INSET);
-    if (!image || !(image.width > 0) || !(image.height > 0))
-        return { width: boxWidth, height: boxHeight, known: false };
-    var scale = dpr > 0 ? dpr : 1;
-    var naturalWidth = image.width / scale;
-    var naturalHeight = image.height / scale;
-    var factor = Math.min(boxWidth / naturalWidth, boxHeight / naturalHeight, 1);
+function controls(width, height, labelWidth) {
+    var scale = Math.min(2, Math.max(0.55, Math.min(width / WIDTH, height / HEIGHT)));
+    var pad = Math.max(5, Math.round(10 * scale));
     return {
-        width: Math.max(1, Math.round(naturalWidth * factor)),
-        height: Math.max(1, Math.round(naturalHeight * factor)),
-        known: true
+        pad: pad,
+        corner: Math.max(18, Math.round(28 * scale)),
+        icon: Math.max(9, Math.round(13 * scale)),
+        buttonHeight: Math.max(18, Math.round(32 * scale)),
+        buttonWidth: Math.max(1, Math.min(width - 2 * pad,
+            Math.max(64, Math.round(110 * scale), Math.ceil((labelWidth || 0) + Math.max(18, Math.round(32 * scale)))))),
+        gap: Math.max(4, Math.round(8 * scale)),
+        font: Math.max(9, Math.round(13 * scale))
     };
+}
+
+function dismissOffset(dx, dy, towardLeft) {
+    var outward = dx * (towardLeft ? -1 : 1);
+    return outward > 6 && Math.abs(dx) >= Math.max(6, Math.abs(dy) * 0.35) ? outward : 0;
 }
 
 // Adds the time since the last tick, unless the preview is paused (the pointer
@@ -97,41 +108,10 @@ function advance(elapsed, delta, paused, seconds) {
     return { elapsed: next, expired: seconds > 0 && next >= seconds * 1000 };
 }
 
-// The hover buttons, in order. Save is offered only for a capture that exists
-// only on the clipboard (nothing saved yet).
-function actions(saved) {
-    var list = ["copy"];
-    if (!saved)
-        list.push("save");
-    list.push("reveal", "close");
-    return list;
-}
-
 // Rounds to a whole device pixel. `scale` is the device pixel ratio.
 function snap(value, scale) {
     var s = scale > 0 ? scale : 1;
     return Math.round(value * s) / s;
-}
-
-// Rounds up to a whole device pixel, so the pill keeps room for its buttons.
-function snapUp(value, scale) {
-    var s = scale > 0 ? scale : 1;
-    return Math.ceil(value * s - 1e-6) / s;
-}
-
-// Where the button pill sits in a card: centred horizontally, `metrics.bottom`
-// above the bottom edge, on whole device pixels. `pill` is the measured
-// { width, height } of the pill. `metrics` is { scale, bottom }.
-function pillRect(card, pill, metrics) {
-    var m = metrics || {};
-    var width = snapUp(pill.width, m.scale);
-    var height = snapUp(pill.height, m.scale);
-    return {
-        x: snap((card.width - width) / 2, m.scale),
-        y: snap(card.height - (m.bottom || 0) - height, m.scale),
-        width: width,
-        height: height
-    };
 }
 
 // Whether a press at `origin` has moved far enough, at `point`, to become a

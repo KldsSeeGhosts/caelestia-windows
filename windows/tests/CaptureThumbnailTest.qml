@@ -7,6 +7,7 @@ import Caelestia.Config
 import Caelestia.Windows
 import qs.services
 import qs.modules.areapicker
+import "modules/areapicker/CaptureLogic.js" as Capture
 
 // The post-capture thumbnail of the QML picker, offscreen. The picker saves and
 // copies for real into the disposable profile and temp directory. The clipboard
@@ -114,6 +115,7 @@ ShellRoot {
 
     AreaPicker {
         id: picker
+        history: null
 
         saveRoot: root.saveRoot
         clipboard: root.clipboardRecorder
@@ -317,15 +319,11 @@ ShellRoot {
         GlobalConfig.windows = { capture: Object.assign({ ui: "shell" }, capture) };
     }
 
-    // Selects a rectangle in the open picker, releases the mouse, and then
-    // chooses "save" or "copy" in the editor that the selection opens.
-    function drag(x1, y1, x2, y2, kind = "save"): void {
+    function selectRegion(x1, y1, x2, y2): void {
         const area = find(pickerWindows()[0].contentItem, "areaPicker");
         area.pressAt(Qt.LeftButton, x1, y1);
         area.moveTo(x2, y2);
         area.releaseAt(Qt.LeftButton, x2, y2);
-        check(picker.editing && !picker.saving, "the selection opens the editor and saves nothing");
-        picker.editPicker.exportEdit(kind);
     }
 
     Component.onCompleted: Qt.callLater(() => step(setup))
@@ -348,11 +346,58 @@ ShellRoot {
         }));
     }
 
-    // 1. The thumbnail appears after a save.
     function savedCapture(): void {
-        drag(20, 30, 80, 70);
-        check(picker.saving, "release starts the save");
-        later(1600, () => step(afterSave));
+        selectRegion(20, 30, 80, 70);
+        check(picker.saving && !picker.editing, "release stages the capture without an editor");
+        later(700, () => step(() => {
+            check(!picker.opened && thumbs.entries.length === 1, "release closes the picker and shows one thumbnail");
+            const raw = thumbs.entries[0];
+            const original = raw.path;
+            check(!raw.saved && !raw.copied && raw.temp === original && clipboardRecorder.copied.length === 0,
+                "the card owns an unsaved image and the clipboard is untouched");
+            shot.source = "file:///" + original;
+            check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 40,
+                "the staged PNG has the selected dimensions");
+            openEditor(raw, source => {
+                const sessionFile = picker.editPath;
+                check(sessionFile !== original && WindowsFiles.isFile(sessionFile), "the editor owns its image independently of the card");
+                picker.cancel();
+                later(700, () => step(() => {
+                    check(!picker.opened && thumbs.entries[0] === raw && WindowsFiles.isFile(original),
+                        "cancel returns to the original card");
+                    check(!WindowsFiles.isFile(sessionFile), "cancel releases the editor's source");
+                    openEditor(raw, () => {
+                        picker.editor.pressAt(10, 10);
+                        picker.editor.moveTo(20, 20);
+                        picker.editor.releaseAt();
+                        check(picker.editor.strokes.length === 1, "the reopened editor accepts annotations");
+                        picker.editPicker.exportEdit("save");
+                        later(1200, () => step(() => {
+                            check(!WindowsFiles.isFile(original), "saving replaces the original unsaved preview");
+                            afterSave();
+                        }));
+                    });
+                }));
+            });
+        }));
+    }
+
+    function openEditor(entry, ready): void {
+        const card = cardFor(entry);
+        const pencil = find(card, "captureThumbnailAction-edit");
+        card.manualHover = true;
+        check(pencil?.Accessible.name === "Edit" && card.hovered, "the bottom-left pencil is an accessible hover action");
+        pencil.clicked();
+        card.manualHover = false;
+        check(picker.opened && picker.editing && !card.armed, "Edit opens the editor without arming a drag");
+        later(500, () => step(() => {
+            const window = pickerWindows()[0];
+            const source = find(window.contentItem, "captureEditorSource");
+            check(source?.status === Image.Ready && source.sourceSize.width === entry.imageWidth
+                && source.sourceSize.height === entry.imageHeight, "the editor shows the captured PNG at its original resolution");
+            check(!find(window.contentItem, "areaPickerView"), "reopening does not freeze the desktop again");
+            ready(source);
+        }));
     }
 
     function afterSave(): void {
@@ -382,34 +427,38 @@ ShellRoot {
         const list = cards();
         check(list.length === 1, "one card");
         const card = list[0];
-        const expectedWidth = Math.min(260, window.width - 24);
-        const expectedHeight = Math.min(174, Math.floor((window.height - 72) / 5));
-        check(card.width === expectedWidth && card.height === expectedHeight, "260 x 174, or smaller on a small work area: " + card.width + " x " + card.height);
-        check(card.x + card.width === window.width - 12 && card.y + card.height === window.height - 12, "12 px from the bottom right corner");
+        const scale = Math.min(1, (window.width - 32) / 240, (window.height - 64) / 800);
+        check(card.width === Math.round(240 * scale) && card.height === Math.floor(160 * scale), "240 x 160 scaled to fit five cards");
+        check(card.x + card.width === window.width - 16 && card.y + card.height === window.height - 16, "16 px from the bottom right corner");
         check(card.fade === 1 && card.slide === 1 && card.opacity === 1 && card.transform[0].x === 0, "the entrance has finished");
         const image = find(card, "captureThumbnailImage");
         check(image !== null && image.status === Image.Ready, "the image is loaded");
-        check(image.width === 60 && image.height === 40, "at its own size, because it is smaller than the card: " + image.width + " x " + image.height);
+        check(image.width === card.width && image.height === card.height && image.fillMode === Image.PreserveAspectCrop,
+            "the preview fills the frame, even for a small crop");
         check(Math.abs(image.x + image.width / 2 - card.width / 2) < 1 && Math.abs(image.y + image.height / 2 - card.height / 2) < 1, "centred");
-        const pill = find(card, "captureThumbnailActions");
-        check(pill !== null && !pill.visible, "the buttons are hidden until the pointer is over the card");
+        const actions = find(card, "captureThumbnailActions");
+        check(actions !== null && !actions.visible && !actions.enabled, "actions are hidden and inert out of hover");
         check(find(card, "captureThumbnailAction-copy") && find(card, "captureThumbnailAction-reveal") && find(card, "captureThumbnailAction-close"),
             "Copy, Show in folder and Close are offered");
-        check(find(card, "captureThumbnailAction-save") === null, "Save is not, because the capture is saved");
+        check(find(card, "captureThumbnailAction-save") !== null, "the MacShot Save control stays in place even after an export");
         const copy = find(card, "captureThumbnailAction-copy");
-        check(copy.stateLayer !== undefined && copy.type === 2, "the buttons are Caelestia IconButtons of the text type");
-        check(copy.width === copy.height && copy.width > 0, "square, sized by the control: " + copy.width);
-        const buttons = ["copy", "reveal", "close"].map(name => find(card, "captureThumbnailAction-" + name));
-        check(buttons.every(button => button.width === copy.width && button.height === copy.height), "all the same size");
-        check(buttons[1].x - (buttons[0].x + buttons[0].width) === Tokens.spacing.extraSmall, "spaced by Tokens");
-        check(pill.width === 3 * copy.width + 2 * Tokens.spacing.extraSmall + 2 * Tokens.padding.extraSmall
-            && pill.height === copy.height + 2 * Tokens.padding.extraSmall, "the pill is its buttons plus Tokens padding");
+        const reveal = find(card, "captureThumbnailAction-reveal");
+        const close = find(card, "captureThumbnailAction-close");
+        const scrim = find(card, "captureThumbnailScrim");
+        check(copy.text === "Copy" && copy.Accessible.name === copy.text, "Copy has a visible, accessible label");
+        check(reveal.Accessible.name === "Show in folder" && close.Accessible.name === "Close", "corner icons have accessible names");
+        check(reveal.x > close.x && reveal.y > close.y, "Close and Show in folder sit in opposite corners");
+        check(scrim.width === card.width && scrim.height === card.height && Math.abs(scrim.color.a - 0.45) < 0.01,
+            "the scrim dims the whole card");
         card.manualHover = true;
         later(600, () => step(() => {
-            check(pill.visible && pill.opacity === 1, "the buttons show while the pointer is over the card");
+            check(actions.visible && actions.enabled && actions.opacity === 1, "actions show while the pointer is over the card");
             check(card.paused, "which pauses the timeout");
-            check(pill.y + pill.height === card.height - Tokens.spacing.small, "a small gap above the bottom edge");
-            check(pill.x === Math.round((card.width - pill.width) / 2), "centred on whole pixels");
+            const primary = find(card, "captureThumbnailPrimaryActions");
+            check(Math.abs(primary.x + primary.width / 2 - card.width / 2) < 1, "Copy is centered");
+            const save = find(card, "captureThumbnailAction-save");
+            check(copy.y < save.y && copy.width === save.width && Math.abs(primary.y + primary.height / 2 - card.height / 2) < 1,
+                "the equal-width Copy and Save pills stack vertically in the center");
             card.manualHover = false;
             copyCapture();
         }));
@@ -423,8 +472,11 @@ ShellRoot {
             check(panels()[0].visible === false && thumbs.suspended, "the thumbnails step aside while the picker is open");
             readyAll();
             later(300, () => step(() => {
-                drag(10, 10, 70, 60, "copy");
-                later(1600, () => step(afterCopy));
+                selectRegion(10, 10, 70, 60);
+                later(700, () => step(() => openEditor(thumbs.entries[1], () => {
+                    picker.editPicker.exportEdit("copy");
+                    later(1200, () => step(afterCopy));
+                })));
             }));
         }));
     }
@@ -452,12 +504,13 @@ ShellRoot {
         const list = cards();
         check(list.length === 2, "two cards");
         check(list[0].entry === thumbs.entries[0] && list[1].entry === thumbs.entries[1], "the newest is at the bottom");
-        check(list[1].y + list[1].height === window.height - 12, "on the bottom edge gap");
-        check(list[0].y + list[0].height + 12 === list[1].y, "with 12 px between them");
+        check(list[1].y + list[1].height === window.height - 16, "on the bottom edge gap");
+        check(list[0].y + list[0].height + 8 === list[1].y, "with 8 px between them");
         check(find(list[1], "captureThumbnailAction-save") !== null, "a copy-only capture offers Save");
-        check(find(list[0], "captureThumbnailAction-save") === null, "a saved one does not");
+        check(find(list[1], "captureThumbnailAction-save").text === "Save", "Save has a visible label");
+        check(find(list[0], "captureThumbnailAction-save") !== null, "the saved card uses the same control layout");
         const image = find(list[1], "captureThumbnailImage");
-        check(image.status === Image.Ready && image.width === 60 && image.height === 50, "the copy's preview is drawn");
+        check(image.status === Image.Ready && image.paintedWidth >= list[1].width && image.paintedHeight >= list[1].height, "the copy fills its thumbnail");
         actionsStep();
     }
 
@@ -465,18 +518,18 @@ ShellRoot {
     function actionsStep(): void {
         const entry = thumbs.entries[1];
         const card = cardFor(entry);
-        find(card, "captureThumbnailAction-copy").clicked();
+        thumbs.copyEntry(entry);
         check(clipboardRecorder.copied.length === 2 && clipboardRecorder.copied[1] === entry.path && clipboardRecorder.existedAtCall,
             "Copy puts the preview file on the clipboard");
         check(thumbs.entries.length === 2, "and leaves the thumbnail");
 
         thumbs.open(entry);
         check(opener.urls.length === 1 && decodeURIComponent(opener.urls[0]).endsWith(entry.path) && opener.urls[0].indexOf("file:///") === 0,
-            "clicking the card opens the image: " + opener.urls[0]);
+            "Open image can still open the full capture: " + opener.urls[0]);
 
         // Save writes to Screenshots with the picker's naming.
         const preview = entry.temp;
-        find(card, "captureThumbnailAction-save").clicked();
+        check(thumbs.saveEntry(entry), "the save operation succeeds");
         check(entry.saved && entry.path !== preview, "Save saves the capture");
         check(entry.path.indexOf(root.saveRoot + "/Screenshots/annotate-") === 0 && entry.path.endsWith(".png"), "in Screenshots with the default name: " + entry.path);
         check(WindowsFiles.isFile(entry.path), "the file exists");
@@ -486,7 +539,6 @@ ShellRoot {
         shot.source = "file:///" + entry.path;
         check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 50, "the saved file holds the same image");
         later(300, () => step(() => {
-            check(find(card, "captureThumbnailAction-save") === null, "Save disappears once saved");
             check(find(card, "captureThumbnailImage").status === Image.Ready, "and the picture stays");
             revealStep();
         }));
@@ -574,8 +626,8 @@ ShellRoot {
         for (let i = 0; i < 5; i++)
             check(list[i].entry === thumbs.entries[i], "oldest highest, newest lowest: " + i);
         for (let i = 0; i < 4; i++)
-            check(list[i].y + list[i].height + 12 === list[i + 1].y, "12 px between cards " + i + " and " + (i + 1));
-        check(list[4].y + list[4].height === window.height - 12, "the newest on the bottom edge gap");
+            check(list[i].y + list[i].height + 8 === list[i + 1].y, "8 px between cards " + i + " and " + (i + 1));
+        check(list[4].y + list[4].height === window.height - 16, "the newest on the bottom edge gap");
         check(list[0].y >= 0, "the oldest is inside the panel");
         // The input mask is one region per card. It covers every card and nothing
         // else: not the gaps between cards, not the margin, not the rest of the panel.
@@ -611,8 +663,8 @@ ShellRoot {
         const list = cards();
         check(list.length === 5, "five cards after the evictions");
         for (let i = 0; i < 4; i++)
-            check(list[i].y + list[i].height + 12 === list[i + 1].y, "the stack closed up: " + i);
-        check(list[4].y + list[4].height === window.height - 12, "and still sits on the bottom edge gap");
+            check(list[i].y + list[i].height + 8 === list[i + 1].y, "the stack closed up: " + i);
+        check(list[4].y + list[4].height === window.height - 16, "and still sits on the bottom edge gap");
         closeStep();
     }
 
@@ -679,7 +731,7 @@ ShellRoot {
         check(card && body && image, "a saved capture with a card");
         check(!card.dragging && !card.armed && !entry.dragging, "nothing is dragging yet");
 
-        // A click that does not move keeps its behaviour: it opens the image.
+        // A short movement never starts a drag.
         const opened = opener.urls.length;
         card.bodyPressed(30, 40);
         check(card.armed, "a press on the body arms it");
@@ -689,8 +741,6 @@ ShellRoot {
         check(dragRecorder.calls.length === 0 && card.armed && !card.dragging, "movement below the system distance (4 px) starts nothing");
         card.bodyReleased();
         check(!card.armed, "the release disarms it");
-        body.clicked(null);
-        check(opener.urls.length === opened + 1 && decodeURIComponent(opener.urls[opened]).endsWith(entry.path), "so the click opens the image");
 
         // A move without a press does nothing.
         card.bodyMoved(100, 100);
@@ -729,9 +779,9 @@ ShellRoot {
         check(WindowsFiles.isFile(savedPath), "a saved file is never deleted by a drag");
         check(entry.dragFile === "" && thumbs.dragFiles.length === 0, "and a saved capture makes no drag file");
         check(before.x === card.x && before.y === card.y, "the card did not move during it: " + card.x + ", " + card.y);
-        check(opener.urls.length === opened + 1, "and the drag opened nothing");
+        check(opener.urls.length === opened, "and the drag opened nothing");
         body.clicked(null);
-        check(opener.urls.length === opened + 1, "a click that follows a drag does not open the image");
+        check(opener.urls.length === opened, "a click that follows a drag does not open the image");
         later(1500, () => step(() => {
             check(!thumbs.entries.includes(entry), "the closed preview is gone after its exit");
             dragButtons();
@@ -743,21 +793,20 @@ ShellRoot {
         later(900, () => step(() => {
             const entry = thumbs.entries[0];
             const card = cardFor(entry);
-            const pill = find(card, "captureThumbnailActions");
+            const actions = find(card, "captureThumbnailActions");
             const calls = dragRecorder.calls.length;
             // The buttons are above the body. A press on a button never reaches
             // it, so it cannot become a drag. The body is below.
             card.manualHover = true;
             later(600, () => step(() => {
-                check(pill.visible, "the buttons are showing");
-                for (const name of ["copy", "save", "reveal", "close"]) {
+                check(actions.visible, "the buttons are showing");
+                for (const name of ["copy", "save", "reveal", "close", "pin", "edit"]) {
                     const button = find(card, "captureThumbnailAction-" + name);
                     const centre = card.mapFromItem(button, button.width / 2, button.height / 2);
-                    check(card.childAt(centre.x, centre.y) === pill, "a press on " + name + " lands on the buttons, not on the card body");
+                    check(card.childAt(centre.x, centre.y) === actions && button.contains(Qt.point(button.width / 2, button.height / 2)),
+                        "a press on " + name + " lands on the buttons, not on the card body");
                     check(button.enabled && button.visible, name + " takes the press");
                 }
-                const outside = find(card, "captureThumbnailBody");
-                check(card.childAt(card.width / 2, 8) === outside, "the card body is under a press away from the buttons");
                 check(dragRecorder.calls.length === calls, "no drag started");
                 card.manualHover = false;
                 dragCopy(entry);
@@ -776,8 +825,7 @@ ShellRoot {
                 check(isDragPath(path), "named like a screenshot, in a drag directory of its own in the temp directory: " + path);
                 check(thumbs.entries[0].dragFile === path && thumbs.dragRecord(path) !== null, "which the owner tracks by that exact path");
             };
-            card.bodyPressed(10, 10);
-            card.bodyMoved(10, 30);
+            check(thumbs.drag(entry, find(card, "captureThumbnailImage")), "the native drag layer offers the file");
             dragRecorder.during = null;
             const call = dragRecorder.calls[dragRecorder.calls.length - 1];
             const file = entry.dragFile;
@@ -870,8 +918,7 @@ ShellRoot {
         later(900, () => step(() => {
             const entry = thumbs.entries[0];
             const card = cardFor(entry);
-            card.bodyPressed(10, 10);
-            card.bodyMoved(10, 30);
+            check(thumbs.drag(entry, find(card, "captureThumbnailImage")), "the native drag layer offers the file");
             const file = entry.dragFile;
             check(isDragPath(file) && WindowsFiles.isFile(file), "it was dragged");
             root.fakeNow += 400000;
@@ -1086,9 +1133,9 @@ ShellRoot {
         later(2000, () => step(() => {
             check(thumbs.entries.length === 1, "a timeout of 0 never closes the thumbnail");
             config({ thumbnailSeconds: -3 });
-            check(thumbs.seconds === 6, "a negative timeout falls back to 6 s");
+            check(thumbs.seconds === 5, "a negative timeout falls back to 5 s");
             config({});
-            check(thumbs.seconds === 6 && thumbs.enabled, "and so does a missing one");
+            check(thumbs.seconds === 5 && thumbs.enabled, "and so does a missing one");
             suspendStep();
         }));
     }
@@ -1097,10 +1144,13 @@ ShellRoot {
     function suspendStep(): void {
         config({ thumbnailSeconds: 0 });
         check(panels()[0].visible, "the panel is visible");
+        const card = cards()[0];
         check(CaptureUi.screenshot("open") === true, "a new picker is asked to open");
         later(400, () => step(() => {
             check(picker.opened && thumbs.suspended && !panels()[0].visible, "the panel is hidden while the picker is open");
             check(thumbs.entries.length === 1, "and keeps its thumbnails");
+            check(!card.visible && card.fade === 1 && card.slide === 1 && card.maskItem.width === 0,
+                "suspension hides the card and turns off input without rewinding the entrance");
             readyAll();
             find(pickerWindows()[0].contentItem, "areaPicker").dismissByKey();
             later(1400, () => step(() => {
@@ -1118,7 +1168,9 @@ ShellRoot {
         later(400, () => step(() => {
             readyAll();
             later(300, () => step(() => {
-                drag(10, 10, 40, 40, "copy");
+                const area = find(pickerWindows()[0].contentItem, "areaPicker");
+                picker.startEditing(area, Capture.exportPlan({ x: 10, y: 10, width: 30, height: 30 }, area.geometry, area.dpr));
+                area.exportEdit("copy");
                 later(1600, () => step(() => {
                     check(toastWith("could not be copied") !== "", "the refused copy is reported");
                     check(thumbs.entries.length === 1, "and adds no thumbnail");
@@ -1146,7 +1198,9 @@ ShellRoot {
                     later(400, () => step(() => {
                         readyAll();
                         later(300, () => step(() => {
-                            drag(10, 10, 40, 40, "copy");
+                            selectRegion(10, 10, 40, 40);
+                            check(picker.editing && !picker.saving, "disabling thumbnails keeps the direct editor");
+                            picker.editPicker.exportEdit("copy");
                             later(1600, () => step(offResult));
                         }));
                     }));
@@ -1290,11 +1344,11 @@ ShellRoot {
                             check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "the retry deleted the preview file");
                             // A new size makes the image load again. It reads the saved file.
                             const before = image.sourceSize.width;
-                            entry.imageWidth = 3000;
-                            entry.imageHeight = 2000;
+                            config({ thumbnailSeconds: 0, thumbnailScale: 0.7 });
                             check(image.sourceSize.width > 0 && image.sourceSize.width !== before, "a new size asks for a new decode: " + before + " then " + image.sourceSize.width);
                             later(600, () => step(() => {
                                 check(image.status === Image.Ready, "and the image stays valid after the preview file is gone");
+                                config({ thumbnailSeconds: 0 });
                                 capStep();
                             }));
                         }));
@@ -1403,7 +1457,42 @@ ShellRoot {
                 check(!next.copyOperation && next.copyFailed && !next.copied && thumbs.entries.includes(next), "missing result keeps entry for retry/save");
                 clipboardRecorder.writeFinished(current, true, "");
                 check(!next.copied, "success after timeout is ignored");
-                cleanupFinal();
+                thumbs.finish(next);
+                clipboardRecorder.autoFinish = true;
+                macshotActions();
+            }));
+        }));
+    }
+
+    function macshotActions(): void {
+        check(thumbs.addCopy(info(), savedPath), "an unsaved card can be pinned");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        later(200, () => step(() => {
+            cardFor(entry).perform("pin");
+            check(entry.closing && thumbs.pins.length === 1, "Pin closes the thumbnail and opens a pinned image");
+            const pin = thumbs.pins[0];
+            check(pin.path !== entry.path && WindowsFiles.isFile(pin.path), "the pin holds its own scratch image");
+            thumbs.finish(entry);
+            check(WindowsFiles.isFile(pin.path), "closing the original card leaves the pinned image intact");
+            thumbs.unpin(pin);
+            check(!WindowsFiles.isFile(pin.path) && thumbs.pins.length === 0, "unpin removes the scratch image");
+
+            check(thumbs.addSaved(info(), savedPath), "a card to dismiss by clicking its image");
+            const clicked = thumbs.entries[thumbs.entries.length - 1];
+            later(200, () => step(() => {
+                find(cardFor(clicked), "captureThumbnailBody").clicked(null);
+                check(clicked.closing && WindowsFiles.isFile(savedPath), "a body click dismisses without changing the saved file");
+                thumbs.finish(clicked);
+                check(thumbs.addSaved(info(), savedPath), "a card to Copy");
+                const copied = thumbs.entries[thumbs.entries.length - 1];
+                later(200, () => step(() => {
+                    cardFor(copied).perform("copy");
+                    check(copied.copyOperation > 0 && !copied.closing, "the Copy action waits for confirmation");
+                    Qt.callLater(() => step(() => {
+                        check(copied.copied && copied.closing, "Copy dismisses after success");
+                        cleanupFinal();
+                    }));
+                }));
             }));
         }));
     }

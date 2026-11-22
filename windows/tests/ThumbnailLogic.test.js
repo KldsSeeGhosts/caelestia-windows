@@ -11,10 +11,10 @@ vm.runInNewContext(
 );
 const plain = value => JSON.parse(JSON.stringify(value));
 
-test("the thumbnail is on for 6 seconds unless the config says otherwise", () => {
-    assert.deepEqual(plain(logic.settings(undefined)), { enabled: true, seconds: 6 });
-    assert.deepEqual(plain(logic.settings({})), { enabled: true, seconds: 6 });
-    assert.deepEqual(plain(logic.settings({ thumbnail: false })), { enabled: false, seconds: 6 });
+test("the thumbnail is on for 5 seconds unless the config says otherwise", () => {
+    assert.deepEqual(plain(logic.settings(undefined)), { enabled: true, seconds: 5 });
+    assert.deepEqual(plain(logic.settings({})), { enabled: true, seconds: 5 });
+    assert.deepEqual(plain(logic.settings({ thumbnail: false })), { enabled: false, seconds: 5 });
     assert.deepEqual(plain(logic.settings({ thumbnail: true, thumbnailSeconds: 10 })), { enabled: true, seconds: 10 });
     assert.deepEqual(plain(logic.settings({ thumbnailSeconds: 0 })), { enabled: true, seconds: 0 });
     assert.deepEqual(plain(logic.settings({ thumbnailSeconds: 2.9 })), { enabled: true, seconds: 2 });
@@ -24,21 +24,32 @@ test("a value of the wrong type falls back to the default", () => {
     for (const bad of ["no", 0, 1, null, "false"])
         assert.equal(logic.settings({ thumbnail: bad }).enabled, true, String(bad));
     for (const bad of ["3", -1, null, NaN, Infinity, true, {}])
-        assert.equal(logic.settings({ thumbnailSeconds: bad }).seconds, 6, String(bad));
+        assert.equal(logic.settings({ thumbnailSeconds: bad }).seconds, 5, String(bad));
 });
 
-test("a preview is 260 x 174 on a roomy work area", () => {
-    assert.deepEqual(plain(logic.previewSize({ width: 1920, height: 1040 })), { width: 260, height: 174 });
+test("MacShot's default is a 240 x 160 preview with centered 110 x 32 action pills", () => {
+    assert.deepEqual(plain(logic.previewSize({ width: 1920, height: 1040 })), { width: 240, height: 160 });
+    assert.deepEqual(plain(logic.controls(240, 160, 25)), { pad: 10, corner: 28, icon: 13, buttonHeight: 32, buttonWidth: 110, gap: 8, font: 13 });
 });
 
+test("the preferred corner and scale position a stack with the newest at the edge", () => {
+    const prefs = logic.appearance({ thumbnailCorner: "top-left", thumbnailScale: 0.5,
+        thumbnailStacking: false, thumbnailLetterbox: false });
+    const work = { width: 1920, height: 1040 };
+    const size = logic.previewSize(work, prefs.scale);
+    const rects = logic.stackRects(work, 2, size, prefs.corner);
+    assert.deepEqual(plain(rects[1]), { x: 16, y: 16, width: 120, height: 80 });
+    assert.ok(rects[0].y > rects[1].y);
+    assert.equal(prefs.stack, false);
+    assert.equal(prefs.cover, true);
+});
 test("the width shrinks to fit a narrow work area with a gap on each side", () => {
-    assert.deepEqual(plain(logic.previewSize({ width: 200, height: 1040 })), { width: 176, height: 174 });
+    assert.deepEqual(plain(logic.previewSize({ width: 200, height: 1040 })), { width: 168, height: 112 });
     assert.equal(logic.previewSize({ width: 10, height: 1040 }).width, 1);
 });
 
-test("the height is a fifth of the room left after six gaps, so five previews fit", () => {
-    // (720 - 72) / 5 = 129.6, floored.
-    assert.equal(logic.previewSize({ width: 1920, height: 720 }).height, 129);
+test("five previews fit and shrink proportionally on small displays", () => {
+    assert.equal(logic.previewSize({ width: 1920, height: 720 }).height, 131);
     for (const height of [300, 480, 720, 1040, 1440]) {
         const work = { width: 1920, height };
         const size = logic.previewSize(work);
@@ -51,23 +62,23 @@ test("the height is a fifth of the room left after six gaps, so five previews fi
     assert.equal(logic.previewSize({ width: 1920, height: 20 }).height, 1);
 });
 
-test("the newest preview is at the bottom right, 12 px from both edges", () => {
+test("the newest preview is at the bottom right, 16 px from both edges", () => {
     const work = { width: 1920, height: 1040 };
     const size = logic.previewSize(work);
     const rects = logic.stackRects(work, 3, size);
     assert.equal(rects.length, 3);
     // Index 2 is the newest.
-    assert.deepEqual(plain(rects[2]), { x: 1920 - 12 - 260, y: 1040 - 12 - 174, width: 260, height: 174 });
-    assert.equal(rects[2].x + rects[2].width, work.width - 12);
-    assert.equal(rects[2].y + rects[2].height, work.height - 12);
+    assert.deepEqual(plain(rects[2]), { x: 1920 - 16 - 240, y: 1040 - 16 - 160, width: 240, height: 160 });
+    assert.equal(rects[2].x + rects[2].width, work.width - 16);
+    assert.equal(rects[2].y + rects[2].height, work.height - 16);
 });
 
-test("older previews stack upward with a 12 px gap between them", () => {
+test("older previews stack upward with an 8 px gap between them", () => {
     const work = { width: 1920, height: 1040 };
     const size = logic.previewSize(work);
     const rects = logic.stackRects(work, 4, size);
     for (let i = 0; i < 3; i++) {
-        assert.equal(rects[i].y + rects[i].height + 12, rects[i + 1].y, `gap above preview ${i + 1}`);
+        assert.equal(rects[i].y + rects[i].height + 8, rects[i + 1].y, `gap above preview ${i + 1}`);
         assert.equal(rects[i].x, rects[i + 1].x);
     }
     assert.deepEqual(plain(logic.stackRects(work, 0, size)), []);
@@ -112,38 +123,23 @@ test("each screen still places its own previews from the bottom right", () => {
     const large = { width: 2560, height: 1400 };
     const onSmall = logic.stackRects(small, 2, logic.previewSize(small));
     const onLarge = logic.stackRects(large, 3, logic.previewSize(large));
-    assert.equal(onSmall[1].x + onSmall[1].width, small.width - 12);
-    assert.equal(onSmall[1].y + onSmall[1].height, small.height - 12);
-    assert.equal(onLarge[2].x + onLarge[2].width, large.width - 12);
-    assert.equal(onLarge[2].y + onLarge[2].height, large.height - 12);
+    assert.equal(onSmall[1].x + onSmall[1].width, small.width - 16);
+    assert.equal(onSmall[1].y + onSmall[1].height, small.height - 16);
+    assert.equal(onLarge[2].x + onLarge[2].width, large.width - 16);
+    assert.equal(onLarge[2].y + onLarge[2].height, large.height - 16);
 });
 
-test("the image is fitted 20 px in from every edge and never scaled up", () => {
-    const card = { width: 260, height: 174 };
-    // A screenshot far larger than the card: the 220 x 134 box limits it.
-    assert.deepEqual(plain(logic.fitImage(card, { width: 1920, height: 1080 }, 1)), { width: 220, height: 124, known: true });
-    // A tall one is limited by the height.
-    assert.deepEqual(plain(logic.fitImage(card, { width: 500, height: 1000 }, 1)), { width: 67, height: 134, known: true });
-    // A small one keeps its size.
-    assert.deepEqual(plain(logic.fitImage(card, { width: 60, height: 40 }, 1)), { width: 60, height: 40, known: true });
+test("the screenshot covers its frame unless letterboxing is explicitly enabled", () => {
+    assert.equal(logic.appearance().cover, true);
+    assert.equal(logic.appearance({ thumbnailLetterbox: true }).cover, false);
 });
 
-test("the image size is in physical pixels, so a 2x screen halves it", () => {
-    const card = { width: 260, height: 174 };
-    assert.deepEqual(plain(logic.fitImage(card, { width: 120, height: 80 }, 2)), { width: 60, height: 40, known: true });
-    assert.deepEqual(plain(logic.fitImage(card, { width: 600, height: 400 }, 1.5)), { width: 201, height: 134, known: true });
-});
-
-test("an unknown image size fills the inner box", () => {
-    const card = { width: 260, height: 174 };
-    assert.deepEqual(plain(logic.fitImage(card, null, 1)), { width: 220, height: 134, known: false });
-    assert.deepEqual(plain(logic.fitImage(card, { width: 0, height: 0 }, 1)), { width: 220, height: 134, known: false });
-    assert.equal(logic.fitImage({ width: 30, height: 30 }, { width: 100, height: 100 }, 1).width >= 1, true);
-});
-
-test("a bad ratio counts as 1", () => {
-    const card = { width: 260, height: 174 };
-    assert.deepEqual(plain(logic.fitImage(card, { width: 60, height: 40 }, 0)), { width: 60, height: 40, known: true });
+test("only a deliberate outward horizontal movement dismisses", () => {
+    assert.equal(logic.dismissOffset(10, 1, false), 10);
+    assert.equal(logic.dismissOffset(-10, 1, true), 10);
+    assert.equal(logic.dismissOffset(-10, 1, false), 0);
+    assert.equal(logic.dismissOffset(3, 1, false), 0);
+    assert.equal(logic.dismissOffset(7, 25, false), 0);
 });
 
 test("only unpaused time counts toward the timeout", () => {
@@ -171,40 +167,11 @@ test("a paused preview stays paused however long the pointer rests on it", () =>
     assert.equal(state.expired, true);
 });
 
-test("Save is offered only for a capture that was not saved", () => {
-    assert.deepEqual(plain(logic.actions(false)), ["copy", "save", "reveal", "close"]);
-    assert.deepEqual(plain(logic.actions(true)), ["copy", "reveal", "close"]);
-});
-
-// The shell measures the pill (its buttons plus Tokens padding) and passes it in.
-const onPixel = (value, scale) => Math.abs(value * scale - Math.round(value * scale)) < 1e-6;
-
-test("the button pill is centred and its bottom margin above the bottom edge", () => {
-    const card = { width: 260, height: 174 };
-    // Four 28 px buttons, three 4 px gaps and 4 px of padding on each side.
-    const four = { width: 4 * 28 + 3 * 4 + 8, height: 28 + 8 };
-    assert.deepEqual(plain(logic.pillRect(card, four, { scale: 1, bottom: 8 })), { x: 64, y: 174 - 8 - 36, width: 132, height: 36 });
-    // Three buttons.
-    const three = { width: 3 * 28 + 2 * 4 + 8, height: 36 };
-    assert.deepEqual(plain(logic.pillRect(card, three, { scale: 1, bottom: 8 })), { x: 80, y: 130, width: 100, height: 36 });
-    assert.equal(logic.pillRect(card, three, { scale: 1, bottom: 12 }).y, 126, "the bottom margin is an input");
-});
-
-test("the pill sits on whole device pixels at every scale", () => {
-    const card = { width: 260, height: 174 };
+test("action positions snap to whole pixels at fractional display scales", () => {
     for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
-        const pill = logic.pillRect(card, { width: 131.3, height: 36.6 }, { scale, bottom: 8 });
-        for (const key of ["x", "y", "width", "height"])
-            assert.ok(onPixel(pill[key], scale), `${key} = ${pill[key]} at ${scale}`);
-        assert.ok(pill.width >= 131.3 && pill.height >= 36.6, "rounded up, so the buttons keep their room");
+        const position = logic.snap(64.3, scale) * scale;
+        assert.ok(Math.abs(position - Math.round(position)) < 1e-6);
     }
-});
-
-test("the pill fits the smallest card", () => {
-    const size = logic.previewSize({ width: 1920, height: 720 });
-    const pill = logic.pillRect(size, { width: 132, height: 36 }, { scale: 1, bottom: 8 });
-    assert.ok(pill.x >= 0 && pill.x + pill.width <= size.width);
-    assert.ok(pill.y >= 0 && pill.y + pill.height <= size.height);
 });
 
 test("a press becomes a drag once it moves the system distance on either axis", () => {

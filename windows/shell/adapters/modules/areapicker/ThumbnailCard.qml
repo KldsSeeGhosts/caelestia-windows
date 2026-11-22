@@ -2,11 +2,12 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
 import Quickshell
+import Caelestia.Components
 import Caelestia.Config
 import Caelestia.I18n
 import qs.components
-import qs.components.controls
 import qs.components.effects
 import qs.services
 import "ThumbnailLogic.js" as Logic
@@ -14,12 +15,8 @@ import "../../utils/FileUrls.js" as FileUrls
 
 // One post-capture preview, drawn by Thumbnails.qml inside its panel.
 //
-// The card is 260 x 174 with a surface fill, a primaryContainer border and the
-// image fitted 20 px in from every edge, as the classic tool's thumbnail was.
-// The buttons that show while the pointer is over it are Caelestia IconButtons
-// in a row on surfaceVariant, sized by the control and by Tokens. The card owns
-// only its own presentation and timeout. Everything that touches files or the clipboard is a
-// function on `owner` (Thumbnails.qml).
+// Keep the screenshot in view until hover reveals its actions. The owner
+// handles the clipboard, file lifetime and native drag.
 Item {
     id: root
 
@@ -29,8 +26,8 @@ Item {
     required property var entry
     // This card's rectangle in the panel, from ThumbnailLogic.stackRects().
     required property var slot
-    // Whether the panel is on screen. A hidden panel pauses the timeout, and
-    // the card plays its entrance again when the panel returns.
+    // Whether the panel is on screen. Suspension pauses the timer without
+    // rewinding the entrance of a card that was already displayed.
     required property bool present
 
     // Fixtures set this because offscreen windows receive no pointer.
@@ -43,7 +40,8 @@ Item {
     // The owner sets this on the entry for as long as the system drag runs. The
     // card then keeps its timeout still, as it does under the pointer.
     readonly property bool dragging: entry.dragging === true
-    readonly property bool paused: hovered || dragging || owner.suspended || !!entry.copyOperation || entry.copyFailed === true
+    readonly property bool paused: hovered || dragging || swipe > 0 || menuLoader.active || owner.suspended
+        || !!entry.outputPending || !!entry.afterReveal || !!entry.copyOperation || entry.copyFailed === true
     // Milliseconds of timeout used so far. Only unpaused time counts.
     property real elapsed
 
@@ -54,23 +52,45 @@ Item {
     property point pressPoint
     property bool armed
     property bool dragged
+    property real swipe
+    property bool swiping
 
-    readonly property bool shown: present && !entry.closing
+    property bool entered
+    readonly property bool readyForEntrance: image.status === Image.Ready || image.status === Image.Error || !entry.imagePath
+    readonly property bool shown: present && entered && !entry.closing
+    readonly property bool animateMotion: entry.fromEditor !== true || entry.closing
     // 0 to 1. `slide` moves the card in from the right with spatial motion and
     // `fade` is its opacity. A card that is closing is gone once `fade` is 0.
     property real slide
     property real fade
-    readonly property var fit: Logic.fitImage({ width: width, height: height },
-        { width: entry.imageWidth, height: entry.imageHeight }, entry.dpr)
+    readonly property bool cover: owner.appearance?.cover ?? true
+    readonly property bool memoryPreview: !!entry.memorySource?.toString()
+    readonly property real drift: (owner.appearance?.corner ?? "").endsWith("-left") ? -Logic.DRIFT : Logic.DRIFT
+    readonly property real swipeX: swipe * Math.sign(drift)
+    readonly property var controls: Logic.controls(width, height)
+    readonly property font pillFont: Qt.font({ pixelSize: controls.font, weight: Font.Medium })
+    readonly property real pillWidth: Logic.controls(width, height, Math.max(copyMetrics.advanceWidth, saveMetrics.advanceWidth)).buttonWidth
+    readonly property real cornerRadius: 12
 
-    // A pill button runs one of the owner's actions.
+    TextMetrics { id: copyMetrics; font: root.pillFont; text: Tr.tr("Copy") }
+    TextMetrics { id: saveMetrics; font: root.pillFont; text: Tr.tr("Save") }
+
+    // A button runs one of the owner's actions.
     function perform(name: string): void {
+        if (entry.outputPending && name !== "close")
+            return;
         if (name === "copy")
-            owner.copyEntry(entry);
-        else if (name === "save")
-            owner.saveEntry(entry);
+            owner.copyEntry(entry, true);
+        else if (name === "save") {
+            if (owner.saveEntry(entry, owner.showExportPath))
+                owner.close(entry);
+        }
         else if (name === "reveal")
             owner.reveal(entry);
+        else if (name === "edit")
+            owner.edit(entry);
+        else if (name === "pin")
+            owner.pin(entry);
         else if (name === "close")
             owner.close(entry);
     }
@@ -80,6 +100,8 @@ Item {
     function bodyPressed(x: real, y: real): void {
         dragged = false;
         armed = true;
+        swipe = 0;
+        swiping = false;
         pressPoint = Qt.point(x, y);
     }
 
@@ -87,27 +109,43 @@ Item {
     // press becomes a drag of the image file. A press that never moves that far
     // is a click, which the body handles on release as before.
     function bodyMoved(x: real, y: real): void {
-        if (!armed || dragging)
+        if (!armed || dragging || entry.outputPending)
             return;
-        if (!Logic.dragStarts(pressPoint, { x: x, y: y }, owner.dragDistance(), dpr))
+        const dx = x + swipeX - pressPoint.x;
+        const dy = y - pressPoint.y;
+        const outward = Logic.dismissOffset(dx, dy, drift < 0);
+        if (swiping || outward) {
+            swiping = true;
+            dragged = true;
+            swipe = Math.max(0, dx * Math.sign(drift));
+            return;
+        }
+        if (!Logic.dragStarts(pressPoint, { x, y }, owner.dragDistance(), dpr))
             return;
         armed = false;
         dragged = true;
-        owner.drag(entry, image);
+        if (owner.drag(entry, image))
+            owner.close(entry);
         // The drag ate the button release, so the body still holds the pointer
         // grab. Turning it off and on lets go of it.
         body.enabled = false;
         body.enabled = true;
     }
 
-    function bodyReleased(): void {
+    function bodyReleased(cancelled = false): void {
         armed = false;
+        if (!cancelled && swiping && swipe >= Math.max(8, Math.min(16, width * 0.05)))
+            owner.close(entry);
+        swipe = 0;
+        swiping = false;
     }
 
-    function updateTarget(): void {
-        const target = shown ? 1 : 0;
-        slide = target;
-        fade = target;
+    function enterWhenReady(): void {
+        if (!present || entered || entry.closing || !readyForEntrance)
+            return;
+        entered = true;
+        slide = 1;
+        fade = 1;
     }
 
     // The card starts on a whole device pixel, so everything placed in it with
@@ -124,9 +162,10 @@ Item {
     y: Logic.snap(slot.y, dpr)
     width: slot.width
     height: slot.height
-    opacity: fade
+    visible: present && entered && fade > 0
+    opacity: fade * (1 - 0.45 * Math.min(1, swipe / 16))
     transform: Translate {
-        x: (1 - root.slide) * Logic.DRIFT
+        x: (1 - root.slide) * root.drift + root.swipeX
     }
 
     onDraggingChanged: {
@@ -134,8 +173,9 @@ Item {
             afterDrag = true;
     }
 
-    onShownChanged: updateTarget()
-    Component.onCompleted: updateTarget()
+    onPresentChanged: enterWhenReady()
+    onReadyForEntranceChanged: enterWhenReady()
+    Component.onCompleted: enterWhenReady()
 
     // The entrance and exit animate; a card that is closing with nothing on
     // screen (hidden panel, motion off) must still finish.
@@ -148,8 +188,25 @@ Item {
         target: root.entry
 
         function onClosingChanged(): void {
-            if (root.entry.closing && root.fade === 0)
+            if (!root.entry.closing)
+                return;
+            if (!root.present || root.fade === 0) {
                 root.owner.finish(root.entry);
+                return;
+            }
+            root.slide = 0;
+            root.fade = 0;
+        }
+    }
+
+    Connections {
+        target: root.visible && (root.entry.afterReveal || root.entry.captureReleasedAt) && !root.entry.previewPresented
+            ? root.Window.window : null
+
+        function onFrameSwapped(): void {
+            root.entry.previewPresented = true;
+            root.owner.logCaptureTiming(root.entry, "first-frame");
+            Qt.callLater(root.owner.finishDeferredCapture, root.entry);
         }
     }
 
@@ -188,12 +245,16 @@ Item {
     }
 
     Behavior on slide {
+        enabled: root.animateMotion
+
         Anim {
             type: Anim.DefaultSpatial
         }
     }
 
     Behavior on fade {
+        enabled: root.animateMotion
+
         Anim {
             type: Anim.DefaultEffects
         }
@@ -202,7 +263,7 @@ Item {
     // A neighbour leaving moves the stack down. The first placement is not
     // animated, so a new card appears where it belongs.
     Behavior on y {
-        enabled: root.fade >= 1
+        enabled: root.present && root.fade >= 1
 
         Anim {
             type: Anim.DefaultSpatial
@@ -228,10 +289,10 @@ Item {
 
         objectName: "captureThumbnailMask"
         parent: root.parent
-        x: root.x + (1 - root.slide) * Logic.DRIFT
+        x: root.x + (1 - root.slide) * root.drift + root.swipeX
         y: root.y
-        width: root.fade > 0 ? root.width : 0
-        height: root.fade > 0 ? root.height : 0
+        width: root.visible ? root.width : 0
+        height: root.visible ? root.height : 0
     }
 
     Elevation {
@@ -241,129 +302,262 @@ Item {
         z: -1
     }
 
-    StyledRect {
+    Rectangle {
         id: card
 
         anchors.fill: parent
-        color: Colours.palette.m3surface
-        // The classic tool's "normal" radius is Tokens.rounding.medium
-        // (ThemeTokens.qml writes it under that name).
-        radius: Tokens.rounding.medium
-        border.width: 1
-        border.color: Colours.palette.m3primaryContainer
+        color: root.cover ? "transparent" : "#1f1f1f"
+        radius: root.cornerRadius
     }
 
     Image {
         id: image
 
         objectName: "captureThumbnailImage"
-        anchors.centerIn: parent
-        width: root.fit.width
-        height: root.fit.height
+        anchors.fill: parent
         // The owner points `imagePath` at the saved file before it deletes a
         // preview file, so this source never names a file that is about to go.
         // Any later reload (a new size or scale) reads the saved file.
-        source: FileUrls.fromLocalPath(root.entry.imagePath)
-        sourceSize: Qt.size(Math.ceil(root.fit.width * root.entry.dpr), Math.ceil(root.fit.height * root.entry.dpr))
-        fillMode: Image.PreserveAspectFit
-        asynchronous: true
+        source: root.memoryPreview ? root.entry.memorySource : FileUrls.fromLocalPath(root.entry.imagePath)
+        sourceSize: root.memoryPreview ? Qt.size(-1, -1)
+            : Qt.size(Math.ceil(width * root.dpr), Math.ceil(height * root.dpr))
+        fillMode: root.cover ? Image.PreserveAspectCrop : Image.PreserveAspectFit
+        clip: root.cover
+        asynchronous: !root.memoryPreview
+        retainWhileLoading: true // Save points this card at an identical PNG.
         cache: false
         smooth: true
         mipmap: true
     }
 
-    // The card body opens the image, and pulling it past the system drag distance
-    // drags the image file out instead. Nothing here edits it: the editor does
-    // not exist yet.
+    // The offscreen software renderer can't run the rounded mask shader.
+    ShaderEffectSource {
+        id: imageTexture
+        anchors.fill: image
+        visible: false
+        hideSource: roundedImage.visible
+        sourceItem: roundedImage.visible ? image : null
+    }
+
+    RoundedMask {
+        id: roundedImage
+        anchors.fill: image
+        visible: GraphicsInfo.api !== GraphicsInfo.Software
+        source: imageTexture
+        topLeftRadius: root.cornerRadius
+        topRightRadius: topLeftRadius
+        bottomLeftRadius: topLeftRadius
+        bottomRightRadius: topLeftRadius
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: card.radius
+        color: "transparent"
+        border.width: 1.5
+        border.color: Qt.rgba(1, 1, 1, 0.4)
+    }
+
+    // Click the body to dismiss, or drag the full-size file out of the panel.
     MouseArea {
         id: body
 
         objectName: "captureThumbnailBody"
         anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onPressed: mouse => root.bodyPressed(mouse.x, mouse.y)
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onPressed: mouse => {
+            if (mouse.button === Qt.LeftButton)
+                root.bodyPressed(mouse.x, mouse.y);
+        }
         onPositionChanged: mouse => root.bodyMoved(mouse.x, mouse.y)
-        onReleased: root.bodyReleased()
-        onCanceled: root.bodyReleased()
-        onClicked: {
-            if (!root.dragged)
-                root.owner.open(root.entry);
+        onReleased: mouse => {
+            if (mouse.button === Qt.LeftButton)
+                root.bodyReleased();
+        }
+        onCanceled: root.bodyReleased(true)
+        onClicked: mouse => {
+            if (mouse?.button === Qt.RightButton)
+                menuLoader.active = true;
+            else if (!root.dragged)
+                root.owner.close(root.entry);
+        }
+        onWheel: wheel => {
+            const delta = root.drift < 0 ? -wheel.pixelDelta.x : wheel.pixelDelta.x;
+            wheel.accepted = delta > 0.5 && delta > Math.abs(wheel.pixelDelta.y) * 0.35;
+            if (!wheel.accepted)
+                return;
+            root.swipe += delta;
+            if (root.swipe >= 16) {
+                root.owner.close(root.entry);
+                root.swipe = 0;
+            } else {
+                resetWheel.restart();
+            }
         }
     }
 
-    StyledRect {
-        id: pill
+    Timer {
+        id: resetWheel
+        interval: 160
+        onTriggered: root.swipe = 0
+    }
 
-        readonly property var names: Logic.actions(root.entry.saved)
-        readonly property var geometry: Logic.pillRect({ width: root.width, height: root.height },
-            { width: row.implicitWidth + Tokens.padding.extraSmall * 2, height: row.implicitHeight + Tokens.padding.extraSmall * 2 },
-            { scale: root.dpr, bottom: Tokens.spacing.small })
+    Loader {
+        id: menuLoader
+        active: false
+        onLoaded: item.popup()
+        sourceComponent: Menu {
+            popupType: Popup.Window
+            onClosed: Qt.callLater(() => menuLoader.active = false)
+            MenuItem { text: Tr.tr("Copy"); enabled: !root.entry.outputPending; onTriggered: root.perform("copy") }
+            MenuItem { text: Tr.tr("Save"); enabled: !root.entry.outputPending; onTriggered: root.perform("save") }
+            MenuItem { text: Tr.tr("Save as…"); enabled: root.owner.showExportPath && !root.entry.outputPending; onTriggered: root.owner.saveAs(root.entry) }
+            MenuSeparator {}
+            MenuItem { text: Tr.tr("Open in editor"); enabled: !root.entry.outputPending; onTriggered: root.perform("edit") }
+            MenuItem { text: Tr.tr("Pin to screen"); enabled: !root.entry.outputPending; onTriggered: root.perform("pin") }
+            MenuItem { text: Tr.tr("Open image"); enabled: !root.entry.outputPending; onTriggered: root.owner.open(root.entry) }
+            MenuItem { text: root.revealText; enabled: !root.entry.outputPending; onTriggered: root.perform("reveal") }
+            MenuSeparator {}
+            MenuItem { text: Tr.tr("Close all"); onTriggered: root.owner.closeAll() }
+        }
+    }
 
+    readonly property string revealText: entry.saved || !owner.showExportPath ? Tr.tr("Show in folder") : Tr.tr("Save and show in folder")
+
+    Item {
+        id: actions
         objectName: "captureThumbnailActions"
-        x: geometry.x
-        y: geometry.y
-        width: geometry.width
-        height: geometry.height
-        radius: Tokens.rounding.large
-        color: Colours.palette.m3surfaceVariant
-        opacity: root.hovered ? 1 : 0
+        anchors.fill: parent
+        opacity: root.hovered && !root.dragging ? 1 : 0
         visible: opacity > 0
+        enabled: root.hovered && !root.dragging && !root.entry.closing
 
         Behavior on opacity {
-            Anim {
-                type: Anim.FastEffects
+            Anim { type: Anim.FastEffects }
+        }
+
+        Rectangle {
+            objectName: "captureThumbnailScrim"
+            anchors.fill: parent
+            radius: card.radius
+            color: Qt.rgba(0, 0, 0, 0.45)
+        }
+
+        Column {
+            objectName: "captureThumbnailPrimaryActions"
+            x: Logic.snap((actions.width - width) / 2, root.dpr)
+            y: Logic.snap((actions.height - height) / 2, root.dpr)
+            spacing: Logic.snap(root.controls.gap, root.dpr)
+
+            PrimaryAction {
+                operation: "copy"
+                text: copyMetrics.text
+            }
+            PrimaryAction {
+                operation: "save"
+                text: saveMetrics.text
             }
         }
 
-        Row {
-            id: row
-
-            // Centred on a whole device pixel, so the buttons' edges are sharp too.
-            x: Logic.snap((pill.width - width) / 2, root.dpr)
-            y: Logic.snap((pill.height - height) / 2, root.dpr)
-            spacing: Tokens.spacing.extraSmall
-
-            Repeater {
-                model: pill.names
-
-                ActionButton {
-                    onTriggered: name => root.perform(name)
-                }
-            }
+        CornerAction {
+            operation: "close"
+            text: Tr.tr("Close")
+            symbol: "close"
+        }
+        CornerAction {
+            operation: "pin"
+            text: Tr.tr("Pin to screen")
+            symbol: "push_pin"
+            atRight: true
+        }
+        CornerAction {
+            operation: "edit"
+            text: Tr.tr("Edit")
+            symbol: "edit"
+            atBottom: true
+        }
+        CornerAction {
+            operation: "reveal"
+            text: root.revealText
+            symbol: "folder_open"
+            atRight: true
+            atBottom: true
         }
     }
 
-    component ActionButton: IconButton {
+    component PrimaryAction: AbstractButton {
+        id: button
+        required property string operation
+        enabled: !root.entry.outputPending
+        objectName: "captureThumbnailAction-" + operation
+        width: Logic.snap(root.pillWidth, root.dpr)
+        height: Logic.snap(root.controls.buttonHeight, root.dpr)
+        padding: 0
+        hoverEnabled: true
+        onClicked: root.perform(operation)
+        background: Rectangle {
+            radius: height / 2
+            color: Qt.rgba(1, 1, 1, button.hovered || button.activeFocus ? 0.95 : 0.85)
+        }
+        contentItem: StyledText {
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            text: button.text
+            font: root.pillFont
+            color: button.hovered ? "black" : "#1a1a1a"
+            transform: PixelSnap {
+                target: button.contentItem
+                surface: root
+                dpr: root.dpr
+            }
+        }
+        Accessible.role: Accessible.Button
+        Accessible.name: text
+        Accessible.onPressAction: clicked()
+    }
+
+    component CornerAction: AbstractButton {
         id: button
 
-        required property string modelData
-        readonly property var spec: ({
-            copy: { icon: "content_copy", label: Tr.tr("Copy") },
-            save: { icon: "save", label: Tr.tr("Save") },
-            reveal: { icon: "folder_open", label: Tr.tr("Show in folder") },
-            close: { icon: "close", label: Tr.tr("Close") }
-        })[modelData]
+        required property string operation
+        required property string symbol
+        enabled: operation === "close" || !root.entry.outputPending
+        property bool atRight
+        property bool atBottom
+        objectName: "captureThumbnailAction-" + operation
+        padding: 0
+        hoverEnabled: true
+        width: Logic.snap(root.controls.corner, root.dpr)
+        height: width
+        x: Logic.snap(atRight ? parent.width - width - root.controls.pad : root.controls.pad, root.dpr)
+        y: Logic.snap(atBottom ? parent.height - height - root.controls.pad : root.controls.pad, root.dpr)
+        onClicked: root.perform(operation)
 
-        signal triggered(string name)
-
-        objectName: "captureThumbnailAction-" + modelData
-        type: IconButton.Text
-        icon: spec.icon
-        onClicked: triggered(modelData)
-
-        // The control nudges its icon by a logical pixel. The icon goes to a
-        // whole device pixel (see PixelSnap).
-        label.transform: PixelSnap {
-            target: button.label
-            surface: root
-            dpr: root.dpr
+        background: Rectangle {
+            radius: width / 2
+            color: Qt.rgba(1, 1, 1, button.hovered || button.activeFocus ? 0.35 : 0.18)
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, 0.5)
+        }
+        contentItem: StyledText {
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            text: button.symbol
+            font.family: Tokens.font.icon.small.family
+            font.pixelSize: root.controls.icon
+            color: "white"
+            transform: PixelSnap {
+                target: button.contentItem
+                surface: root
+                dpr: root.dpr
+            }
         }
 
         ToolTip.visible: hovered
         ToolTip.delay: 500
-        ToolTip.text: spec.label
+        ToolTip.text: text
         Accessible.role: Accessible.Button
-        Accessible.name: spec.label
+        Accessible.name: text
         Accessible.onPressAction: button.clicked()
     }
 }

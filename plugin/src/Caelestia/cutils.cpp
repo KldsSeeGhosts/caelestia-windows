@@ -1,11 +1,16 @@
 #include "cutils.hpp"
 
+#include <qcolorspace.h>
 #include <qdir.h>
 #include <qfile.h>
 #include <qfileinfo.h>
+#include <qhash.h>
 #include <qloggingcategory.h>
 #include <qmetaobject.h>
+#include <qmutex.h>
+#include <qpainter.h>
 #include <qqmlengine.h>
+#include <qquickimageprovider.h>
 #include <qquickitemgrabresult.h>
 #include <qquickwindow.h>
 #include <qregularexpression.h>
@@ -28,9 +33,112 @@ const QRegularExpression& captureTempName() {
     return name;
 }
 
+QRect cropBounds(const QImage& image, const QRect& scaledRect) {
+    // Never pad with transparency when fractional scaling rounds the crop a
+    // pixel past the grabbed buffer.
+    return scaledRect.isValid() ? scaledRect.intersected(image.rect()) : image.rect();
+}
+
+QImage cropGrab(const QImage& image, const QRect& scaledRect) {
+    const auto clip = cropBounds(image, scaledRect);
+    if (clip.isEmpty())
+        return {};
+    return clip == image.rect() ? image : image.copy(clip);
+}
+
+QImage capturePreview(const QImage& image, const QRect& scaledRect, const QSize& bounds) {
+    const auto clip = cropBounds(image, scaledRect);
+    if (clip.isEmpty())
+        return {};
+    // Only retain a small preview in the image provider. The output file
+    // still uses the original crop. Do not upscale small snips.
+    const auto limit = bounds.boundedTo(QSize(768, 768));
+    if (clip.width() <= limit.width() && clip.height() <= limit.height())
+        return clip == image.rect() ? image : image.copy(clip);
+
+    // Sample straight from the grabbed frame. The full crop copy belongs to
+    // the disk write, and the preview doesn't need Qt's parallel area scaler.
+    // Keep even extremely thin selections at least one pixel wide and tall.
+    const auto size = clip.size().scaled(limit, Qt::KeepAspectRatio).expandedTo(QSize(1, 1));
+    QImage preview(size, QImage::Format_ARGB32_Premultiplied);
+    if (!preview.isNull()) {
+        preview.setColorSpace(image.colorSpace());
+        QPainter painter(&preview);
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        painter.drawImage(preview.rect(), image, clip);
+    }
+    return preview;
+}
+
+// A write can outlive its QML scope or even its engine. If nobody receives the
+// finished file, remove exactly the reserved capture temp, never an export.
+struct CaptureOutput {
+    QString path;
+
+    ~CaptureOutput() {
+        if (!path.isEmpty())
+            caelestia::shell::CUtils::removeCaptureTemp(path);
+    }
+};
+
 } // namespace
 
 namespace caelestia::shell {
+
+class CapturePreviews {
+public:
+    QImage image(const QString& id) {
+        const QMutexLocker lock(&this->mutex);
+        return this->images.value(id);
+    }
+
+    QUrl add(QImage image) {
+        const auto id = QUuid::createUuid().toString(QUuid::Id128);
+        const QMutexLocker lock(&this->mutex);
+        this->images.insert(id, std::move(image));
+        return QUrl(QStringLiteral("image://caelestia-capture-preview/") + id);
+    }
+
+    void release(const QUrl& url) {
+        if (url.scheme() != QStringLiteral("image") || url.host() != QStringLiteral("caelestia-capture-preview"))
+            return;
+        const QMutexLocker lock(&this->mutex);
+        this->images.remove(url.path().mid(1));
+    }
+
+private:
+    QMutex mutex;
+    QHash<QString, QImage> images;
+};
+
+class CapturePreviewProvider : public QQuickImageProvider {
+public:
+    explicit CapturePreviewProvider(std::shared_ptr<CapturePreviews> previews)
+        : QQuickImageProvider(QQuickImageProvider::Image), previews(std::move(previews)) {}
+
+    QImage requestImage(const QString& id, QSize* size, const QSize&) override {
+        const auto image = this->previews->image(id);
+        if (size)
+            *size = image.size();
+        return image;
+    }
+
+private:
+    std::shared_ptr<CapturePreviews> previews;
+};
+
+CUtils* CUtils::create(QQmlEngine* engine, QJSEngine*) {
+    auto* utils = new CUtils;
+    utils->capturePreviews = std::make_shared<CapturePreviews>();
+    engine->addImageProvider(QStringLiteral("caelestia-capture-preview"), new CapturePreviewProvider(utils->capturePreviews));
+    return utils;
+}
+
+void CUtils::releaseCapturePreview(const QUrl& preview) {
+    if (this->capturePreviews)
+        this->capturePreviews->release(preview);
+}
 
 void CUtils::dependency(const QVariant& value) {
     Q_UNUSED(value);
@@ -42,6 +150,16 @@ void CUtils::saveItem(QQuickItem* target, const QUrl& path, const QJSValue& onSa
 
 void CUtils::saveItem(
     QQuickItem* target, const QUrl& path, const QRect& rect, const QJSValue& onSaved, const QJSValue& onFailed) {
+    this->saveItemImpl(target, path, rect, {}, {}, onSaved, onFailed);
+}
+
+void CUtils::saveCaptureWithPreview(QQuickItem* target, const QUrl& path, const QRect& rect, const QSize& previewBounds,
+    const QJSValue& onPreview, const QJSValue& onSaved, const QJSValue& onFailed) {
+    this->saveItemImpl(target, path, rect, previewBounds, onPreview, onSaved, onFailed);
+}
+
+void CUtils::saveItemImpl(QQuickItem* target, const QUrl& path, const QRect& rect, const QSize& previewBounds,
+    const QJSValue& onPreview, const QJSValue& onSaved, const QJSValue& onFailed) {
     // Every rejection reports through onFailed, so a caller that waits for a
     // result is never left waiting. The callback runs from the event loop, as it
     // does for a failure while saving.
@@ -73,30 +191,50 @@ void CUtils::saveItem(
     if (!grabResult)
         return reject("failed to grab the target");
 
+    std::shared_ptr<CaptureOutput> output;
+    if (onPreview.isCallable()) {
+        output = std::make_shared<CaptureOutput>();
+        output->path = path.toLocalFile();
+    }
     QObject::connect(
         grabResult.data(), &QQuickItemGrabResult::ready, this,
-        [grabResult, scaledRect, path, onSaved, onFailed, this] {
-            QtConcurrent::run([image = grabResult->image(), scaledRect, file = path.toLocalFile()] {
-                // Clip to the image: QImage::copy pads a rectangle that sticks out
-                // with transparent pixels, and rounding at a fractional scale can
-                // push the far edge a pixel past it. A crop with nothing inside
-                // the image must fail; QImage::copy would return the whole image
-                // for an empty rectangle, so a null image is used instead, which
-                // fails to save.
-                auto img = image;
-                if (scaledRect.isValid()) {
-                    const auto clip = scaledRect.intersected(image.rect());
-                    img = clip.isEmpty() ? QImage() : image.copy(clip);
-                }
-                const auto parent = QFileInfo(file).absolutePath();
-                return QDir().mkpath(parent) && img.save(file);
-            }).then(this, [path, onSaved, onFailed](bool ok) {
+        [grabResult, scaledRect, path, previewBounds, onPreview, onSaved, onFailed, output, this] {
+            const auto finish = [path, onSaved, onFailed, output](bool ok) {
                 const auto* cb = ok ? &onSaved : &onFailed;
                 if (!ok)
                     qCWarning(lcCUtils) << "saveItem: failed to save" << path;
 
-                if (cb->isCallable())
-                    cb->call({ path.toLocalFile() });
+                if (cb->isCallable()) {
+                    const auto result = cb->call({ path.toLocalFile() });
+                    if (ok && output && result.isBool() && result.toBool())
+                        output->path.clear();
+                }
+            };
+            const auto write = [file = path.toLocalFile(), output](const QImage& img) {
+                // Hold the reservation alive through the write even if the
+                // completion callback is canceled when the engine goes away.
+                const auto parent = QFileInfo(file).absolutePath();
+                return QDir().mkpath(parent) && img.save(file);
+            };
+            if (!onPreview.isCallable() || previewBounds.isEmpty() || !this->capturePreviews) {
+                QtConcurrent::run([image = grabResult->image(), scaledRect, write] {
+                    return write(cropGrab(image, scaledRect));
+                }).then(this, finish);
+                return;
+            }
+
+            QtConcurrent::run([image = grabResult->image(), scaledRect, previewBounds] {
+                return std::pair(image, capturePreview(image, scaledRect, previewBounds));
+            }).then(this, [this, scaledRect, onPreview, write, finish](std::pair<QImage, QImage> result) {
+                if (!result.second.isNull()) {
+                    const auto url = this->capturePreviews->add(std::move(result.second));
+                    const auto accepted = onPreview.call({ url.toString() });
+                    if (!accepted.isBool() || !accepted.toBool())
+                        this->releaseCapturePreview(url);
+                }
+                QtConcurrent::run([image = std::move(result.first), scaledRect, write] {
+                    return write(cropGrab(image, scaledRect));
+                }).then(this, finish);
             });
         },
         Qt::SingleShotConnection);

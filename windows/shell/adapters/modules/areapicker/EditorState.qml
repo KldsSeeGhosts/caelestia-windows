@@ -48,6 +48,10 @@ Item {
         barPosition = null;
     }
 
+    function restore(strokes: var, ratio: real): void {
+        history = { strokes: Logic.scaleStrokes(strokes, ratio), redo: [] };
+    }
+
     function setTool(id: string): void {
         disarmClear();
         inkOpen = false;

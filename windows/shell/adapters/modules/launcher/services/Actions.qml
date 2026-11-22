@@ -26,7 +26,8 @@ Searcher {
         model: [
             {name: "Calculator", description: "Arithmetic and functions", icon: "calculate", command: ["autocomplete", "calc"]},
             {name: "Settings", description: "Open Caelestia settings (Nexus)", icon: "settings", command: ["settings"]},
-            {name: "Screenshot", description: "Glazier", icon: "screenshot_region", command: ["screenshot"]},
+            {name: "Screenshot", description: "Capture an area or window", icon: "screenshot_region", command: ["screenshot"]},
+            {name: "Screenshot history", description: "Edit and export recent screenshots", icon: "history", command: ["screenshotHistory"]},
             {name: "Record screen", description: "Glazier", icon: "screen_record", command: ["record"]},
             {name: "Wallpaper", description: "Browse wallpaper folder", icon: "wallpaper", command: ["autocomplete", "wallpaper"]},
             {name: "Choose wallpaper file", description: "Open Windows image picker (Live controls)", icon: "image", command: ["chooseWallpaper"]},
@@ -65,6 +66,9 @@ Searcher {
                 Wallpapers.choose(Wallpapers.defaultPickerTarget(list.QsWindow.window?.screen));
             } else if (command[0] === "screenshot") {
                 CaptureUi.screenshot("open");
+            } else if (command[0] === "screenshotHistory") {
+                list.screenState.launcher = false;
+                CaptureUi.showHistory();
             } else if (command[0] === "record") {
                 CaptureUi.record();
             } else if ((command[0] === "setMode" || command[0] === "generateMode") && command.length > 1) {

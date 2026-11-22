@@ -194,7 +194,8 @@ function barLayout(options) {
     var copy = opts.copy || button;
     var padding = m.padding || 0;
     var spacing = m.spacing || 0;
-    var tallest = Math.max(button.height, clear.height, copy.height);
+    var done = opts.done;
+    var tallest = Math.max(button.height, clear.height, copy.height, done?.height || 0);
     var height = snapUp(tallest + 2 * padding, scale);
     var items = [];
     var gap = 0;
@@ -228,6 +229,8 @@ function barLayout(options) {
     separator();
     add("save", button.width, button.height);
     add("copy", copy.width, copy.height);
+    if (done)
+        add("done", done.width, done.height);
     add("close", button.width, button.height);
     return { width: snapUp(position + padding, scale), height: height, items: items };
 }
@@ -424,6 +427,16 @@ function isEmpty(stroke) {
 
 function emptyHistory() {
     return { strokes: [], redo: [] };
+}
+
+function scaleStrokes(strokes, ratio) {
+    return strokes.map(function (stroke) {
+        return {
+            tool: stroke.tool, color: stroke.color, size: stroke.size * ratio,
+            x1: stroke.x1 * ratio, y1: stroke.y1 * ratio, x2: stroke.x2 * ratio, y2: stroke.y2 * ratio,
+            points: stroke.points.map(function (p) { return { x: p.x * ratio, y: p.y * ratio, w: p.w * ratio }; })
+        };
+    });
 }
 
 function canUndo(history) {

@@ -155,6 +155,17 @@ function exportPlan(sel, screen, dpr) {
     return { valid: crop.width >= 1 && crop.height >= 1, logical: logical, physical: physical, crop: crop, image: image };
 }
 
+// Fit a stored capture on its monitor with space around it for the toolbar.
+// Display scale does not determine the resolution of a later export.
+function editRegion(info, screen) {
+    var dpr = info.dpr || 1;
+    var scale = Math.min(1 / dpr, Math.max(1, screen.width - 32) / info.width,
+        Math.max(1, screen.height - 144) / info.height);
+    var width = info.width * scale;
+    var height = info.height * scale;
+    return rect(Math.floor((screen.width - width) / 2), Math.floor((screen.height - height) / 2), width, height);
+}
+
 // The tint appears only when every screen has a frozen frame, so a partial
 // freeze is never visible. `ready` maps screen name to hasContent.
 function allReady(ready, names) {

@@ -39,6 +39,7 @@ ShellRoot {
         function toggleSound() { sound = !sound; }
     }
     AreaPicker {
+        history: null
         id: area
         interactionEnabled: false
         recorder: root.recorder
@@ -83,7 +84,7 @@ ShellRoot {
             area.recordingMode = true;
             area.recordingSound = picker.sound;
             const screen = { x: -2560, y: 120, width: 1600, height: 900 };
-            area.startEditing({ geometry: screen, dpr: 1.5 }, { logical: { x: 10, y: 20, width: 101, height: 61 } });
+            area.acceptSelection({ geometry: screen, dpr: 1.5 }, { logical: { x: 10, y: 20, width: 101, height: 61 } });
             check(recorder.shellRegion.x === -2545 && recorder.shellRegion.y === 150, "physical monitor offset");
             check(recorder.shellRegion.w === 152 && recorder.shellRegion.h === 92, "even physical dimensions");
             check(recorder.startArgs.join(" ").includes("--no-ui --mic off --system-sound on"), "helper starts without its own UI and with sound");

@@ -23,15 +23,14 @@ import "../../utils/FileUrls.js" as FileUrls
 //   pointer enters a screen's window, that screen shows only the tint.
 // - Hypr.options (border size and rounding) becomes the fixed 2 px outline and
 //   square corners of the current capture tool.
-// - Releasing a selection opens the editor over it (Editor.qml) and saves
-//   nothing. Copy and Save in the editor export the composed item, the frozen
-//   view plus the annotation layer, with CUtils.saveItem. Save writes
-//   Pictures\Screenshots and Copy waits for ClipboardWriter.writeFinished.
+// - Releasing a selection stages the frozen pixels for the thumbnail.
+//   The editor can also compose annotations over a PNG opened from a card.
 MouseArea {
     id: root
 
     required property var owner
     required property ShellScreen screen
+    required property bool sessionOpen
 
     // This screen in the shape the logic module expects. Logical pixels.
     readonly property var geometry: ({
@@ -41,13 +40,14 @@ MouseArea {
         width: width > 0 ? width : screen.width,
         height: height > 0 ? height : screen.height
     })
-    readonly property bool hasContent: view.hasContent
+    readonly property bool hasContent: view.item?.hasContent ?? false
     readonly property real dpr: Window.window ? Window.window.devicePixelRatio : screen.devicePixelRatio
     // The editor is shared by every screen's window. Only the screen that holds
     // the selection shows its toolbar and annotations.
     readonly property var editor: owner.editor
     readonly property bool editsHere: owner.editing && owner.editScreen === screen.name
-    readonly property var editRegion: editsHere ? owner.editPlan.logical : ({ x: 0, y: 0, width: 0, height: 0 })
+    readonly property var editRegion: !editsHere ? ({ x: 0, y: 0, width: 0, height: 0 })
+        : owner.editPath ? Logic.editRegion(owner.editInfo, geometry) : owner.editPlan.logical
 
     // Topmost first, in this screen's own coordinates. Fixed at open.
     property var windows: []
@@ -95,9 +95,7 @@ MouseArea {
         return Logic.targetAt(windows, x, y, geometry).rect;
     }
 
-    // Releasing the pointer opens the editor over the selection. Nothing is
-    // written here: only Copy and Save in the editor produce an image.
-    function beginEdit(selection: var): void {
+    function captureSelection(selection: var, releasedAt: double): void {
         // Nothing to cut from until the view is in a window.
         if (owner.saving || owner.closing || owner.editing || !view.Window.window)
             return;
@@ -105,7 +103,40 @@ MouseArea {
         if (!plan.valid)
             return;
         select(plan.logical);
-        owner.startEditing(root, plan);
+        owner.acceptSelection(root, plan, releasedAt);
+    }
+
+    function stageCapture(path: string, plan: var, info: var, releasedAt: double): void {
+        const o = owner;
+        const session = o.session;
+        const r = plan.logical;
+        const rect = Qt.rect(r.x, r.y, r.width, r.height);
+        const target = FileUrls.fromLocalPath(path);
+        if (o.canPreviewCapture(info) && typeof CUtils.saveCaptureWithPreview === "function") {
+            let published = false;
+            const thumbnails = o.thumbnails;
+            CUtils.saveCaptureWithPreview(view, target, rect, thumbnails.previewBounds(info),
+                preview => published = !!o && o.capturePreviewReady(session, path, info, preview, releasedAt),
+                saved => {
+                    if (published)
+                        return thumbnails?.completePendingCapture(path, true) ?? false;
+                    if (o) {
+                        o.captureFinished(session, saved, info, releasedAt);
+                        return true;
+                    }
+                    return false;
+                },
+                () => {
+                    if (published)
+                        thumbnails?.completePendingCapture(path, false);
+                    else
+                        o?.captureFailed(session, path);
+                });
+            return;
+        }
+        CUtils.saveItem(view, target, rect,
+            saved => o.captureFinished(session, saved, info, releasedAt),
+            () => o.captureFailed(session, path));
     }
 
     // Cut the selection out of the composed item, the frozen view plus the
@@ -120,6 +151,13 @@ MouseArea {
         // A stroke still under the pointer is not part of the image.
         editor.abandon();
         editor.inkOpen = false;
+        if (owner.editPath) {
+            if (kind === "done" && owner.finishUnchanged())
+                return;
+            if (editImage.status === Image.Ready)
+                exportReopened(kind);
+            return;
+        }
         owner.saving = true;
         const plan = owner.editPlan;
         const rect = Qt.rect(plan.logical.x, plan.logical.y, plan.logical.width, plan.logical.height);
@@ -130,6 +168,57 @@ MouseArea {
             saveToClipboard(rect, info);
         else
             saveToFile(rect, owner.saveRoot + "/Screenshots", true, info);
+    }
+
+    function exportReopened(kind: string): void {
+        const o = owner;
+        const session = o.session;
+        o.saving = true;
+        const path = o.beginClipboard();
+        if (!path) {
+            o.reopenedExportFinished(session, kind, path, false);
+            return;
+        }
+        if (editor.strokes.length === 0) {
+            const ok = CUtils.copyFile(editImage.source, FileUrls.fromLocalPath(path), true);
+            o.reopenedExportFinished(session, kind, path, ok);
+            return;
+        }
+        // The target is based on the original pixel size, even if the canvas
+        // had to shrink to fit the monitor. Qt applies the window's DPR.
+        const pixels = editImage.sourceSize;
+        const size = Qt.size(Math.max(1, Math.round(pixels.width / dpr)), Math.max(1, Math.round(pixels.height / dpr)));
+        const needsResize = Math.round(size.width * dpr) !== pixels.width || Math.round(size.height * dpr) !== pixels.height;
+        // If Qt's default grab already matches the source dimensions, the
+        // native helper can encode the full-resolution PNG off the UI thread.
+        // A canvas that shrank to fit (or rounded differently at fractional
+        // DPI) still needs the explicit-size path below.
+        if (!needsResize && Math.floor(editPixels.width) === size.width && Math.floor(editPixels.height) === size.height) {
+            CUtils.saveItem(editPixels, FileUrls.fromLocalPath(path),
+                saved => {
+                    if (session === o.session)
+                        o.reopenedExportFinished(session, kind, saved, true);
+                    else
+                        o.removeTemp(saved);
+                },
+                () => o.reopenedExportFinished(session, kind, path, false));
+            return;
+        }
+        if (!editPixels.grabToImage(grab => {
+            if (session !== o.session)
+                return;
+            if (needsResize) {
+                // Not every physical size is attainable using whole logical
+                // pixels at fractional DPR. Correct it before saving the PNG.
+                // Give Canvas.save a file:// base instead of Quickshell's
+                // virtual import URL. This component does not use singletons.
+                exactExport.setSource(FileUrls.fromLocalPath(Quickshell.shellPath("modules/areapicker/ExactPng.qml")),
+                    { grab, path, pixels, dpr, complete: ok => o.reopenedExportFinished(session, kind, path, ok) });
+            } else {
+                o.reopenedExportFinished(session, kind, path, grab.saveToFile(path));
+            }
+        }, size))
+            o.reopenedExportFinished(session, kind, path, false);
     }
 
     function saveToClipboard(rect: rect, info: var): void {
@@ -169,11 +258,18 @@ MouseArea {
     cursorShape: owner.editing ? Qt.ArrowCursor : Qt.CrossCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton
     focus: true
-    opacity: owner.closing ? 0 : 1
+    opacity: sessionOpen && !owner.closing ? 1 : 0
 
     Component.onCompleted: {
         windows = Logic.screenWindows(owner.stack, geometry);
         clearSelection();
+        if (owner.editPath && editsHere) {
+            owner.editPicker = root;
+            editor.scale = dpr;
+            const row = owner.restoredEdit;
+            if (row?.strokes?.length)
+                editor.restore(row.strokes, editRegion.width / row.canvasWidth);
+        }
         forceActiveFocus();
     }
 
@@ -233,11 +329,12 @@ MouseArea {
     function releaseAt(button: int, x: real, y: real): void {
         if (button !== Qt.LeftButton)
             return;
+        const releasedAt = Date.now();
         const wasDown = down;
         down = false;
         if (!wasDown || owner.editing || owner.saving || owner.closing || !owner.allReady)
             return;
-        beginEdit(targetForRelease(x, y));
+        captureSelection(targetForRelease(x, y), releasedAt);
     }
 
     onPressed: mouse => pressAt(mouse.button, mouse.x, mouse.y)
@@ -273,25 +370,48 @@ MouseArea {
         // The frozen desktop. It is never hidden: a Windows ScreencopyView does
         // not start capturing while invisible. It sits outside the fading
         // overlay, so the freeze appears at once and only the tint fades in.
-        ScreencopyView {
+        Loader {
             id: view
 
-            objectName: "areaPickerView"
             anchors.fill: parent
-            captureSource: root.screen
-            live: false
+            active: root.sessionOpen && !root.owner.editPath
+
+            sourceComponent: ScreencopyView {
+                objectName: "areaPickerView"
+                anchors.fill: parent
+                captureSource: root.screen
+                live: false
+            }
         }
 
-        Annotations {
-            objectName: "areaPickerAnnotations"
+        Item {
+            id: editPixels
             visible: root.editsHere
             x: root.editRegion.x
             y: root.editRegion.y
             width: root.editRegion.width
             height: root.editRegion.height
-            strokes: root.editor.strokes
-            draft: root.editor.draft
-            revision: root.editor.revision
+
+            Image {
+                id: editImage
+                objectName: "captureEditorSource"
+                anchors.fill: parent
+                source: root.owner.editPath ? FileUrls.fromLocalPath(root.owner.editPath) : ""
+                asynchronous: true
+                cache: false
+                onStatusChanged: {
+                    if (status === Image.Error)
+                        root.owner.editSourceFailed();
+                }
+            }
+
+            Annotations {
+                objectName: "areaPickerAnnotations"
+                anchors.fill: parent
+                strokes: root.editor.strokes
+                draft: root.editor.draft
+                revision: root.editor.revision
+            }
         }
     }
 
@@ -308,7 +428,8 @@ MouseArea {
 
             objectName: "areaPickerTint"
             anchors.fill: parent
-            color: Colours.palette.m3surfaceContainerHighest
+            // Dim the desktop without casting the wallpaper's palette over it.
+            color: "black"
             opacity: 0.3
 
             layer.enabled: true
@@ -361,6 +482,18 @@ MouseArea {
         }
     }
 
+    Loader {
+        id: exactExport
+
+        // Create the extra canvas only for captures Qt cannot grab at their
+        // original physical size. Tear it down after completion or cancel.
+        active: root.owner.saving && root.editsHere && !!root.owner.editPath
+        onActiveChanged: {
+            if (!active)
+                source = "";
+        }
+    }
+
     // The other screens go dark while the editor is open, as the classic tool's
     // does, and a press on them ends it.
     Rectangle {
@@ -384,10 +517,13 @@ MouseArea {
         sourceComponent: Editor {
             editor: root.editor
             region: root.editRegion
-            backdrop: view
+            backdrop: composed
             busy: root.owner.saving
+            canFinish: !!root.owner.editPath && !!root.owner.history
+            savedOriginal: root.owner.editingSaved
             onCopyRequested: root.exportEdit("copy")
             onSaveRequested: root.exportEdit("save")
+            onDoneRequested: root.exportEdit("done")
             onCloseRequested: root.owner.cancel()
         }
     }

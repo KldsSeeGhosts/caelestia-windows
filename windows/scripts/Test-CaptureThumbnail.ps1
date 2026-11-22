@@ -15,6 +15,18 @@ try {
         -Sources @('windows/tests/CaptureThumbnailTest.qml') -FixtureFile 'windows/tests/CaptureThumbnailTest.qml' `
         -Marker CAELESTIA_CAPTURE_THUMBNAIL -MinimumAssertions 250 -TimeoutMs 120000 `
         -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_POWERSHELL = $fixturePowerShell }
+    $scratchOld = New-Item -ItemType File -Path (Join-Path $fixtureTemp 'caelestia-clipboard-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png')
+    $scratchFresh = New-Item -ItemType File -Path (Join-Path $fixtureTemp 'caelestia-clipboard-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png')
+    $scratchForeign = New-Item -ItemType File -Path (Join-Path $fixtureTemp 'caelestia-clipboard-someone-elses.png')
+    $scratchDrag = New-Item -ItemType Directory -Path (Join-Path $fixtureTemp 'caelestia-drag-cccccccccccccccccccccccccccccccc')
+    $null = New-Item -ItemType File -Path (Join-Path $scratchDrag.FullName 'annotate-test.png')
+    $scratchOld.LastWriteTime = (Get-Date).AddDays(-2)
+    $scratchForeign.LastWriteTime = $scratchOld.LastWriteTime
+    $scratchDrag.LastWriteTime = $scratchOld.LastWriteTime
+    $history = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name screenshot-history -ShellFixture -UseQuickshell `
+        -Sources @('windows/tests/ScreenshotHistoryTest.qml') -FixtureFile 'windows/tests/ScreenshotHistoryTest.qml' `
+        -Marker CAELESTIA_SCREENSHOT_HISTORY -MinimumAssertions 41 -TimeoutMs 30000 `
+        -Environment @{ TEMP = $fixtureTemp; TMP = $fixtureTemp; CAELESTIA_SCRATCH_FIXTURE = '1' }
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixtureTemp)
     if ($resolved.StartsWith($tempRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
@@ -23,4 +35,6 @@ try {
     }
 }
 $result | ConvertTo-Json -Depth 8
+$history | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Capture thumbnail fixture failed. See $($result.stderr)." }
+if (-not $history.passed) { throw "Screenshot history fixture failed. See $($history.stdout) and $($history.stderr)." }
