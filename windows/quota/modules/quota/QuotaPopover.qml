@@ -84,6 +84,9 @@ Item {
             root.dismissed();
     }
 
+    // Collapsing an account destroys its detail rows and their anchors.
+    onAnchorItemChanged: if (!anchorItem && (shown || overAnchor)) dismiss()
+
     Timer {
         id: showTimer
         interval: root.revealDelay

@@ -32,7 +32,10 @@ Item {
     readonly property double staleAfter: Math.max(180000, Quota.refreshIntervalMs * 3)
     // The chosen view lives in the service, so it outlasts the drawer closing.
     readonly property string view: Quota.usageView
-    readonly property var board: Logic.priorityBoard(Quota.providers, account => root.readProblem(account))
+    // Only Priority reads the board. All Usage has its own per-account model.
+    readonly property var board: view === "priority"
+        ? Logic.priorityBoard(Quota.providers, account => root.readProblem(account))
+        : ({ attention: [], usedUp: [], notices: [], showsClearRow: false, summary: "" })
 
     // OpenUsage metrics (see the metrics table in the PR): content padding 7
     // above and below (DashboardContentView.barGap), sections 14 apart, cards
@@ -604,82 +607,85 @@ Item {
                                         onClicked: root.toggleAccount(account.modelData.id)
                                         onActiveFocusChanged: if (activeFocus) body.ensureVisible(this)
                                     }
-                                    Column {
-                                        id: card
-                                        objectName: "quotaDetail"
-                                        visible: account.expanded
+                                    Loader {
+                                        // Collapsed accounts need only their summary row.
+                                        active: account.expanded
+                                        visible: active
                                         x: root.cardPad - root.listPad
                                         width: root.inner
-                                        topPadding: 2
-                                        bottomPadding: root.cardBottom
 
-                                        Repeater {
-                                            model: Logic.accountWindows(account.modelData)
-                                            delegate: QuotaMeter {
-                                                required property var modelData
-                                                width: card.width
-                                                limit: modelData
-                                                nowMs: Quota.nowMs
-                                                grid: root.grid
-                                                family: root.family
-                                                provider: section.modelData.label
-                                            }
-                                        }
-                                        // OpenUsage's "Limit Resets" row, shown only when the
-                                        // data reports reset credits (DashboardFamilies.swift:39).
-                                        // Its figure warns in the colour of the next to expire.
-                                        QuotaValueRow {
-                                            id: resetsRow
-                                            readonly property var credits: account.modelData.resetCredits ?? null
-                                            readonly property int creditCount: Number(credits?.count ?? (credits?.expiries ?? []).length) || 0
-                                            readonly property var next: Logic.resetEntries(credits?.expiries ?? [], Quota.nowMs)[0] ?? null
-                                            objectName: "quotaLimitResets"
-                                            visible: creditCount > 0
-                                            width: card.width
-                                            family: root.family
-                                            label: qsTr("Limit Resets")
-                                            value: qsTr("%1 available").arg(creditCount)
-                                            severity: next && next.severity === "warning" ? "warning" : next && next.severity === "critical" ? "critical" : "normal"
-                                            hasDetail: true
-                                            lit: popover.open && popover.anchorItem === figure
-                                            readonly property var detailData: ({ count: creditCount, expiries: credits?.expiries ?? [], nowMs: Quota.nowMs })
-                                            onDetailHover: (anchor, active) => popover.hover(anchor, resetsDetail, detailData, active)
-                                            onDetailClicked: anchor => popover.openFor(anchor, resetsDetail, detailData)
-                                        }
-                                        // The provider's own figures: peak hours and spend,
-                                        // for all of its accounts together.
-                                        Column {
-                                            objectName: "quotaSpend"
-                                            visible: section.peak !== "" || section.spendRows.length > 0
-                                            width: card.width
-                                            topPadding: 6
-                                            SectionLabel {
-                                                x: 0
-                                                visible: section.modelData.accounts.length > 1
-                                                text: qsTr("%1 · all accounts").arg(section.modelData.label)
-                                            }
-                                            QuotaValueRow {
-                                                visible: section.peak !== ""
-                                                width: parent.width
-                                                family: root.family
-                                                label: qsTr("Peak hours")
-                                                value: section.peak
-                                            }
+                                        sourceComponent: Column {
+                                            id: card
+                                            objectName: "quotaDetail"
+                                            topPadding: 2
+                                            bottomPadding: root.cardBottom
+
                                             Repeater {
-                                                model: section.spendRows
-                                                delegate: QuotaValueRow {
-                                                    id: spendRow
+                                                model: Logic.accountWindows(account.modelData)
+                                                delegate: QuotaMeter {
                                                     required property var modelData
-                                                    readonly property var detailData: Logic.usageDetail(modelData.label, modelData.cost, modelData.usage)
                                                     width: card.width
+                                                    limit: modelData
+                                                    nowMs: Quota.nowMs
+                                                    grid: root.grid
                                                     family: root.family
-                                                    label: modelData.label
-                                                    // Spend when the manager reports it; tokens from a hub read otherwise.
-                                                    value: modelData.cost !== null ? Logic.money(modelData.cost) : qsTr("%1 tokens").arg(Logic.count(modelData.usage.tokens))
-                                                    hasDetail: true
-                                                    lit: popover.open && popover.anchorItem === figure
-                                                    onDetailHover: (anchor, active) => popover.hover(anchor, breakdownDetail, detailData, active)
-                                                    onDetailClicked: anchor => popover.openFor(anchor, breakdownDetail, detailData)
+                                                    provider: section.modelData.label
+                                                }
+                                            }
+                                            // OpenUsage's "Limit Resets" row, shown only when the
+                                            // data reports reset credits (DashboardFamilies.swift:39).
+                                            // Its figure warns in the colour of the next to expire.
+                                            QuotaValueRow {
+                                                readonly property var credits: account.modelData.resetCredits ?? null
+                                                readonly property int creditCount: Number(credits?.count ?? (credits?.expiries ?? []).length) || 0
+                                                readonly property var next: Logic.resetEntries(credits?.expiries ?? [], Quota.nowMs)[0] ?? null
+                                                objectName: "quotaLimitResets"
+                                                visible: creditCount > 0
+                                                width: card.width
+                                                family: root.family
+                                                label: qsTr("Limit Resets")
+                                                value: qsTr("%1 available").arg(creditCount)
+                                                severity: next && next.severity === "warning" ? "warning" : next && next.severity === "critical" ? "critical" : "normal"
+                                                hasDetail: true
+                                                lit: popover.open && popover.anchorItem === figure
+                                                readonly property var detailData: ({ count: creditCount, expiries: credits?.expiries ?? [], nowMs: Quota.nowMs })
+                                                onDetailHover: (anchor, active) => popover.hover(anchor, resetsDetail, detailData, active)
+                                                onDetailClicked: anchor => popover.openFor(anchor, resetsDetail, detailData)
+                                            }
+                                            // The provider's own figures: peak hours and spend,
+                                            // for all of its accounts together.
+                                            Column {
+                                                objectName: "quotaSpend"
+                                                visible: section.peak !== "" || section.spendRows.length > 0
+                                                width: card.width
+                                                topPadding: 6
+                                                SectionLabel {
+                                                    x: 0
+                                                    visible: section.modelData.accounts.length > 1
+                                                    text: qsTr("%1 · all accounts").arg(section.modelData.label)
+                                                }
+                                                QuotaValueRow {
+                                                    visible: section.peak !== ""
+                                                    width: parent.width
+                                                    family: root.family
+                                                    label: qsTr("Peak hours")
+                                                    value: section.peak
+                                                }
+                                                Repeater {
+                                                    model: section.spendRows
+                                                    delegate: QuotaValueRow {
+                                                        required property var modelData
+                                                        readonly property var detailData: Logic.usageDetail(modelData.label, modelData.cost, modelData.usage)
+                                                        width: card.width
+                                                        family: root.family
+                                                        label: modelData.label
+                                                        // Spend when the manager reports it; tokens from a hub read otherwise.
+                                                        value: modelData.cost !== null ? Logic.money(modelData.cost) : qsTr("%1 tokens").arg(Logic.count(modelData.usage.tokens))
+                                                        hasDetail: true
+                                                        lit: popover.open && popover.anchorItem === figure
+                                                        onDetailHover: (anchor, active) => popover.hover(anchor, breakdownDetail, detailData, active)
+                                                        onDetailClicked: anchor => popover.openFor(anchor, breakdownDetail, detailData)
+                                                    }
                                                 }
                                             }
                                         }

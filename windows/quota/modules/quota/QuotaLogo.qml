@@ -40,7 +40,7 @@ Item {
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true
-        asynchronous: false
+        asynchronous: true
         Accessible.ignored: true
         onStatusChanged: if (status === Image.Error && !root.useAlt && !!root.altSource.toString()) root.useAlt = true
     }

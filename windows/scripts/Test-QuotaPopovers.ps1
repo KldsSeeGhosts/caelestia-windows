@@ -10,9 +10,9 @@ param(
     [string]$ProviderIcons
 )
 # Offscreen: the real quota Content with synthetic spend and reset credits.
-# Drives OpenUsage's hover details and the "…" menu, and saves fixture
-# screenshots. It calls no CPA, provider or reset endpoint and opens nothing on
-# the desktop.
+# Drives the hover details, the "…" menu and the drawer's open and close
+# lifecycle. It saves fixture screenshots, calls no endpoint and opens nothing
+# on the desktop.
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
 # A fixture entry must not leave a per-run folder in the real Quickshell state
@@ -24,7 +24,7 @@ $stateBefore = @(if (Test-Path -LiteralPath $stateRoot) {
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name quota-popovers -ShellFixture -UseQuickshell `
     -FakeDirectories @('windows/tests/fakes/quota-popovers') `
     -Sources @('windows/tests/QuotaPopoverTest.qml') -FixtureFile 'windows/tests/QuotaPopoverTest.qml' `
-    -Marker CAELESTIA_QUOTA_POPOVER -MinimumAssertions 28 -Keep -ShellConfig $ShellConfig `
+    -Marker CAELESTIA_QUOTA_POPOVER -MinimumAssertions 42 -Keep -ShellConfig $ShellConfig `
     -Environment $(if ($ProviderIcons) { @{ CAELESTIA_PROVIDER_ICONS = [IO.Path]::GetFullPath($ProviderIcons) } } else { @{} })
 $stateAfter = @(if (Test-Path -LiteralPath $stateRoot) {
     Get-ChildItem -LiteralPath $stateRoot -Directory | ForEach-Object Name

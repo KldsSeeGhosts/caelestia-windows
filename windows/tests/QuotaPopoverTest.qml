@@ -3,6 +3,7 @@ import QtTest
 import Quickshell
 import Caelestia
 import Caelestia.Config
+import qs.components
 import qs.services
 import qs.modules.quota as QuotaPanel
 
@@ -16,6 +17,15 @@ ShellRoot {
     property int assertions: 0
     property var input: null
     property Component inputComponent: Component { TestCase { when: false } }
+    Component {
+        id: drawerComponent
+        QuotaPanel.Wrapper {
+            anchors.top: parent.top
+            screenState: ScreenState { modelData: Quickshell.screens[0] }
+            property real firstHeight: 0
+            onVisibleChanged: if (visible) firstHeight = height
+        }
+    }
     FloatingWindow {
         id: win
         visible: true
@@ -98,7 +108,7 @@ ShellRoot {
         input = inputComponent.createObject(win.contentItem);
         const sections = CUtils.findChildren(content, "quotaAccount");
         check(sections.length > 0 && sections.every(s => !s.expanded), "accounts start collapsed");
-        check(CUtils.findChildren(content, "quotaDetail").every(d => !d.visible), "the details start hidden");
+        check(CUtils.findChildren(content, "quotaDetail").length === 0, "collapsed accounts do not create details");
         input.wait(50);
         capture("overview", () => step(details));
     }
@@ -206,10 +216,54 @@ ShellRoot {
         check(!!label && Qt.colorEqual(label.color, Colours.palette.m3onPrimary),
               "the selected label takes the highlight colour in the same frame");
         input.wait(50);
-        capture("menu", () => {
+        capture("menu", () => step(() => {
             item("quotaMenu").hide();
+            const row = CUtils.findChildren(content, "quotaLimitResets").find(r => r.visible);
+            row.detailClicked(row.figure);
+            check(item("quotaPopover").open, "the account's popover is open");
+            const account = CUtils.findChildren(content, "quotaAccount").find(a => a.modelData.resetCredits);
+            content.toggleAccount(account.modelData.id);
+            input.wait(0); // Loader deletes its old item on the event loop.
+            check(CUtils.findChildren(account, "quotaDetail").length === 0, "collapsing an account unloads the detail");
+            check(!item("quotaPopover").open && !item("quotaPopover").explicit, "collapsing the account clears its popover");
+            checkDrawer();
             console.log("CAELESTIA_QUOTA_POPOVER_PASS " + assertions);
             Qt.quit();
-        });
+        }));
+    }
+
+    function checkDrawer(): void {
+        content.visible = false;
+        QuotaConfig.settingPresent = true;
+        QuotaConfig.settingEnabled = true;
+        Quota.refreshes = 0;
+        Quota.lastUpdatedAt = Date.now() - 60000;
+        const drawer = drawerComponent.createObject(win.contentItem);
+        const loaded = () => CUtils.findChildren(drawer, "quotaContent")[0];
+        check(!drawer.visible && !loaded(), "the untouched drawer stays unloaded");
+
+        drawer.screenState.quota = true;
+        drawer.screenState.quota = false;
+        check(!drawer.visible && Quota.clockHolders === 0 && Quota.refreshes === 0, "a canceled opening stays closed");
+
+        drawer.screenState.quota = true;
+        check(Quota.clockHolders === 1 && Quota.refreshes === 0, "opening keeps time but does not refresh yet");
+        input.tryVerify(() => drawer.visible && !!loaded());
+        check(drawer.firstHeight > 100, "the drawer starts sliding at its content height");
+        input.tryVerify(() => drawer.offsetScale === 0);
+        check(Math.abs(drawer.firstHeight - drawer.height) < 0.5, "the drawer does not resize during the slide");
+        check(Quota.refreshes === 1, "stale quota refreshes once the slide ends");
+
+        drawer.screenState.quota = false;
+        input.tryVerify(() => !drawer.visible && !loaded());
+        check(Quota.clockHolders === 0, "closing releases the relative-time clock");
+
+        Quota.lastUpdatedAt = Date.now();
+        drawer.screenState.quota = true;
+        input.tryVerify(() => drawer.visible && drawer.offsetScale === 0);
+        check(Quota.refreshes === 1 && !!loaded(), "reopen displays fresh cached quota without refreshing");
+        drawer.screenState.quota = false;
+        input.tryVerify(() => !drawer.visible && !loaded());
+        drawer.destroy();
     }
 }
