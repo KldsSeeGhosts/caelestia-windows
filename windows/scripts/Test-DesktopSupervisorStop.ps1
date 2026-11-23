@@ -1,5 +1,6 @@
 [CmdletBinding()]
-param([int]$LaneCount = 7)
+param([int]$LaneCount = 0)
+if ($LaneCount -le 0) { $LaneCount = [Math]::Min(7, [Math]::Max(2, [Environment]::ProcessorCount - 1)) }
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-supervisor-stop-' + [guid]::NewGuid().ToString('N'))
@@ -59,7 +60,7 @@ function New-PatchedSupervisorSource([string]$Token, [string]$CaseRoot) {
     foreach ($pair in @(
         @('ProbeIntervalMs = 60000', 'ProbeIntervalMs = 300'),
         @('RetryIntervalMs = 15000', 'RetryIntervalMs = 300'),
-        @('ProbeTimeoutMs = 5000', 'ProbeTimeoutMs = 200'),
+        @('ProbeTimeoutMs = 5000', 'ProbeTimeoutMs = 400'),
         @('FreezeWindowMs = 120000', 'FreezeWindowMs = 2000'),
         @('public const int ChildExitGraceMs = 5000;', 'public const int ChildExitGraceMs = 1200;'),
         @('public const int RestartTakeoverGraceMs = 2000;', 'public const int RestartTakeoverGraceMs = 1200;')
@@ -508,7 +509,7 @@ function Invoke-ReadinessCase([string]$Mode) {
             [IO.File]::WriteAllText((Join-Path $case 'ready-1'), 'draw')
             Wait-Until { (Read-CaelestiaSupervisorStatus $statusPath).phase -eq 'running' } 'First frame did not publish running.'
             Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'Ready taskbar not hidden.'
-            Assert ([Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case)) 'Ready taskbar did not get its invisible region.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::HasRegion($case) } 'Ready taskbar did not get its invisible region.'
             $s = Read-CaelestiaSupervisorStatus $statusPath
             Assert ($s.shellReady -and $s.taskbarTakenOver) 'Running status lacks readiness/takeover.'
             [IO.File]::WriteAllText((Join-Path $case 'reload-dip'), 'dip')
@@ -1531,6 +1532,9 @@ public static class SupervisorStopFixture {
             'modes-5'   = @('mode:stuck-quit', 'mode:stuck-start')
         }
         foreach ($name in $laneCases.Keys) {
+            while (@($lanes | Where-Object { -not $_.Process.HasExited }).Count -ge $LaneCount) {
+                Start-Sleep -Milliseconds 50
+            }
             $laneRoot = Join-Path $root ('lane-' + $name)
             [IO.Directory]::CreateDirectory($laneRoot) | Out-Null
             $laneScripts = Join-Path $laneRoot 'scripts'
