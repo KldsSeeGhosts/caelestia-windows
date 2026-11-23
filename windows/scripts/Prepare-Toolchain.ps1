@@ -56,6 +56,7 @@ function Get-VerifiedToolchainArchive($Download) {
     return $path
 }
 
+$rustInstall = $null
 Push-Location -LiteralPath $ToolRoot
 try {
     $pythonVersion = @(& $Python -c "import sys,struct; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor)+'-'+str(struct.calcsize('P')*8))")
@@ -72,6 +73,24 @@ try {
         Save-ToolchainTiming 'verify-python-environment' $clock $LASTEXITCODE
         if ($LASTEXITCODE -ne 0 -or $state -notin @('hit', 'miss')) { throw 'Prepared Python verification failed.' }
         $prepared = $state -eq 'hit'
+    }
+    if ($InstallRust) {
+        $null = Get-VerifiedToolchainArchive $spec.rustManifest
+        $rustup = (Get-Command rustup.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        Write-Host 'Installing the pinned Rust toolchain alongside Qt and LLVM preparation.'
+        # This install uses no prepared tools. rustup still checks component
+        # hashes against the exact public manifest, and we join before using Rust.
+        $rustInstall = Start-Job -Name 'install-pinned-rust' -ScriptBlock {
+            param($Rustup, $Version, $Target, $WorkingDirectory)
+            Set-Location -LiteralPath $WorkingDirectory -ErrorAction Stop
+            $ErrorActionPreference = 'Continue'
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            & $Rustup toolchain install "$Version-$Target" --profile minimal --target $Target 2>&1 |
+                ForEach-Object { Write-Host "$_" }
+            [pscustomobject]@{ exitCode = $LASTEXITCODE; elapsed = $clock.Elapsed }
+        } -ArgumentList $rustup, $spec.rustVersion, $spec.rustTarget, $ToolRoot
+    } else {
+        Save-ToolchainTiming 'rust-install' ([Diagnostics.Stopwatch]::new()) $null 'skipped'
     }
     $venvPython = Join-Path $ToolRoot 'tools\Scripts\python.exe'
     # Keep archive verification even when the prepared environment is restored.
@@ -152,29 +171,29 @@ try {
         Write-Host 'Extracting verified CLI11 archive.'
         Expand-Archive -LiteralPath $cli -DestinationPath (Join-Path $ToolRoot 'deps') -Force
     }
-    if ($InstallRust) {
-        $null = Get-VerifiedToolchainArchive $spec.rustManifest
-        Write-Host 'Installing the pinned Rust toolchain.'
-        # rustup verifies component hashes from this exact public manifest.
-        $clock = [Diagnostics.Stopwatch]::StartNew()
-        & rustup.exe toolchain install "$($spec.rustVersion)-$($spec.rustTarget)" --profile minimal --target $spec.rustTarget
-        Save-ToolchainTiming 'rust-install' $clock $LASTEXITCODE
-        if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust installation failed. Check public access without changing credentials.' }
-    } else {
-        Save-ToolchainTiming 'rust-install' ([Diagnostics.Stopwatch]::new()) $null 'skipped'
-    }
-    $clock = [Diagnostics.Stopwatch]::StartNew()
+    $assertionClock = [Diagnostics.Stopwatch]::StartNew()
     $assertionOutcome = 'failure'
     try {
         $instance = Enter-CaelestiaToolchain -QtPrefix $qtPrefix `
             -LlvmBin (Join-Path $ToolRoot "$($spec.llvmDirectory)\bin") -ToolsBin (Join-Path $ToolRoot 'tools\Scripts')
+        if ($rustInstall) {
+            $assertionClock.Stop()
+            $installResult = @(Receive-Job -Job $rustInstall -Wait)
+            if ($rustInstall.State -ne 'Completed' -or $installResult.Count -ne 1 -or
+                $null -eq $installResult[0].exitCode) {
+                throw 'Pinned Rust installation did not complete. Check public access without changing credentials.'
+            }
+            Save-ToolchainTiming 'rust-install' $installResult[0] $installResult[0].exitCode
+            if ($installResult[0].exitCode -ne 0) { throw 'Pinned Rust installation failed. Check public access without changing credentials.' }
+            $assertionClock.Start()
+        }
         Select-CaelestiaRust
         $receipt = Get-CaelestiaActualToolchain -QtPrefix $qtPrefix -Cli11Include (Join-Path $ToolRoot $spec.cli11Directory)
         $receipt | Add-Member -NotePropertyName vsInstallationVersion -NotePropertyValue $instance.installationVersion
         $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $ToolRoot 'toolchain.json') -Encoding UTF8
         $assertionOutcome = 'success'
     } finally {
-        Save-ToolchainTiming 'final-assertions' $clock $null $assertionOutcome
+        Save-ToolchainTiming 'final-assertions' $assertionClock $null $assertionOutcome
     }
     if ($ReusePreparedPython -and -not $prepared) {
         $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -184,6 +203,10 @@ try {
     }
     Write-Host 'Supported toolchain prepared and asserted. toolchain.json contains only public version/hash fields.'
 } finally {
+    if ($rustInstall) {
+        Stop-Job -Job $rustInstall -ErrorAction SilentlyContinue
+        Remove-Job -Job $rustInstall -Force -ErrorAction SilentlyContinue
+    }
     Save-ToolchainTiming 'total' $prepareClock $null 'elapsed'
     Pop-Location
 }

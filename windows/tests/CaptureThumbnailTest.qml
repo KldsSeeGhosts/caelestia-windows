@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Window
+import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
@@ -167,6 +169,24 @@ ShellRoot {
         id: holder
     }
 
+    Component {
+        id: directoryListing
+
+        FolderListModel {
+            required property var report
+            showDotAndDotDot: false
+            onStatusChanged: {
+                if (status !== FolderListModel.Ready)
+                    return;
+                const names = [];
+                for (let index = 0; index < count; index++)
+                    names.push(get(index, "fileName"));
+                destroy();
+                root.step(() => report(names));
+            }
+        }
+    }
+
     Image {
         id: shot
 
@@ -264,6 +284,39 @@ ShellRoot {
         return null;
     }
 
+    function cardSettled(card): bool {
+        return card !== null && card.shown && card.fade === 1 && card.slide === 1
+            && card.y === Math.round(card.slot.y * card.dpr) / card.dpr
+            && find(card, "captureThumbnailImage")?.status === Image.Ready;
+    }
+
+    function waitForCards(count, next): void {
+        waitFor(() => {
+            const list = cards();
+            return list.length === count && list.every(card => cardSettled(card) && thumbs.entries.includes(card.entry));
+        }, next, count + " settled thumbnail cards");
+    }
+
+    function waitForEmpty(next): void {
+        waitFor(() => thumbs.entries.length === 0 && panels().length === 0, next, "thumbnail panel to close");
+    }
+
+    function pickerOpened(next): void {
+        waitFor(() => picker.opened && !!find(pickerWindows()[0]?.contentItem, "areaPicker"), next, "picker window");
+    }
+
+    function pickerReady(next): void {
+        readyAll();
+        waitFor(() => {
+            const view = find(pickerWindows()[0]?.contentItem, "areaPickerView");
+            return picker.allReady && view?.Window.window?.visible && view.width > 0 && view.height > 0;
+        }, next, "frozen view attached to a visible window");
+    }
+
+    function pickerClosed(next): void {
+        waitFor(() => !picker.opened, next, "picker to close");
+    }
+
     function readyAll(): void {
         for (const screen of Quickshell.screens)
             picker.noteContent(screen.name, true);
@@ -276,14 +329,21 @@ ShellRoot {
         shell.running = true;
     }
 
-    // Exits with the number of hand-over files in the temp directory.
-    function countTemp(callback): void {
-        powershell("exit @(Get-ChildItem -LiteralPath $env:TEMP -Filter 'caelestia-clipboard-*.png' -ErrorAction SilentlyContinue).Count", callback);
+    function list(folder, directories, callback): void {
+        directoryListing.createObject(root, {
+            folder: "file:///" + folder,
+            showDirs: directories,
+            showFiles: !directories,
+            report: callback
+        });
     }
 
-    // Exits with the number of drag directories in the temp directory.
+    function countTemp(callback): void {
+        list(tempFolder, false, names => callback(names.filter(name => /^caelestia-clipboard-.*\.png$/i.test(name)).length));
+    }
+
     function countDragDirs(callback): void {
-        powershell("exit @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'caelestia-drag-*' -ErrorAction SilentlyContinue).Count", callback);
+        list(tempFolder, true, names => callback(names.filter(name => /^caelestia-drag-/i.test(name)).length));
     }
 
     // <temp>/caelestia-drag-<32 hex>/annotate-<stamp>.png, the scheme of a drag file.
@@ -338,18 +398,17 @@ ShellRoot {
         check(thumbs.enabled && thumbs.seconds === 0, "a timeout of 0 is read from the config");
         check(thumbs.entries.length === 0 && panels().length === 0, "no panel before the first capture");
         check(CaptureUi.screenshot("openFreeze") === true, "the picker is asked to open");
-        later(400, () => step(() => {
+        pickerOpened(() => {
             check(picker.opened, "the picker opened");
             screenName = pickerWindows()[0].screen.name;
-            readyAll();
-            later(300, () => step(savedCapture));
-        }));
+            pickerReady(savedCapture);
+        });
     }
 
     function savedCapture(): void {
         selectRegion(20, 30, 80, 70);
         check(picker.saving && !picker.editing, "release stages the capture without an editor");
-        later(700, () => step(() => {
+        waitFor(() => !picker.opened && thumbs.entries[0] && !thumbs.entries[0].outputPending, () => {
             check(!picker.opened && thumbs.entries.length === 1, "release closes the picker and shows one thumbnail");
             const raw = thumbs.entries[0];
             const original = raw.path;
@@ -362,7 +421,7 @@ ShellRoot {
                 const sessionFile = picker.editPath;
                 check(sessionFile !== original && WindowsFiles.isFile(sessionFile), "the editor owns its image independently of the card");
                 picker.cancel();
-                later(700, () => step(() => {
+                pickerClosed(() => {
                     check(!picker.opened && thumbs.entries[0] === raw && WindowsFiles.isFile(original),
                         "cancel returns to the original card");
                     check(!WindowsFiles.isFile(sessionFile), "cancel releases the editor's source");
@@ -372,17 +431,21 @@ ShellRoot {
                         picker.editor.releaseAt();
                         check(picker.editor.strokes.length === 1, "the reopened editor accepts annotations");
                         picker.editPicker.exportEdit("save");
-                        later(1200, () => step(() => {
+                        pickerClosed(() => {
                             check(!WindowsFiles.isFile(original), "saving replaces the original unsaved preview");
                             afterSave();
-                        }));
+                        });
                     });
-                }));
+                });
             });
-        }));
+        }, "first capture to finish writing");
     }
 
     function openEditor(entry, ready): void {
+        waitFor(() => !!cardFor(entry), () => editCard(entry, ready), "thumbnail editor action");
+    }
+
+    function editCard(entry, ready): void {
         const card = cardFor(entry);
         const pencil = find(card, "captureThumbnailAction-edit");
         card.manualHover = true;
@@ -390,14 +453,17 @@ ShellRoot {
         pencil.clicked();
         card.manualHover = false;
         check(picker.opened && picker.editing && !card.armed, "Edit opens the editor without arming a drag");
-        later(500, () => step(() => {
+        waitFor(() => {
+            const source = find(pickerWindows()[0]?.contentItem, "captureEditorSource");
+            return source?.status === Image.Ready && source.Window.window?.visible;
+        }, () => {
             const window = pickerWindows()[0];
             const source = find(window.contentItem, "captureEditorSource");
             check(source?.status === Image.Ready && source.sourceSize.width === entry.imageWidth
                 && source.sourceSize.height === entry.imageHeight, "the editor shows the captured PNG at its original resolution");
             check(!find(window.contentItem, "areaPickerView"), "reopening does not freeze the desktop again");
             ready(source);
-        }));
+        }, "editor source image");
     }
 
     function afterSave(): void {
@@ -419,7 +485,7 @@ ShellRoot {
         check(window.exclusionMode === ExclusionMode.Normal && window.exclusiveZone === 0, "reserving no space, so it is the work area");
         check(window.anchors.left && window.anchors.right && window.anchors.top && window.anchors.bottom, "anchored to the work area");
         check(window.visible, "visible once the picker is gone");
-        later(900, () => step(cardLook));
+        waitForCards(1, cardLook);
     }
 
     function cardLook(): void {
@@ -451,7 +517,7 @@ ShellRoot {
         check(scrim.width === card.width && scrim.height === card.height && Math.abs(scrim.color.a - 0.45) < 0.01,
             "the scrim dims the whole card");
         card.manualHover = true;
-        later(600, () => step(() => {
+        waitFor(() => actions.opacity === 1, () => {
             check(actions.visible && actions.enabled && actions.opacity === 1, "actions show while the pointer is over the card");
             check(card.paused, "which pauses the timeout");
             const primary = find(card, "captureThumbnailPrimaryActions");
@@ -461,24 +527,24 @@ ShellRoot {
                 "the equal-width Copy and Save pills stack vertically in the center");
             card.manualHover = false;
             copyCapture();
-        }));
+        }, "thumbnail hover actions");
     }
 
     // 2. The thumbnail appears after a copy.
     function copyCapture(): void {
         check(CaptureUi.screenshot("openClip") === true, "openClip is asked to open");
-        later(400, () => step(() => {
+        pickerOpened(() => {
             check(picker.opened, "the picker opened for a clipboard capture");
             check(panels()[0].visible === false && thumbs.suspended, "the thumbnails step aside while the picker is open");
-            readyAll();
-            later(300, () => step(() => {
+            pickerReady(() => {
                 selectRegion(10, 10, 70, 60);
-                later(700, () => step(() => openEditor(thumbs.entries[1], () => {
-                    picker.editPicker.exportEdit("copy");
-                    later(1200, () => step(afterCopy));
-                })));
-            }));
-        }));
+                waitFor(() => !picker.opened && thumbs.entries[1] && !thumbs.entries[1].outputPending,
+                    () => openEditor(thumbs.entries[1], () => {
+                        picker.editPicker.exportEdit("copy");
+                        pickerClosed(afterCopy);
+                    }), "second capture to finish writing");
+            });
+        });
     }
 
     function afterCopy(): void {
@@ -496,7 +562,7 @@ ShellRoot {
         shot.source = "file:///" + entry.temp;
         check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 50, "holding the selection: " + shot.sourceSize);
         check(entry.imageWidth === 60 && entry.imageHeight === 50, "and the card knows its size");
-        later(900, () => step(copyLayout));
+        waitForCards(2, copyLayout);
     }
 
     function copyLayout(): void {
@@ -538,10 +604,10 @@ ShellRoot {
         check(thumbs.saveEntry(entry) === true && entry.path.indexOf("(2)") < 0, "saving again does nothing");
         shot.source = "file:///" + entry.path;
         check(shot.status === Image.Ready && shot.sourceSize.width === 60 && shot.sourceSize.height === 50, "the saved file holds the same image");
-        later(300, () => step(() => {
+        waitFor(() => find(card, "captureThumbnailImage")?.status === Image.Ready, () => {
             check(find(card, "captureThumbnailImage").status === Image.Ready, "and the picture stays");
             revealStep();
-        }));
+        }, "saved thumbnail image");
     }
 
     function revealStep(): void {
@@ -604,7 +670,7 @@ ShellRoot {
     // 4. Stacking and eviction.
     function stackStep(): void {
         thumbs.closeAll();
-        later(1500, () => step(() => {
+        waitForEmpty(() => {
             check(thumbs.entries.length === 0 && panels().length === 0, "closing every thumbnail removes the panel");
             check(WindowsFiles.isFile(savedPath), "and leaves the saved files alone");
             thumbs.addCopy(info(), savedPath);
@@ -615,8 +681,8 @@ ShellRoot {
             check(thumbs.entries.length === 5, "five thumbnails");
             held.oldest = copy;
             held.oldestTemp = copy.temp;
-            later(1000, () => step(fiveStack));
-        }));
+            waitForCards(5, fiveStack);
+        });
     }
 
     function fiveStack(): void {
@@ -655,7 +721,7 @@ ShellRoot {
         // A seventh pushes out a saved one, whose file belongs to the user.
         thumbs.addSaved(info(), savedPath);
         check(thumbs.entries.length === 5 && WindowsFiles.isFile(savedPath), "a saved capture's file is never deleted");
-        later(1000, () => step(afterEviction));
+        waitForCards(5, afterEviction);
     }
 
     function afterEviction(): void {
@@ -675,7 +741,7 @@ ShellRoot {
         const temp = entry.temp;
         check(thumbs.entries.length === 5 && WindowsFiles.isFile(temp), "it pushed the oldest out");
         // While it slides in, its mask region is where the card is drawn.
-        later(60, () => step(() => {
+        waitFor(() => cardFor(entry)?.entered, () => {
             const card = cardFor(entry);
             const rects = maskRects(panels()[0]);
             const mask = card.maskItem;
@@ -683,8 +749,8 @@ ShellRoot {
             check(mask.x === card.x + (1 - card.slide) * 60 && mask.y === card.y, "the region follows the slide: " + mask.x + " for card x " + card.x + " at slide " + card.slide);
             check(card.slide >= 1 || mask.x > card.x, "a card still sliding in is masked where it is drawn, to the right of its place");
             check(card.fade > 0 ? mask.width === card.width : mask.width === 0, "and takes no presses until it is visible");
-            later(700, () => step(() => closeCard(entry, temp)));
-        }));
+            waitFor(() => cardSettled(card), () => closeCard(entry, temp), "new card entrance");
+        }, "new thumbnail card");
     }
 
     function closeCard(entry, temp): void {
@@ -692,13 +758,13 @@ ShellRoot {
         check(card.slide === 1 && card.maskItem.x === card.x, "after the slide the region is the card");
         find(card, "captureThumbnailAction-close").clicked();
         check(entry.closing, "Close starts the exit");
-        later(1500, () => step(() => {
+        waitFor(() => !thumbs.entries.includes(entry) && cards().length === 4, () => {
             check(thumbs.entries.length === 4 && !thumbs.entries.includes(entry), "the thumbnail is gone after the exit");
             check(!WindowsFiles.isFile(temp), "and so is its preview file");
             check(cards().length === 4, "with its card");
             check(maskRects(panels()[0]).length === 4, "and its mask region");
             dragStep();
-        }));
+        }, "closed thumbnail card to disappear");
     }
 
     // 5b. Dragging the image out.
@@ -708,19 +774,18 @@ ShellRoot {
     // call to the owner (bodyPressed, bodyMoved), which marks the entry as
     // dragging and calls `startDrag`. Here that is a recorder.
 
-    // Exits with the number of files in a folder.
     function countFiles(folder, callback): void {
-        powershell("exit @(Get-ChildItem -LiteralPath '" + winPath(folder) + "' -File -ErrorAction SilentlyContinue).Count", callback);
+        list(folder, false, names => callback(names.length));
     }
 
     function dragStep(): void {
         thumbs.closeAll();
-        later(1500, () => step(() => {
+        waitForEmpty(() => {
             check(thumbs.entries.length === 0, "the stack is empty before the drag cases");
             config({ thumbnailSeconds: 0 });
             thumbs.addSaved(info(), savedPath);
-            later(900, () => step(dragThreshold));
-        }));
+            waitForCards(1, dragThreshold);
+        });
     }
 
     function dragThreshold(): void {
@@ -782,15 +847,15 @@ ShellRoot {
         check(opener.urls.length === opened, "and the drag opened nothing");
         body.clicked(null);
         check(opener.urls.length === opened, "a click that follows a drag does not open the image");
-        later(1500, () => step(() => {
+        waitFor(() => !thumbs.entries.includes(entry), () => {
             check(!thumbs.entries.includes(entry), "the closed preview is gone after its exit");
             dragButtons();
-        }));
+        }, "dragged thumbnail to close");
     }
 
     function dragButtons(): void {
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
-        later(900, () => step(() => {
+        waitForCards(1, () => {
             const entry = thumbs.entries[0];
             const card = cardFor(entry);
             const actions = find(card, "captureThumbnailActions");
@@ -798,7 +863,7 @@ ShellRoot {
             // The buttons are above the body. A press on a button never reaches
             // it, so it cannot become a drag. The body is below.
             card.manualHover = true;
-            later(600, () => step(() => {
+            waitFor(() => actions.opacity === 1, () => {
                 check(actions.visible, "the buttons are showing");
                 for (const name of ["copy", "save", "reveal", "close", "pin", "edit"]) {
                     const button = find(card, "captureThumbnailAction-" + name);
@@ -810,8 +875,8 @@ ShellRoot {
                 check(dragRecorder.calls.length === calls, "no drag started");
                 card.manualHover = false;
                 dragCopy(entry);
-            }));
-        }));
+            }, "hover actions to finish fading in");
+        });
     }
 
     function dragCopy(entry): void {
@@ -885,10 +950,10 @@ ShellRoot {
         check(record !== null && !record.closed && record.path === file && thumbs.dragFiles.length === 1, "the drag file is tracked by its exact path, and its card is open");
         const ended = record.endedAt;
         check(ended === root.fakeNow, "with the time its last drag ended: " + ended);
-        thumbs.dragSweepInterval = 200;
+        thumbs.dragSweepInterval = 50;
         root.fakeNow = ended + 60000;
         thumbs.close(entry);
-        later(1500, () => step(() => {
+        waitFor(() => !thumbs.entries.includes(entry), () => {
             check(!thumbs.entries.includes(entry), "the card closed");
             check(!WindowsFiles.isFile(temp), "and took its preview file");
             check(WindowsFiles.isFile(file), "but its drag file is still there, 1 minute after the last drag");
@@ -899,15 +964,15 @@ ShellRoot {
             thumbs.sweepDragFiles();
             check(WindowsFiles.isFile(file), "1 ms short of 5 minutes it is kept");
             root.fakeNow = ended + 300000;
-            later(700, () => step(() => {
+            waitFor(() => thumbs.dragFiles.length === 0, () => {
                 check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "5 minutes after the last drag the timer removes it");
                 check(!thumbs.sweeping, "and the timer stops");
                 countDragDirs(count => {
                     check(count === 0, "with its directory: " + count);
                     dragGraceFirst();
                 });
-            }));
-        }));
+            }, "drag grace sweep");
+        }, "dragged card to close before grace expires");
     }
 
     // B. The 5 minutes pass first, with the card still open. The file stays
@@ -915,7 +980,7 @@ ShellRoot {
     function dragGraceFirst(): void {
         check(thumbs.entries.length === 0, "the stack is empty");
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
-        later(900, () => step(() => {
+        waitForCards(1, () => {
             const entry = thumbs.entries[0];
             const card = cardFor(entry);
             check(thumbs.drag(entry, find(card, "captureThumbnailImage")), "the native drag layer offers the file");
@@ -925,22 +990,22 @@ ShellRoot {
             thumbs.sweepDragFiles();
             check(WindowsFiles.isFile(file) && !thumbs.dragRecord(file).closed, "10 minutes on, an open card still keeps its drag file");
             thumbs.close(entry);
-            later(1500, () => step(() => {
+            waitFor(() => !thumbs.entries.includes(entry), () => {
                 check(!thumbs.entries.includes(entry), "the card closed");
                 check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "and the file went with it, because the grace period was over");
                 countDragDirs(count => {
                     check(count === 0, "and its directory: " + count);
                     dragEvict();
                 });
-            }));
-        }));
+            }, "dragged card to close after grace expires");
+        });
     }
 
     // C. A sixth capture pushes the card out. The file outlives it by the grace
     // period and is removed by the first capture after that.
     function dragEvict(): void {
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail, the oldest");
-        later(900, () => step(() => {
+        waitForCards(1, () => {
             const first = thumbs.entries[0];
             cardFor(first).bodyPressed(10, 10);
             cardFor(first).bodyMoved(10, 30);
@@ -962,18 +1027,18 @@ ShellRoot {
             check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "removes it");
             check(WindowsFiles.isFile(savedPath), "while the saved files are never touched");
             thumbs.closeAll();
-            later(1500, () => step(() => countDragDirs(count => {
+            waitForEmpty(() => countDragDirs(count => {
                 check(count === 0 && thumbs.entries.length === 0, "no drag directory is left: " + count);
                 dragLocked();
-            })));
-        }));
+            }));
+        });
     }
 
     // D. A target still holds the file when it is due. The file stays and is
     // tried again until the target lets go.
     function dragLocked(): void {
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
-        later(900, () => step(() => {
+        waitForCards(1, () => {
             const entry = thumbs.entries[0];
             cardFor(entry).bodyPressed(10, 10);
             cardFor(entry).bodyMoved(10, 30);
@@ -981,23 +1046,23 @@ ShellRoot {
             holdFile(file, () => step(() => {
                 root.fakeNow += 400000;
                 thumbs.close(entry);
-                later(1500, () => step(() => {
+                waitFor(() => !thumbs.entries.includes(entry), () => {
                     check(!thumbs.entries.includes(entry), "the card closed");
                     check(WindowsFiles.isFile(file), "a file that a target holds open is not removed");
                     check(thumbs.dragRecord(file) !== null && thumbs.sweeping, "it is remembered and tried again");
                     letGo(() => step(() => {
-                        later(700, () => step(() => {
+                        waitFor(() => thumbs.dragFiles.length === 0, () => {
                             check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "once the target lets go the timer removes it");
                             countDragDirs(count => {
                                 check(count === 0, "with its directory: " + count);
                                 thumbs.dragSweepInterval = 30000;
                                 dragShutdown();
                             });
-                        }));
+                        }, "released drag file to be swept");
                     }));
-                }));
+                }, "card with a locked drag file to close");
             }));
-        }));
+        });
     }
 
     // E. A shell reload (or quit) removes the drag files at once: one whose card
@@ -1015,7 +1080,7 @@ ShellRoot {
         check(extra.dragFiles.length === 2 && extra.dragRecord(files[1]).closed && !extra.dragRecord(files[0]).closed, "one card has closed, one is open, and both files are kept");
         check(files.every(path => WindowsFiles.isFile(path)), "within the grace period");
         extra.destroy();
-        later(300, () => step(() => {
+        waitFor(() => CaptureUi.thumbnails === null, () => {
             check(files.every(path => !WindowsFiles.isFile(path)), "destroying the instance removes both");
             countDragDirs(count => {
                 check(count === 0, "with their directories: " + count);
@@ -1023,13 +1088,13 @@ ShellRoot {
                 CaptureUi.thumbnails = thumbs;
                 dragShutdownApi();
             });
-        }));
+        }, "destroyed thumbnails instance to unregister");
     }
 
     // The same through the explicit call that the quit signal also makes.
     function dragShutdownApi(): void {
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
-        later(900, () => step(() => {
+        waitForCards(1, () => {
             const entry = thumbs.entries[0];
             cardFor(entry).bodyPressed(10, 10);
             cardFor(entry).bodyMoved(10, 30);
@@ -1038,37 +1103,34 @@ ShellRoot {
             thumbs.removeAllDragFiles();
             check(!WindowsFiles.isFile(file) && thumbs.dragFiles.length === 0, "removeAllDragFiles removes it whatever its age");
             thumbs.closeAll();
-            later(1500, () => step(dragPaused));
-        }));
+            waitForEmpty(dragPaused);
+        });
     }
 
     // The timeout stands still for as long as the drag runs, and then goes on
     // from where it was, as after hover.
     function dragPaused(): void {
-        thumbs.closeAll();
-        later(1500, () => step(() => {
-            check(thumbs.entries.length === 0, "the stack is empty");
-            config({ thumbnailSeconds: 1 });
-            thumbs.addSaved(info(), savedPath);
-            later(250, () => step(() => {
-                const entry = thumbs.entries[0];
-                const card = cardFor(entry);
-                // What the owner does for the length of the real drag.
-                entry.dragging = true;
-                check(card.dragging && card.paused, "a dragging card is paused");
-                const elapsed = card.elapsed;
-                later(2200, () => step(() => {
-                    check(thumbs.entries.includes(entry) && !entry.closing, "2 s into a 1 s timeout, the dragged preview is still there");
-                    check(card.elapsed === elapsed, "it used no time: " + elapsed + " then " + card.elapsed);
-                    entry.dragging = false;
-                    check(card.afterDrag && !card.hovered && !card.paused, "when the drag ends the pointer is not taken to still be over the card");
-                    later(1800, () => step(() => {
-                        check(!thumbs.entries.includes(entry), "and the timeout runs out as it does after hover");
-                        dragEviction();
-                    }));
-                }));
-            }));
-        }));
+        check(thumbs.entries.length === 0, "the stack is empty");
+        config({ thumbnailSeconds: 1 });
+        thumbs.addSaved(info(), savedPath);
+        waitFor(() => cardFor(thumbs.entries[0])?.shown, () => {
+            const entry = thumbs.entries[0];
+            const card = cardFor(entry);
+            // What the owner does for the length of the real drag.
+            entry.dragging = true;
+            check(card.dragging && card.paused, "a dragging card is paused");
+            const elapsed = card.elapsed;
+            later(2200, () => {
+                check(thumbs.entries.includes(entry) && !entry.closing, "2 s into a 1 s timeout, the dragged preview is still there");
+                check(card.elapsed === elapsed, "it used no time: " + elapsed + " then " + card.elapsed);
+                entry.dragging = false;
+                check(card.afterDrag && !card.hovered && !card.paused, "when the drag ends the pointer is not taken to still be over the card");
+                waitForEmpty(() => {
+                    check(!thumbs.entries.includes(entry), "and the timeout runs out as it does after hover");
+                    dragEviction();
+                });
+            });
+        }, "thumbnail timeout to start");
     }
 
     // A sixth preview does not push out one that is being dragged.
@@ -1086,20 +1148,20 @@ ShellRoot {
         thumbs.closeAll();
         check(oldest.closeAfterDrag && !oldest.closing, "closing everything waits for the drag too");
         oldest.dragging = false;
-        later(1500, () => step(() => {
+        waitFor(() => thumbs.entries.length === 1, () => {
             check(thumbs.entries.length === 1 && thumbs.entries[0] === oldest, "the others went");
             thumbs.close(oldest);
-            later(1500, () => step(() => {
+            waitForEmpty(() => {
                 check(thumbs.entries.length === 0, "and the dragged one closes once it is let go");
                 timeoutStep();
-            }));
-        }));
+            });
+        }, "cards not being dragged to close");
     }
 
     // 6. The timeout, and the pause.
     function timeoutStep(): void {
         thumbs.closeAll();
-        later(1500, () => step(() => {
+        waitForEmpty(() => {
             check(thumbs.entries.length === 0, "the stack is empty");
             config({ thumbnailSeconds: 1 });
             check(thumbs.seconds === 1, "the timeout follows the config");
@@ -1108,11 +1170,11 @@ ShellRoot {
             held.kept = thumbs.entries[0];
             held.timed = thumbs.entries[1];
             held.timedTemp = held.timed.temp;
-            later(100, () => step(() => {
+            waitFor(() => !!cardFor(held.kept), () => {
                 cardFor(held.kept).manualHover = true;
-                later(2300, () => step(afterTimeout));
-            }));
-        }));
+                waitFor(() => !thumbs.entries.includes(held.timed), afterTimeout, "unhovered thumbnail to time out");
+            }, "thumbnail to hover");
+        });
     }
 
     function afterTimeout(): void {
@@ -1121,23 +1183,23 @@ ShellRoot {
         const card = cardFor(held.kept);
         check(card.elapsed === 0 || card.elapsed < 1000, "the one under the pointer has not used its time: " + card.elapsed);
         card.manualHover = false;
-        later(2300, () => step(() => {
+        waitForEmpty(() => {
             check(thumbs.entries.length === 0, "it goes once the pointer leaves");
             noTimeoutStep();
-        }));
+        });
     }
 
     function noTimeoutStep(): void {
         config({ thumbnailSeconds: 0 });
         thumbs.addSaved(info(), savedPath);
-        later(2000, () => step(() => {
+        later(2000, () => {
             check(thumbs.entries.length === 1, "a timeout of 0 never closes the thumbnail");
             config({ thumbnailSeconds: -3 });
             check(thumbs.seconds === 5, "a negative timeout falls back to 5 s");
             config({});
             check(thumbs.seconds === 5 && thumbs.enabled, "and so does a missing one");
             suspendStep();
-        }));
+        });
     }
 
     // 7. The picker and the thumbnails take turns.
@@ -1146,38 +1208,35 @@ ShellRoot {
         check(panels()[0].visible, "the panel is visible");
         const card = cards()[0];
         check(CaptureUi.screenshot("open") === true, "a new picker is asked to open");
-        later(400, () => step(() => {
+        pickerOpened(() => {
             check(picker.opened && thumbs.suspended && !panels()[0].visible, "the panel is hidden while the picker is open");
             check(thumbs.entries.length === 1, "and keeps its thumbnails");
             check(!card.visible && card.fade === 1 && card.slide === 1 && card.maskItem.width === 0,
                 "suspension hides the card and turns off input without rewinding the entrance");
             readyAll();
             find(pickerWindows()[0].contentItem, "areaPicker").dismissByKey();
-            later(1400, () => step(() => {
+            pickerClosed(() => {
                 check(!picker.opened && !thumbs.suspended && panels()[0].visible, "Esc brings it back");
                 check(thumbs.entries.length === 1, "with nothing added");
                 clipboardFailureStep();
-            }));
-        }));
+            });
+        });
     }
 
     // 8. A copy the clipboard refuses shows no thumbnail.
     function clipboardFailureStep(): void {
         clipboardRecorder.result = false;
         check(CaptureUi.screenshot("openClip") === true, "openClip is asked to open");
-        later(400, () => step(() => {
-            readyAll();
-            later(300, () => step(() => {
-                const area = find(pickerWindows()[0].contentItem, "areaPicker");
-                picker.startEditing(area, Capture.exportPlan({ x: 10, y: 10, width: 30, height: 30 }, area.geometry, area.dpr));
-                area.exportEdit("copy");
-                later(1600, () => step(() => {
-                    check(toastWith("could not be copied") !== "", "the refused copy is reported");
-                    check(thumbs.entries.length === 1, "and adds no thumbnail");
-                    clipboardRecorder.result = true;
-                    disabledStep();
-                }));
-            }));
+        pickerOpened(() => pickerReady(() => {
+            const area = find(pickerWindows()[0].contentItem, "areaPicker");
+            picker.startEditing(area, Capture.exportPlan({ x: 10, y: 10, width: 30, height: 30 }, area.geometry, area.dpr));
+            area.exportEdit("copy");
+            waitFor(() => !picker.saving, () => {
+                check(toastWith("could not be copied") !== "", "the refused copy is reported");
+                check(thumbs.entries.length === 1, "and adds no thumbnail");
+                clipboardRecorder.result = true;
+                disabledStep();
+            }, "clipboard failure");
         }));
     }
 
@@ -1185,7 +1244,7 @@ ShellRoot {
     function disabledStep(): void {
         config({ thumbnail: false });
         check(!thumbs.enabled, "windows.capture.thumbnail = false turns it off");
-        later(1500, () => step(() => {
+        waitForEmpty(() => {
             check(thumbs.entries.length === 0 && panels().length === 0, "and closes the ones on screen");
             countTemp(before => {
                 tempBefore = before;
@@ -1195,18 +1254,15 @@ ShellRoot {
                     check(after === tempBefore, "and no preview file is made: " + tempBefore + " then " + after);
                     // The picker itself still works.
                     check(CaptureUi.screenshot("openClip") === true, "the picker still opens");
-                    later(400, () => step(() => {
-                        readyAll();
-                        later(300, () => step(() => {
-                            selectRegion(10, 10, 40, 40);
-                            check(picker.editing && !picker.saving, "disabling thumbnails keeps the direct editor");
-                            picker.editPicker.exportEdit("copy");
-                            later(1600, () => step(offResult));
-                        }));
+                    pickerOpened(() => pickerReady(() => {
+                        selectRegion(10, 10, 40, 40);
+                        check(picker.editing && !picker.saving, "disabling thumbnails keeps the direct editor");
+                        picker.editPicker.exportEdit("copy");
+                        pickerClosed(offResult);
                     }));
                 });
             });
-        }));
+        });
     }
 
     function offResult(): void {
@@ -1224,12 +1280,12 @@ ShellRoot {
         const temp = extra.entries[0].temp;
         check(WindowsFiles.isFile(temp), "with a preview file");
         extra.destroy();
-        later(300, () => step(() => {
+        waitFor(() => CaptureUi.thumbnails === null, () => {
             check(!WindowsFiles.isFile(temp), "destroying the instance deletes the preview file");
             check(CaptureUi.thumbnails === null, "and unregisters it");
             CaptureUi.thumbnails = thumbs;
             lockStep();
-        }));
+        }, "destroyed thumbnails instance to unregister");
     }
 
     // 11. A preview file that a viewer holds open is deleted later.
@@ -1246,54 +1302,51 @@ ShellRoot {
         const list = (Array.isArray(path) ? path : [path]).map(item => "'" + winPath(item) + "'").join(",");
         holder.command = [root.powerShellExe,
             "-NoProfile", "-NonInteractive", "-Command",
-            "$held = @(foreach ($p in @(" + list + ")) { [IO.File]::Open($p, 'Open', 'Read', 'Read') }); "
+            "$ErrorActionPreference='Stop'; $held = @(foreach ($p in @(" + list + ")) { [IO.File]::Open($p, 'Open', 'Read', 'Read') }); "
             + "New-Item -ItemType File -Force -Path '" + winPath(held.flag) + "' | Out-Null; "
             + "while (-not (Test-Path -LiteralPath '" + winPath(held.release) + "')) { Start-Sleep -Milliseconds 50 }; "
             + "foreach ($f in $held) { $f.Close() }"];
         holder.running = true;
-        waitFor(() => WindowsFiles.isFile(held.flag), callback, 200);
+        waitFor(() => WindowsFiles.isFile(held.flag), callback, "file lock");
     }
 
     function letGo(callback): void {
-        powershell("New-Item -ItemType File -Force -Path '" + winPath(held.release) + "' | Out-Null", code => {
-            check(code === 0, "the lock is released");
-            waitFor(() => !holder.running, callback, 200);
-        });
+        check(CUtils.copyFile("file:///" + held.flag, "file:///" + held.release, false), "the lock is released");
+        waitFor(() => !holder.running, callback, "file lock to release");
     }
 
-    // Polls every 50 ms until `condition` holds, then calls `callback`.
-    function waitFor(condition, callback, tries): void {
-        check(tries > 0, "the awaited condition came true");
+    function waitFor(condition, callback, description, deadline = Date.now() + 10000): void {
         if (condition())
             callback();
+        else if (Date.now() >= deadline)
+            throw new Error("Timed out waiting for " + description);
         else
-            later(50, () => step(() => waitFor(condition, callback, tries - 1)));
+            later(25, () => waitFor(condition, callback, description, deadline));
     }
 
     property int lockCount: 0
 
     function lockStep(): void {
         check(thumbs.entries.length === 0 && thumbs.pendingTemps.length === 0 && !thumbs.retrying, "nothing is waiting to be deleted yet");
-        thumbs.retryInterval = 300;
+        thumbs.retryInterval = 100;
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
         const entry = thumbs.entries[0];
         const temp = entry.temp;
         holdFile(temp, () => step(() => {
             thumbs.close(entry);
-            later(1200, () => step(() => {
+            waitFor(() => !thumbs.entries.includes(entry), () => {
                 check(!thumbs.entries.includes(entry), "the thumbnail closed");
                 check(WindowsFiles.isFile(temp), "but Windows kept its locked preview file");
                 check(thumbs.pendingTemps.length === 1 && thumbs.pendingTemps[0] === temp, "which the scope remembers");
                 check(thumbs.retrying, "and retries on a timer");
-                // The retries so far (every 300 ms) all failed and kept the file.
                 letGo(() => step(() => {
-                    later(900, () => step(() => {
+                    waitFor(() => thumbs.pendingTemps.length === 0, () => {
                         check(!WindowsFiles.isFile(temp), "once the viewer lets go, a retry deletes it");
                         check(thumbs.pendingTemps.length === 0 && !thumbs.retrying, "and the retry timer stops");
                         nextCaptureRetry();
-                    }));
+                    }, "released preview to be retried");
                 }));
-            }));
+            }, "thumbnail with locked preview to close");
         }));
     }
 
@@ -1305,30 +1358,28 @@ ShellRoot {
         const temp = entry.temp;
         holdFile(temp, () => step(() => {
             thumbs.close(entry);
-            later(1200, () => step(() => {
+            waitFor(() => !thumbs.entries.includes(entry), () => {
                 check(WindowsFiles.isFile(temp) && thumbs.pendingTemps.includes(temp), "the locked file is remembered again");
-                letGo(() => step(() => {
-                    later(500, () => step(() => {
-                        check(WindowsFiles.isFile(temp), "with a long interval nothing retries by itself");
-                        check(thumbs.addSaved(info(), savedPath), "the next capture arrives");
-                        check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "and retries the deletion at once");
-                        check(!thumbs.retrying, "so the timer stops");
-                        saveWhileLocked();
-                    }));
+                letGo(() => later(500, () => {
+                    check(WindowsFiles.isFile(temp), "with a long interval nothing retries by itself");
+                    check(thumbs.addSaved(info(), savedPath), "the next capture arrives");
+                    check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "and retries the deletion at once");
+                    check(!thumbs.retrying, "so the timer stops");
+                    saveWhileLocked();
                 }));
-            }));
+            }, "second thumbnail with locked preview to close");
         }));
     }
 
     // Save while a viewer holds the preview file, then a retry, then a reload of
     // the card's image. The card must already show the saved file by then.
     function saveWhileLocked(): void {
-        thumbs.retryInterval = 300;
+        thumbs.retryInterval = 100;
         check(thumbs.addCopy(info(), savedPath), "a copy-only thumbnail");
         const entry = thumbs.entries[thumbs.entries.length - 1];
         const temp = entry.temp;
         check(entry.imagePath === temp, "the card shows the preview file");
-        later(700, () => step(() => {
+        waitFor(() => find(cardFor(entry), "captureThumbnailImage")?.status === Image.Ready, () => {
             const image = find(cardFor(entry), "captureThumbnailImage");
             check(image.status === Image.Ready && decodeURIComponent(String(image.source)).endsWith(temp), "and has loaded it");
             holdFile(temp, () => step(() => {
@@ -1337,25 +1388,25 @@ ShellRoot {
                 check(decodeURIComponent(String(image.source)).endsWith(entry.path), "its image source changed first");
                 check(entry.temp === "" && WindowsFiles.isFile(temp) && thumbs.pendingTemps.includes(temp), "then the locked preview file went on the retry list");
                 check(!thumbs.isShown(temp), "no live card shows a file on the list");
-                later(500, () => step(() => {
+                waitFor(() => image.status === Image.Ready, () => {
                     check(image.status === Image.Ready, "the saved file is loaded");
                     letGo(() => step(() => {
-                        later(900, () => step(() => {
+                        waitFor(() => thumbs.pendingTemps.length === 0, () => {
                             check(!WindowsFiles.isFile(temp) && thumbs.pendingTemps.length === 0, "the retry deleted the preview file");
                             // A new size makes the image load again. It reads the saved file.
                             const before = image.sourceSize.width;
                             config({ thumbnailSeconds: 0, thumbnailScale: 0.7 });
                             check(image.sourceSize.width > 0 && image.sourceSize.width !== before, "a new size asks for a new decode: " + before + " then " + image.sourceSize.width);
-                            later(600, () => step(() => {
+                            waitFor(() => image.status === Image.Ready, () => {
                                 check(image.status === Image.Ready, "and the image stays valid after the preview file is gone");
                                 config({ thumbnailSeconds: 0 });
                                 capStep();
-                            }));
-                        }));
+                            }, "reloaded saved preview");
+                        }, "locked preview retry");
                     }));
-                }));
+                }, "saved preview image");
             }));
-        }));
+        }, "preview image before locking");
     }
 
     // The retry list holds at most pendingLimit paths.
@@ -1375,12 +1426,12 @@ ShellRoot {
             thumbs.deleteTemp(paths[3]);
             check(thumbs.pendingTemps.length === 3 && thumbs.droppedCount === dropped + 1, "a path already on the list is not added twice");
             letGo(() => step(() => {
-                later(900, () => step(() => {
+                waitFor(() => thumbs.pendingTemps.length === 0, () => {
                     check(thumbs.pendingTemps.length === 0 && paths.slice(1).every(path => !WindowsFiles.isFile(path)), "the three that were kept are deleted once released");
                     check(CUtils.removeCaptureTemp(paths[0]) === true, "the dropped one can still be removed by hand");
                     thumbs.pendingLimit = 20;
                     reloadWithLock();
-                }));
+                }, "all remembered previews to be deleted");
             }));
         }));
     }
@@ -1392,7 +1443,7 @@ ShellRoot {
         const temp = extra.entries[0].temp;
         holdFile(temp, () => step(() => {
             extra.destroy();
-            later(300, () => step(() => {
+            waitFor(() => CaptureUi.thumbnails === null, () => {
                 check(WindowsFiles.isFile(temp), "a file that is still locked when the shell reloads stays");
                 letGo(() => step(() => {
                     // The file belongs to the temp scheme, so a later cleanup
@@ -1402,7 +1453,7 @@ ShellRoot {
                     thumbs.retryInterval = 30000;
                     finalStep();
                 }));
-            }));
+            }, "destroyed thumbnails instance to unregister");
         }));
     }
 
@@ -1453,21 +1504,21 @@ ShellRoot {
             const current = next.copyOperation;
             clipboardRecorder.writeFinished(stale, true, "");
             check(next.copyOperation === current && !next.copied, "old result cannot finish a new entry");
-            later(150, () => step(() => {
+            waitFor(() => !next.copyOperation, () => {
                 check(!next.copyOperation && next.copyFailed && !next.copied && thumbs.entries.includes(next), "missing result keeps entry for retry/save");
                 clipboardRecorder.writeFinished(current, true, "");
                 check(!next.copied, "success after timeout is ignored");
                 thumbs.finish(next);
                 clipboardRecorder.autoFinish = true;
                 macshotActions();
-            }));
+            }, "missing clipboard result to time out");
         }));
     }
 
     function macshotActions(): void {
         check(thumbs.addCopy(info(), savedPath), "an unsaved card can be pinned");
         const entry = thumbs.entries[thumbs.entries.length - 1];
-        later(200, () => step(() => {
+        waitFor(() => !!cardFor(entry), () => {
             cardFor(entry).perform("pin");
             check(entry.closing && thumbs.pins.length === 1, "Pin closes the thumbnail and opens a pinned image");
             const pin = thumbs.pins[0];
@@ -1479,27 +1530,27 @@ ShellRoot {
 
             check(thumbs.addSaved(info(), savedPath), "a card to dismiss by clicking its image");
             const clicked = thumbs.entries[thumbs.entries.length - 1];
-            later(200, () => step(() => {
+            waitFor(() => !!find(cardFor(clicked), "captureThumbnailBody"), () => {
                 find(cardFor(clicked), "captureThumbnailBody").clicked(null);
                 check(clicked.closing && WindowsFiles.isFile(savedPath), "a body click dismisses without changing the saved file");
                 thumbs.finish(clicked);
                 check(thumbs.addSaved(info(), savedPath), "a card to Copy");
                 const copied = thumbs.entries[thumbs.entries.length - 1];
-                later(200, () => step(() => {
+                waitFor(() => !!cardFor(copied), () => {
                     cardFor(copied).perform("copy");
                     check(copied.copyOperation > 0 && !copied.closing, "the Copy action waits for confirmation");
                     Qt.callLater(() => step(() => {
                         check(copied.copied && copied.closing, "Copy dismisses after success");
                         cleanupFinal();
                     }));
-                }));
-            }));
-        }));
+                }, "card to copy");
+            }, "card to dismiss");
+        }, "card to pin");
     }
 
     function cleanupFinal(): void {
         thumbs.closeAll();
-        later(1500, () => step(() => {
+        waitForEmpty(() => {
             check(thumbs.entries.length === 0 && panels().length === 0, "everything is closed");
             // A retiring card can still hold its preview file for one more
             // event-loop turn. The retry list is the owner's cleanup path, so
@@ -1514,7 +1565,7 @@ ShellRoot {
                 CaptureUi.glazierProvider = Glazier;
                 console.log("CAELESTIA_CAPTURE_THUMBNAIL_PASS " + assertions);
                 Qt.quit();
-            })), 100);
-        }));
+            })), "remaining preview files to be deleted");
+        });
     }
 }

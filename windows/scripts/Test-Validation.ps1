@@ -241,7 +241,10 @@ function Invoke-ParallelScriptChecks([string[]]$Names, [string[]]$Extra) {
                     Write-Output "--- end of $name ---"
                 }
             }
-            if ($running.Count) { Start-Sleep -Milliseconds 50 }
+            # Refill freed slots before the next poll delay.
+            if ($running.Count -and ($next -eq $Names.Count -or $running.Count -eq $QmlJobs)) {
+                Start-Sleep -Milliseconds 50
+            }
         }
         if ($results.Count - $initialCount -ne $Names.Count) {
             throw 'Parallel validation did not complete every test.'
