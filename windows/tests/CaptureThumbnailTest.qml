@@ -1526,25 +1526,31 @@ ShellRoot {
             thumbs.finish(entry);
             check(WindowsFiles.isFile(pin.path), "closing the original card leaves the pinned image intact");
             thumbs.unpin(pin);
-            check(!WindowsFiles.isFile(pin.path) && thumbs.pins.length === 0, "unpin removes the scratch image");
+            check(thumbs.pins.length === 0, "unpin closes the pinned image");
+            waitFor(() => {
+                thumbs.retryTemps();
+                return !WindowsFiles.isFile(pin.path);
+            }, () => {
+                check(!WindowsFiles.isFile(pin.path), "unpin removes the scratch image");
 
-            check(thumbs.addSaved(info(), savedPath), "a card to dismiss by clicking its image");
-            const clicked = thumbs.entries[thumbs.entries.length - 1];
-            waitFor(() => !!find(cardFor(clicked), "captureThumbnailBody"), () => {
-                find(cardFor(clicked), "captureThumbnailBody").clicked(null);
-                check(clicked.closing && WindowsFiles.isFile(savedPath), "a body click dismisses without changing the saved file");
-                thumbs.finish(clicked);
-                check(thumbs.addSaved(info(), savedPath), "a card to Copy");
-                const copied = thumbs.entries[thumbs.entries.length - 1];
-                waitFor(() => !!cardFor(copied), () => {
-                    cardFor(copied).perform("copy");
-                    check(copied.copyOperation > 0 && !copied.closing, "the Copy action waits for confirmation");
-                    Qt.callLater(() => step(() => {
-                        check(copied.copied && copied.closing, "Copy dismisses after success");
-                        cleanupFinal();
-                    }));
-                }, "card to copy");
-            }, "card to dismiss");
+                check(thumbs.addSaved(info(), savedPath), "a card to dismiss by clicking its image");
+                const clicked = thumbs.entries[thumbs.entries.length - 1];
+                waitFor(() => !!find(cardFor(clicked), "captureThumbnailBody"), () => {
+                    find(cardFor(clicked), "captureThumbnailBody").clicked(null);
+                    check(clicked.closing && WindowsFiles.isFile(savedPath), "a body click dismisses without changing the saved file");
+                    thumbs.finish(clicked);
+                    check(thumbs.addSaved(info(), savedPath), "a card to Copy");
+                    const copied = thumbs.entries[thumbs.entries.length - 1];
+                    waitFor(() => !!cardFor(copied), () => {
+                        cardFor(copied).perform("copy");
+                        check(copied.copyOperation > 0 && !copied.closing, "the Copy action waits for confirmation");
+                        Qt.callLater(() => step(() => {
+                            check(copied.copied && copied.closing, "Copy dismisses after success");
+                            cleanupFinal();
+                        }));
+                    }, "card to copy");
+                }, "card to dismiss");
+            }, "unpin to remove the scratch image");
         }, "card to pin");
     }
 
