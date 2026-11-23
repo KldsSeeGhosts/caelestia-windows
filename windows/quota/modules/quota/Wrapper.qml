@@ -36,18 +36,14 @@ Item {
         }
     }
 
-    onShouldBeActiveChanged: {
-        root.syncClock();
-        if (shouldBeActive && Date.now() - Quota.lastUpdatedAt > 30000)
-            Quota.refresh();
-    }
+    onShouldBeActiveChanged: root.syncClock()
     Component.onCompleted: root.syncClock()
     Component.onDestruction: {
         if (root.clockHeld)
             Quota.releaseClock();
     }
 
-    property real offsetScale: shouldBeActive ? 0 : 1
+    property real offsetScale: shouldBeActive && content.status === Loader.Ready ? 0 : 1
 
     visible: offsetScale < 1
     width: implicitWidth
@@ -60,7 +56,11 @@ Item {
     opacity: 1 - offsetScale
 
     onOffsetScaleChanged: {
-        if (offsetScale >= 1) {
+        // Show cached rows first. A fast refresh can otherwise rebuild
+        // the rows and change the drawer's height while it is sliding.
+        if (offsetScale === 0 && shouldBeActive && Date.now() - Quota.lastUpdatedAt > 30000) {
+            Quota.refresh();
+        } else if (offsetScale >= 1) {
             Quota.resetToDefault();
             content.item?.resetScroll();
         }
@@ -78,6 +78,9 @@ Item {
         anchors.margins: Tokens.padding.medium
 
         active: root.shouldBeActive || root.visible
+        // Don't block the pointer handler with QML compilation or construction.
+        // The slide starts only once the loader has a complete item.
+        asynchronous: true
         // A URL boundary keeps the closed drawer's Content graph out of shell
         // compilation. Loader caches these initial bindings while inactive and
         // applies them before completion on every creation, including reopen.

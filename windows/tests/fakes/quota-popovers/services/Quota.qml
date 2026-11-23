@@ -1,7 +1,6 @@
 pragma Singleton
 import QtQuick
-// Stand-in for the quota service in the keyboard fixture: enough accounts that
-// the drawer scrolls, and counters for what the keyboard asked for.
+// Stand-in for the quota service in the drawer and popover fixture.
 QtObject {
     id: root
 
@@ -46,6 +45,7 @@ QtObject {
     property int viewChanges: 0
     onUsageViewChanged: viewChanges++
     property int refreshes: 0
+    property int clockHolders: 0
     property int keepalives: 0
     property int refreshIntervalMs: 60000
     property int effectiveRefreshMs: 60000
@@ -54,6 +54,9 @@ QtObject {
     property double nextUpdateAt: lastUpdatedAt + effectiveRefreshMs
     property bool configured: true
     property string status: "ok"
+    property bool loading: false
+    property bool hasError: false
+    property string error: ""
     property var todayCostUsd: null
     property var spend: ({
         today: { total: 3.06, rows: [{ provider: "codex", cost: 1.62 }, { provider: "claude", cost: 1.44 }] },
@@ -66,6 +69,9 @@ QtObject {
     property int keepaliveDone: 0
     property int keepaliveTotal: 0
     function selectGroup(provider): void {}
+    function holdClock(): void { clockHolders++; }
+    function releaseClock(): void { clockHolders--; }
+    function resetToDefault(): void {}
     function refresh(force): void { refreshes++; }
     function retryRefusedKey(): void {}
     function triggerKeepalive(): void { keepalives++; }

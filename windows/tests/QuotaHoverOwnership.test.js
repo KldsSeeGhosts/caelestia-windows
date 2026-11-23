@@ -347,7 +347,8 @@ const initialSource = between(quotaLoader, "Component.onCompleted: ", "\n    }")
 test("the quota drawer has no static Content dependency and supplies initial bindings", () => {
     assert.doesNotMatch(quotaWrapper, /sourceComponent:|\bas Content\b|\bContent\s*\{/);
     assert.match(quotaLoader, /Component\.onCompleted: content\.setSource\(Qt\.resolvedUrl\("Content\.qml"\), \{/);
-    assert.doesNotMatch(quotaLoader, /onLoaded:|asynchronous:/);
+    assert.doesNotMatch(quotaLoader, /onLoaded:/);
+    assert.match(quotaLoader, /asynchronous: true/);
     const state = { loading: false, hasError: false, error: "" };
     const root = { shouldBeActive: false };
     let cached;
@@ -387,6 +388,7 @@ test("the lazy drawer retains its requested-or-visible lifetime and implicit geo
             assert.equal(vm.runInNewContext(active, { root: { shouldBeActive, visible } }), shouldBeActive || visible);
         }
     }
+    assert.match(quotaWrapper, /offsetScale: shouldBeActive && content\.status === Loader\.Ready \? 0 : 1/);
     assert.match(quotaWrapper, /visible: offsetScale < 1/);
     assert.match(quotaWrapper, /Behavior on offsetScale \{\n        Anim \{\}/);
     assert.match(quotaLoader, /anchors\.fill: parent/);
