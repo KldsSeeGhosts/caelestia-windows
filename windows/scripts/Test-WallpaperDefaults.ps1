@@ -53,7 +53,7 @@ $fixtures = @(
     [ordered]@{ name = 'wallpaper-restart'; source = 'windows/tests/WallpaperRestartTest.qml'
         marker = 'CAELESTIA_WALLPAPER_RESTART'; minimum = 25 },
     [ordered]@{ name = 'wallpaper-upgrade'; source = 'windows/tests/WallpaperUpgradeTest.qml'
-        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 18 },
+        marker = 'CAELESTIA_WALLPAPER_UPGRADE'; minimum = 30 },
     [ordered]@{ name = 'wallpaper-provenance'; source = 'windows/tests/WallpaperProvenanceTest.qml'
         marker = 'CAELESTIA_WALLPAPER_PROVENANCE'; minimum = 8 },
     [ordered]@{ name = 'wallpaper-record-retry'; source = 'windows/tests/WallpaperRecordRetryTest.qml'

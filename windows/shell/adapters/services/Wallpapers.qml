@@ -921,22 +921,29 @@ Singleton {
         }
     }
 
+    function noteWallpaperDesktopChange(): bool {
+        const desktop = Native.Wallpaper.currentDesktop;
+        if (!desktop || desktop === root.lastWallpaperDesktop)
+            return false;
+        const switched = !!root.lastWallpaperDesktop;
+        root.lastWallpaperDesktop = desktop;
+        if (switched)
+            desktopWallpaperSettle.restart();
+        return switched;
+    }
+
     Connections {
         target: root.sourceInitialized && !root.sourceFresh ? Native.Wallpaper : null
         function onCurrentDesktopChanged(): void {
-            const desktop = Native.Wallpaper.currentDesktop;
-            if (!desktop || desktop === root.lastWallpaperDesktop)
-                return;
-            if (root.lastWallpaperDesktop)
-                desktopWallpaperSettle.restart();
-            root.lastWallpaperDesktop = desktop;
+            root.noteWallpaperDesktopChange();
         }
     }
     Timer {
         id: desktopWallpaperSettle
         // DesktopLayer debounces Explorer's registry and wallpaper broadcasts
-        // for 500 ms. Leave time for delayed and repeated switch broadcasts.
-        interval: 1000
+        // for 500 ms and restarts its timer on repeated notifications. Leave
+        // margin for re-armed switch broadcasts without blocking Settings edits.
+        interval: 2000
     }
     Connections {
         target: Native.DesktopLayer
@@ -957,7 +964,12 @@ Singleton {
             // adoptPickedFile and are kept, including intentional black ones.
             if (WallpaperEngine.desktopHandedBack || !root.sourceInitialized)
                 return;
-            if (desktopWallpaperSettle.running || completion.active?.operation === "setWallpaper")
+            // Check currentDesktop synchronously too so a wallpaperChanged
+            // notification delivered ahead of currentDesktopChanged still
+            // arms the settle window instead of adopting the new desktop's
+            // Windows wallpaper.
+            if (root.noteWallpaperDesktopChange() || desktopWallpaperSettle.running
+                    || completion.active?.operation === "setWallpaper")
                 return;
             const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
             const globalChanged = !Paths.samePath(root.fileCurrent, next || root.fallback);

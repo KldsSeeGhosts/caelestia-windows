@@ -32,8 +32,13 @@ QtObject {
         onTriggered: root.checkSwitchBroadcast()
     }
 
+    property Timer delayedSwitchBroadcast: Timer {
+        interval: 900
+        onTriggered: root.checkDelayedSwitchBroadcast()
+    }
+
     property Timer settingsAfterSwitch: Timer {
-        interval: 700
+        interval: 800
         onTriggered: root.checkSettingsAfterSwitch()
     }
 
@@ -126,6 +131,21 @@ QtObject {
                 "a virtual desktop switch replaced the global pick");
             check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
                 "a virtual desktop switch replaced the display pick");
+            delayedSwitchBroadcast.start();
+        } catch (error) {
+            console.error("CAELESTIA_WALLPAPER_UPGRADE_FAIL " + error);
+            Qt.exit(1);
+        }
+    }
+
+    function checkDelayedSwitchBroadcast(): void {
+        try {
+            // 1400 ms after the switch (simulating a re-armed 500 ms native debounce).
+            Native.DesktopLayer.wallpaperChanged();
+            check(Wallpapers.fileCurrent === "C:/walls/picked2.jpg",
+                "a delayed virtual desktop switch broadcast replaced the global pick");
+            check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "a delayed virtual desktop switch broadcast replaced the display pick");
             settingsAfterSwitch.start();
         } catch (error) {
             console.error("CAELESTIA_WALLPAPER_UPGRADE_FAIL " + error);
