@@ -62,6 +62,13 @@ ShellRoot {
             throw new Error(description);
     }
 
+    function checkGrabTarget(target, label): void {
+        check(grab.windows.length === 1 && grab.windows[0] === target,
+            label + ": focus grab targets " + (target === focusWindow ? "the companion" : "the drawer host"));
+        check(grab.windows.every(window => window.visible),
+            label + ": every focus grab target is visible");
+    }
+
     function list(): var {
         const current = popouts.current;
         return current ? CUtils.findChild(current, "activeWindowWindowList") : null;
@@ -103,8 +110,7 @@ ShellRoot {
             check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
                 "closed popout: companion keyboardFocus is None");
             check(!focusWindow.focusable, "closed popout: companion is not focusable");
-            check(grab.windows.length === 1 && grab.windows[0] === focusWindow,
-                "closed popout: focus grab targets the companion");
+            checkGrabTarget(win, "closed popout");
 
             // Hover opens the shared popout without a pin.
             Services.RunningApps.previewGroupId = "fixture-app";
@@ -119,6 +125,7 @@ ShellRoot {
             check(!win.focusable, "hover open: window is not focusable");
             check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
                 "hover open: companion keyboardFocus is None");
+            checkGrabTarget(win, "hover open");
             popouts.hasCurrent = false;
             check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "hover close: keyboardFocus stays None");
 
@@ -139,26 +146,50 @@ ShellRoot {
                 "pinned: companion uses the overlay layer");
             check(focusWindow.color.a === 0, "pinned: companion background is transparent");
             check(focusWindow.surface === "popouts", "pinned: companion targets the popout");
-            check(focusWindow.width > 0 && focusWindow.width < win.width,
-                "pinned: companion is narrower than the monitor");
-            check(focusWindow.height > 0 && focusWindow.height < win.height,
-                "pinned: companion is shorter than the monitor");
+            check(focusWindow.width > 0 && focusWindow.width <= win.width - 2,
+                "pinned: companion is at least 2 px narrower than the monitor");
+            check(focusWindow.height > 0 && focusWindow.height <= win.height - 2,
+                "pinned: companion is at least 2 px shorter than the monitor");
             check(list().activeFocus, "pinned: the window list has active focus");
             check(list().Window.window === focusWindow.contentHost.Window.window,
                 "pinned: the popout list lives in the companion");
             check(popouts.pinned === true, "pinned: the popouts wrapper holds the pin");
+            checkGrabTarget(focusWindow, "pinned");
             keys.parent = focusWindow.contentHost;
             keys.keyClick(Qt.Key_Escape, Qt.NoModifier, 0);
-            step = 3;
-        } else if (step === 3) {
             check(!popouts.hasCurrent, "Escape closes the pinned popout");
             check(!popouts.pinned && !pill.pinned, "closing releases the pin");
+            check(popouts.usesFocusWindow, "closing: companion stays requested during exit");
+            check(focusWindow.surface === "popouts", "closing: companion surface survives close request");
+            check(focusWindow.visible, "closing: companion stays visible during exit");
+            check(popouts.content.Window.window === focusWindow.contentHost.Window.window,
+                "closing: popout content stays parented to the companion");
+            step = 3;
+        } else if (step === 3) {
+            const wrapper = content.interactionWrapper.panels.popoutsWrapper;
+            if (wrapper.offsetScale < 1) {
+                check(wrapper.offsetScale > 0, "closing: slide animation is progressing");
+                check(popouts.usesFocusWindow, "closing: companion remains requested");
+                check(focusWindow.surface === "popouts", "closing: companion surface is retained");
+                check(focusWindow.visible, "closing: companion remains visible");
+                check(popouts.content.Window.window === focusWindow.contentHost.Window.window,
+                    "closing: popout content remains in the companion");
+                check(Math.abs(popouts.content.x - popouts.slideOffset) <= 1,
+                    "closing: popout content preserves the animated slide offset");
+                check(Math.abs(popouts.content.width - popouts.nonAnimWidth) <= 1,
+                    "closing: popout content keeps its full animated width");
+            }
+            if (wrapper.offsetScale < 1 || focusWindow.surface !== "")
+                return;
+            check(!popouts.usesFocusWindow, "closed: companion request released");
             check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
                 "after Escape: the monitor-sized window stays None");
             check(!win.focusable, "after Escape: the monitor-sized window stays unfocusable");
             check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
                 "after Escape: companion keyboardFocus is None again");
             check(!focusWindow.focusable, "after Escape: companion is not focusable again");
+            check(!focusWindow.visible, "after Escape: companion is hidden again");
+            checkGrabTarget(win, "after Escape");
             console.log("CAELESTIA_PINNED_FOCUS_PASS " + assertions);
             Qt.quit();
         }

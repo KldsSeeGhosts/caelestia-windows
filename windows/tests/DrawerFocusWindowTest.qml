@@ -7,8 +7,9 @@ import Caelestia.Config
 import qs.modules.drawers
 
 // The launcher and session use the production ContentWindow and its card-sized
-// focus companion. The monitor-sized window must stay non-activating while the
-// companion owns keyboard focus, then both must return to None on Escape.
+// focus companion. Drawers without a companion must still provide a visible,
+// non-activating target for outside-click dismissal. The monitor-sized window
+// must stay non-activating throughout.
 ShellRoot {
     id: root
 
@@ -18,6 +19,7 @@ ShellRoot {
     property int step: 0
     property int attempts: 0
     property var input
+    property real sessionOpenLeft: 0
 
     readonly property var win: content
     readonly property var focusWindow: content.focusWindow
@@ -41,6 +43,13 @@ ShellRoot {
             throw new Error(description);
     }
 
+    function checkGrabTarget(target, label): void {
+        check(grab.windows.length === 1 && grab.windows[0] === target,
+            label + ": focus grab targets " + (target === focusWindow ? "the companion" : "the drawer host"));
+        check(grab.windows.every(window => window.visible),
+            label + ": every focus grab target is visible");
+    }
+
     function checkClosed(label): void {
         check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
             label + ": monitor-sized window keyboardFocus is None");
@@ -48,8 +57,7 @@ ShellRoot {
         check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
             label + ": companion keyboardFocus is None");
         check(!focusWindow.focusable, label + ": companion is not focusable");
-        check(grab.windows.length === 1 && grab.windows[0] === focusWindow,
-            label + ": focus grab targets the companion");
+        checkGrabTarget(win, label);
     }
 
     function checkOpen(surface, label): void {
@@ -65,12 +73,20 @@ ShellRoot {
         check(focusWindow.color.a === 0, label + ": companion background is transparent");
         check(focusWindow.surface === surface,
             label + ": companion targets " + surface);
-        check(focusWindow.width > 0 && focusWindow.width < win.width,
-            label + ": companion is narrower than the monitor");
-        check(focusWindow.height > 0 && focusWindow.height < win.height,
-            label + ": companion is shorter than the monitor");
-        check(grab.windows.length === 1 && grab.windows[0] === focusWindow,
-            label + ": focus grab targets the companion");
+        check(focusWindow.width > 0 && focusWindow.width <= win.width - 2,
+            label + ": companion is at least 2 px narrower than the monitor");
+        check(focusWindow.height > 0 && focusWindow.height <= win.height - 2,
+            label + ": companion is at least 2 px shorter than the monitor");
+        checkGrabTarget(focusWindow, label);
+    }
+
+    function checkDrawerHostGrab(label): void {
+        check(win.visible, label + ": drawer host is visible");
+        check(!focusWindow.visible, label + ": companion is hidden");
+        check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+            label + ": drawer host keyboardFocus stays None");
+        check(!win.focusable, label + ": drawer host stays unfocusable");
+        checkGrabTarget(win, label);
     }
 
     function checkGeometry(panel, label): void {
@@ -90,6 +106,9 @@ ShellRoot {
     Component.onCompleted: {
         GlobalConfig.launcher.enabled = true;
         GlobalConfig.session.enabled = true;
+        GlobalConfig.sidebar.enabled = true;
+        GlobalConfig.dashboard.enabled = true;
+        GlobalConfig.dashboard.showOnHover = false;
         content.screenState.bar = true;
         input = keyComponent.createObject(content.contentItem);
     }
@@ -146,12 +165,61 @@ ShellRoot {
             checkGeometry(content.interactionWrapper.panels.sessionWrapper, "session");
             check(logout.Window.window === focusWindow.contentHost.Window.window,
                 "session: controls live in the companion");
+            sessionOpenLeft = focusWindow.margins.left;
             input.keyClick(Qt.Key_Escape);
+            check(!content.screenState.session, "session: Escape requests close");
+            check(session.usesFocusWindow, "session: companion stays requested during exit");
+            check(focusWindow.surface === "session", "session: companion surface survives close request");
+            check(focusWindow.visible, "session: companion stays visible during exit");
+            check(logout.Window.window === focusWindow.contentHost.Window.window,
+                "session: controls stay parented to the companion during exit");
             step = 4;
         } else if (step === 4) {
+            const session = content.interactionWrapper.panels.session;
+            const wrapper = content.interactionWrapper.panels.sessionWrapper;
+            if (session.offsetScale < 1) {
+                check(session.offsetScale > 0, "session exiting: slide animation is progressing");
+                check(session.usesFocusWindow, "session exiting: companion remains requested");
+                check(focusWindow.surface === "session", "session exiting: companion surface is retained");
+                check(focusWindow.visible, "session exiting: companion remains visible");
+                check(focusWindow.margins.left > sessionOpenLeft,
+                    "session exiting: companion follows the slide offset");
+                checkGeometry(wrapper, "session exiting");
+                const logout = CUtils.findChild(focusWindow.contentHost, "logoutButton");
+                check(logout && logout.Window.window === focusWindow.contentHost.Window.window,
+                    "session exiting: controls remain parented to the companion");
+            }
             if (content.screenState.session || focusWindow.surface !== "")
                 return;
+            check(!session.usesFocusWindow, "session closed: companion request released");
             checkClosed("session closed");
+            content.screenState.sidebar = true;
+            step = 5;
+        } else if (step === 5) {
+            const sidebar = content.interactionWrapper.panels.sidebar;
+            if (sidebar.offsetScale > 0.001)
+                return;
+            checkDrawerHostGrab("sidebar");
+            content.screenState.sidebar = false;
+            step = 6;
+        } else if (step === 6) {
+            const sidebar = content.interactionWrapper.panels.sidebar;
+            if (sidebar.offsetScale < 1)
+                return;
+            content.screenState.dashboard = true;
+            step = 7;
+        } else if (step === 7) {
+            const dashboard = content.interactionWrapper.panels.dashboard;
+            if (dashboard.offsetScale > 0.001)
+                return;
+            checkDrawerHostGrab("dashboard");
+            content.screenState.dashboard = false;
+            step = 8;
+        } else if (step === 8) {
+            const dashboard = content.interactionWrapper.panels.dashboard;
+            if (dashboard.offsetScale < 1)
+                return;
+            checkDrawerHostGrab("drawers closed");
             console.log("CAELESTIA_DRAWER_FOCUS_PASS " + assertions);
             Qt.quit();
         }

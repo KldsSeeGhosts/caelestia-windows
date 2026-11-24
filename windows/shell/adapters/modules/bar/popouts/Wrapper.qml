@@ -46,6 +46,10 @@ Item {
     // below, so Escape and the arrow keys reach the popout. A hover-opened
     // popout never sets it and so never takes focus from the user's app.
     property bool pinned: false
+    readonly property real slideOffset: (-implicitWidth - 5) * offsetScale
+    readonly property bool usesFocusWindow: _usesFocusWindow
+    readonly property bool inFocusWindow: usesFocusWindow && focusWindow !== null
+    property bool _usesFocusWindow: false
 
     property string detachedMode
     property string queuedMode
@@ -100,10 +104,23 @@ Item {
     focus: hasCurrent
     Keys.onEscapePressed: root.close()
 
-    // A pin lasts only while its popout is open.
+    // A pin lasts only while its popout is open. Keep using the companion
+    // until the slide-off finishes even though the pin itself releases now.
+    onOffsetScaleChanged: {
+        if (!hasCurrent && offsetScale >= 1)
+            _usesFocusWindow = false;
+    }
     onHasCurrentChanged: {
         if (!hasCurrent)
             pinned = false;
+        else
+            _usesFocusWindow = pinned;
+    }
+    onPinnedChanged: {
+        if (pinned && hasCurrent)
+            _usesFocusWindow = true;
+        else if (hasCurrent)
+            _usesFocusWindow = false;
     }
     onCurrentNameChanged: {
         if (currentName !== "activewindow")
@@ -141,8 +158,11 @@ Item {
         id: content
 
         shouldBeActive: root.hasCurrent && !root.detachedMode
-        parent: root.focusWindow?.surface === "popouts" ? root.focusWindow.contentHost : root
-        anchors.fill: parent
+        parent: root.inFocusWindow ? root.focusWindow.contentHost : root
+        x: root.inFocusWindow ? root.slideOffset : 0
+        y: 0
+        width: root.inFocusWindow ? root.nonAnimWidth : root.width
+        height: root.inFocusWindow ? root.nonAnimHeight : root.height
 
         sourceComponent: Content {
             popouts: popoutState

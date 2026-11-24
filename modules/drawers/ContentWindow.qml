@@ -40,9 +40,9 @@ StyledWindow {
         readonly property bool launcherFocus: root.interactionEnabled
             && root.screenState.launcher && root.contentItem.Config.launcher.enabled
         readonly property bool sessionFocus: root.interactionEnabled
-            && root.screenState.session && root.contentItem.Config.session.enabled
+            && panels.session.usesFocusWindow
         readonly property bool popoutFocus: root.interactionEnabled
-            && panels.popouts.pinned && panels.popouts.hasCurrent
+            && panels.popouts.usesFocusWindow
         readonly property string surface: launcherFocus ? "launcher"
             : sessionFocus ? "session" : popoutFocus ? "popouts" : ""
         readonly property Item target: surface === "launcher" ? panels.launcher
@@ -50,9 +50,11 @@ StyledWindow {
             : surface === "popouts" ? panels.popoutsWrapper : null
         readonly property bool active: surface !== "" && target !== null
         readonly property real targetWidth: !target ? 0
-            : Math.max(1, target.width > 0 ? target.width : target.implicitWidth)
+            : Math.max(1, Math.min(screen.width - 2,
+                target.width > 0 ? target.width : target.implicitWidth))
         readonly property real targetHeight: !target ? 0
-            : Math.max(1, target.height > 0 ? target.height : target.implicitHeight)
+            : Math.max(1, Math.min(screen.height - 2,
+                target.height > 0 ? target.height : target.implicitHeight))
         property bool pointerHovered: false
 
         readonly property alias contentHost: focusContent
@@ -227,7 +229,10 @@ StyledWindow {
                 return true;
             return false;
         }
-        windows: [root.focusWindow]
+        // The companion is hidden for the sidebar, dashboard and nested tray
+        // menus. Target the monitor-sized host in that case so the native grab
+        // still starts; it remains WindowDoesNotAcceptFocus and WS_EX_NOACTIVATE.
+        windows: drawerFocusWindow.active ? [drawerFocusWindow] : [root]
         onCleared: {
             root.screenState.launcher = false;
             root.screenState.session = false;

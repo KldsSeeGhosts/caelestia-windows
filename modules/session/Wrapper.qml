@@ -11,14 +11,18 @@ Item {
     required property bool sidebarVisible
     property var focusWindow: null
     readonly property real nonAnimWidth: content.implicitWidth
-    readonly property bool usesFocusWindow: focusWindow?.surface === "session"
 
     readonly property bool shouldBeActive: screenState.session && Config.session.enabled
     property real offsetScale: shouldBeActive ? 0 : 1
     property real sidebarOffset: sidebarVisible ? 14 : 0
+    readonly property real slideOffset: (-implicitWidth - 5 - sidebarOffset) * offsetScale
+    // Keep the loader in the companion until the animated exit has finished.
+    // The companion follows this wrapper's slide offset through its geometry.
+    readonly property bool usesFocusWindow: focusWindow !== null
+        && (shouldBeActive || visible)
 
     visible: offsetScale < 1
-    anchors.rightMargin: (-implicitWidth - 5 - sidebarOffset) * offsetScale
+    anchors.rightMargin: slideOffset
     implicitWidth: content.implicitWidth
     implicitHeight: content.implicitHeight || 510 // Hard coded fallback for first open
     width: implicitWidth
