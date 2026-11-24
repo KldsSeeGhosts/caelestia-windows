@@ -446,18 +446,20 @@ ShellRoot {
         // from the screen edge. The selection is 20, 30, 60 x 40 and the screen is
         // offscreen at a device pixel ratio of 1.
         const bar = find(editorItem, "editorToolbar");
-        const pencil = find(bar, "editorTool-pencil");
+        const pencil = find(bar, "editorTool-select");
         const margin = Tokens.spacing.small;
         const padding = Tokens.padding.small;
         check(pencil !== null && pencil.width > 0 && pencil.width === pencil.height, "the tool buttons are square, from IconButton: " + pencil.width);
         check(bar.height === pencil.height + 2 * padding, "the bar is a button plus the padding: " + bar.height);
         check(bar.y === 70 + Tokens.spacing.small && bar.x === margin, "below the selection by the gap, and the margin from the edge: " + bar.x + ", " + bar.y);
-        check(bar.width > 10 * pencil.width, "wide enough for every item: " + bar.width);
-        for (const id of ["pencil", "highlighter", "line", "arrow", "rect", "circle"]) {
-            const button = find(bar, "editorTool-" + id);
+        check(bar.width > 8 * pencil.width && bar.width < 18 * pencil.width, "compact, yet wide enough for every item: " + bar.width);
+        for (const id of ["select", "Group-0", "Group-1", "Group-2"]) {
+            const button = find(bar, "editorTool" + (id === "select" ? "-select" : id));
             check(button !== null && button.width === pencil.width && button.height === pencil.height, "the same size button for " + id);
             check(button.stateLayer !== undefined && button.type === IconButton.Text, id + " is a Caelestia IconButton");
         }
+        check(find(bar, "editorTool-pencil") === null && find(bar, "editorTool-text") === null && find(bar, "editorTool-blur") === null,
+            "individual tools stay in their flyouts until a group is opened");
         for (const name of ["editorColor", "editor-undo", "editor-redo", "editor-save", "editor-close"])
             check(find(bar, name) !== null && find(bar, name).width === pencil.width && find(bar, name).height === pencil.height, "the " + name + " button");
         for (const name of ["editor-clear", "editor-copy"])
@@ -467,14 +469,31 @@ ShellRoot {
         const copyLabel = find(bar, "editor-copy").label;
         check(copyLabel.text === "Copy" && copyLabel.font.pointSize === Tokens.font.body.small.pointSize
             && copyLabel.font.family === Tokens.font.body.small.family, "Copy is set in the shell's body font");
-        for (const name of ["editorTool-pencil", "editorTool-circle", "editorColor", "editor-undo", "editor-redo", "editor-clear", "editor-save", "editor-copy", "editor-close"]) {
+        for (const name of ["editorTool-select", "editorToolGroup-0", "editorToolGroup-1", "editorToolGroup-2", "editorColor", "editor-undo", "editor-redo", "editor-clear", "editor-save", "editor-copy", "editor-close"]) {
             const item = find(bar, name);
             check(Number.isInteger(item.x) && Number.isInteger(item.y) && Number.isInteger(item.width) && Number.isInteger(item.height),
                 name + " is on whole pixels at a ratio of 1");
         }
-        check(find(bar, "editorTool-text") === null && find(bar, "editorTool-blur") === null, "no tool from a later part");
         check(find(bar, "editor-undo").disabled && find(bar, "editor-redo").disabled, "undo and redo are off with nothing drawn");
         toolsStep(window, area);
+    }
+
+    function clickEditorTool(window, bar, id): void {
+        if (id === "select") {
+            find(bar, "editorTool-select").clicked();
+            return;
+        }
+        const groups = { pencil: 0, highlighter: 0, line: 1, arrow: 1, rect: 1, circle: 1, text: 2, step: 2, blur: 2 };
+        const group = groups[id];
+        check(group !== undefined, "known editor tool " + id);
+        find(bar, "editorToolGroup-" + group).clicked();
+        check(picker.editor.toolMenu === group, "the group button opens flyout " + group);
+        const flyout = find(window.contentItem, "editorToolFlyout");
+        check(flyout !== null, "the flyout exists");
+        const button = find(flyout, "editorTool-" + id);
+        check(button !== null, id + " is in the flyout");
+        button.clicked();
+        check(picker.editor.toolMenu === -1, "choosing the tool closes the flyout");
     }
 
     function toolsStep(window, area): void {
@@ -482,16 +501,18 @@ ShellRoot {
         const bar = find(window.contentItem, "editorToolbar");
         check(editor.tool === "pencil" && editor.color === "#FF4444" && editor.size === 3, "Pencil, red, 3 px to begin with");
 
-        // Each button picks its tool, and so does its key.
-        for (const id of ["highlighter", "line", "arrow", "rect", "circle", "pencil"]) {
-            find(bar, "editorTool-" + id).clicked();
+        // Each flyout button picks its tool, and so does its key.
+        for (const id of ["highlighter", "line", "arrow", "rect", "circle", "text", "step", "blur", "pencil"]) {
+            clickEditorTool(window, bar, id);
             check(editor.tool === id, "the " + id + " button picks " + id);
         }
-        const keys = { H: "highlighter", L: "line", A: "arrow", R: "rect", C: "circle", P: "pencil" };
+        clickEditorTool(window, bar, "select");
+        check(editor.tool === "select", "Select is on the compact bar");
+        const keys = { H: "highlighter", L: "line", A: "arrow", R: "rect", C: "circle", P: "pencil", T: "text", N: "step", B: "blur", V: "select" };
         for (const letter of Object.keys(keys)) {
             check(picker.editorKey(letter.charCodeAt(0), false, false, false) && editor.tool === keys[letter], "the key " + letter + " picks " + keys[letter]);
         }
-        check(picker.editorKey(0x54, false, false, false) === false && editor.tool === "pencil", "T is not a tool in this part");
+        editor.setTool("pencil");
 
         // Draw with every tool, in region coordinates.
         const drawings = {
@@ -649,6 +670,11 @@ ShellRoot {
         find(popover, "editorSize-S").clicked();
         check(editor.size === 2 && editor.inkOpen, "S is 2 px, and the popover stays open");
         check(find(popover, "editorSize-S").internalChecked && !find(popover, "editorSize-M").internalChecked, "S looks chosen now");
+        check(find(popover, "editorFill-outline") !== null && find(popover, "editorFill-filled") !== null, "the popover has the fill segments");
+        find(popover, "editorFill-filled").clicked();
+        check(editor.fill && find(popover, "editorFill-filled").internalChecked, "Filled is chosen and visible");
+        find(popover, "editorFill-outline").clicked();
+        check(!editor.fill && find(popover, "editorFill-outline").internalChecked, "Outline is chosen and visible");
 
         // Esc closes the popover first and the editor second.
         area.dismissByKey();
@@ -674,6 +700,94 @@ ShellRoot {
         check(!picker.closing && picker.editing, "a right press does not close the editor");
         area.moveTo(100, 100);
         check(area.rsx === 20 && area.sw === 60, "moving the pointer does not retarget the selection");
+        editingToolsStep(window, area);
+    }
+
+    // The image-editor tools over the same small selection: fill, constraints,
+    // blur, numbered steps, text, select/move/style/delete and quick erase.
+    function editingToolsStep(window, area): void {
+        const editor = picker.editor;
+        const editorItem = find(window.contentItem, "captureEditor");
+        const count = editor.strokes.length;
+
+        editor.setFill(true);
+        editor.setTool("rect");
+        editor.pressAt(35, 25);
+        editor.moveTo(55, 38);
+        editor.releaseAt();
+        check(editor.strokes.length === count + 1 && editor.strokes[count].fill === true, "filled rectangles are committed with their fill state");
+        check(picker.editorKey(0x46, false, false, false) && editor.fill === false, "F toggles the fill style off");
+
+        editor.setTool("line");
+        editor.pressAt(1, 1);
+        editor.moveTo(20, 19, true);
+        check(Math.abs(Math.abs(editor.draft.stroke.x2 - 1) - Math.abs(editor.draft.stroke.y2 - 1)) < 0.001,
+            "Shift constrains a line toward 45 degrees");
+        editor.abandon();
+
+        editor.setTool("blur");
+        editor.pressAt(20, 2);
+        editor.moveTo(32, 12);
+        editor.releaseAt();
+        check(editor.strokes[editor.strokes.length - 1].tool === "blur", "a blur rectangle is committed");
+        check(findAll(find(window.contentItem, "areaPickerAnnotations"), "annotationPrimitive").length >= count + 2,
+            "the annotation layer includes the new primitives");
+
+        editor.setTool("step");
+        editor.setSize(0);
+        editor.pressAt(4, 35);
+        editor.pressAt(25, 35);
+        const steps = () => editor.strokes.filter(stroke => stroke.tool === "step").map(stroke => stroke.step);
+        check(steps().join() === "1,2", "steps number themselves in order: " + steps());
+        check(editor.eraseAt(25, 35), "right-click quick erase hit the second step");
+        check(steps().join() === "1", "erase is immediate");
+        editor.undo();
+        check(steps().join() === "1,2", "and undoable, with the numbering restored");
+
+        editor.setTool("text");
+        editor.pressAt(2, 18);
+        check(editor.textEditing && find(window.contentItem, "captureEditorTextInput") !== null, "clicking places inline text");
+        editor.updateText("Note");
+        check(picker.editorKey(0x50, false, false, false) === false && editor.tool === "text", "typing state swallows single-letter shortcuts");
+        check(editor.shortcut(0x53, true, false, false) === "save", "Ctrl+S is still exported while text is being typed");
+        check(editor.shortcut(0x43, true, false, false) === "copy", "Ctrl+C is still exported while text is being typed");
+        check(editor.shortcut(0x5a, true, false, false) === "", "Ctrl+Z stays with the draft text");
+        check(editor.commitText() && editor.strokes[editor.strokes.length - 1].text === "Note", "Enter or outside commit creates the text annotation");
+        editor.pressAt(8, 18);
+        editor.updateText("Discard");
+        check(editor.escapePressed() && !editor.textEditing, "Escape cancels active text first");
+        check(editor.strokes.filter(stroke => stroke.tool === "text").length === 1, "cancelled text is not committed");
+
+        editor.setTool("select");
+        editor.pressAt(50, 30);
+        check(editor.selectedStroke && editor.selectedStroke.tool === "rect", "Select hits the filled rectangle");
+        check(find(editorItem, "captureEditorSelection").visible, "and shows its bounds");
+        editor.moveTo(55, 34);
+        editor.releaseAt();
+        check(Math.abs(editor.selectedStroke.x1 - 40) < 0.001 && Math.abs(editor.selectedStroke.y1 - 29) < 0.001,
+            "dragging moves the annotation: " + editor.selectedStroke.x1 + ", " + editor.selectedStroke.y1);
+        editor.setColor(0);
+        editor.setSize(1);
+        editor.setFill(false);
+        check(editor.selectedStroke.color === "#FF4444" && editor.selectedStroke.size === 4 && editor.selectedStroke.fill === false,
+            "the style popover edits the selected annotation");
+        check(picker.editorKey(0x01000007, false, false, false) && !editor.strokes.some(stroke => stroke.tool === "rect" && stroke.color === "#FF4444"),
+            "Delete removes the selection");
+        editor.undo();
+        check(editor.strokes.some(stroke => stroke.tool === "rect" && stroke.color === "#FF4444"), "and undo restores it");
+        editor.pressAt(45, 35);
+        editor.releaseAt();
+        check(editor.selectedStroke?.tool === "rect", "selecting it again gives Escape a selection to clear");
+        area.dismissByKey();
+        check(editor.selectedId === -1 && picker.editing && !picker.closing, "Escape deselects before closing the editor");
+
+        // Save expects the one line left by the clear test. Reset the fixture state
+        // and recreate exactly that annotation.
+        editor.reset();
+        editor.setTool("line");
+        editor.pressAt(5, 5);
+        editor.moveTo(30, 30);
+        editor.releaseAt();
         saveStep(window, area);
     }
 

@@ -148,9 +148,11 @@ MouseArea {
     function exportEdit(kind: string): void {
         if (!editsHere || owner.saving || owner.closing || !composed.Window.window)
             return;
-        // A stroke still under the pointer is not part of the image.
+        // A stroke still under the pointer is not part of the image. Active text
+        // is committed first, so Ctrl+S and Ctrl+C keep what is already typed.
+        editor.commitText();
         editor.abandon();
-        editor.inkOpen = false;
+        editor.closePopovers();
         if (owner.editPath) {
             if (kind === "done" && owner.finishUnchanged())
                 return;
@@ -205,15 +207,22 @@ MouseArea {
             return;
         }
         if (!editPixels.grabToImage(grab => {
-            if (session !== o.session)
+            if (session !== o.session) {
+                o.removeTemp(path);
                 return;
+            }
             if (needsResize) {
                 // Not every physical size is attainable using whole logical
                 // pixels at fractional DPR. Correct it before saving the PNG.
                 // Give Canvas.save a file:// base instead of Quickshell's
                 // virtual import URL. This component does not use singletons.
                 exactExport.setSource(FileUrls.fromLocalPath(Quickshell.shellPath("modules/areapicker/ExactPng.qml")),
-                    { grab, path, pixels, dpr, complete: ok => o.reopenedExportFinished(session, kind, path, ok) });
+                    { grab, path, pixels, dpr, complete: ok => {
+                        if (session === o.session)
+                            o.reopenedExportFinished(session, kind, path, ok);
+                        else
+                            o.removeTemp(path);
+                    } });
             } else {
                 o.reopenedExportFinished(session, kind, path, grab.saveToFile(path));
             }
@@ -265,10 +274,11 @@ MouseArea {
         clearSelection();
         if (owner.editPath && editsHere) {
             owner.editPicker = root;
-            editor.scale = dpr;
+            editor.scale = owner.editInfo?.dpr > 0 ? owner.editInfo.dpr : dpr;
             const row = owner.restoredEdit;
             if (row?.strokes?.length)
                 editor.restore(row.strokes, editRegion.width / row.canvasWidth);
+            owner.openedEdit = editor.history;
         }
         forceActiveFocus();
     }
@@ -291,11 +301,15 @@ MouseArea {
     function pressAt(button: int, x: real, y: real): void {
         if (owner.editing) {
             // The editor's own surfaces take their presses before this one. A left
-            // press that gets here is outside the selection and the toolbar: it
-            // closes an open popover, and otherwise ends the editor. A right
-            // press does nothing. It is for the eraser, which comes later.
-            if (button === Qt.LeftButton && !owner.saving && !owner.closing)
-                owner.dismiss();
+            // press that gets here is outside the selection and the toolbar. It
+            // first commits active text, then ends the editor. A right press does
+            // nothing here; right-click erase is inside the selection canvas.
+            if (button === Qt.LeftButton && !owner.saving && !owner.closing) {
+                if (editor.textEditing)
+                    editor.commitText();
+                else
+                    owner.dismiss();
+            }
             return;
         }
         if (button === Qt.RightButton) {
@@ -405,12 +419,29 @@ MouseArea {
                 }
             }
 
+            // The annotation-sized pixels under the editor. Live captures crop
+            // the frozen screen view; reopened captures crop the PNG image. Blur
+            // annotations sample this texture, so they export exactly as drawn.
+            ShaderEffectSource {
+                id: blurBase
+
+                width: parent.width
+                height: parent.height
+                visible: false
+                live: true
+                sourceItem: root.owner.editPath ? editImage : view.item
+                sourceRect: root.owner.editPath
+                    ? Qt.rect(0, 0, editImage.width, editImage.height)
+                    : Qt.rect(root.editRegion.x, root.editRegion.y, root.editRegion.width, root.editRegion.height)
+            }
+
             Annotations {
                 objectName: "areaPickerAnnotations"
                 anchors.fill: parent
                 strokes: root.editor.strokes
                 draft: root.editor.draft
                 revision: root.editor.revision
+                base: blurBase
             }
         }
     }

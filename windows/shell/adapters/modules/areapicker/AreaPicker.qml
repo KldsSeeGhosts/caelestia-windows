@@ -60,7 +60,10 @@ Scope {
     property var editInfo: null
     property int editSerial
     property string editHistoryId
+    // The Windows clipboard-history item for the thumbnail this edit came from.
+    property string editClipboardId
     property var restoredEdit: null
+    property var openedEdit: null
     property var committedEdit: null
     property bool editingSaved
     // The tool state and annotations, shared by every screen's window.
@@ -89,10 +92,18 @@ Scope {
     // Needs a local file path. Fixtures replace it with a recorder so that no
     // test writes the real clipboard.
     property var clipboard: Native.ClipboardWriter
+    // Windows clipboard history, injectable so fixtures never touch WinRT.
+    property var clipboardHistory: ClipboardHistory
     property int copyOperation
     property int copySession
     property var copyInfo: null
     property string copyPreview: ""
+    // Mutable handoff for the clipboard-history correlation owned by Thumbnails.
+    property var copyTrack: null
+    // Detached edited Done copies that cannot use a thumbnail. Each value has
+    // the clipboard history item it replaces and whether Thumbnails manages that
+    // replacement itself.
+    property var detachedImageWrites: ({})
     // Shows the finished capture. Thumbnails.qml registers itself with CaptureUi;
     // fixtures replace it, and without one no thumbnail is shown.
     property var thumbnails: CaptureUi.thumbnails
@@ -268,7 +279,7 @@ Scope {
         editing = true;
     }
 
-    function reopenCapture(path: string, info: var, serial: int, historyId = "", saved = false): bool {
+    function reopenCapture(path: string, info: var, serial: int, historyId = "", saved = false, clipboardId = ""): bool {
         const screen = screenNames.includes(info.screen) ? info.screen : screenNames[0];
         if (!interactionEnabled || opened || !screen)
             return false;
@@ -288,7 +299,9 @@ Scope {
         editInfo = Object.assign({}, info, { screen });
         editSerial = serial;
         editHistoryId = historyId;
+        editClipboardId = clipboardId;
         restoredEdit = row;
+        openedEdit = null;
         editingSaved = saved || !!row?.exportPath;
         editScreen = screen;
         openScreenNames = screenNames;
@@ -321,7 +334,9 @@ Scope {
         editInfo = null;
         editSerial = 0;
         editHistoryId = "";
+        editClipboardId = "";
         restoredEdit = null;
+        openedEdit = null;
         committedEdit = null;
         editingSaved = false;
         if (path)
@@ -337,19 +352,19 @@ Scope {
         closing = true;
     }
 
-    // Esc first closes the colour popover, then the editor.
+    // Esc first cancels text, closes a popover or flyout and clears a selection,
+    // then closes the editor.
     function dismiss(): void {
-        if (editing && editor.inkOpen && !saving)
-            editor.inkOpen = false;
-        else
-            cancel();
+        if (editing && !saving && editor.escapePressed())
+            return;
+        cancel();
     }
 
     // The editor's keys, for any screen's window. Returns whether the key was used.
     function editorKey(key: int, ctrl: bool, shift: bool, alt: bool): bool {
         if (!editing || closing || saving || !editPicker)
             return false;
-        if (!ctrl && !alt && !editor.inkOpen && editPath && history && (key === Qt.Key_Return || key === Qt.Key_Enter)) {
+        if (!ctrl && !alt && !editor.inkOpen && editor.toolMenu < 0 && !editor.textEditing && editPath && history && (key === Qt.Key_Return || key === Qt.Key_Enter)) {
             editPicker.exportEdit("done");
             return true;
         }
@@ -401,16 +416,36 @@ Scope {
             return;
         }
         if (ok && kind === "done") {
-            const id = keepEdited(path, info);
-            if (thumbnails?.addCapture(info, path, id, editSerial)) {
+            if (editUnchanged()) {
+                removeTemp(path);
                 activeTemp = "";
                 closeAfterDone();
                 return;
             }
-            if (id) {
+            const id = keepEdited(path, info);
+            if (!id) {
+                saveFailed(started, Tr.tr("The edit could not be kept."));
+                return;
+            }
+            if (thumbnails?.addCapture(info, path, id, editSerial)) {
+                const entry = thumbnails.entryForSerial(thumbnails.lastId);
+                if (entry) {
+                    // Until the edited copy succeeds, the old item is still the
+                    // one this replacement can discard. copyEntry clears and
+                    // replaces it after the clipboard write completes.
+                    entry.clipboardHistoryId = editClipboardId;
+                    entry.replaceClipboardId = editClipboardId;
+                    thumbnails.copyEntry(entry);
+                }
+                activeTemp = "";
                 closeAfterDone();
                 return;
             }
+            if (copyEditedDetached(path, editClipboardId))
+                closeAfterDone();
+            else
+                saveFailed(started, Tr.tr("The image could not be copied."));
+            return;
         }
         if (ok) {
             const saved = thumbnails?.saveExport(path, saveRoot);
@@ -431,9 +466,16 @@ Scope {
         return id;
     }
 
+    function sameEdit(left: var, right: var): bool {
+        return !!left && !!right && JSON.stringify(left.strokes ?? []) === JSON.stringify(right.strokes ?? []);
+    }
+
+    function editUnchanged(): bool {
+        return !!editPath && (sameEdit(committedEdit, editor.history) || sameEdit(openedEdit, editor.history));
+    }
+
     function finishUnchanged(): bool {
-        if (!committedEdit || committedEdit !== editor.history
-            || !thumbnails?.entries?.some(entry => entry.serial === editSerial))
+        if (!editUnchanged())
             return false;
         closeAfterDone();
         return true;
@@ -451,9 +493,21 @@ Scope {
         if (started !== session)
             return;
         const id = keepEdited(path, info, path);
+        const changedEdit = editPath && !editUnchanged();
         if (thumbnails && info && thumbnails.addSaved(info, path, id, editPath ? editSerial : -1)) {
             if (editPath)
                 editSerial = thumbnails.lastId;
+            if (changedEdit) {
+                const entry = thumbnails.entryForSerial(thumbnails.lastId);
+                if (entry) {
+                    if (editClipboardId)
+                        entry.replaceClipboardId = editClipboardId;
+                    thumbnails.copyEntry(entry, false, id => {
+                        if (editPath)
+                            editClipboardId = id;
+                    });
+                }
+            }
         }
         if (history || (thumbnails && !thumbnails.enabled))
             Toaster.toast(Tr.tr("Screenshot saved"), Tr.tr("Saved to %1").arg(path), "screenshot_region");
@@ -484,24 +538,83 @@ Scope {
         copySession = started;
         copyInfo = info;
         saving = true;
+        const replaceClipboardId = editPath && editClipboardId && !editUnchanged() ? editClipboardId : "";
+        copyTrack = { serial: 0, replaceClipboardId, managed: false };
+        const track = copyTrack;
         copyOperation = clipboard.copyImageFile(path);
+        if (copyOperation && thumbnails?.registerClipboardWrite) {
+            track.managed = true;
+            thumbnails.registerClipboardWrite(copyOperation, null, {
+                replaceClipboardId,
+                onCorrelated: id => copyClipboardCorrelated(track, id)
+            });
+        }
         removeTemp(path);
         activeTemp = "";
     }
 
+    // Done must copy even when no thumbnail can present the result. The
+    // writer has already opened the hand-over file when it returns, so the
+    // editor may close while this detached write finishes.
+    function copyEditedDetached(path: string, replaceClipboardId: string): bool {
+        const operation = clipboard.copyImageFile(path);
+        if (!operation)
+            return false;
+        const managed = !!thumbnails?.registerClipboardWrite;
+        if (managed)
+            thumbnails.registerClipboardWrite(operation, null, ({ replaceClipboardId }));
+        const writes = Object.assign({}, detachedImageWrites);
+        writes[operation] = { replaceClipboardId: replaceClipboardId, managed: managed };
+        detachedImageWrites = writes;
+        return true;
+    }
+
+    function copyClipboardCorrelated(track: var, id: string): void {
+        if (!track)
+            return;
+        if (editPath)
+            editClipboardId = id;
+        const entry = thumbnails?.entryForSerial?.(track.serial);
+        if (entry)
+            entry.clipboardHistoryId = id;
+    }
+
     Connections {
-        target: root.clipboard
+        target: root.clipboard || null
         function onWriteFinished(id: int, ok: bool, error: string): void {
+            const detachedWrite = root.detachedImageWrites[id];
+            if (detachedWrite) {
+                const writes = Object.assign({}, root.detachedImageWrites);
+                delete writes[id];
+                root.detachedImageWrites = writes;
+                if (!ok) {
+                    Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be copied."), "screenshot_region", Toast.Error);
+                    return;
+                }
+                if (!detachedWrite.managed && detachedWrite.replaceClipboardId)
+                    root.clipboardHistory?.remove?.(detachedWrite.replaceClipboardId);
+                return;
+            }
             if (!root.copyOperation || id !== root.copyOperation || root.copySession !== root.session || !root.opened || root.closing)
                 return;
             if (!ok) {
                 root.saveFailed(root.copySession, Tr.tr("The image could not be copied."));
                 return;
             }
-            const unchanged = root.committedEdit && root.committedEdit === root.editor.history;
+            const unchanged = root.editPath && root.editUnchanged();
             const historyId = !unchanged && root.copyPreview ? root.keepEdited(root.copyPreview, root.copyInfo) : root.editHistoryId;
+            if (root.copyTrack?.replaceClipboardId) {
+                if (!root.copyTrack.managed)
+                    root.clipboardHistory?.remove?.(root.copyTrack.replaceClipboardId);
+                if (root.editClipboardId === root.copyTrack.replaceClipboardId)
+                    root.editClipboardId = "";
+            }
             if (!unchanged && root.thumbnails && root.copyInfo && root.copyPreview
                 && root.thumbnails.addCopy(root.copyInfo, root.copyPreview, historyId, root.editPath ? root.editSerial : -1)) {
+                if (root.copyTrack) {
+                    root.copyTrack.serial = root.thumbnails.lastId;
+                    root.thumbnails.updateClipboardWriteSerial?.(root.copyOperation, root.copyTrack.serial);
+                }
                 if (root.editPath) {
                     root.editSerial = root.thumbnails.lastId;
                     root.committedEdit = root.editor.history;

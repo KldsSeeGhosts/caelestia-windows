@@ -63,7 +63,14 @@ Scope {
     property var screenList: Screens.screens
     // Needs a local file path. Fixtures replace it with a recorder.
     property var clipboard: Native.ClipboardWriter
+    // Windows clipboard history, injectable so fixtures never touch WinRT.
+    property var clipboardHistory: ClipboardHistory
     property int copyTimeout: 10000
+    // Clipboard History learns about a successful write asynchronously. Writes
+    // are correlated only with a changed top image inside this bounded window.
+    property int clipboardCorrelationMs: 1500
+    property var clipboardWrites: ({})
+    property var clipboardCorrelations: []
     // Opens a file or folder URL with the default application. Fixtures replace
     // it with a recorder so that no test starts a program.
     property var openUrl: url => Qt.openUrlExternally(url)
@@ -233,6 +240,15 @@ Scope {
         });
         if (!entry)
             return false;
+        if (previous) {
+            // A replacement represents the same capture while an edit is saved
+            // or copied. Keep its clipboard identity until a successful edited
+            // copy supersedes it.
+            if (!entry.clipboardHistoryId)
+                entry.clipboardHistoryId = previous.clipboardHistoryId;
+            if (!entry.replaceClipboardId)
+                entry.replaceClipboardId = previous.replaceClipboardId;
+        }
         if (previous?.screen === info.screen) {
             entries = entries.map(other => other === previous ? entry : other);
         } else {
@@ -275,8 +291,195 @@ Scope {
     }
 
     function copyOutput(path: string): bool {
+        const token = clipboardToken();
         detachedCopy = clipboard.copyImageFile(path);
+        if (detachedCopy > 0)
+            registerClipboardWrite(detachedCopy, null, ({ token }));
         return detachedCopy > 0;
+    }
+
+    function clipboardItems(): var {
+        const items = clipboardHistory?.items;
+        if (!items)
+            return [];
+        return Array.isArray(items) ? items : Array.from(items);
+    }
+
+    function topClipboardImage(): var {
+        const items = clipboardItems();
+        if (!items.length)
+            return null;
+        const top = items[0];
+        const kind = String(top?.kind ?? top?.type ?? "");
+        return kind === "image" && String(top?.id ?? "") ? top : null;
+    }
+
+    function clipboardToken(): var {
+        const known = ({});
+        for (const item of clipboardItems()) {
+            const id = String(item?.id ?? "");
+            if (id)
+                known[id] = true;
+        }
+        return { knownIds: known, previousTop: String(topClipboardImage()?.id ?? ""), started: Date.now() };
+    }
+
+    function removeClipboardItem(id: string): void {
+        if (id && clipboardHistory?.remove)
+            clipboardHistory.remove(id);
+    }
+
+    function entryForSerial(serial: int): var {
+        return serial > 0 ? entries.find(entry => entry.serial === serial) ?? null : null;
+    }
+
+    // Records one clipboard operation before it starts. The record lives apart
+    // from the card so an explicit discard can still remove a history item that
+    // appears after the card object has been retired.
+    function registerClipboardWrite(operation: int, entry: var, options = ({})): void {
+        if (operation <= 0)
+            return;
+        const write = {
+            operation: operation,
+            token: options.token ?? clipboardToken(),
+            serial: entry?.serial ?? 0,
+            discardOnSuccess: false,
+            replaceClipboardId: String(options.replaceClipboardId ?? ""),
+            onCorrelated: options.onCorrelated ?? null
+        };
+        const writes = Object.assign({}, clipboardWrites);
+        writes[operation] = write;
+        clipboardWrites = writes;
+    }
+
+    // Picker-managed copies learn their replacement card's serial only after the
+    // write has already started. Keep the live write record in step so discard
+    // before correlation can still match that card.
+    function updateClipboardWriteSerial(operation: int, serial: int): void {
+        if (operation <= 0 || serial <= 0)
+            return;
+        const current = clipboardWrites[operation];
+        if (current && current.serial !== serial) {
+            const writes = Object.assign({}, clipboardWrites);
+            writes[operation] = Object.assign({}, current, { serial: serial });
+            clipboardWrites = writes;
+        }
+        let changed = false;
+        const correlations = clipboardCorrelations.map(write => {
+            if (write.operation !== operation || write.serial === serial)
+                return write;
+            changed = true;
+            return Object.assign({}, write, { serial: serial });
+        });
+        if (changed)
+            clipboardCorrelations = correlations;
+    }
+
+    function completeClipboardWrite(operation: int, ok: bool): var {
+        const write = clipboardWrites[operation];
+        if (!write)
+            return null;
+        const writes = Object.assign({}, clipboardWrites);
+        delete writes[operation];
+        clipboardWrites = writes;
+        if (!ok)
+            return write;
+        if (write.replaceClipboardId) {
+            removeClipboardItem(write.replaceClipboardId);
+            const entry = entryForSerial(write.serial);
+            if (entry?.clipboardHistoryId === write.replaceClipboardId)
+                entry.clipboardHistoryId = "";
+            if (entry?.replaceClipboardId === write.replaceClipboardId)
+                entry.replaceClipboardId = "";
+        }
+        if (clipboardHistory?.retain) {
+            clipboardHistory.retain();
+            write.retained = true;
+        }
+        write.token.started = Date.now();
+        clipboardCorrelations = clipboardCorrelations.concat([write]);
+        Qt.callLater(processClipboardCorrelations);
+        return write;
+    }
+
+    function releaseClipboardCorrelation(write: var): void {
+        if (!write?.retained)
+            return;
+        write.retained = false;
+        clipboardHistory?.release?.();
+    }
+
+    function markClipboardDiscard(entry: var): void {
+        const operation = entry.copyOperation;
+        if (operation && clipboardWrites[operation]) {
+            const writes = Object.assign({}, clipboardWrites);
+            writes[operation] = Object.assign({}, writes[operation], { discardOnSuccess: true });
+            clipboardWrites = writes;
+        }
+        let changed = false;
+        const pending = clipboardCorrelations.map(write => {
+            if (write.serial !== entry.serial || write.discardOnSuccess)
+                return write;
+            changed = true;
+            return Object.assign({}, write, { discardOnSuccess: true });
+        });
+        if (changed)
+            clipboardCorrelations = pending;
+    }
+
+    function processClipboardCorrelations(): void {
+        if (!clipboardCorrelations.length)
+            return;
+        const now = Date.now();
+        const remaining = [];
+        const claimed = ({});
+        for (const write of clipboardCorrelations) {
+            const top = topClipboardImage();
+            const id = String(top?.id ?? "");
+            const isNewOrPromoted = id && (!write.token.knownIds[id] || write.token.previousTop !== id);
+            // Windows timestamps the clipboard update itself, while the token is
+            // stamped when its write completion reaches the shell. A newer top
+            // item belongs to a later unrelated copy and must not be claimed for
+            // this write. The margin covers Windows' asynchronous history ingestion;
+            // items without a timestamp keep the older ID heuristic.
+            const stamp = Date.parse(String(top?.timestamp ?? ""));
+            const newerThanWrite = Number.isFinite(stamp) && stamp > write.token.started + 1000;
+            if (id && !claimed[id] && isNewOrPromoted && !newerThanWrite) {
+                claimed[id] = true;
+                const entry = entryForSerial(write.serial);
+                if (write.discardOnSuccess || entry?.explicitlyDiscarded) {
+                    removeClipboardItem(id);
+                } else {
+                    if (entry)
+                        entry.clipboardHistoryId = id;
+                    if (write.onCorrelated)
+                        write.onCorrelated(id);
+                }
+                releaseClipboardCorrelation(write);
+            } else if (now - write.token.started < clipboardCorrelationMs) {
+                remaining.push(write);
+            } else {
+                releaseClipboardCorrelation(write);
+            }
+        }
+        clipboardCorrelations = remaining;
+    }
+
+    // The X button is an explicit discard: unlike a passive dismissal it cancels
+    // a deferred capture, removes saved history and removes the tracked Windows
+    // clipboard-history item. A copy still in flight is marked here and its late
+    // correlation removes the edited image when Windows publishes it.
+    function discardEntry(entry: var): void {
+        if (!entry)
+            return;
+        entry.explicitlyDiscarded = true;
+        entry.afterReveal = null;
+        markClipboardDiscard(entry);
+        if (entry.historyId)
+            CaptureUi.picker?.history?.removeEntry(entry.historyId);
+        if (entry.clipboardHistoryId)
+            removeClipboardItem(entry.clipboardHistoryId);
+        close(entry);
     }
 
     // Starts the exit animation. The card calls finish() when it is done. A
@@ -452,7 +655,7 @@ Scope {
         pendingTemps = pendingTemps.filter(path => !tryRemove(path));
     }
 
-    function copyEntry(entry: var, dismiss = false): void {
+    function copyEntry(entry: var, dismiss = false, onCorrelated = null): void {
         if (!entries.includes(entry) || entry.closing || entry.outputPending)
             return;
         finishDeferredCapture(entry);
@@ -464,8 +667,12 @@ Scope {
         entry.copied = false;
         entry.dismissAfterCopy = dismiss;
         entry.copyStarted = Date.now();
+        const token = clipboardToken();
         entry.copyOperation = clipboard.copyImageFile(entry.path);
-        if (!entry.copyOperation)
+        if (entry.copyOperation)
+            registerClipboardWrite(entry.copyOperation, entry,
+                ({ token, replaceClipboardId: entry.replaceClipboardId, onCorrelated }));
+        else
             copyResult(entry, false);
     }
 
@@ -479,6 +686,12 @@ Scope {
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be copied."), "screenshot_region", Toast.Error);
         } else {
             entry.copyFailed = false;
+            if (entry.replaceClipboardId) {
+                removeClipboardItem(entry.replaceClipboardId);
+                if (entry.clipboardHistoryId === entry.replaceClipboardId)
+                    entry.clipboardHistoryId = "";
+                entry.replaceClipboardId = "";
+            }
             if (entry.dismissAfterCopy)
                 close(entry);
         }
@@ -488,6 +701,7 @@ Scope {
     Connections {
         target: root.clipboard
         function onWriteFinished(id: int, ok: bool, error: string): void {
+            const write = root.completeClipboardWrite(id, ok);
             if (id === root.detachedCopy && id > 0) {
                 root.detachedCopy = 0;
                 if (!ok)
@@ -495,9 +709,18 @@ Scope {
                 return;
             }
             const entry = root.entries.find(item => item.copyOperation === id && !item.closing);
-            if (entry)
+            if (entry && !write?.discardOnSuccess)
                 root.copyResult(entry, ok);
+            else if (entry)
+                entry.copyOperation = 0;
         }
+    }
+
+    Timer {
+        interval: 50
+        repeat: true
+        running: root.clipboardCorrelations.length > 0
+        onTriggered: root.processClipboardCorrelations()
     }
 
     Timer {
@@ -603,7 +826,7 @@ Scope {
             return;
         finishDeferredCapture(entry);
         const info = { screen: entry.screen, width: entry.imageWidth, height: entry.imageHeight, dpr: entry.dpr };
-        if (!CaptureUi.picker.reopenCapture(entry.path, info, entry.serial, entry.historyId, entry.saved))
+        if (!CaptureUi.picker.reopenCapture(entry.path, info, entry.serial, entry.historyId, entry.saved, entry.clipboardHistoryId))
             Toaster.toast(Tr.tr("Screenshot failed"), Tr.tr("The image could not be opened."), "screenshot_region", Toast.Error);
     }
 
@@ -713,6 +936,9 @@ Scope {
             if (!entry.outputPending)
                 release(entry);
         }
+        for (const write of clipboardCorrelations)
+            releaseClipboardCorrelation(write);
+        clipboardCorrelations = [];
         // The native capture owns any unfinished file until completion.
         pendingCaptures.clear();
         for (const pin of pins)
@@ -777,6 +1003,12 @@ Scope {
             property string dragFile
             property bool saved
             property string historyId
+            // Windows clipboard history item for the image currently represented
+            // by this card. replaceClipboardId is the unedited item superseded
+            // by a copy that is still being written.
+            property string clipboardHistoryId
+            property string replaceClipboardId
+            property bool explicitlyDiscarded
             property var afterReveal: null
             property bool fromEditor
             // An operation belongs to this entry, never to a replacement card.

@@ -72,6 +72,32 @@ ShellRoot {
         function surfacesHidden(): bool { return root.surfacesHiddenNow; }
     }
 
+    // Records the Windows clipboard-history entries the shell would see.
+    property QtObject clipboardHistoryRecorder: QtObject {
+        property var items: []
+        property var removed: []
+        property int serial
+        property int retained
+        property int retains
+        property int releases
+        function retain(): void {
+            retained++;
+            retains++;
+        }
+        function release(): void {
+            retained = Math.max(0, retained - 1);
+            releases++;
+        }
+        function publishImage(): void {
+            serial++;
+            items = [{ id: "clip-" + serial, kind: "image" }].concat(items);
+        }
+        function remove(id: string): void {
+            removed = removed.concat([id]);
+            items = items.filter(item => item.id !== id);
+        }
+    }
+
     // Records the clipboard writes. The real clipboard is never touched.
     property QtObject clipboardRecorder: QtObject {
         property var copied: []
@@ -88,7 +114,11 @@ ShellRoot {
             const ok = result;
             const code = ok ? "" : error;
             if (autoFinish)
-                Qt.callLater(() => writeFinished(id, ok, code));
+                Qt.callLater(() => {
+                    writeFinished(id, ok, code);
+                    if (ok)
+                        clipboardHistoryRecorder.publishImage();
+                });
             return id;
         }
     }
@@ -121,6 +151,7 @@ ShellRoot {
 
         saveRoot: root.saveRoot
         clipboard: root.clipboardRecorder
+        clipboardHistory: root.clipboardHistoryRecorder
     }
 
     Thumbnails {
@@ -128,6 +159,7 @@ ShellRoot {
 
         saveRoot: root.saveRoot
         clipboard: root.clipboardRecorder
+        clipboardHistory: root.clipboardHistoryRecorder
         openUrl: url => {
             root.opener.urls = root.opener.urls.concat([String(url)]);
             return root.opener.result;
@@ -548,8 +580,8 @@ ShellRoot {
     }
 
     function afterCopy(): void {
-        check(clipboardRecorder.copied.length === 1, "the image was handed to the clipboard");
-        const handOver = clipboardRecorder.copied[0].split("\\").join("/");
+        check(clipboardRecorder.copied.length === 2, "the image was handed to the clipboard");
+        const handOver = clipboardRecorder.copied[1].split("\\").join("/");
         check(clipboardRecorder.existedAtCall, "from a file that existed at the call");
         check(!WindowsFiles.isFile(handOver), "which the picker deleted right away");
         check(!picker.opened && !thumbs.suspended && panels()[0].visible, "the picker closed and the panel is back");
@@ -585,7 +617,7 @@ ShellRoot {
         const entry = thumbs.entries[1];
         const card = cardFor(entry);
         thumbs.copyEntry(entry);
-        check(clipboardRecorder.copied.length === 2 && clipboardRecorder.copied[1] === entry.path && clipboardRecorder.existedAtCall,
+        check(clipboardRecorder.copied.length === 3 && clipboardRecorder.copied[2] === entry.path && clipboardRecorder.existedAtCall,
             "Copy puts the preview file on the clipboard");
         check(thumbs.entries.length === 2, "and leaves the thumbnail");
 
@@ -763,8 +795,116 @@ ShellRoot {
             check(!WindowsFiles.isFile(temp), "and so is its preview file");
             check(cards().length === 4, "with its card");
             check(maskRects(panels()[0]).length === 4, "and its mask region");
-            dragStep();
+            clipboardDiscardStep();
         }, "closed thumbnail card to disappear");
+    }
+
+    // 5a. Passive close keeps clipboard history; the X button discards it.
+    function clipboardDiscardStep(): void {
+        thumbs.closeAll();
+        waitForEmpty(() => {
+            config({ thumbnailSeconds: 0 });
+            check(thumbs.addSaved(info(), savedPath), "a card for passive-close clipboard tracking");
+            const passive = thumbs.entries[thumbs.entries.length - 1];
+            thumbs.copyEntry(passive);
+            waitFor(() => !!passive.clipboardHistoryId, () => {
+                const passiveId = passive.clipboardHistoryId;
+                thumbs.close(passive);
+                waitFor(() => !thumbs.entries.includes(passive), () => {
+                    check(clipboardHistoryRecorder.items.some(item => item.id === passiveId),
+                        "passive close keeps the tracked clipboard-history item");
+                    check(!clipboardHistoryRecorder.removed.includes(passiveId), "passive close removes no clipboard-history item");
+                    explicitDiscardCopy();
+                }, "passive close with tracked clipboard item");
+            }, "passive copy to correlate");
+        });
+    }
+
+    function explicitDiscardCopy(): void {
+        check(thumbs.addSaved(info(), savedPath), "a card for explicit clipboard discard");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        thumbs.copyEntry(entry);
+        waitFor(() => !!entry.clipboardHistoryId && !!cardFor(entry), () => {
+            const id = entry.clipboardHistoryId;
+            cardFor(entry).perform("close");
+            check(entry.closing && entry.explicitlyDiscarded, "the X button marks the entry as explicitly discarded");
+            check(clipboardHistoryRecorder.removed.includes(id), "the X button removes the tracked clipboard-history item");
+            waitFor(() => !thumbs.entries.includes(entry), () => {
+                check(!clipboardHistoryRecorder.items.some(item => item.id === id), "the discarded item is gone from clipboard history");
+                pickerCopySerialDiscard();
+            }, "explicitly discarded card");
+        }, "explicit copy to correlate");
+    }
+
+    // A picker-managed copy starts before its replacement card exists. Once the
+    // card is added, its serial must still reach the already completed write so
+    // X before correlation removes the clipboard item rather than publishing it.
+    function pickerCopySerialDiscard(): void {
+        check(thumbs.addSaved(info(), savedPath), "a card for picker-copy serial tracking");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        clipboardRecorder.autoFinish = false;
+        const operation = clipboardRecorder.copyImageFile(savedPath);
+        thumbs.registerClipboardWrite(operation, null, ({}));
+        clipboardRecorder.writeFinished(operation, true, "");
+        thumbs.updateClipboardWriteSerial(operation, entry.serial);
+        thumbs.discardEntry(entry);
+        clipboardHistoryRecorder.publishImage();
+        const id = clipboardHistoryRecorder.items[0].id;
+        waitFor(() => clipboardHistoryRecorder.removed.includes(id), () => {
+            check(!clipboardHistoryRecorder.items.some(item => item.id === id), "the late picker-copy clipboard item is discarded");
+            check(clipboardHistoryRecorder.retained === 0, "serial-tracked discard releases clipboard history");
+            clipboardRecorder.autoFinish = true;
+            unrelatedClipboardCopyIsNotClaimed();
+        }, "picker-copy serial discard to correlate");
+    }
+
+    // A clipboard item copied after a screenshot write must not satisfy that
+    // write's correlation. Otherwise X would delete somebody else's clipboard
+    // entry instead of the screenshot's own late history item.
+    function unrelatedClipboardCopyIsNotClaimed(): void {
+        const previousMs = thumbs.clipboardCorrelationMs;
+        thumbs.clipboardCorrelationMs = 80;
+        check(thumbs.addSaved(info(), savedPath), "a card for unrelated clipboard correlation");
+        const entry = thumbs.entries[thumbs.entries.length - 1];
+        clipboardRecorder.autoFinish = false;
+        thumbs.copyEntry(entry, true);
+        const operation = entry.copyOperation;
+        clipboardRecorder.writeFinished(operation, true, "");
+        const unrelated = "unrelated-newer-copy";
+        clipboardHistoryRecorder.items = [{
+            id: unrelated,
+            kind: "image",
+            timestamp: new Date(Date.now() + 2000).toISOString()
+        }].concat(clipboardHistoryRecorder.items);
+        later(60, () => {
+            check(!entry.clipboardHistoryId, "a newer unrelated clipboard item is not claimed");
+            check(!clipboardHistoryRecorder.removed.includes(unrelated), "the unrelated clipboard item is not removed");
+            waitFor(() => clipboardHistoryRecorder.retained === 0, () => {
+                check(!entry.clipboardHistoryId, "the unrelated item is still unclaimed at correlation expiry");
+                thumbs.clipboardCorrelationMs = previousMs;
+                clipboardRecorder.autoFinish = true;
+                thumbs.close(entry);
+                waitFor(() => !thumbs.entries.includes(entry), discardPendingCapture, "unrelated-correlation card to close");
+            }, "unrelated clipboard correlation to expire", Date.now() + 1000);
+        });
+    }
+
+    function discardPendingCapture(): void {
+        const path = CUtils.newCaptureTempPath().replace(/\\/g, "/");
+        check(CUtils.copyFile("file:///" + savedPath, "file:///" + path, true), "a pending capture file");
+        const entry = thumbs.addPendingCapture(info(), path, "image://caelestia-capture-preview/fixture", 0);
+        check(!!entry?.outputPending, "a provisional capture is pending");
+        let revealed = false;
+        entry.afterReveal = () => revealed = true;
+        const copies = clipboardRecorder.copied.length;
+        const historyItems = clipboardHistoryRecorder.items.length;
+        thumbs.discardEntry(entry);
+        check(entry.afterReveal === null && entry.explicitlyDiscarded, "the X button cancels the deferred capture action");
+        thumbs.finish(entry);
+        check(thumbs.completePendingCapture(path, true), "the late PNG completion still reaches its reservation");
+        check(!revealed && clipboardRecorder.copied.length === copies, "no deferred copy runs after an explicit discard");
+        check(clipboardHistoryRecorder.items.length === historyItems, "and no clipboard-history item appears");
+        dragStep();
     }
 
     // 5b. Dragging the image out.
