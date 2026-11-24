@@ -20,7 +20,8 @@ Singleton {
     // the user picks a wallpaper in Caelestia, then shows only Caelestia picks:
     // a Windows Settings or Wallpaper Engine change is never followed. A
     // profile that existed before (marker "existing", or classified as existing
-    // by the state/caelestia rule) follows Windows exactly as before.
+    // by the state/caelestia rule) follows Windows wallpaper edits, but not
+    // the wallpaper Windows restores as part of a virtual desktop switch.
     //
     // Only a fresh profile persists picks, in desktop.json. The record keeps
     // the profile-wide pick and the per-display picks. There is no baseline to
@@ -31,6 +32,7 @@ Singleton {
     property bool sourceComponentReady: false
     property bool sourceInitialized: false
     property bool sourceFresh: false
+    property string lastWallpaperDesktop: ""
     property string profilePick: ""
     property var monitorPicks: ({})
     // "valid", "missing" or "invalid". Read at startup; only a fresh profile
@@ -322,6 +324,7 @@ Singleton {
     function resolveInitialSource(): void {
         root.sourceInitialized = true;
         if (!root.sourceFresh) {
+            root.lastWallpaperDesktop = Native.Wallpaper.currentDesktop;
             // Exactly the released build's startup source: the saved Windows
             // wallpaper, or the bundled asset when Windows reports no path.
             const current = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
@@ -919,6 +922,23 @@ Singleton {
     }
 
     Connections {
+        target: root.sourceInitialized && !root.sourceFresh ? Native.Wallpaper : null
+        function onCurrentDesktopChanged(): void {
+            const desktop = Native.Wallpaper.currentDesktop;
+            if (!desktop || desktop === root.lastWallpaperDesktop)
+                return;
+            if (root.lastWallpaperDesktop)
+                desktopWallpaperSettle.restart();
+            root.lastWallpaperDesktop = desktop;
+        }
+    }
+    Timer {
+        id: desktopWallpaperSettle
+        // DesktopLayer debounces Explorer's registry and wallpaper broadcasts
+        // for 500 ms. Leave time for delayed and repeated switch broadcasts.
+        interval: 1000
+    }
+    Connections {
         target: Native.DesktopLayer
         function onWallpaperChanged(): void {
             // A fresh profile does not follow Windows. A Windows Settings
@@ -937,7 +957,7 @@ Singleton {
             // adoptPickedFile and are kept, including intentional black ones.
             if (WallpaperEngine.desktopHandedBack || !root.sourceInitialized)
                 return;
-            if (completion.active?.operation === "setWallpaper")
+            if (desktopWallpaperSettle.running || completion.active?.operation === "setWallpaper")
                 return;
             const next = Native.Wallpaper.currentWallpaper().replace(/\\/g, "/");
             const globalChanged = !Paths.samePath(root.fileCurrent, next || root.fallback);

@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 QtObject {
+    property string currentDesktop: "desktop-a"
     property string currentPath: "C:/walls/windows-default.jpg"
     property var calls: []
     property var screenIds: ({primary: "primary-id", secondary: "secondary-id"})
