@@ -17,8 +17,10 @@ rendered frame.
 Fresh profiles reuse `state/wallpaper/desktop.json` version 1, with the existing
 shared `wallpaper` field and physical-ID-keyed `monitors` map. A display without
 an override falls back to the shared pick, then the bundled image. Existing
-profiles keep their released behavior and persist choices through Windows.
-There is no new config key or migration.
+profiles keep their released behavior and persist choices through Windows,
+while ignoring Explorer's virtual-desktop switch wallpaper broadcasts so
+Caelestia picks survive workspace switches. There is no new config key or
+migration.
 
 Launcher mouse, keyboard and Choose wallpaper actions apply to all displays
 when there are no individual choices. Once individual images or different

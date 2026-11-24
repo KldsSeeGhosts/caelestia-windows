@@ -7,10 +7,9 @@ import qs.utils
 
 // Upgrade migration without any of the optional state files older builds
 // wrote. The only signal is the Caelestia state directory every earlier build
-// created. An existing profile must behave exactly as the released build did:
-// it follows the saved Windows wallpaper and per-display images, and a
-// Caelestia pick changes Windows as before. It never reads or writes the
-// fresh-profile pick record.
+// created. An existing profile loads the saved Windows wallpaper and follows
+// Windows edits, but switching desktops must preserve Caelestia picks. A
+// Caelestia pick still changes Windows without writing a fresh-profile record.
 QtObject {
     id: root
 
@@ -27,6 +26,21 @@ QtObject {
     }
 
     Component.onCompleted: Qt.callLater(run)
+
+    property Timer switchBroadcast: Timer {
+        interval: 500
+        onTriggered: root.checkSwitchBroadcast()
+    }
+
+    property Timer delayedSwitchBroadcast: Timer {
+        interval: 900
+        onTriggered: root.checkDelayedSwitchBroadcast()
+    }
+
+    property Timer settingsAfterSwitch: Timer {
+        interval: 800
+        onTriggered: root.checkSettingsAfterSwitch()
+    }
 
     function run(): void {
         try {
@@ -96,6 +110,61 @@ QtObject {
             check(Files.contents[root.recordPath] === undefined,
                 "the global pick wrote a fresh-profile pick record");
 
+            check(Wallpapers.setWallpaper("C:/walls/picked.jpg", {name: "secondary"}),
+                "the existing profile rejected a display pick after the global pick");
+            Native.Wallpaper.currentDesktop = "desktop-b";
+            Native.Wallpaper.currentPath = "C:/walls/windows-default.jpg";
+            Native.Wallpaper.screenPaths = {primary: "C:/walls/windows-default.jpg",
+                secondary: "C:/walls/windows-default.jpg"};
+            switchBroadcast.start();
+        } catch (error) {
+            console.error("CAELESTIA_WALLPAPER_UPGRADE_FAIL " + error);
+            Qt.exit(1);
+        }
+    }
+
+    function checkSwitchBroadcast(): void {
+        try {
+            Native.DesktopLayer.wallpaperChanged();
+            Native.DesktopLayer.wallpaperChanged();
+            check(Wallpapers.fileCurrent === "C:/walls/picked2.jpg",
+                "a virtual desktop switch replaced the global pick");
+            check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "a virtual desktop switch replaced the display pick");
+            delayedSwitchBroadcast.start();
+        } catch (error) {
+            console.error("CAELESTIA_WALLPAPER_UPGRADE_FAIL " + error);
+            Qt.exit(1);
+        }
+    }
+
+    function checkDelayedSwitchBroadcast(): void {
+        try {
+            // 1400 ms after the switch (simulating a re-armed 500 ms native debounce).
+            Native.DesktopLayer.wallpaperChanged();
+            check(Wallpapers.fileCurrent === "C:/walls/picked2.jpg",
+                "a delayed virtual desktop switch broadcast replaced the global pick");
+            check(Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "a delayed virtual desktop switch broadcast replaced the display pick");
+            settingsAfterSwitch.start();
+        } catch (error) {
+            console.error("CAELESTIA_WALLPAPER_UPGRADE_FAIL " + error);
+            Qt.exit(1);
+        }
+    }
+
+    function checkSettingsAfterSwitch(): void {
+        try {
+            check(Wallpapers.fileCurrent === "C:/walls/picked2.jpg"
+                && Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/picked.jpg",
+                "the switch wallpaper was adopted after settling");
+            Native.Wallpaper.currentPath = "C:/walls/new-primary.jpg";
+            Native.Wallpaper.screenPaths = {primary: "C:/walls/new-primary.jpg",
+                secondary: "C:/walls/new-secondary.jpg"};
+            Native.DesktopLayer.wallpaperChanged();
+            check(Wallpapers.fileCurrent === "C:/walls/new-primary.jpg"
+                && Wallpapers.currentForScreen({name: "secondary"}) === "C:/walls/new-secondary.jpg",
+                "a later Settings change did not replace the picks");
             console.log("CAELESTIA_WALLPAPER_UPGRADE_PASS " + assertions);
             Qt.quit();
         } catch (error) {
