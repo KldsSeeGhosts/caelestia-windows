@@ -17,6 +17,8 @@ CustomMouseArea {
     required property Bar.BarWrapper bar
     required property real borderThickness
     required property bool fullscreen
+    property var focusWindow: null
+    readonly property bool focusWindowHovered: focusWindow?.pointerHovered ?? false
     // Windows: supplied by the per-screen shared-edge adapter.
     property var windowsHover: null
 
@@ -78,6 +80,49 @@ CustomMouseArea {
         }
     }
 
+    function closeOnPointerLeave(): void {
+        if (focusWindowHovered)
+            return;
+
+        // Only hide if not activated by shortcut
+        if (!osdShortcutActive) {
+            screenState.osd = false;
+            root.panels.osd.hovered = false;
+        }
+
+        if (!dashboardShortcutActive)
+            screenState.dashboard = false;
+
+        // Windows: the quota drawer closes on the same pointer leave.
+        if (panels.quotaEnabled)
+            screenState.quota = false;
+
+        if (!utilitiesShortcutActive)
+            screenState.utilities = false;
+
+        if (!popouts.pinned
+                && (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1)) {
+            popouts.hasCurrent = false;
+            bar.closeTray();
+        }
+
+        if (Config.bar.showOnHover)
+            bar.isHovered = false;
+
+        if (Config.sidebar.showOnHover && !sidebarShortcutActive)
+            screenState.sidebar = false;
+
+        // Only close a launcher the pointer actually entered. A keybind or
+        // start-button open with the pointer elsewhere stays open.
+        if (Config.launcher.enabled && Config.launcher.showOnHover)
+            updateLauncherHover(false);
+    }
+
+    function closeAfterFocusWindowLeave(): void {
+        if (!focusWindowHovered && !containsMouse)
+            closeOnPointerLeave();
+    }
+
     function onWheel(event: WheelEvent): void {
         if (fullscreen)
             return;
@@ -99,37 +144,20 @@ CustomMouseArea {
     }
     onContainsMouseChanged: {
         if (!containsMouse) {
-            // Only hide if not activated by shortcut
-            if (!osdShortcutActive) {
-                screenState.osd = false;
-                root.panels.osd.hovered = false;
-            }
-
-            if (!dashboardShortcutActive)
-                screenState.dashboard = false;
-
-            // Windows: the quota drawer closes on the same pointer leave.
-            if (panels.quotaEnabled)
-                screenState.quota = false;
-
-            if (!utilitiesShortcutActive)
-                screenState.utilities = false;
-
-            if (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) {
-                popouts.hasCurrent = false;
-                bar.closeTray();
-            }
-
-            if (Config.bar.showOnHover)
-                bar.isHovered = false;
-
-            if (Config.sidebar.showOnHover && !sidebarShortcutActive)
-                screenState.sidebar = false;
-
-            // Only close a launcher the pointer actually entered. A keybind or
-            // start-button open with the pointer elsewhere stays open.
-            if (Config.launcher.enabled && Config.launcher.showOnHover)
-                updateLauncherHover(false);
+            // Moving into the companion produces a leave in this window first.
+            // Recheck after the companion has received the matching enter.
+            if (focusWindow?.visible)
+                Qt.callLater(root.closeOnPointerLeave);
+            else
+                root.closeOnPointerLeave();
+        }
+    }
+    onFocusWindowHoveredChanged: {
+        if (focusWindowHovered) {
+            if (screenState.launcher)
+                launcherHoverEntered = true;
+        } else {
+            Qt.callLater(root.closeAfterFocusWindowLeave);
         }
     }
 
@@ -298,7 +326,9 @@ CustomMouseArea {
         // Show popouts on hover
         if (x < bar.implicitWidth) {
             bar.checkPopout(y);
-        } else if ((!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1) && !inLeftPanel(panels.popoutsWrapper, x, y)) {
+        } else if (!popouts.pinned
+                && (!popouts.currentName.startsWith("traymenu") || ((popouts.current as StackView)?.depth ?? 0) <= 1)
+                && !inLeftPanel(panels.popoutsWrapper, x, y)) {
             popouts.hasCurrent = false;
             bar.closeTray();
         }

@@ -24,6 +24,7 @@ Item {
     required property ScreenState screenState
     required property Bar.BarWrapper bar
     required property real borderThickness
+    required property var focusWindow
 
     readonly property alias osd: osd
     readonly property alias osdWrapper: osdWrapper
@@ -114,6 +115,7 @@ Item {
         Session.Wrapper {
             id: session
 
+        focusWindow: root.focusWindow
             screenState: root.screenState
             sidebarVisible: sidebar.visible
 
@@ -125,6 +127,7 @@ Item {
     Launcher.Wrapper {
         id: launcher
 
+        focusWindow: root.focusWindow
         screen: root.screen
         screenState: root.screenState
         panels: root
@@ -155,6 +158,7 @@ Item {
     BarPopouts.ClipWrapper {
         id: popoutsWrapper
 
+        focusWindow: root.focusWindow
         screen: root.screen
         borderThickness: root.borderThickness
     }

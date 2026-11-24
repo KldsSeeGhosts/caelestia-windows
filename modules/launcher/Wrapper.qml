@@ -12,8 +12,10 @@ Item {
     required property ShellScreen screen
     required property ScreenState screenState
     required property var panels
+    property var focusWindow: null
 
     readonly property bool shouldBeActive: screenState.launcher && Config.launcher.enabled
+    readonly property bool usesFocusWindow: focusWindow?.surface === "launcher"
 
     readonly property real maxHeight: {
         let max = screen.height - Config.border.thickness * 2 + Tokens.padding.extraLarge;
@@ -35,6 +37,8 @@ Item {
     anchors.bottomMargin: (-implicitHeight - 5) * offsetScale
     implicitHeight: content.implicitHeight
     implicitWidth: content.implicitWidth || 630 // Hard coded fallback for first open
+    width: implicitWidth
+    height: implicitHeight
     opacity: 1 - offsetScale
 
     Component.onCompleted: Qt.callLater(() => Apps) // Load apps on init
@@ -46,8 +50,11 @@ Item {
     Loader {
         id: content
 
+        parent: root.usesFocusWindow ? root.focusWindow.contentHost : root
         anchors.top: parent.top
         anchors.horizontalCenter: parent.horizontalCenter
+        opacity: root.usesFocusWindow ? root.opacity : 1
+        z: root.usesFocusWindow ? 1 : 0
 
         active: root.shouldBeActive || root.visible
 

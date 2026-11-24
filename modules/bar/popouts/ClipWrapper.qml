@@ -10,6 +10,7 @@ Item {
 
     required property ShellScreen screen
     required property real borderThickness
+    property var focusWindow: null
 
     readonly property alias content: content
     property real offsetScale: x > 0 || content.hasCurrent ? 0 : 1
@@ -19,6 +20,8 @@ Item {
 
     implicitWidth: content.implicitWidth * (1 - offsetScale)
     implicitHeight: content.implicitHeight
+    width: implicitWidth
+    height: implicitHeight
 
     x: content.isDetached ? (parent.width - content.nonAnimWidth) / 2 : 0
     y: {
@@ -57,6 +60,7 @@ Item {
 
         screen: root.screen
         offsetScale: root.offsetScale
+        focusWindow: root.focusWindow
 
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left

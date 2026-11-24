@@ -22,8 +22,9 @@ servers rather than real provider accounts.
   mutation controls against production components with synthetic providers.
 - `-Suite Shell`: launcher/notification accessibility contracts, a smoke
   that `PanelWindow.excludeFromCapture` and `Hyprland.windowStack()` are
-  reachable from QML, drag previews, teardown, idle status, launcher hover, fullscreen routing,
-  focus-return policy, quota interaction, wallpaper/background ownership and
+  reachable from QML, drag previews, teardown, idle status, launcher hover,
+  card-sized launcher, session and pinned-popout focus companions, fullscreen
+  routing, focus-return policy, quota interaction, wallpaper/background ownership and
   rollback consumer acknowledgement/deadline/late-result state, plus local
   file-URL round trips and preview/copy boundaries with synthetic files.
 - `-Suite Scheme`: the real pinned colour generator's worker protocol,

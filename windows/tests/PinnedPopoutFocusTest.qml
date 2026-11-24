@@ -8,10 +8,9 @@ import qs.modules.drawers
 
 // The running-apps popout keyboard focus on the production host. The real
 // ContentWindow and its popouts wrapper run here, not a FloatingWindow, so the
-// window's computed keyboardFocus and its native focusability are the ones the
-// shell ships. A hover-opened popout must leave the window unfocusable; a
-// right-click pin must make it focusable and put the window list in focus; and
-// closing the pin must hand the window back to None.
+// computed keyboardFocus and native focusability are the ones the shell ships.
+// The monitor-sized drawer host must stay unfocusable throughout; a pinned
+// popout moves into the card-sized focus companion and releases it on close.
 ShellRoot {
     id: root
 
@@ -23,6 +22,8 @@ ShellRoot {
     property var keys
 
     readonly property var win: content
+    readonly property var focusWindow: content.focusWindow
+    readonly property var grab: content.focusGrab
     readonly property var popouts: content.interactionWrapper.panels.popouts
 
     ContentWindow {
@@ -99,6 +100,11 @@ ShellRoot {
             keys = keyComponent.createObject(content.contentItem);
             check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "closed popout: keyboardFocus is None");
             check(!win.focusable, "closed popout: window is not focusable");
+            check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                "closed popout: companion keyboardFocus is None");
+            check(!focusWindow.focusable, "closed popout: companion is not focusable");
+            check(grab.windows.length === 1 && grab.windows[0] === focusWindow,
+                "closed popout: focus grab targets the companion");
 
             // Hover opens the shared popout without a pin.
             Services.RunningApps.previewGroupId = "fixture-app";
@@ -111,6 +117,8 @@ ShellRoot {
             check(!popouts.pinned, "hover open is not pinned");
             check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "hover open: keyboardFocus is None");
             check(!win.focusable, "hover open: window is not focusable");
+            check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                "hover open: companion keyboardFocus is None");
             popouts.hasCurrent = false;
             check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "hover close: keyboardFocus stays None");
 
@@ -121,17 +129,36 @@ ShellRoot {
             if (!list())
                 return;
             check(popouts.hasCurrent && pill.pinned, "right click pins the popout");
-            check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.OnDemand, "pinned: keyboardFocus is OnDemand");
-            check(win.focusable, "pinned: window is focusable");
+            check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                "pinned: the monitor-sized window stays None");
+            check(!win.focusable, "pinned: the monitor-sized window stays unfocusable");
+            check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.OnDemand,
+                "pinned: companion keyboardFocus is OnDemand");
+            check(focusWindow.focusable, "pinned: companion is focusable");
+            check(focusWindow.WlrLayershell.layer === WlrLayer.Overlay,
+                "pinned: companion uses the overlay layer");
+            check(focusWindow.color.a === 0, "pinned: companion background is transparent");
+            check(focusWindow.surface === "popouts", "pinned: companion targets the popout");
+            check(focusWindow.width > 0 && focusWindow.width < win.width,
+                "pinned: companion is narrower than the monitor");
+            check(focusWindow.height > 0 && focusWindow.height < win.height,
+                "pinned: companion is shorter than the monitor");
             check(list().activeFocus, "pinned: the window list has active focus");
+            check(list().Window.window === focusWindow.contentHost.Window.window,
+                "pinned: the popout list lives in the companion");
             check(popouts.pinned === true, "pinned: the popouts wrapper holds the pin");
+            keys.parent = focusWindow.contentHost;
             keys.keyClick(Qt.Key_Escape, Qt.NoModifier, 0);
             step = 3;
         } else if (step === 3) {
             check(!popouts.hasCurrent, "Escape closes the pinned popout");
             check(!popouts.pinned && !pill.pinned, "closing releases the pin");
-            check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "after Escape: keyboardFocus is None again");
-            check(!win.focusable, "after Escape: window is not focusable again");
+            check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                "after Escape: the monitor-sized window stays None");
+            check(!win.focusable, "after Escape: the monitor-sized window stays unfocusable");
+            check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
+                "after Escape: companion keyboardFocus is None again");
+            check(!focusWindow.focusable, "after Escape: companion is not focusable again");
             console.log("CAELESTIA_PINNED_FOCUS_PASS " + assertions);
             Qt.quit();
         }

@@ -130,8 +130,9 @@ ShellRoot {
                 anchors { top: true; bottom: true; left: true; right: true }
             }
 
+            // Guard the card-sized focus owner, not the non-activating visual host.
             WindowsFocusGuard {
-                target: content.contentItem
+                target: content.focusWindow.contentHost
                 foregroundSource: Native.Foreground
                 active: !root.smoke && ((content.screenState?.session ?? false)
                     || (content.screenState?.launcher ?? false))
