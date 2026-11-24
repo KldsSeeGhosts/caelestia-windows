@@ -16,10 +16,12 @@ Item {
     property real offsetScale: shouldBeActive ? 0 : 1
     property real sidebarOffset: sidebarVisible ? 14 : 0
     readonly property real slideOffset: (-implicitWidth - 5 - sidebarOffset) * offsetScale
-    // Keep the loader in the companion until the animated exit has finished.
-    // The companion follows this wrapper's slide offset through its geometry.
+    // Keep requesting the companion until the animated exit has finished, but
+    // only parent into it while this drawer actually owns the companion.
     readonly property bool usesFocusWindow: focusWindow !== null
         && (shouldBeActive || visible)
+    readonly property bool inFocusWindow: usesFocusWindow
+        && focusWindow?.surface === "session"
 
     visible: offsetScale < 1
     anchors.rightMargin: slideOffset
@@ -36,11 +38,11 @@ Item {
     Loader {
         id: content
 
-        parent: root.usesFocusWindow ? root.focusWindow.contentHost : root
+        parent: root.inFocusWindow ? root.focusWindow.contentHost : root
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
-        opacity: root.usesFocusWindow ? root.opacity : 1
-        z: root.usesFocusWindow ? 1 : 0
+        opacity: root.inFocusWindow ? root.opacity : 1
+        z: root.inFocusWindow ? 1 : 0
 
         active: root.shouldBeActive || root.visible
 

@@ -48,7 +48,7 @@ Item {
     property bool pinned: false
     readonly property real slideOffset: (-implicitWidth - 5) * offsetScale
     readonly property bool usesFocusWindow: _usesFocusWindow
-    readonly property bool inFocusWindow: usesFocusWindow && focusWindow !== null
+    readonly property bool inFocusWindow: usesFocusWindow && focusWindow?.surface === "popouts"
     property bool _usesFocusWindow: false
 
     property string detachedMode
