@@ -18,6 +18,8 @@ StyledWindow {
 
     readonly property alias bar: bar
     readonly property alias interactionWrapper: interactions
+    readonly property alias focusWindow: drawerFocusWindow
+    readonly property alias focusGrab: focusGrab
     // Automated rendering can exercise the original graph without taking input.
     property bool interactionEnabled: true
 
@@ -27,6 +29,75 @@ StyledWindow {
         modelData: root.screen
     }
     readonly property ScreenState screenState: ShellState.forScreen(screen) ?? teardownState
+
+    // The monitor-sized window stays permanently non-activating. Interactive
+    // drawers move their card-sized loader into this window so typing, IME and
+    // focus return target a window that cannot trigger Wallpaper Engine's
+    // fullscreen pause rule.
+    StyledWindow {
+        id: drawerFocusWindow
+
+        readonly property bool launcherFocus: root.interactionEnabled
+            && root.screenState.launcher && root.contentItem.Config.launcher.enabled
+        readonly property bool sessionFocus: root.interactionEnabled
+            && panels.session.usesFocusWindow
+        readonly property bool popoutFocus: root.interactionEnabled
+            && panels.popouts.usesFocusWindow
+        readonly property string surface: launcherFocus ? "launcher"
+            : sessionFocus ? "session" : popoutFocus ? "popouts" : ""
+        readonly property Item target: surface === "launcher" ? panels.launcher
+            : surface === "session" ? panels.sessionWrapper
+            : surface === "popouts" ? panels.popoutsWrapper : null
+        readonly property bool active: surface !== "" && target !== null
+        readonly property real targetWidth: !target ? 0
+            : Math.max(1, Math.min(screen.width - 2,
+                target.width > 0 ? target.width : target.implicitWidth))
+        readonly property real targetHeight: !target ? 0
+            : Math.max(1, Math.min(screen.height - 2,
+                target.height > 0 ? target.height : target.implicitHeight))
+        property bool pointerHovered: false
+
+        readonly property alias contentHost: focusContent
+
+        screen: root.screen
+        name: "drawers-focus"
+        visible: active
+        onVisibleChanged: {
+            if (!visible)
+                pointerHovered = false;
+        }
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: (launcherFocus || sessionFocus)
+            ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+
+        anchors.top: true
+        anchors.left: true
+        margins.left: target ? Math.round(panels.x + target.x) : 0
+        margins.top: target ? Math.round(panels.y + target.y) : 0
+        implicitWidth: Math.round(targetWidth)
+        implicitHeight: Math.round(targetHeight)
+
+        FocusScope {
+            id: focusContent
+
+            anchors.fill: parent
+            focus: true
+
+            Keys.onEscapePressed: {
+                if (drawerFocusWindow.surface === "launcher")
+                    root.screenState.launcher = false;
+                else if (drawerFocusWindow.surface === "session")
+                    root.screenState.session = false;
+                else if (drawerFocusWindow.surface === "popouts")
+                    panels.popouts.close();
+            }
+
+            HoverHandler {
+                onHoveredChanged: drawerFocusWindow.pointerHovered = hovered
+            }
+        }
+    }
 
     // Windows: the facade also accepts an injected monitor-shaped backend.
     readonly property var monitor: Hypr.monitorFor(screen)
@@ -85,7 +156,9 @@ StyledWindow {
     name: "drawers"
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: (fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen) || (hasSpecialWorkspace && hasFullscreenOnNormalWs) ? WlrLayer.Overlay : WlrLayer.Top
-    WlrLayershell.keyboardFocus: interactionEnabled && ((screenState.launcher && contentItem.Config.launcher.enabled) || (screenState.session && contentItem.Config.session.enabled)) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    // The monitor-sized visual host must never become the foreground window.
+    // Keyboard focus belongs to the card-sized drawerFocusWindow above.
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
     mask: !interactionEnabled ? noInputRegion : hasFullscreen ? emptyRegion : regions
 
@@ -156,7 +229,10 @@ StyledWindow {
                 return true;
             return false;
         }
-        windows: [root]
+        // The companion is hidden for the sidebar, dashboard and nested tray
+        // menus. Target the monitor-sized host in that case so the native grab
+        // still starts; it remains WindowDoesNotAcceptFocus and WS_EX_NOACTIVATE.
+        windows: drawerFocusWindow.active ? [drawerFocusWindow] : [root]
         onCleared: {
             root.screenState.launcher = false;
             root.screenState.session = false;
@@ -297,6 +373,7 @@ StyledWindow {
         id: interactions
 
         enabled: root.interactionEnabled
+        focusWindow: root.focusWindow
         screen: root.screen
         popouts: panels.popouts
         screenState: root.screenState
@@ -310,6 +387,7 @@ StyledWindow {
         Panels {
             id: panels
 
+            focusWindow: root.focusWindow
             screen: root.screen
             screenState: root.screenState
             bar: bar

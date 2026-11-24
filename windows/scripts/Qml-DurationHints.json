@@ -8,6 +8,7 @@
         "Test-CaptureThumbnail": 25,
         "Test-CaptureRecording": 1,
         "Test-DragPreview": 5,
+        "Test-DrawerFocusWindow": 3,
         "Test-HotplugTeardown": 3,
         "Test-IdleInhibitStatus": 2,
         "Test-LauncherHoverClose": 3,

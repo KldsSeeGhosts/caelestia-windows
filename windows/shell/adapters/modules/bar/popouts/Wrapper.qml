@@ -29,6 +29,7 @@ Item {
 
     required property ShellScreen screen
     required property real offsetScale
+    required property var focusWindow
 
     readonly property alias content: content
 
@@ -41,10 +42,14 @@ Item {
     property alias hasCurrent: popoutState.hasCurrent
     property real currentCenter
     // Set by the running-apps strip when a popout is opened on purpose (right
-    // click or keyboard). It makes the drawers window keyboard-focusable below,
-    // so Escape and the arrow keys reach the popout. A hover-opened popout
-    // never sets it and so never takes focus from the user's app.
+    // click or keyboard). It makes the card-sized focus companion focusable
+    // below, so Escape and the arrow keys reach the popout. A hover-opened
+    // popout never sets it and so never takes focus from the user's app.
     property bool pinned: false
+    readonly property real slideOffset: (-implicitWidth - 5) * offsetScale
+    readonly property bool usesFocusWindow: _usesFocusWindow
+    readonly property bool inFocusWindow: usesFocusWindow && focusWindow?.surface === "popouts"
+    property bool _usesFocusWindow: false
 
     property string detachedMode
     property string queuedMode
@@ -90,6 +95,8 @@ Item {
 
     implicitWidth: nonAnimWidth
     implicitHeight: nonAnimHeight
+    width: implicitWidth
+    height: implicitHeight
 
     // Upstream's wrapper takes focus while a popout is open, so Escape reaches
     // it. Windows has no credential-collecting network popout, so the upstream
@@ -97,25 +104,36 @@ Item {
     focus: hasCurrent
     Keys.onEscapePressed: root.close()
 
-    // A pin lasts only while its popout is open.
+    // A pin lasts only while its popout is open. Keep using the companion
+    // until the slide-off finishes even though the pin itself releases now.
+    onOffsetScaleChanged: {
+        if (!hasCurrent && offsetScale >= 1)
+            _usesFocusWindow = false;
+    }
     onHasCurrentChanged: {
         if (!hasCurrent)
             pinned = false;
+        else
+            _usesFocusWindow = pinned;
+    }
+    onPinnedChanged: {
+        if (pinned && hasCurrent)
+            _usesFocusWindow = true;
+        else if (hasCurrent)
+            _usesFocusWindow = false;
     }
     onCurrentNameChanged: {
         if (currentName !== "activewindow")
             pinned = false;
     }
 
-    // The drawers window is keyboard-focusable only while a popout is pinned,
-    // the same override upstream applies for its detached popouts. The binding
-    // is released when the pin ends, so the window goes back to None and the
-    // user's app keeps focus. Declared before the grab so the window accepts
-    // focus before the grab asks for it.
+    // Only the card-sized companion becomes focusable while a popout is
+    // pinned. The monitor-sized drawers window stays at None so Wallpaper
+    // Engine never sees it as a foreground fullscreen window.
     Binding {
         when: root.pinned
 
-        target: QsWindow.window
+        target: root.focusWindow
         property: "WlrLayershell.keyboardFocus"
         value: WlrKeyboardFocus.OnDemand
     }
@@ -126,7 +144,7 @@ Item {
     // another app's foreground clears it, which closes the popout.
     HyprlandFocusGrab {
         active: root.pinned
-        windows: [QsWindow.window]
+        windows: root.focusWindow ? [root.focusWindow] : []
         onCleared: root.close()
     }
 
@@ -140,7 +158,11 @@ Item {
         id: content
 
         shouldBeActive: root.hasCurrent && !root.detachedMode
-        anchors.fill: parent
+        parent: root.inFocusWindow ? root.focusWindow.contentHost : root
+        x: root.inFocusWindow ? root.slideOffset : 0
+        y: 0
+        width: root.inFocusWindow ? root.nonAnimWidth : root.width
+        height: root.inFocusWindow ? root.nonAnimHeight : root.height
 
         sourceComponent: Content {
             popouts: popoutState

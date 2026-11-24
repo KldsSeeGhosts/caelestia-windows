@@ -9,16 +9,26 @@ Item {
 
     required property ScreenState screenState
     required property bool sidebarVisible
+    property var focusWindow: null
     readonly property real nonAnimWidth: content.implicitWidth
 
     readonly property bool shouldBeActive: screenState.session && Config.session.enabled
     property real offsetScale: shouldBeActive ? 0 : 1
     property real sidebarOffset: sidebarVisible ? 14 : 0
+    readonly property real slideOffset: (-implicitWidth - 5 - sidebarOffset) * offsetScale
+    // Keep requesting the companion until the animated exit has finished, but
+    // only parent into it while this drawer actually owns the companion.
+    readonly property bool usesFocusWindow: focusWindow !== null
+        && (shouldBeActive || visible)
+    readonly property bool inFocusWindow: usesFocusWindow
+        && focusWindow?.surface === "session"
 
     visible: offsetScale < 1
-    anchors.rightMargin: (-implicitWidth - 5 - sidebarOffset) * offsetScale
+    anchors.rightMargin: slideOffset
     implicitWidth: content.implicitWidth
     implicitHeight: content.implicitHeight || 510 // Hard coded fallback for first open
+    width: implicitWidth
+    height: implicitHeight
     opacity: 1 - offsetScale
 
     Behavior on offsetScale {
@@ -28,8 +38,11 @@ Item {
     Loader {
         id: content
 
+        parent: root.inFocusWindow ? root.focusWindow.contentHost : root
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
+        opacity: root.inFocusWindow ? root.opacity : 1
+        z: root.inFocusWindow ? 1 : 0
 
         active: root.shouldBeActive || root.visible
 
