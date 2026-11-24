@@ -92,7 +92,7 @@ Item {
         else if (name === "pin")
             owner.pin(entry);
         else if (name === "close")
-            owner.close(entry);
+            owner.discardEntry ? owner.discardEntry(entry) : owner.close(entry);
     }
 
     // A press on the card body. The action buttons are above the body, so a

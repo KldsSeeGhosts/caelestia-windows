@@ -25,7 +25,38 @@ ShellRoot {
     property string waitingFor
     property bool dismissPendingCapture
     property string dismissedPath
+    property string originalClipboardId
+    property string editedClipboardId
+    property int unchangedCopyCount
     readonly property string exportFolder: Quickshell.stateDir.replace(/\\/g, "/") + "/user-exports"
+
+    // Records the Windows clipboard-history entries the shell would see. The
+    // fixture publishes one image item for every successful clipboard write.
+    QtObject {
+        id: clipboardHistoryRecorder
+        property var items: []
+        property var removed: []
+        property int serial
+        property int retained
+        property int retains
+        property int releases
+        function retain(): void {
+            retained++;
+            retains++;
+        }
+        function release(): void {
+            retained = Math.max(0, retained - 1);
+            releases++;
+        }
+        function publishImage(): void {
+            serial++;
+            items = [{ id: "clip-" + serial, kind: "image" }].concat(items);
+        }
+        function remove(id: string): void {
+            removed = removed.concat([id]);
+            items = items.filter(item => item.id !== id);
+        }
+    }
 
     QtObject {
         id: clipboardRecorder
@@ -38,7 +69,10 @@ ShellRoot {
                 root.publishedBeforeCopy = !picker.opened && thumbs.entries.some(entry => entry.path === path);
             images = images.concat([{path, exists: WindowsFiles.isFile(path)}]);
             const id = ++serial;
-            Qt.callLater(() => writeFinished(id, true, ""));
+            Qt.callLater(() => {
+                writeFinished(id, true, "");
+                clipboardHistoryRecorder.publishImage();
+            });
             return id;
         }
         function copyText(path: string): int {
@@ -52,11 +86,13 @@ ShellRoot {
     AreaPicker {
         id: picker
         clipboard: clipboardRecorder
+        clipboardHistory: clipboardHistoryRecorder
     }
 
     Thumbnails {
         id: thumbs
         clipboard: clipboardRecorder
+        clipboardHistory: clipboardHistoryRecorder
     }
 
     Connections {
@@ -179,7 +215,8 @@ ShellRoot {
     Component.onCompleted: Qt.callLater(() => step(() => {
         GlobalConfig.windows = { capture: { thumbnailSeconds: 0, saveDirectory: exportFolder } };
         selectCapture(() => {
-            waitFor(() => clipboardRecorder.images.length > 0, checkInitialCapture, "automatic copy");
+            waitFor(() => clipboardRecorder.images.length > 0 && thumbs.entries[0]?.clipboardHistoryId,
+                checkInitialCapture, "automatic copy");
         });
     }))
 
@@ -192,6 +229,9 @@ ShellRoot {
         captureId = row.id;
         original = picker.history.pathFor(row.raw);
         check(row.raw === row.image && row.strokes.length === 0 && WindowsFiles.isFile(original), "an unedited capture stores only one PNG");
+        originalClipboardId = thumbs.entries[0].clipboardHistoryId;
+        check(originalClipboardId === "clip-1" && clipboardHistoryRecorder.items[0]?.id === originalClipboardId,
+            "the automatic copy is tracked in clipboard history");
         editCard(() => {
             const panel = thumbs.windows[0];
             const hiddenCard = child(panel?.contentItem, "captureThumbnail");
@@ -203,7 +243,9 @@ ShellRoot {
             check(!!child(picker.editPicker, "editor-done")?.visible, "Done is a visible editor action");
             retiringEditor = picker.windows[0];
             child(picker.editPicker, "editor-done").clicked();
-            waitFor(() => !picker.opened, checkDone, "first Done");
+            waitFor(() => !picker.opened && clipboardRecorder.images.length === 2
+                && thumbs.entries[0]?.clipboardHistoryId && thumbs.entries[0].clipboardHistoryId !== originalClipboardId,
+                checkDone, "first Done");
         });
     }
 
@@ -211,7 +253,13 @@ ShellRoot {
         check(safeEditorCloses === 1 && picker.windows.length === 0, "Done retires the editor without recreating a picker");
         const row = picker.history.get(captureId);
         check(picker.history.rows.length === 1 && row.strokes.length === 1 && row.raw !== row.image, "Done updates one history entry with a rendered preview and editable stroke");
-        check(Native.FsUtils.classify(exportFolder) === "invalid" && clipboardRecorder.images.length === 1, "Done does not export or copy");
+        check(Native.FsUtils.classify(exportFolder) === "invalid" && clipboardRecorder.images.length === 2,
+            "Done copies edited pixels without exporting a file");
+        editedClipboardId = thumbs.entries[0].clipboardHistoryId;
+        check(clipboardHistoryRecorder.removed.includes(originalClipboardId) && editedClipboardId !== originalClipboardId,
+            "the edited copy replaces the unedited clipboard-history entry");
+        check(clipboardHistoryRecorder.items.length === 1 && clipboardHistoryRecorder.items[0].id === editedClipboardId,
+            "clipboard history has one clean edited image entry");
         check(thumbs.entries.length === 1 && thumbs.entries[0].historyId === captureId, "Done replaces the same thumbnail");
 
         const card = () => child(thumbs.windows[0]?.contentItem, "captureThumbnail");
@@ -234,14 +282,29 @@ ShellRoot {
             picker.editor.undo();
             check(picker.editor.strokes.length === 0 && picker.editor.canRedo, "the first stroke is still editable");
             picker.editor.redo();
+            picker.editor.pressAt(35, 35);
+            picker.editor.moveTo(45, 45);
+            picker.editor.releaseAt();
+            check(picker.editor.strokes.length === 2, "the reopened edit accepts another stroke");
             picker.editPicker.exportEdit("copy");
-            waitFor(() => picker.editing && !picker.saving, () => {
-                check(clipboardRecorder.images.length === 2 && clipboardRecorder.images[1].exists, "Copy exports edited pixels and leaves the editor open");
+            waitFor(() => picker.editing && !picker.saving && !!thumbs.entries[0]?.clipboardHistoryId
+                && thumbs.entries[0].clipboardHistoryId !== editedClipboardId, () => {
+                check(clipboardRecorder.images.length === 3 && clipboardRecorder.images[2].exists, "Copy exports edited pixels and leaves the editor open");
+                check(clipboardHistoryRecorder.removed.includes(editedClipboardId), "Copy removes the superseded edited clipboard entry");
+                editedClipboardId = thumbs.entries[0].clipboardHistoryId;
+                picker.editor.pressAt(50, 50);
+                picker.editor.moveTo(55, 55);
+                picker.editor.releaseAt();
+                check(picker.editor.strokes.length === 3, "a further edit makes Save export new pixels");
                 picker.editPicker.exportEdit("save");
-                waitFor(() => picker.editing && !picker.saving, () => {
+                waitFor(() => picker.editing && !picker.saving && clipboardRecorder.images.length === 4
+                    && thumbs.entries[0]?.clipboardHistoryId && thumbs.entries[0].clipboardHistoryId !== editedClipboardId, () => {
+                    check(clipboardHistoryRecorder.removed.includes(editedClipboardId), "Save copies the edited image and removes the superseded clipboard entry");
+                    editedClipboardId = thumbs.entries[0].clipboardHistoryId;
                     check(picker.editingSaved, "Save keeps the editor open and marks the export");
                     check(child(picker.editPicker, "editor-save").Accessible.name === "Save a copy", "the next export is labeled Save a copy");
                     retiringEditor = picker.windows[0];
+                    unchangedCopyCount = clipboardRecorder.images.length;
                     picker.editPicker.exportEdit("done");
                     waitFor(() => !picker.opened, checkSave, "Done after Save");
                 }, "editor Save");
@@ -254,8 +317,17 @@ ShellRoot {
         const card = thumbs.entries.find(entry => entry.saved);
         exported = card?.path ?? "";
         check(exported.startsWith(exportFolder + "/") && WindowsFiles.isFile(exported), "Save writes the configured export folder");
-        check(picker.history.rows.length === 1 && picker.history.get(captureId)?.strokes.length === 1
+        check(picker.history.rows.length === 1 && picker.history.get(captureId)?.strokes.length === 3
             && picker.history.get(captureId).exportPath === exported, "Save updates the same history item and tracks the export separately");
+        check(clipboardRecorder.images.length === unchangedCopyCount, "Done without further edits does not re-copy");
+        check(!clipboardHistoryRecorder.removed.includes(editedClipboardId), "and does not delete the existing clipboard entry");
+        const clipboardId = card.clipboardHistoryId;
+        check(clipboardId && clipboardId === editedClipboardId, "the replacement thumbnail keeps the edited clipboard-history ID");
+        thumbs.discardEntry(card);
+        thumbs.finish(card);
+        check(picker.history.rows.length === 0 && !picker.history.get(captureId), "the X button removes the capture from screenshot history");
+        check(clipboardHistoryRecorder.removed.includes(clipboardId) && !clipboardHistoryRecorder.items.some(item => item.id === clipboardId),
+            "the X button removes the edited clipboard-history entry");
         check(CaptureUi.showHistory() && picker.history.viewing, "history can be opened");
         picker.history.viewing = false;
         check(picker.history.clear(), "clear history");
@@ -263,7 +335,7 @@ ShellRoot {
         GlobalConfig.windows = { capture: { quickCapture: "save-and-copy-path", historyLimit: 0, thumbnail: false, saveDirectory: exportFolder } };
         selectCapture(() => {
             check(clipboardRecorder.paths.length === 1 && WindowsFiles.isFile(clipboardRecorder.paths[0]), "Quick Capture can save and copy the pathname without a thumbnail");
-            check(picker.history.rows.length === 0 && clipboardRecorder.images.length === 2, "disabled history does not retain the capture");
+            check(picker.history.rows.length === 0 && clipboardRecorder.images.length === 4, "disabled history does not retain the capture");
             if (Quickshell.env("CAELESTIA_SCRATCH_FIXTURE") === "1") {
                 const temp = Quickshell.env("TEMP").replace(/\\/g, "/");
                 const old = temp + "/caelestia-clipboard-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png";
@@ -291,8 +363,8 @@ ShellRoot {
         GlobalConfig.windows = { capture: { thumbnailSeconds: 0, saveDirectory: exportFolder } };
         dismissPendingCapture = true;
         selectCapture(() => {
-            waitFor(() => clipboardRecorder.images.length === 3, () => {
-                check(clipboardRecorder.images[2].path === dismissedPath && clipboardRecorder.images[2].exists,
+            waitFor(() => clipboardRecorder.images.length === 5, () => {
+                check(clipboardRecorder.images[4].path === dismissedPath && clipboardRecorder.images[4].exists,
                     "automatic copy reads the completed PNG even after dismissal");
                 check(thumbs.entries.length === 0 && !thumbs.pendingCaptures.has(dismissedPath) && !WindowsFiles.isFile(dismissedPath),
                     "the dismissed card leaves no pending file or entry");

@@ -14,19 +14,32 @@
 
 // ---- tools, colours and sizes -------------------------------------------
 
-// Part 1 of the editor offers these six. Text, Blur, Step and Ruler follow later.
+// Select stands on its own. The other tools sit behind three group buttons:
+// draw, shapes and annotations. The bar stays compact on small monitors, and
+// each group opens as a small flyout.
 var TOOLS = [
+    { id: "select", key: 0x56, label: "Select", icon: "select", group: -1, freehand: false },
     { id: "pencil", key: 0x50, label: "Pencil", icon: "edit", group: 0, freehand: true },
     { id: "highlighter", key: 0x48, label: "Highlighter", icon: "ink_highlighter", group: 0, freehand: true },
     // Material Symbols has no plain diagonal line, so the dash is turned.
     { id: "line", key: 0x4C, label: "Line", icon: "remove", rotation: -45, group: 1, freehand: false },
     { id: "arrow", key: 0x41, label: "Arrow", icon: "north_east", group: 1, freehand: false },
     { id: "rect", key: 0x52, label: "Rectangle", icon: "crop_square", group: 1, freehand: false },
-    { id: "circle", key: 0x43, label: "Circle", icon: "circle", group: 1, freehand: false }
+    { id: "circle", key: 0x43, label: "Circle", icon: "circle", group: 1, freehand: false },
+    { id: "text", key: 0x54, label: "Text", icon: "text_fields", group: 2, freehand: false },
+    { id: "step", key: 0x4E, label: "Step", icon: "filter_1", group: 2, freehand: false },
+    { id: "blur", key: 0x42, label: "Blur", icon: "blur_on", group: 2, freehand: false }
+];
+
+var GROUPS = [
+    { group: 0, label: "Draw tools" },
+    { group: 1, label: "Shape tools" },
+    { group: 2, label: "Annotation tools" }
 ];
 
 var COLORS = ["#FF4444", "#FF8C00", "#FFD700", "#44FF88", "#44AAFF", "#CC44FF", "#FF44CC", "#FFFFFF", "#000000"];
 var SIZES = [{ size: 2, label: "S" }, { size: 4, label: "M" }, { size: 7, label: "L" }];
+var FILLS = [{ id: "outline" }, { id: "filled" }];
 
 var DEFAULT_TOOL = "pencil";
 var DEFAULT_COLOR = COLORS[0];
@@ -36,7 +49,10 @@ var DEFAULT_SIZE = 3;
 // Qt.Key_Escape, and the letters whose key codes equal their capital ASCII code.
 var KEY_ESCAPE = 0x01000000;
 var KEY_C = 0x43;
+var KEY_F = 0x46;
 var KEY_S = 0x53;
+var KEY_BACKSPACE = 0x01000003;
+var KEY_DELETE = 0x01000007;
 var KEY_Y = 0x59;
 var KEY_Z = 0x5A;
 
@@ -56,6 +72,19 @@ function groupCount() {
     return TOOLS.reduce(function (count, tool) { return Math.max(count, tool.group + 1); }, 0);
 }
 
+function groupForTool(id) {
+    var tool = toolById(id);
+    return tool ? tool.group : -2;
+}
+
+function groupTool(group, activeTool) {
+    var tools = toolsInGroup(group);
+    var active = toolById(activeTool);
+    if (active && active.group === group)
+        return active;
+    return tools.length > 0 ? tools[0] : null;
+}
+
 // What a key press does. `key` is a Qt key code. Plain letters pick a tool (C is
 // the circle, Ctrl+C is Copy). Returns null for a key the editor ignores. Escape
 // is not handled here because it first closes an open popover.
@@ -73,6 +102,10 @@ function shortcut(key, ctrl, shift, alt) {
     }
     if (alt)
         return null;
+    if (key === KEY_BACKSPACE || key === KEY_DELETE)
+        return { action: "delete" };
+    if (key === KEY_F)
+        return { action: "fill" };
     for (var i = 0; i < TOOLS.length; i++) {
         if (TOOLS[i].key === key)
             return { action: "tool", tool: TOOLS[i].id };
@@ -213,10 +246,10 @@ function barLayout(options) {
         add("separator", 1 / (scale > 0 ? scale : 1), Math.max(0, button.height - 2 * (m.separatorInset || 0)));
         gap = m.separatorSpacing || 0;
     }
+    add("tool:select", button.width, button.height);
     for (var g = 0; g < groupCount(); g++) {
-        if (g > 0)
-            gap = m.groupSpacing || 0;
-        toolsInGroup(g).forEach(function (tool) { add("tool:" + tool.id, button.width, button.height); });
+        gap = m.groupSpacing || 0;
+        add("group:" + g, button.width, button.height);
     }
     if (opts.showOptions !== false) {
         separator();
@@ -259,6 +292,34 @@ function barPosition(work, region, size, userPos, metrics) {
     return snapPoint(work, point, size.width, size.height, m.scale);
 }
 
+// One tool group's flyout: a compact row of that group's tools. Rectangles are
+// relative to the flyout and use the same measured icon button as the bar.
+// Options: { metrics, group, button }
+function toolFlyout(options) {
+    var opts = options || {};
+    var m = opts.metrics || {};
+    var scale = m.scale;
+    var button = opts.button || { width: 0, height: 0 };
+    var padding = m.padding || 0;
+    var spacing = m.spacing || 0;
+    var tools = toolsInGroup(opts.group === undefined ? 0 : opts.group);
+    var width = snapUp(button.width, scale);
+    var height = snapUp(button.height, scale);
+    var items = [];
+    for (var i = 0; i < tools.length; i++) {
+        items.push({
+            id: "tool:" + tools[i].id, tool: tools[i].id,
+            x: snap(padding + i * (width + spacing), scale), y: padding,
+            width: width, height: height
+        });
+    }
+    return {
+        width: snapUp((tools.length > 0 ? tools.length * width + (tools.length - 1) * spacing : 0) + 2 * padding, scale),
+        height: snapUp(height + 2 * padding, scale),
+        items: items
+    };
+}
+
 // The colour popover: a row of colour cells, a divider and a row of size
 // segments. Rectangles are relative to the popover's top left corner.
 // Options: { metrics, colors, cell, sizes, segment }
@@ -274,20 +335,24 @@ function inkPopover(options) {
     var sizeCount = opts.sizes === undefined ? SIZES.length : opts.sizes;
     var cell = opts.cell || { width: 0, height: 0 };
     var segment = opts.segment || { width: 0, height: 0 };
+    var fillSegment = opts.fillSegment || segment;
     var padding = m.padding || 0;
     var spacing = m.spacing || 0;
+    var separatorSpacing = m.separatorSpacing || 0;
     var hairline = 1 / (scale > 0 ? scale : 1);
     var cellWidth = snapUp(cell.width, scale);
     var cellHeight = snapUp(cell.height, scale);
     var rowWidth = count > 0 ? count * cellWidth + (count - 1) * spacing : 0;
-    // A size button never gets narrower than it needs, even if the colours are few.
-    var contentWidth = snapUp(Math.max(rowWidth, sizeCount * segment.width + Math.max(0, sizeCount - 1) * spacing), scale);
+    var sizeWidth = sizeCount > 0 ? sizeCount * segment.width + (sizeCount - 1) * spacing : 0;
+    var fillWidth = FILLS.length * fillSegment.width + (FILLS.length - 1) * spacing;
+    // No row gets narrower than its buttons need, even if the colours are few.
+    var contentWidth = snapUp(Math.max(rowWidth, sizeWidth, fillWidth), scale);
     var colors = [];
     var slack = count > 1 ? (contentWidth - count * cellWidth) / (count - 1) : 0;
     for (var i = 0; i < count; i++)
         colors.push({ index: i, x: snap(padding + i * (cellWidth + (count > 1 ? slack : 0)), scale), y: padding, width: cellWidth, height: cellHeight });
-    var line = snap(padding + cellHeight + (m.separatorSpacing || 0), scale);
-    var trackY = snap(line + hairline + (m.separatorSpacing || 0), scale);
+    var line = snap(padding + cellHeight + separatorSpacing, scale);
+    var trackY = snap(line + hairline + separatorSpacing, scale);
     var segmentWidth = sizeCount > 0 ? snapUp((contentWidth - (sizeCount - 1) * spacing) / sizeCount, scale) : 0;
     var segmentHeight = snapUp(segment.height, scale);
     var sizes = [];
@@ -295,13 +360,26 @@ function inkPopover(options) {
         var entry = SIZES[j] || {};
         sizes.push({ index: j, size: entry.size, label: entry.label, x: snap(padding + j * (segmentWidth + spacing), scale), y: trackY, width: segmentWidth, height: segmentHeight });
     }
-    var last = sizes.length > 0 ? sizes[sizes.length - 1] : null;
+    var fillLine = snap(trackY + segmentHeight + separatorSpacing, scale);
+    var fillY = snap(fillLine + hairline + separatorSpacing, scale);
+    var fillWidthEach = snapUp((contentWidth - (FILLS.length - 1) * spacing) / FILLS.length, scale);
+    var fillHeight = snapUp(fillSegment.height, scale);
+    var fills = [];
+    for (var f = 0; f < FILLS.length; f++) {
+        fills.push({
+            index: f, id: FILLS[f].id,
+            x: snap(padding + f * (fillWidthEach + spacing), scale), y: fillY,
+            width: fillWidthEach, height: fillHeight
+        });
+    }
     return {
-        width: snapUp(Math.max(contentWidth, last ? last.x + last.width - padding : 0) + 2 * padding, scale),
-        height: snapUp(trackY + segmentHeight + padding, scale),
+        width: snapUp(contentWidth + 2 * padding, scale),
+        height: snapUp(fillY + fillHeight + padding, scale),
         colors: colors,
         divider: { x: padding, y: line, width: contentWidth, height: hairline },
-        sizes: sizes
+        fillDivider: { x: padding, y: fillLine, width: contentWidth, height: hairline },
+        sizes: sizes,
+        fills: fills
     };
 }
 
@@ -347,11 +425,71 @@ var MIN_SAMPLE = 0.5;
 // stroke becomes a few polylines.
 var WIDTH_STEP = 0.5;
 
-function newStroke(tool, color, size, x, y) {
-    return { tool: tool, color: color, size: size, x1: x, y1: y, x2: x, y2: y, points: [] };
+var NEXT_STROKE_ID = 1;
+
+function noteId(stroke) {
+    if (stroke && Number.isFinite(stroke.id))
+        NEXT_STROKE_ID = Math.max(NEXT_STROKE_ID, stroke.id + 1);
+    return stroke;
+}
+
+function copyStroke(stroke) {
+    var id = Number.isFinite(stroke.id) && stroke.id > 0 ? stroke.id : NEXT_STROKE_ID++;
+    var copy = {
+        id: id, tool: stroke.tool, color: stroke.color, size: stroke.size,
+        x1: stroke.x1, y1: stroke.y1, x2: stroke.x2, y2: stroke.y2,
+        fill: stroke.fill === true, text: stroke.text || "", step: stroke.step || 0,
+        points: (stroke.points || []).map(function (p) { return { x: p.x, y: p.y, w: p.w }; })
+    };
+    return noteId(copy);
+}
+
+function newStroke(tool, color, size, x, y, fill) {
+    return { id: NEXT_STROKE_ID++, tool: tool, color: color, size: size, x1: x, y1: y, x2: x, y2: y, fill: fill === true, text: "", step: 0, points: [] };
+}
+
+function textStroke(color, size, x, y, text) {
+    var stroke = newStroke("text", color, size, x, y, false);
+    stroke.text = text;
+    var b = textBounds(stroke);
+    stroke.x2 = b.x + b.width;
+    stroke.y2 = b.y + b.height;
+    return stroke;
+}
+
+function stepStroke(color, size, x, y) {
+    return newStroke("step", color, size, x, y, false);
 }
 
 function strokeBounds(stroke) {
+    if (stroke.tool === "text")
+        return textBounds(stroke);
+    if (stroke.tool === "step") {
+        var r = stepRadius(stroke.size);
+        return rect(stroke.x1 - r, stroke.y1 - r, 2 * r, 2 * r);
+    }
+    if (stroke.tool === "circle") {
+        var ellipse = ellipseGeometry(stroke);
+        if (!ellipse)
+            return rect(stroke.x1, stroke.y1, 0, 0);
+        return rect(ellipse.cx - ellipse.rx, ellipse.cy - ellipse.ry, 2 * ellipse.rx, 2 * ellipse.ry);
+    }
+    if (isFreehand(stroke.tool)) {
+        if (!stroke.points.length)
+            return rect(stroke.x1, stroke.y1, 0, 0);
+        var left = Infinity;
+        var top = Infinity;
+        var right = -Infinity;
+        var bottom = -Infinity;
+        stroke.points.forEach(function (p) {
+            var half = p.w / 2;
+            left = Math.min(left, p.x - half);
+            top = Math.min(top, p.y - half);
+            right = Math.max(right, p.x + half);
+            bottom = Math.max(bottom, p.y + half);
+        });
+        return rect(left, top, right - left, bottom - top);
+    }
     return rect(Math.min(stroke.x1, stroke.x2), Math.min(stroke.y1, stroke.y2),
         Math.abs(stroke.x2 - stroke.x1), Math.abs(stroke.y2 - stroke.y1));
 }
@@ -362,12 +500,33 @@ function isFreehand(tool) {
 }
 
 // A draft is a stroke being drawn, with the pencil's speed state.
-function startDraft(tool, color, size, x, y) {
-    var stroke = newStroke(tool, color, size, x, y);
+function startDraft(tool, color, size, x, y, fill) {
+    var stroke = newStroke(tool, color, size, x, y, fill);
     var draft = { stroke: stroke, speed: size, lastX: x, lastY: y };
     if (isFreehand(tool))
         stroke.points.push({ x: x, y: y, w: size });
     return draft;
+}
+
+// Shift-constrained drawing. Rectangles, ellipses and redaction rectangles keep
+// equal width and height in the dragged direction. Lines and arrows snap their
+// angle to a multiple of 45 degrees while keeping the drag distance.
+function constrainPoint(tool, x1, y1, x, y) {
+    var dx = x - x1;
+    var dy = y - y1;
+    if (tool === "rect" || tool === "circle" || tool === "blur") {
+        var side = Math.max(Math.abs(dx), Math.abs(dy));
+        return { x: x1 + (dx < 0 ? -side : side), y: y1 + (dy < 0 ? -side : side) };
+    }
+    if (tool === "line" || tool === "arrow") {
+        var length = Math.sqrt(dx * dx + dy * dy);
+        if (length === 0)
+            return { x: x, y: y };
+        var angle = Math.atan2(dy, dx);
+        var snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        return { x: x1 + length * Math.cos(snapped), y: y1 + length * Math.sin(snapped) };
+    }
+    return { x: x, y: y };
 }
 
 // The pencil is thinner when it moves fast: the width falls from 1.6 times the
@@ -383,11 +542,12 @@ function pencilWidth(size, speed) {
 // skip samples closer than half a physical pixel. Returns { changed, done }.
 // `done` is a finished stroke the caller must commit, when the draft reached
 // MAX_POINTS and carries on in a new stroke from its last point.
-function moveDraft(draft, x, y, scale) {
+function moveDraft(draft, x, y, scale, constrain) {
     var stroke = draft.stroke;
     if (!isFreehand(stroke.tool)) {
-        stroke.x2 = x;
-        stroke.y2 = y;
+        var end = constrain ? constrainPoint(stroke.tool, stroke.x1, stroke.y1, x, y) : { x: x, y: y };
+        stroke.x2 = end.x;
+        stroke.y2 = end.y;
         return { changed: true, done: null };
     }
     var dx = x - draft.lastX;
@@ -405,7 +565,7 @@ function moveDraft(draft, x, y, scale) {
     stroke.points.push({ x: x, y: y, w: width });
     if (stroke.points.length > MAX_POINTS) {
         var done = stroke;
-        var next = newStroke(done.tool, done.color, done.size, x, y);
+        var next = newStroke(done.tool, done.color, done.size, x, y, done.fill);
         next.points.push({ x: x, y: y, w: width });
         draft.stroke = next;
         return { changed: true, done: done };
@@ -414,8 +574,13 @@ function moveDraft(draft, x, y, scale) {
 }
 
 // Nothing to commit for a shape that was never dragged: it would be an invisible
-// entry on the undo stack. A freehand click is a dot and is kept.
+// entry on the undo stack. A freehand click is a dot and is kept. Text and step
+// strokes are committed by their own click or editing path, never as empty shapes.
 function isEmpty(stroke) {
+    if (stroke.tool === "text")
+        return !stroke.text;
+    if (stroke.tool === "step")
+        return false;
     if (isFreehand(stroke.tool))
         return stroke.points.length === 0;
     var dx = Math.abs(stroke.x2 - stroke.x1);
@@ -423,45 +588,242 @@ function isEmpty(stroke) {
     return dx < 1 && dy < 1;
 }
 
-// ---- history -------------------------------------------------------------
+// ---- annotation geometry, hit testing and editing -------------------------
 
-function emptyHistory() {
-    return { strokes: [], redo: [] };
+function textPixelSize(size) {
+    return size * 4 + 4;
 }
 
-function scaleStrokes(strokes, ratio) {
+// The logic cannot measure a font. This width is only for hit testing and the
+// selection bounds, and errs wide enough for the shell's UI font.
+function textWidth(text, size) {
+    var length = String(text || "").length;
+    return Math.max(1, length) * textPixelSize(size) * 0.62;
+}
+
+function textBounds(stroke) {
+    var h = textPixelSize(stroke.size) * 1.25;
+    return rect(stroke.x1, stroke.y1, textWidth(stroke.text, stroke.size), h);
+}
+
+function stepRadius(size) {
+    return size * 2 + 8;
+}
+
+function contrastColor(color) {
+    var hex = String(color || "").replace("#", "");
+    if (hex.length !== 6)
+        return "#FFFFFF";
+    var r = parseInt(hex.slice(0, 2), 16) / 255;
+    var g = parseInt(hex.slice(2, 4), 16) / 255;
+    var b = parseInt(hex.slice(4, 6), 16) / 255;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 0.58 ? "#000000" : "#FFFFFF";
+}
+
+function translateStroke(stroke, dx, dy) {
+    var copy = copyStroke(stroke);
+    copy.x1 += dx;
+    copy.y1 += dy;
+    copy.x2 += dx;
+    copy.y2 += dy;
+    copy.points = copy.points.map(function (p) { return { x: p.x + dx, y: p.y + dy, w: p.w }; });
+    return copy;
+}
+
+function distanceToSegment(x, y, ax, ay, bx, by) {
+    var dx = bx - ax;
+    var dy = by - ay;
+    var lengthSquared = dx * dx + dy * dy;
+    var t = lengthSquared === 0 ? 0 : clamp(((x - ax) * dx + (y - ay) * dy) / lengthSquared, 0, 1);
+    var px = ax + t * dx;
+    var py = ay + t * dy;
+    return Math.hypot(x - px, y - py);
+}
+
+function hitFreehand(stroke, x, y) {
+    if (!stroke.points.length)
+        return false;
+    var tolerance = Math.max(5, stroke.size / 2 + 3);
+    if (stroke.points.length === 1)
+        return Math.hypot(x - stroke.points[0].x, y - stroke.points[0].y) <= Math.max(tolerance, stroke.points[0].w / 2 + 3);
+    for (var i = 1; i < stroke.points.length; i++) {
+        var width = Math.max(stroke.points[i - 1].w, stroke.points[i].w);
+        if (distanceToSegment(x, y, stroke.points[i - 1].x, stroke.points[i - 1].y, stroke.points[i].x, stroke.points[i].y) <= width / 2 + 4)
+            return true;
+    }
+    return false;
+}
+
+function pointInPolygon(x, y, points) {
+    var inside = false;
+    for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
+        var xi = points[i].x;
+        var yi = points[i].y;
+        var xj = points[j].x;
+        var yj = points[j].y;
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+            inside = !inside;
+    }
+    return inside;
+}
+
+function hitShape(stroke, x, y) {
+    var b = strokeBounds(stroke);
+    var tolerance = Math.max(5, stroke.size / 2 + 3);
+    if (stroke.tool === "blur")
+        return contains(rect(b.x - 2, b.y - 2, b.width + 4, b.height + 4), x, y);
+    if (stroke.tool === "rect") {
+        var inside = contains(b, x, y);
+        if (!inside)
+            return false;
+        if (stroke.fill)
+            return true;
+        return x - b.x <= tolerance || b.x + b.width - x <= tolerance || y - b.y <= tolerance || b.y + b.height - y <= tolerance;
+    }
+    if (stroke.tool === "circle") {
+        var ellipse = ellipseGeometry(stroke);
+        if (!ellipse)
+            return false;
+        var nx = (x - ellipse.cx) / Math.max(ellipse.rx, 1);
+        var ny = (y - ellipse.cy) / Math.max(ellipse.ry, 1);
+        var distance = Math.sqrt(nx * nx + ny * ny);
+        if (stroke.fill)
+            return distance <= 1.05;
+        var edge = Math.min(0.35, tolerance / Math.max(Math.min(ellipse.rx, ellipse.ry), 1));
+        return Math.abs(distance - 1) <= Math.max(edge, 0.08);
+    }
+    if (stroke.tool === "line")
+        return distanceToSegment(x, y, stroke.x1, stroke.y1, stroke.x2, stroke.y2) <= tolerance;
+    if (stroke.tool === "arrow") {
+        if (distanceToSegment(x, y, stroke.x1, stroke.y1, stroke.x2, stroke.y2) <= tolerance)
+            return true;
+        var arrow = arrowGeometry(stroke);
+        return !!arrow && pointInPolygon(x, y, arrow.triangle);
+    }
+    if (stroke.tool === "text")
+        return contains(textBounds(stroke), x, y);
+    if (stroke.tool === "step")
+        return Math.hypot(x - stroke.x1, y - stroke.y1) <= stepRadius(stroke.size) + 3;
+    return false;
+}
+
+function hitStroke(stroke, x, y) {
+    if (!stroke)
+        return false;
+    return isFreehand(stroke.tool) ? hitFreehand(stroke, x, y) : hitShape(stroke, x, y);
+}
+
+// Topmost first: the newest stroke is the first one a click can hit.
+function hitTest(strokes, x, y) {
+    for (var i = strokes.length - 1; i >= 0; i--) {
+        if (hitStroke(strokes[i], x, y))
+            return i;
+    }
+    return -1;
+}
+
+function indexOfId(strokes, id) {
+    for (var i = 0; i < strokes.length; i++) {
+        if (strokes[i].id === id)
+            return i;
+    }
+    return -1;
+}
+
+// A selection outline needs breathing room around line caps and text.
+function selectionBounds(stroke) {
+    if (!stroke)
+        return null;
+    var b = strokeBounds(stroke);
+    var pad = stroke.tool === "text" || stroke.tool === "step" ? 3 : Math.max(3, stroke.size / 2 + 2);
+    return rect(b.x - pad, b.y - pad, b.width + 2 * pad, b.height + 2 * pad);
+}
+
+// ---- history -------------------------------------------------------------
+
+// Steps are ordinal annotations, not fixed labels. Every change renumbers them
+// in drawing order, so undo, erase and delete never leave gaps.
+function renumber(strokes) {
+    var step = 0;
     return strokes.map(function (stroke) {
-        return {
-            tool: stroke.tool, color: stroke.color, size: stroke.size * ratio,
-            x1: stroke.x1 * ratio, y1: stroke.y1 * ratio, x2: stroke.x2 * ratio, y2: stroke.y2 * ratio,
-            points: stroke.points.map(function (p) { return { x: p.x * ratio, y: p.y * ratio, w: p.w * ratio }; })
-        };
+        var copy = copyStroke(stroke);
+        if (copy.tool === "step")
+            copy.step = ++step;
+        return copy;
     });
 }
 
+function emptyHistory() {
+    return { strokes: [], undo: [], redo: [] };
+}
+
+function scaleStrokes(strokes, ratio) {
+    return renumber(strokes.map(function (stroke) {
+        var copy = copyStroke(stroke);
+        copy.size *= ratio;
+        copy.x1 *= ratio;
+        copy.y1 *= ratio;
+        copy.x2 *= ratio;
+        copy.y2 *= ratio;
+        copy.points = copy.points.map(function (p) { return { x: p.x * ratio, y: p.y * ratio, w: p.w * ratio }; });
+        return copy;
+    }));
+}
+
 function canUndo(history) {
-    return history.strokes.length > 0;
+    return (history.undo || []).length > 0;
 }
 
 function canRedo(history) {
     return history.redo.length > 0;
 }
 
-// Each function returns a new object, so a QML binding on the result updates.
+// Replace the visible strokes without an undo entry. The move preview uses this;
+// committing that move uses changeStrokes with the original array as `before`.
+function replaceCurrent(history, strokes) {
+    return { strokes: renumber(strokes), undo: history.undo || [], redo: history.redo || [] };
+}
+
+// Every undoable edit is one transition between two complete stroke arrays.
+// That model covers add, delete, move and style changes with the same rules.
+function changeStrokes(history, before, after) {
+    return { strokes: renumber(after), undo: (history.undo || []).concat([before]), redo: [] };
+}
+
 function commit(history, stroke) {
-    return { strokes: history.strokes.concat([stroke]), redo: [] };
+    return changeStrokes(history, history.strokes, history.strokes.concat([stroke]));
+}
+
+function replaceStroke(history, index, stroke) {
+    if (index < 0 || index >= history.strokes.length)
+        return history;
+    var next = history.strokes.slice();
+    next[index] = stroke;
+    return changeStrokes(history, history.strokes, next);
+}
+
+function removeStroke(history, index) {
+    if (index < 0 || index >= history.strokes.length)
+        return history;
+    var next = history.strokes.slice();
+    next.splice(index, 1);
+    return changeStrokes(history, history.strokes, next);
 }
 
 function undo(history) {
     if (!canUndo(history))
         return history;
-    return { strokes: history.strokes.slice(0, -1), redo: history.redo.concat([history.strokes[history.strokes.length - 1]]) };
+    var undoStack = history.undo.slice();
+    var previous = undoStack.pop();
+    return { strokes: previous, undo: undoStack, redo: history.redo.concat([history.strokes]) };
 }
 
 function redo(history) {
     if (!canRedo(history))
         return history;
-    return { strokes: history.strokes.concat([history.redo[history.redo.length - 1]]), redo: history.redo.slice(0, -1) };
+    var redoStack = history.redo.slice();
+    var next = redoStack.pop();
+    return { strokes: next, undo: history.undo.concat([history.strokes]), redo: redoStack };
 }
 
 // Clear removes everything and, as in the classic tool, cannot be undone.
@@ -610,12 +972,30 @@ function primitives(stroke) {
         }
         break;
     case "rect":
-        list.push({ kind: "polyline", points: rectPoints(stroke), width: stroke.size, color: color, alpha: 1, cap: "round" });
+        if (stroke.fill)
+            list.push({ kind: "polygon", points: rectPoints(stroke).slice(0, 4), color: color });
+        else
+            list.push({ kind: "polyline", points: rectPoints(stroke), width: stroke.size, color: color, alpha: 1, cap: "round" });
         break;
     case "circle":
         var ellipse = ellipseGeometry(stroke);
         if (ellipse)
-            list.push({ kind: "ellipse", cx: ellipse.cx, cy: ellipse.cy, rx: ellipse.rx, ry: ellipse.ry, width: stroke.size, color: color });
+            list.push({ kind: "ellipse", cx: ellipse.cx, cy: ellipse.cy, rx: ellipse.rx, ry: ellipse.ry, width: stroke.size, color: color, fill: stroke.fill === true });
+        break;
+    case "text":
+        if (stroke.text)
+            list.push({ kind: "text", x: stroke.x1, y: stroke.y1, text: stroke.text, pixelSize: textPixelSize(stroke.size), color: color });
+        break;
+    case "step":
+        list.push({
+            kind: "step", cx: stroke.x1, cy: stroke.y1, r: stepRadius(stroke.size), color: color,
+            textColor: contrastColor(color), label: String(stroke.step || 1), pixelSize: stepRadius(stroke.size) * 1.05
+        });
+        break;
+    case "blur":
+        var box = strokeBounds(stroke);
+        if (box.width >= 1 && box.height >= 1)
+            list.push({ kind: "blur", x: box.x, y: box.y, width: box.width, height: box.height, pixelSize: 20 });
         break;
     }
     return list;

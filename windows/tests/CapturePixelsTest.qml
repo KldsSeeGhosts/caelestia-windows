@@ -287,13 +287,14 @@ ShellRoot {
         state.reset();
         state.inkOpen = false;
         const cases = [
-            { name: "below the selection", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: false, arm: false },
-            { name: "above the selection", region: { x: 300.4, y: 640.3, width: 500, height: 240 }, drag: null, ink: false, arm: false },
-            { name: "inside the selection", region: { x: 50, y: 30, width: 1500, height: 840 }, drag: null, ink: false, arm: false },
-            { name: "after a drag", region: { x: 300, y: 200, width: 500, height: 300 }, drag: { x: 333.37, y: 412.61 }, ink: false, arm: false },
-            { name: "with the popover open", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: true, arm: false },
-            { name: "with the popover above the bar", region: { x: 300.4, y: 640.3, width: 500, height: 240 }, drag: { x: 217.77, y: 301.33 }, ink: true, arm: false },
-            { name: "with Clear armed", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: false, arm: true }
+            { name: "below the selection", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: false, arm: false, menu: -1 },
+            { name: "above the selection", region: { x: 300.4, y: 640.3, width: 500, height: 240 }, drag: null, ink: false, arm: false, menu: -1 },
+            { name: "inside the selection", region: { x: 50, y: 30, width: 1500, height: 840 }, drag: null, ink: false, arm: false, menu: -1 },
+            { name: "after a drag", region: { x: 300, y: 200, width: 500, height: 300 }, drag: { x: 333.37, y: 412.61 }, ink: false, arm: false, menu: -1 },
+            { name: "with the popover open", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: true, arm: false, menu: -1 },
+            { name: "with the popover above the bar", region: { x: 300.4, y: 640.3, width: 500, height: 240 }, drag: { x: 217.77, y: 301.33 }, ink: true, arm: false, menu: -1 },
+            { name: "with Clear armed", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: false, arm: true, menu: -1 },
+            { name: "with the shape flyout open", region: { x: 300, y: 200, width: 500, height: 300 }, drag: null, ink: false, arm: false, menu: 1 }
         ];
         caseStep(cases, 0);
     }
@@ -308,21 +309,26 @@ ShellRoot {
         root.region = current.region;
         state.barPosition = current.drag;
         state.inkOpen = current.ink;
+        state.toolMenu = current.menu ?? -1;
         if (current.arm)
             state.pressClear();
         // The row layouts position their children when the frame is polished.
         later(150, () => step(() => {
             const bar = toolbar.children.find(child => child.objectName === "editorToolbar");
             const popover = toolbar.children.find(child => child.objectName === "editorInkPopover");
+            const flyout = toolbar.children.find(child => child.objectName === "editorToolFlyout");
             const label = "toolbar " + current.name;
-            check(bar !== undefined && popover !== undefined, "the toolbar and its popover exist");
-            // Six tools, undo, redo, Clear, Save, Copy (icon and label), Close.
-            // The armed Clear has a label too.
+            check(bar !== undefined && popover !== undefined && flyout !== undefined, "the toolbar, its popover and the tool flyout exist");
+            // Select, three group buttons, undo, redo, Clear, Save, Copy (icon and
+            // label) and Close. The armed Clear has a label too.
             const all = texts(bar, []);
-            checkTexts(all, current.arm ? 14 : 13, label);
+            checkTexts(all, current.arm ? 12 : 11, label);
             check(popover.visible === current.ink, label + ": the popover is " + (current.ink ? "open" : "closed"));
             if (current.ink)
-                checkTexts(texts(popover, []), 3, label + " popover");
+                checkTexts(texts(popover, []), 5, label + " popover");
+            check(flyout.visible === (current.menu >= 0), label + ": the tool flyout is " + (current.menu >= 0 ? "open" : "closed"));
+            if (current.menu >= 0)
+                checkTexts(texts(flyout, []), 4, label + " shape flyout");
             const copy = all.find(item => item.text === "Copy" && item.font.pointSize === Tokens.font.body.small.pointSize);
             check(copy !== undefined, label + ": the Copy label is among them");
             caseStep(cases, caseIndex + 1);
@@ -417,6 +423,8 @@ ShellRoot {
             const source = thumbs.entries[0];
             thumbs.edit(source);
             waitFor(() => picker.editPicker && CUtils.findChild(picker.editPicker, "captureEditorSource")?.status === Image.Ready, () => {
+                check(Math.abs(picker.editor.scale - captureScale) < 1e-9,
+                    "the reopened editor keeps the capture's ratio " + captureScale + ", not the window's " + scale);
                 picker.editor.pressAt(10, 10);
                 picker.editor.moveTo(20, 20);
                 picker.editor.releaseAt();

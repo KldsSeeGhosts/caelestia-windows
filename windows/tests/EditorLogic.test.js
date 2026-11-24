@@ -102,10 +102,10 @@ function ids(layout) {
     return layout.items.map(item => item.id);
 }
 
-test("the bar lists the six tools, the colour, undo and redo, clear, save, copy and close", () => {
+test("the bar lists Select, three compact tool groups, the colour, actions and close", () => {
     const layout = logic.barLayout(sizes());
     same(ids(layout), [
-        "tool:pencil", "tool:highlighter", "tool:line", "tool:arrow", "tool:rect", "tool:circle",
+        "tool:select", "group:0", "group:1", "group:2",
         "separator", "color", "separator", "undo", "redo", "clear", "separator", "save", "copy", "close"
     ]);
 });
@@ -114,25 +114,25 @@ test("the layout follows the measured sizes and the spacing it is given", () => 
     const layout = logic.barLayout(sizes());
     const x = id => logic.itemRect(layout, id).x;
     assert.equal(layout.height, 28 + 2 * 8, "the tallest control plus the padding on both sides");
-    assert.equal(x("tool:pencil"), 8, "the padding");
-    assert.equal(x("tool:highlighter") - x("tool:pencil"), 28 + 4, "the control and the spacing");
-    assert.equal(x("tool:line") - (x("tool:highlighter") + 28), 8, "the group spacing");
+    assert.equal(x("tool:select"), 8, "the padding");
+    assert.equal(x("group:0") - x("tool:select"), 28 + 8, "the control and the group spacing");
+    assert.equal(x("group:1") - (x("group:0") + 28), 8, "the next group spacing");
     const separators = layout.items.filter(item => item.id === "separator");
     assert.equal(separators.length, 3);
     assert.ok(separators.every(item => item.width === 1 && item.height === 28 - 16 && item.y === 16), "a hairline, inset from the button height, centred");
-    assert.equal(separators[0].x - (x("tool:circle") + 28), 8, "the separator spacing before");
+    assert.equal(separators[0].x - (x("group:2") + 28), 8, "the separator spacing before");
     assert.equal(x("color") - (separators[0].x + 1), 8, "and after");
     assert.equal(x("copy") - (x("save") + 28), 4);
     assert.equal(logic.itemRect(layout, "copy").width, 80, "Copy keeps its measured width");
     assert.equal(logic.itemRect(layout, "close").x, x("copy") + 80 + 4);
     const last = layout.items[layout.items.length - 1];
     assert.equal(layout.width, last.x + last.width + 8, "the padding closes the bar");
-    assert.equal(layout.width, 523);
+    assert.equal(layout.width, 467);
 
     const bigger = logic.barLayout(sizes(1, { button: { width: 40, height: 40 } }));
     assert.equal(bigger.height, 56, "a taller control makes a taller bar");
     assert.ok(bigger.width > layout.width, "and a wider one");
-    assert.equal(logic.itemRect(bigger, "tool:pencil").height, 40);
+    assert.equal(logic.itemRect(bigger, "tool:select").height, 40);
     assert.equal(logic.itemRect(bigger, "copy").y, (56 - 28) / 2, "a control shorter than the row is centred");
 });
 
@@ -140,7 +140,7 @@ test("a wider Copy label widens the bar and nothing before it moves", () => {
     const narrow = logic.barLayout(sizes());
     const wide = logic.barLayout(sizes(1, { copy: { width: 100, height: 28 } }));
     assert.equal(wide.width - narrow.width, 20);
-    for (const id of ["tool:pencil", "save", "color"])
+    for (const id of ["tool:select", "save", "color"])
         assert.equal(logic.itemRect(wide, id).x, logic.itemRect(narrow, id).x);
     assert.equal(logic.itemRect(wide, "close").x - logic.itemRect(narrow, "close").x, 20);
 });
@@ -173,7 +173,7 @@ test("every position and size is on a whole device pixel at 100 to 200 percent",
                 assert.ok(onDevicePixel(item[key], scale), `${item.id}.${key} = ${item[key]} at ${scale}`);
         }
         assert.ok(logic.itemRect(layout, "copy").width >= 83.77, "a size is rounded up, so the label keeps its room");
-        assert.ok(logic.itemRect(layout, "tool:pencil").width >= 28.6);
+        assert.ok(logic.itemRect(layout, "tool:select").width >= 28.6);
     }
 });
 
@@ -183,7 +183,7 @@ test("the armed Clear button grows and pushes the rest right; the colour button 
     assert.equal(logic.itemRect(armed, "clear").width, 90);
     assert.equal(logic.itemRect(calm, "clear").width, 28);
     assert.equal(armed.width - calm.width, 62);
-    assert.equal(logic.itemRect(armed, "tool:pencil").x, logic.itemRect(calm, "tool:pencil").x);
+    assert.equal(logic.itemRect(armed, "tool:select").x, logic.itemRect(calm, "tool:select").x);
     assert.equal(logic.itemRect(armed, "clear").x, logic.itemRect(calm, "clear").x, "Clear grows to the right and keeps its left edge");
     assert.equal(logic.itemRect(armed, "clear").y, logic.itemRect(calm, "clear").y);
     assert.equal(logic.itemRect(armed, "clear").height, logic.itemRect(calm, "clear").height);
@@ -222,7 +222,7 @@ test("the colour popover is built from measured cells and segments", () => {
     same(logic.COLORS, ["#FF4444", "#FF8C00", "#FFD700", "#44FF88", "#44AAFF", "#CC44FF", "#FF44CC", "#FFFFFF", "#000000"]);
     same(plain(logic.SIZES), [{ size: 2, label: "S" }, { size: 4, label: "M" }, { size: 7, label: "L" }]);
     assert.equal(popover.width, 9 * 28 + 8 * 4 + 16, "the colour row and the padding");
-    assert.equal(popover.height, 93);
+    assert.equal(popover.height, 142);
     same(plain(popover.divider), { x: 8, y: 44, width: 284, height: 1 });
     same(plain(popover.colors[0]), { index: 0, x: 8, y: 8, width: 28, height: 28 });
     assert.equal(popover.colors[1].x - popover.colors[0].x, 28 + 4);
@@ -231,6 +231,11 @@ test("the colour popover is built from measured cells and segments", () => {
     assert.ok(popover.sizes.every(entry => entry.width === 92 && entry.height === 32 && entry.y === 53), "the segments share the colour row's width");
     assert.equal(popover.sizes[2].label, "L");
     assert.equal(popover.sizes[2].x + popover.sizes[2].width, popover.width - 8, "and end with it");
+    same(plain(popover.fillDivider), { x: 8, y: 93, width: 284, height: 1 });
+    assert.equal(popover.fills.length, 2);
+    same(popover.fills.map(entry => entry.id), ["outline", "filled"]);
+    assert.ok(popover.fills.every(entry => entry.height === 32 && entry.y === 102), "the fill row shares the popover width");
+    assert.equal(popover.fills[1].x + popover.fills[1].width, popover.width - 8);
 });
 
 test("the popover grows when the size buttons need more room than the colours", () => {
@@ -257,7 +262,7 @@ test("the popover opens above the bar and below it when there is no room", () =>
     const bar = { x: 700, y: 510, width: 523, height: 44 };
     const anchor = { x: 917, y: 518, width: 28, height: 28 };
     const above = logic.popoverPosition(work, bar, anchor, size, metrics());
-    assert.equal(above.y, 510 - 8 - 93);
+    assert.equal(above.y, 510 - 8 - 142);
     assert.equal(above.x, 931 - 150);
     const top = logic.popoverPosition(work, { x: 700, y: 20, width: 523, height: 44 }, anchor, size, metrics());
     assert.equal(top.y, 20 + 44 + 8, "below when above would leave the work area");
@@ -296,13 +301,14 @@ test("Clear needs two presses", () => {
 // ---- tools and keys --------------------------------------------------------
 
 test("the tools and their keys", () => {
-    same(logic.TOOLS.map(tool => tool.id), ["pencil", "highlighter", "line", "arrow", "rect", "circle"]);
+    same(logic.TOOLS.map(tool => tool.id), ["select", "pencil", "highlighter", "line", "arrow", "rect", "circle", "text", "step", "blur"]);
     const key = letter => letter.charCodeAt(0);
-    same(logic.TOOLS.map(tool => tool.key), ["P", "H", "L", "A", "R", "C"].map(key));
-    same(logic.TOOLS.map(tool => tool.group), [0, 0, 1, 1, 1, 1]);
-    assert.equal(logic.groupCount(), 2);
+    same(logic.TOOLS.map(tool => tool.key), ["V", "P", "H", "L", "A", "R", "C", "T", "N", "B"].map(key));
+    same(logic.TOOLS.map(tool => tool.group), [-1, 0, 0, 1, 1, 1, 1, 2, 2, 2]);
+    assert.equal(logic.groupCount(), 3);
     assert.equal(logic.toolById("circle").label, "Circle");
-    assert.equal(logic.toolById("text"), null, "Text comes in a later part");
+    assert.equal(logic.groupTool(1, "arrow").id, "arrow", "a group button shows the active tool in that group");
+    assert.equal(logic.groupTool(1, "pencil").id, "line", "and otherwise its first tool");
 });
 
 test("letters pick tools; Ctrl+C copies instead of choosing the circle", () => {
@@ -311,7 +317,7 @@ test("letters pick tools; Ctrl+C copies instead of choosing the circle", () => {
     same(plain(logic.shortcut(code("C"), false, false, false)), { action: "tool", tool: "circle" });
     same(plain(logic.shortcut(code("C"), true, false, false)), { action: "copy" });
     assert.equal(logic.shortcut(code("P"), false, false, true), null, "Alt+P is not P");
-    assert.equal(logic.shortcut(code("T"), false, false, false), null, "Text is not part of this part");
+    same(plain(logic.shortcut(code("T"), false, false, false)), { action: "tool", tool: "text" });
     assert.equal(logic.shortcut(code("Q"), false, false, false), null);
     assert.equal(logic.shortcut(code("P"), true, false, false), null, "Ctrl+P is nothing");
 });
@@ -323,6 +329,9 @@ test("Ctrl+S saves; Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo", () => {
     same(plain(logic.shortcut(code("Z"), true, true, false)), { action: "redo" });
     same(plain(logic.shortcut(code("Y"), true, false, false)), { action: "redo" });
     assert.equal(logic.shortcut(code("S"), false, false, false), null, "plain S does nothing");
+    same(plain(logic.shortcut(code("F"), false, false, false)), { action: "fill" });
+    same(plain(logic.shortcut(logic.KEY_DELETE, false, false, false)), { action: "delete" });
+    same(plain(logic.shortcut(logic.KEY_BACKSPACE, false, false, false)), { action: "delete" });
     assert.equal(logic.shortcut(logic.KEY_ESCAPE, false, false, false), null, "Escape is handled by the owner");
 });
 
@@ -339,10 +348,10 @@ test("undo and redo move a stroke between the two stacks", () => {
     same(history.strokes.map(s => s.x2), [10, 20, 30]);
     history = logic.undo(history);
     same(history.strokes.map(s => s.x2), [10, 20]);
-    same(history.redo.map(s => s.x2), [30]);
+    same(history.redo.map(snapshot => snapshot.map(stroke => stroke.x2)), [[10, 20, 30]], "redo holds the complete removed state");
     history = logic.undo(logic.undo(history));
     assert.equal(history.strokes.length, 0);
-    same(history.redo.map(s => s.x2), [30, 20, 10]);
+    same(history.redo.map(snapshot => snapshot.map(stroke => stroke.x2)), [[10, 20, 30], [10, 20], [10]]);
     assert.equal(logic.canUndo(history), false);
     history = logic.redo(history);
     same(history.strokes.map(s => s.x2), [10], "redo brings back the most recently undone stroke first");
@@ -569,7 +578,193 @@ test("primitives describe each tool for the renderer", () => {
     assert.equal(logic.primitives(rect)[0].points.length, 5);
 
     const circle = Object.assign(logic.newStroke("circle", "#CC44FF", 4, 50, 50), { x2: 60, y2: 50 });
-    same(plain(logic.primitives(circle)), [{ kind: "ellipse", cx: 50, cy: 50, rx: 10, ry: 1, width: 4, color: "#CC44FF" }]);
+    same(plain(logic.primitives(circle)), [{ kind: "ellipse", cx: 50, cy: 50, rx: 10, ry: 1, width: 4, color: "#CC44FF", fill: false }]);
 
-    same(logic.primitives(logic.newStroke("text", "#FF4444", 3, 0, 0)), [], "a tool from a later part draws nothing");
+    same(logic.primitives(logic.newStroke("text", "#FF4444", 3, 0, 0)), [], "empty text draws nothing");
+});
+
+// ---- image-editor annotation logic ---------------------------------------
+
+test("filled rectangles and ellipses render as filled primitives", () => {
+    const rect = logic.startDraft("rect", "#44AAFF", 4, 10, 10, true).stroke;
+    rect.x2 = 40;
+    rect.y2 = 30;
+    same(plain(logic.primitives(rect)), [{
+        kind: "polygon",
+        points: [{ x: 10, y: 10 }, { x: 40, y: 10 }, { x: 40, y: 30 }, { x: 10, y: 30 }],
+        color: "#44AAFF"
+    }]);
+
+    const circle = logic.startDraft("circle", "#FF4444", 4, 50, 50, true).stroke;
+    circle.x2 = 70;
+    circle.y2 = 40;
+    same(plain(logic.primitives(circle)), [{ kind: "ellipse", cx: 50, cy: 50, rx: 20, ry: 10, width: 4, color: "#FF4444", fill: true }]);
+});
+
+test("Shift constrains rectangles and ellipses to equal sides in either direction", () => {
+    const draft = logic.startDraft("rect", "#44AAFF", 4, 10, 20);
+    logic.moveDraft(draft, 60, 90, 1, true);
+    same([draft.stroke.x2, draft.stroke.y2], [80, 90], "the larger drag distance is both sides");
+    logic.moveDraft(draft, -40, 10, 1, true);
+    same([draft.stroke.x2, draft.stroke.y2], [-40, -30], "the signs keep the drag direction");
+
+    const circle = logic.startDraft("circle", "#44AAFF", 4, 100, 100);
+    logic.moveDraft(circle, 140, 90, 1, true);
+    same(plain(logic.ellipseGeometry(circle.stroke)), { cx: 100, cy: 100, rx: 40, ry: 40 }, "a constrained ellipse is a perfect circle");
+});
+
+test("Shift constrains lines and arrows to 45 degree increments", () => {
+    for (const tool of ["line", "arrow"]) {
+        const draft = logic.startDraft(tool, "#44AAFF", 4, 0, 0);
+        logic.moveDraft(draft, 100, 98, 1, true);
+        near(Math.abs(draft.stroke.x2), Math.abs(draft.stroke.y2), tool + " snaps near 45 degrees");
+        near(Math.hypot(draft.stroke.x2, draft.stroke.y2), Math.hypot(100, 98), tool + " keeps the drag distance");
+        logic.moveDraft(draft, 100, 10, 1, true);
+        near(draft.stroke.y2, 0, "a shallow angle snaps horizontal");
+        logic.moveDraft(draft, 10, 100, 1, true);
+        near(draft.stroke.x2, 0, "a steep angle snaps vertical");
+    }
+});
+
+test("hit testing selects the topmost annotation and understands fill", () => {
+    const outline = Object.assign(logic.newStroke("rect", "#FF4444", 3, 0, 0, false), { x2: 100, y2: 100 });
+    const filled = Object.assign(logic.newStroke("rect", "#44AAFF", 3, 20, 20, true), { x2: 80, y2: 80 });
+    assert.equal(logic.hitTest([outline], 50, 50), -1, "the inside of an outlined rectangle is not a hit");
+    assert.equal(logic.hitTest([outline], 2, 50), 0, "its edge is");
+    assert.equal(logic.hitTest([outline, filled], 50, 50), 1, "the inside of a filled rectangle is");
+    assert.equal(logic.hitTest([filled, outline], 2, 50), 1, "the newer shape wins where they overlap");
+
+    const line = Object.assign(logic.newStroke("line", "#FF4444", 3, 0, 0), { x2: 100, y2: 0 });
+    assert.equal(logic.hitTest([line], 50, 4), 0);
+    assert.equal(logic.hitTest([line], 50, 20), -1);
+});
+
+test("text and step annotations have hit bounds and render primitives", () => {
+    const text = logic.textStroke("#FFFFFF", 4, 10, 20, "Hello");
+    assert.equal(logic.textPixelSize(4), 20);
+    assert.equal(logic.hitTest([text], 12, 22), 0);
+    assert.equal(logic.hitTest([text], 200, 22), -1);
+    const primitive = logic.primitives(text)[0];
+    assert.equal(primitive.kind, "text");
+    assert.equal(primitive.text, "Hello");
+    assert.equal(primitive.pixelSize, 20);
+
+    const step = logic.stepStroke("#FF4444", 4, 50, 50);
+    step.step = 2;
+    assert.equal(logic.hitTest([step], 50, 50), 0);
+    assert.equal(logic.hitTest([step], 90, 50), -1);
+    const badge = logic.primitives(step)[0];
+    assert.equal(badge.kind, "step");
+    assert.equal(badge.label, "2");
+    assert.equal(badge.textColor, "#FFFFFF");
+    assert.equal(logic.contrastColor("#FFFFFF"), "#000000");
+});
+
+test("blur annotations render a pixelated rectangle primitive", () => {
+    const blur = Object.assign(logic.newStroke("blur", "#FFFFFF", 3, 30, 20), { x2: 10, y2: 5 });
+    same(plain(logic.primitives(blur)), [{ kind: "blur", x: 10, y: 5, width: 20, height: 15, pixelSize: 20 }]);
+    assert.equal(logic.hitTest([blur], 15, 10), 0);
+    assert.equal(logic.hitTest([blur], 35, 10), -1);
+});
+
+test("moving a stroke translates its endpoints and freehand points immutably", () => {
+    const pencil = logic.startDraft("pencil", "#FF4444", 3, 5, 5).stroke;
+    pencil.points.push({ x: 8, y: 9, w: 3 });
+    const moved = logic.translateStroke(pencil, 10, -2);
+    same(plain(moved.points), [{ x: 15, y: 3, w: 3 }, { x: 18, y: 7, w: 3 }]);
+    same(plain(pencil.points), [{ x: 5, y: 5, w: 3 }, { x: 8, y: 9, w: 3 }], "the original is untouched");
+    assert.equal(moved.id, pencil.id, "selection identity survives a move");
+});
+
+test("replace and delete are single undoable and redoable transitions", () => {
+    const first = line(10);
+    const second = line(20);
+    let history = logic.commit(logic.commit(logic.emptyHistory(), first), second);
+    const restyled = logic.copyStroke(second);
+    restyled.color = "#44AAFF";
+    restyled.fill = true;
+    history = logic.replaceStroke(history, 1, restyled);
+    assert.equal(history.strokes[1].color, "#44AAFF");
+    assert.equal(history.undo.length, 3, "add, add and restyle");
+
+    history = logic.undo(history);
+    assert.equal(history.strokes[1].color, "#FF4444", "undo restores the old style");
+    history = logic.redo(history);
+    assert.equal(history.strokes[1].fill, true, "redo reapplies it");
+
+    history = logic.removeStroke(history, 0);
+    same(history.strokes.map(stroke => stroke.x2), [20]);
+    history = logic.undo(history);
+    same(history.strokes.map(stroke => stroke.x2), [10, 20], "undo restores a deletion");
+    history = logic.redo(history);
+    same(history.strokes.map(stroke => stroke.x2), [20], "redo deletes it again");
+});
+
+test("steps renumber after delete, undo and redo", () => {
+    let history = logic.emptyHistory();
+    history = logic.commit(history, logic.stepStroke("#FF4444", 3, 10, 10));
+    history = logic.commit(history, line(20));
+    history = logic.commit(history, logic.stepStroke("#FF4444", 3, 30, 30));
+    history = logic.commit(history, logic.stepStroke("#FF4444", 3, 50, 50));
+    same(history.strokes.filter(stroke => stroke.tool === "step").map(stroke => stroke.step), [1, 2, 3]);
+
+    history = logic.removeStroke(history, 2);
+    same(history.strokes.filter(stroke => stroke.tool === "step").map(stroke => stroke.step), [1, 2], "no gap after deleting step 2");
+    history = logic.undo(history);
+    same(history.strokes.filter(stroke => stroke.tool === "step").map(stroke => stroke.step), [1, 2, 3], "undo restores the third label");
+    history = logic.redo(history);
+    same(history.strokes.filter(stroke => stroke.tool === "step").map(stroke => stroke.step), [1, 2], "redo compacts them again");
+});
+
+test("scaling restored annotations preserves text, fill and identity", () => {
+    const text = logic.textStroke("#FFFFFF", 4, 10, 20, "Note");
+    const shape = Object.assign(logic.newStroke("rect", "#FF4444", 3, 0, 0, true), { x2: 20, y2: 10 });
+    const scaled = logic.scaleStrokes([text, shape], 0.5);
+    assert.equal(scaled[0].text, "Note");
+    assert.equal(scaled[0].id, text.id);
+    assert.equal(scaled[0].size, 2);
+    assert.equal(scaled[1].fill, true);
+    assert.equal(scaled[1].x2, 10);
+});
+
+test("a selection bounds outline includes stroke width and text padding", () => {
+    const selected = Object.assign(logic.newStroke("line", "#FF4444", 4, 10, 10), { x2: 30, y2: 10 });
+    same(plain(logic.selectionBounds(selected)), { x: 6, y: 6, width: 28, height: 8 });
+    const text = logic.textStroke("#FFFFFF", 4, 10, 20, "Hi");
+    const bounds = logic.selectionBounds(text);
+    assert.equal(bounds.x, 7);
+    assert.equal(bounds.y, 17);
+    assert.ok(bounds.width > 20 && bounds.height > 20);
+});
+
+test("selection bounds surround centred ellipses and whole freehand paths", () => {
+    const circle = Object.assign(logic.newStroke("circle", "#FF4444", 2, 50, 50), { x2: 70, y2: 60 });
+    same(plain(logic.strokeBounds(circle)), { x: 30, y: 40, width: 40, height: 20 });
+    assert.equal(logic.hitTest([circle], 70, 50), 0, "the rendered rim is hit at the drag point");
+
+    const pencil = logic.startDraft("pencil", "#FF4444", 4, 0, 0).stroke;
+    pencil.points.push({ x: -20, y: 10, w: 4 }, { x: 20, y: -10, w: 4 });
+    const pencilBounds = logic.strokeBounds(pencil);
+    assert.equal(pencilBounds.x, -22);
+    assert.equal(pencilBounds.width, 44);
+    assert.equal(pencilBounds.y, -12);
+    assert.equal(pencilBounds.height, 24);
+});
+
+test("tool flyouts lay out their groups on whole device pixels", () => {
+    for (const scale of [1, 1.25, 1.5, 1.75]) {
+        for (const group of [0, 1, 2]) {
+            const flyout = logic.toolFlyout({ metrics: metrics(scale), group, button: { width: 28.6, height: 28.6 } });
+            assert.equal(flyout.items.length, logic.toolsInGroup(group).length);
+            const all = [flyout].concat(flyout.items);
+            for (const entry of all) {
+                for (const key of ["x", "y", "width", "height"]) {
+                    if (entry[key] !== undefined)
+                        assert.ok(onDevicePixel(entry[key], scale), `${key} at ${scale}`);
+                }
+            }
+            assert.ok(flyout.items.every(item => item.x >= 8 && item.x + item.width <= flyout.width - 8 + 1e-9));
+        }
+    }
+    same(logic.toolFlyout({ metrics: metrics(), group: 1, button: { width: 28, height: 28 } }).items.map(item => item.tool), ["line", "arrow", "rect", "circle"]);
 });

@@ -26,11 +26,15 @@ function dimensions(info) {
 
 function validStrokes(strokes) {
     return strokes.every(function (stroke) {
-        return stroke && ["pencil", "highlighter", "line", "arrow", "rect", "circle"].includes(stroke.tool)
+        return stroke && ["pencil", "highlighter", "line", "arrow", "rect", "circle", "text", "step", "blur"].includes(stroke.tool)
             && typeof stroke.color === "string" && /^#[a-f0-9]{6}$/i.test(stroke.color)
             && [stroke.size, stroke.x1, stroke.y1, stroke.x2, stroke.y2].every(Number.isFinite)
             && Array.isArray(stroke.points) && stroke.points.length <= 2001
-            && stroke.points.every(function (p) { return p && [p.x, p.y, p.w].every(Number.isFinite); });
+            && stroke.points.every(function (p) { return p && [p.x, p.y, p.w].every(Number.isFinite); })
+            && (stroke.fill === undefined || typeof stroke.fill === "boolean")
+            && (stroke.text === undefined || (typeof stroke.text === "string" && stroke.text.length <= 4096))
+            && (stroke.step === undefined || Number.isFinite(stroke.step))
+            && (stroke.id === undefined || (Number.isFinite(stroke.id) && stroke.id > 0));
     });
 }
 

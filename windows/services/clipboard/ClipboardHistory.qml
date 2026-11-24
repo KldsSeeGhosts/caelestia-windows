@@ -31,6 +31,11 @@ Singleton {
     property bool historyEnabled: false
     property string backendStatus: "initializing"
     property string lastError: ""
+    // Overlay activation and bounded screenshot-write correlation are
+    // independent reasons to read history. The native worker is active
+    // while either one needs it, so one cannot switch reads off under the other.
+    property bool overlayActive
+    property int retainedReaders
 
     readonly property bool available: backend.item !== null
     readonly property string status: root.enabled ? backendStatus : "disabled"
@@ -47,8 +52,27 @@ Singleton {
     }
 
     function setActive(active: bool): void {
+        overlayActive = active;
         if (available)
-            backend.item.setActive(active);
+            backend.item.setActive(active || retainedReaders > 0);
+    }
+
+    // A screenshot copy needs a short live read while Windows publishes the
+    // new history item. Callers pair every retain with release, including
+    // timeout paths; the overlay keeps its own setActive lifecycle.
+    function retain(): void {
+        retainedReaders++;
+        if (retainedReaders === 1 && !overlayActive) {
+            if (available)
+                backend.item.setActive(true);
+            refresh();
+        }
+    }
+
+    function release(): void {
+        retainedReaders = Math.max(0, retainedReaders - 1);
+        if (available && retainedReaders === 0 && !overlayActive)
+            backend.item.setActive(false);
     }
 
     function copy(id: string): void {
@@ -89,6 +113,10 @@ Singleton {
 
     function syncBackend(): void {
         const service = backend.item;
+        if (service && (overlayActive || retainedReaders > 0)) {
+            service.setActive(true);
+            service.refresh();
+        }
         if (!service) {
             items = [];
             historyEnabled = false;

@@ -71,13 +71,23 @@ Item {
     readonly property var ink: Logic.inkPopover({
         metrics: metrics,
         cell: buttonSize,
-        segment: { width: segmentProbe.implicitWidth, height: segmentProbe.implicitHeight }
+        segment: { width: segmentProbe.implicitWidth, height: segmentProbe.implicitHeight },
+        fillSegment: {
+            width: Math.max(fillProbeOutline.implicitWidth, fillProbeFilled.implicitWidth),
+            height: Math.max(fillProbeOutline.implicitHeight, fillProbeFilled.implicitHeight)
+        }
     })
     readonly property var inkAnchor: Logic.itemRect(layout, "color")
     readonly property var inkPlace: Logic.popoverPosition(work,
         { x: barPlace.x, y: barPlace.y, width: layout.width, height: layout.height },
         { x: barPlace.x + inkAnchor.x, y: barPlace.y + inkAnchor.y, width: inkAnchor.width, height: inkAnchor.height },
         ink, metrics)
+    readonly property var toolMenuLayout: editor.toolMenu >= 0 ? Logic.toolFlyout({ metrics: metrics, group: editor.toolMenu, button: buttonSize }) : null
+    readonly property var toolMenuAnchor: editor.toolMenu >= 0 ? Logic.itemRect(layout, "group:" + editor.toolMenu) : null
+    readonly property var toolMenuPlace: toolMenuLayout && toolMenuAnchor ? Logic.popoverPosition(work,
+        { x: barPlace.x, y: barPlace.y, width: layout.width, height: layout.height },
+        { x: barPlace.x + toolMenuAnchor.x, y: barPlace.y + toolMenuAnchor.y, width: toolMenuAnchor.width, height: toolMenuAnchor.height },
+        toolMenuLayout, metrics) : ({ x: 0, y: 0 })
 
     enabled: !busy
     opacity: busy ? 0.6 : 1
@@ -98,6 +108,22 @@ Item {
         visible: false
         type: TextButton.Tonal
         text: "M"
+    }
+
+    TextButton {
+        id: fillProbeOutline
+
+        visible: false
+        type: TextButton.Tonal
+        text: Tr.tr("Outline")
+    }
+
+    TextButton {
+        id: fillProbeFilled
+
+        visible: false
+        type: TextButton.Tonal
+        text: Tr.tr("Filled")
     }
 
     // ---- bar -----------------------------------------------------------
@@ -122,7 +148,7 @@ Item {
             cursorShape: pressed ? Qt.SizeAllCursor : Qt.ArrowCursor
 
             onPressed: mouse => {
-                root.editor.inkOpen = false;
+                root.editor.closePopovers();
                 grab = mapToItem(root, mouse.x, mouse.y);
                 origin = Qt.point(bar.x, bar.y);
             }
@@ -138,7 +164,8 @@ Item {
         StyledRect {
             id: indicator
 
-            readonly property var target: Logic.itemRect(root.layout, "tool:" + root.editor.tool)
+            readonly property string activeCell: root.editor.tool === "select" ? "tool:select" : "group:" + Logic.groupForTool(root.editor.tool)
+            readonly property var target: Logic.itemRect(root.layout, activeCell)
 
             x: target ? target.x : 0
             y: target ? target.y : 0
@@ -167,6 +194,20 @@ Item {
             color: Colours.palette.m3surfaceContainerHighest
         }
 
+        // An open tool flyout marks its group button even before another tool in
+        // that group is chosen.
+        StyledRect {
+            readonly property var target: root.editor.toolMenu >= 0 ? Logic.itemRect(root.layout, "group:" + root.editor.toolMenu) : null
+
+            visible: root.editor.toolMenu >= 0
+            x: target ? target.x : 0
+            y: target ? target.y : 0
+            width: target ? target.width : 0
+            height: target ? target.height : 0
+            radius: Tokens.rounding.medium
+            color: Colours.palette.m3surfaceContainerHighest
+        }
+
         Repeater {
             model: root.layout.items.filter(item => item.id === "separator")
 
@@ -181,32 +222,42 @@ Item {
             }
         }
 
+        BarIcon {
+            cellId: "tool:select"
+            objectName: "editorTool-select"
+            tip: Tr.tr("Select")
+            icon: "select"
+            checked: root.editor.tool === "select"
+            activeOnColour: Colours.palette.m3onSecondaryContainer
+            onClicked: root.editor.setTool("select")
+        }
+
         Repeater {
-            model: Logic.TOOLS
+            model: Logic.GROUPS
 
             BarIcon {
-                id: toolButton
+                id: groupButton
 
                 required property var modelData
-                readonly property bool selected: root.editor.tool === modelData.id
+                readonly property var shownTool: Logic.groupTool(modelData.group, root.editor.tool)
+                readonly property bool selected: Logic.groupForTool(root.editor.tool) === modelData.group
 
-                cellId: "tool:" + modelData.id
-                objectName: "editorTool-" + modelData.id
-                tip: modelData.label
-                icon: modelData.icon
-                checked: selected
+                cellId: "group:" + modelData.group
+                objectName: "editorToolGroup-" + modelData.group
+                tip: Tr.tr(modelData.label)
+                icon: shownTool ? shownTool.icon : "edit"
+                checked: selected || root.editor.toolMenu === modelData.group
                 activeOnColour: Colours.palette.m3onSecondaryContainer
-                onClicked: root.editor.setTool(modelData.id)
+                onClicked: root.editor.toggleToolMenu(modelData.group)
 
-                // Material Symbols has no plain diagonal line, so the dash is turned.
-                label.rotation: modelData.rotation ?? 0
+                label.rotation: shownTool?.rotation ?? 0
             }
         }
 
         BarIcon {
             cellId: "color"
             objectName: "editorColor"
-            tip: Tr.tr("Colour and size")
+            tip: Tr.tr("Colour, size and fill")
             onClicked: root.editor.toggleInk()
 
             // The dot shows the colour, and its size the line size. Its edge keeps
@@ -216,6 +267,20 @@ Item {
                 width: Logic.dotDiameter(root.editor.size, root.buttonSize.height, root.dpr)
                 height: width
                 radius: width / 2
+                color: root.editor.color
+                border.width: 1 / root.dpr
+                border.color: Colours.palette.m3outline
+            }
+
+            // The small square means new shapes are filled. Outline leaves it off.
+            Rectangle {
+                visible: root.editor.fill
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: Tokens.spacing.extraSmall / 2
+                width: Tokens.spacing.extraSmall * 1.5
+                height: width
+                radius: Tokens.rounding.small / 2
                 color: root.editor.color
                 border.width: 1 / root.dpr
                 border.color: Colours.palette.m3outline
@@ -338,6 +403,14 @@ Item {
             color: Colours.palette.m3outlineVariant
         }
 
+        Rectangle {
+            x: root.ink.fillDivider.x
+            y: root.ink.fillDivider.y
+            width: root.ink.fillDivider.width
+            height: root.ink.fillDivider.height
+            color: Colours.palette.m3outlineVariant
+        }
+
         Repeater {
             model: root.ink.colors
 
@@ -418,6 +491,104 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: ToolTip.text
                 Accessible.onPressAction: segment.clicked()
+            }
+        }
+
+        Repeater {
+            model: root.ink.fills
+
+            TextButton {
+                id: fillSegment
+
+                required property var modelData
+                readonly property bool filled: modelData.id === "filled"
+                readonly property bool selected: root.editor.fill === filled
+                readonly property string labelText: filled ? Tr.tr("Filled") : Tr.tr("Outline")
+                readonly property string tipText: filled ? Tr.tr("Fill shapes") : Tr.tr("Outline shapes")
+
+                objectName: "editorFill-" + modelData.id
+                x: modelData.x
+                y: modelData.y
+                width: modelData.width
+                height: modelData.height
+                type: TextButton.Tonal
+                checked: selected
+                text: labelText
+                onClicked: root.editor.setFill(filled)
+
+                label.transform: PixelSnap {
+                    target: fillSegment.label
+                    surface: popover
+                    dpr: root.dpr
+                }
+
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: tipText
+                Accessible.role: Accessible.Button
+                Accessible.name: tipText
+                Accessible.onPressAction: fillSegment.clicked()
+            }
+        }
+    }
+
+    // ---- tool group flyout ---------------------------------------------
+
+    Glass {
+        id: toolFlyout
+
+        objectName: "editorToolFlyout"
+        x: root.toolMenuPlace.x
+        y: root.toolMenuPlace.y
+        width: root.toolMenuLayout?.width ?? 0
+        height: root.toolMenuLayout?.height ?? 0
+        opacity: root.editor.toolMenu >= 0 ? 1 : 0
+        visible: opacity > 0
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.Standard
+            }
+        }
+
+        // A press on the flyout's own space is not a click outside.
+        MouseArea {
+            anchors.fill: parent
+        }
+
+        Repeater {
+            model: root.toolMenuLayout?.items ?? []
+
+            IconButton {
+                id: flyoutButton
+
+                required property var modelData
+                readonly property var tool: Logic.toolById(modelData.tool)
+
+                objectName: "editorTool-" + modelData.tool
+                x: modelData.x
+                y: modelData.y
+                width: modelData.width
+                height: modelData.height
+                type: IconButton.Text
+                icon: tool?.icon ?? ""
+                checked: root.editor.tool === modelData.tool
+                activeOnColour: Colours.palette.m3onSecondaryContainer
+                onClicked: root.editor.setTool(modelData.tool)
+
+                label.rotation: tool?.rotation ?? 0
+                label.transform: PixelSnap {
+                    target: flyoutButton.label
+                    surface: toolFlyout
+                    dpr: root.dpr
+                }
+
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: tool ? Tr.tr(tool.label) : ""
+                Accessible.role: Accessible.Button
+                Accessible.name: ToolTip.text
+                Accessible.onPressAction: flyoutButton.clicked()
             }
         }
     }

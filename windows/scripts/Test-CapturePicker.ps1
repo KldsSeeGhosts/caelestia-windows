@@ -33,7 +33,8 @@ try {
             [string]$FixtureTemp, [string]$FixturePowerShell)
         $ErrorActionPreference = 'Stop'
         . $FixtureScript
-        foreach ($run in @($SliceJson | ConvertFrom-Json)) {
+        $pixelRunList = $SliceJson | ConvertFrom-Json
+        foreach ($run in $pixelRunList) {
             $suffix = "window-$($run.Window)-capture-$($run.Capture)"
             $pixelTemp = Join-Path $FixtureTemp $suffix
             $null = New-Item -ItemType Directory -Path $pixelTemp
