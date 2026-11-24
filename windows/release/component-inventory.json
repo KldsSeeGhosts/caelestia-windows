@@ -73,7 +73,7 @@
     },
     {
       "id": "backend",
-      "version": "e86479c15276e5c66b93d9aa0266be166bd74134",
+      "version": "fb61bc6d89009f3a78695abc123c041a4ded44fd",
       "source": "https://github.com/KldsSeeGhosts/caelestia-quickshell-windows.git",
       "license": "LGPL-3.0-only",
       "classification": "runtime payload"
