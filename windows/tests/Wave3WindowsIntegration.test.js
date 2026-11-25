@@ -204,20 +204,24 @@ test("launcher Ctrl+Shift+Enter and Ctrl+Shift+Return invoke only app-row elevat
 test("Nexus app info exposes capability-gated actions and the inline sudo warning", () => {
     for (const marker of [
         'text: Tr.tr("Actions")',
+        "import qs.modules.launcher.services",
+        'objectName: "appInfoRun"',
         'objectName: "appInfoRunAsAdmin"',
         'objectName: "appInfoOpenFileLocation"',
         'objectName: "appInfoOpenProperties"',
         'objectName: "appInfoOpenSettings"',
         'objectName: "appInfoInlineSudo"',
         'objectName: "appInfoUninstall"',
-        "ElevationLogic.isInlineSudoEnabled(Native.AppActions)",
+        "property var appActions: Native.AppActions",
+        "ElevationLogic.isInlineSudoEnabled(root.appActions)",
         "root.refreshInlineSudoAvailable()",
         "Inline mode shares the console with medium-integrity processes and is less secure than a separate elevated window",
         "ElevationLogic.inlineSudoSpec(root.app)",
         "ElevationLogic.launchInlineSudo(",
         "root.launchActionsEnabled",
         "Boolean(actionInfo.canOpenProperties)",
-        "Native.AppActions.openProperties(root.app.id, root)",
+        "root.appActions.openProperties(root.app.id, root)",
+        "onClicked: Apps.launchWithFeedback(root.app, null)",
         "onShellActionFinished"
     ]) {
         assert.ok(appInfo.includes(marker), `AppInfo contains ${marker}`);
@@ -283,17 +287,24 @@ test("default keybinds add terminal elevation and registered escape chords", () 
     }
 });
 
-test("active-window winfo detach carries the previewed client instead of the foreground client", () => {
+test("active-window winfo detach carries only the resolved previewed client", () => {
     assert.ok(activeWindowPopout.includes("readonly property var previewClient"));
-    assert.ok(activeWindowPopout.includes("client: root.previewClient"));
+    assert.ok(activeWindowPopout.includes("toplevel: root.preview"));
+    assert.ok(activeWindowPopout.includes("root.popouts.inspectWindowRequested(root.previewClient)"));
     assert.ok(activeWindowPopout.includes("(Services.Hypr.toplevels?.values ?? []).find(t => t.address === id)"));
-    assert.ok(activeWindowContent.includes("property var client: Hypr.activeToplevel"));
-    assert.ok(activeWindowContent.includes('detachRequested("winfo", root.client)'));
-    assert.ok(popoutState.includes("signal detachRequested(mode: string, client: var)"));
-    assert.ok(popoutWrapper.includes("function detach(mode: string, client: var): void"));
-    assert.ok(popoutWrapper.includes("const target = client ?? Services.Hypr.activeToplevel"));
-    assert.ok(popoutWrapper.includes("WindowInfoFactory.openForClient(target)"));
-    assert.ok(popoutWrapper.includes("onDetachRequested: (mode, client) => root.detach(mode, client)"));
+    assert.ok(activeWindowPopout.includes("root.popouts.inspectWindowRequested(client)"));
+    assert.ok(!activeWindowPopout.includes("WindowInfoFactory.openForClient"), "the popout never falls back to the foreground window");
+    assert.ok(activeWindowContent.includes('detachRequested("winfo")'));
+    assert.ok(!activeWindowContent.includes("property var client"), "the upstream content keeps its original one-argument detach contract");
+    assert.ok(popoutState.includes("signal detachRequested(mode: string)"));
+    assert.ok(popoutState.includes("signal inspectWindowRequested(client: var)"));
+    assert.ok(popoutWrapper.includes("function detach(mode: string): void"));
+    assert.ok(popoutWrapper.includes("function detachWindowInfo(client: var): void"));
+    assert.ok(popoutWrapper.includes("if (!client)"));
+    assert.ok(popoutWrapper.includes("WindowInfoFactory.openForClient(client)"));
+    assert.ok(!popoutWrapper.includes("Services.Hypr.activeToplevel"), "WindowInfo detach has no foreground fallback");
+    assert.ok(popoutWrapper.includes("onDetachRequested: mode => root.detach(mode)"));
+    assert.ok(popoutWrapper.includes("onInspectWindowRequested: client => root.detachWindowInfo(client)"));
 });
 
 test("elevated windows receive badges and native action refusals become warning toasts", () => {
@@ -301,11 +312,11 @@ test("elevated windows receive badges and native action refusals become warning 
         'objectName: "activeWindowAdminBadge"',
         'objectName: "activeWindowRowAdminBadge"',
         'text: qsTr("Admin")',
-        "root.selectedWindow?.elevated === true",
-        "WindowInfoFactory.openForClient(client)"
+        "root.selectedWindow?.elevated === true"
     ]) {
         assert.ok(activeWindowPopout.includes(marker), `ActiveWindow popout contains ${marker}`);
     }
+    assert.ok(popoutWrapper.includes("WindowInfoFactory.openForClient(client)"));
     assert.ok(activeWindowComponent.includes('objectName: "activeWindowAdminIndicator"'));
     assert.ok(activeWindowComponent.includes("Services.Hypr.activeToplevel?.elevated === true"));
 
@@ -370,8 +381,10 @@ test("WindowInfo is staged as a Windows adapter with null-safe identity, badge, 
     for (const marker of [
         'objectName: "windowInfoFloatTileButton"',
         'objectName: "windowInfoPinButton"',
-        "disabled: !Hypr.tilingActive",
-        "disabled: !Hypr.pinSupported"
+        "disabled: !Hypr.dispatchEnabled || !Hypr.tilingActive",
+        "disabled: !Hypr.dispatchEnabled || !Hypr.pinSupported",
+        "disabled: isCurrent || !Hypr.dispatchEnabled",
+        "disabled: !Hypr.dispatchEnabled"
     ]) {
         assert.ok(windowInfoButtons.includes(marker), `WindowInfo buttons contain ${marker}`);
     }

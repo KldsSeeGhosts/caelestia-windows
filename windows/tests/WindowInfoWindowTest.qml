@@ -133,29 +133,40 @@ ShellRoot {
             if (!capabilitiesDone) {
                 const floatButton = findObject(capabilityHarness, "windowInfoFloatTileButton");
                 const pinButton = findObject(capabilityHarness, "windowInfoPinButton");
-                if (!floatButton || !pinButton) {
+                const killButton = findObject(capabilityHarness, "windowInfoKillButton");
+                const moveButton = findObject(capabilityHarness, "windowInfoMoveWorkspaceButton2");
+                if (!floatButton || !pinButton || !killButton || !moveButton) {
                     if (++capabilityAttempts < 10)
                         return;
-                    root.check(false, "capability-gated WindowInfo buttons are created");
+                    root.check(false, "dispatch-backed WindowInfo buttons are created");
                 }
-                root.check(floatButton.disabled === true && pinButton.disabled === true,
-                    "missing Hypr capabilities disable float/tile and pin");
+                root.check(floatButton.disabled === true && pinButton.disabled === true
+                    && killButton.disabled === true && moveButton.disabled === true,
+                    "dispatch-disabled WindowInfo buttons start disabled");
 
                 capabilityBackend.pinSupported = false;
                 capabilityBackend.tilingActive = false;
                 Hypr.enabled = true;
                 Hypr.backend = capabilityBackend;
+                Hypr.dispatchEnabled = true;
                 root.check(Hypr.pinSupported === false && Hypr.tilingActive === false,
                     "false backend capabilities propagate through the facade");
                 root.check(floatButton.disabled === true && pinButton.disabled === true,
-                    "false backend capabilities keep both buttons disabled");
+                    "false backend capabilities keep both capability buttons disabled");
+                root.check(killButton.disabled === false && moveButton.disabled === false,
+                    "dispatch enables kill and workspace move without extra capabilities");
 
                 capabilityBackend.pinSupported = true;
                 capabilityBackend.tilingActive = true;
                 root.check(Hypr.pinSupported === true && Hypr.tilingActive === true,
                     "true backend capabilities propagate through the facade");
                 root.check(floatButton.disabled === false && pinButton.disabled === false,
-                    "true backend capabilities enable both buttons");
+                    "true backend capabilities enable both capability buttons");
+
+                Hypr.dispatchEnabled = false;
+                root.check(floatButton.disabled === true && pinButton.disabled === true
+                    && killButton.disabled === true && moveButton.disabled === true,
+                    "observation-only mode disables every dispatch-backed button");
                 // The fixture-owned backend must not outlive the test root while
                 // the singleton facade is torn down later in engine shutdown.
                 Hypr.backend = null;

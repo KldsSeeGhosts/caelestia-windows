@@ -10,12 +10,14 @@ import qs.components
 import qs.services
 import qs.utils
 import qs.modules.nexus.common
+import qs.modules.launcher.services
 import "../../../../windows/services/apps/ElevationLogic.js" as ElevationLogic
 
 PageBase {
     id: root
 
-    readonly property DesktopEntry app: nState.selectedApp
+    property var app: nState.selectedApp
+    property var appActions: Native.AppActions
     readonly property bool favouriteByRegex: app && matchedByRegex(GlobalConfig.launcher.favouriteApps, app.id)
     readonly property bool hiddenByRegex: app && matchedByRegex(GlobalConfig.launcher.hiddenApps, app.id)
 
@@ -38,10 +40,10 @@ PageBase {
     }
 
     readonly property var actionInfo: {
-        if (!root.app?.id || typeof Native.AppActions?.info !== "function")
+        if (!root.app?.id || typeof root.appActions?.info !== "function")
             return ({});
         try {
-            return Native.AppActions.info(root.app.id) ?? ({});
+            return root.appActions.info(root.app.id) ?? ({});
         } catch (error) {
             return ({});
         }
@@ -57,11 +59,12 @@ PageBase {
     }
 
     property bool inlineSudoAvailable: isTerminalEntry(root.app)
-        && ElevationLogic.isInlineSudoEnabled(Native.AppActions)
+        && ElevationLogic.isInlineSudoEnabled(root.appActions)
     readonly property bool propertiesAvailable: Boolean(actionInfo.canOpenProperties)
-        && typeof Native.AppActions.openProperties === "function"
+        && typeof root.appActions.openProperties === "function"
     readonly property bool launchActionsEnabled: Apps.launchEnabled === true
-    readonly property bool hasNativeActions: (actionInfo.canRunAsAdmin === true && launchActionsEnabled)
+    readonly property bool hasNativeActions: launchActionsEnabled
+        || (actionInfo.canRunAsAdmin === true && launchActionsEnabled)
         || actionInfo.canOpenLocation === true || actionInfo.packaged === true
         || propertiesAvailable || actionInfo.canUninstall === true
         || (inlineSudoAvailable && launchActionsEnabled)
@@ -83,17 +86,17 @@ PageBase {
 
     function runAsAdmin(): void {
         const result = ElevationLogic.runAsAdminDetailed(
-            Native.AppActions, root.app?.id ?? "", root, root.launchActionsEnabled);
+            root.appActions, root.app?.id ?? "", root, root.launchActionsEnabled);
         root.reportElevation(result);
     }
 
     function runSimpleAction(name, failureText): void {
-        const action = Native.AppActions ? Native.AppActions[name] : null;
+        const action = root.appActions ? root.appActions[name] : null;
         if (!root.app?.id || typeof action !== "function")
             return;
         let accepted = false;
         try {
-            accepted = action.call(Native.AppActions, root.app.id) === true;
+            accepted = action.call(root.appActions, root.app.id) === true;
         } catch (error) {
             accepted = false;
         }
@@ -102,11 +105,11 @@ PageBase {
     }
 
     function openProperties(): void {
-        if (!root.app?.id || typeof Native.AppActions?.openProperties !== "function")
+        if (!root.app?.id || typeof root.appActions?.openProperties !== "function")
             return;
         let accepted = false;
         try {
-            accepted = Native.AppActions.openProperties(root.app.id, root) === true;
+            accepted = root.appActions.openProperties(root.app.id, root) === true;
         } catch (error) {
             accepted = false;
         }
@@ -120,7 +123,7 @@ PageBase {
 
     function refreshInlineSudoAvailable(): void {
         root.inlineSudoAvailable = isTerminalEntry(root.app)
-            && ElevationLogic.isInlineSudoEnabled(Native.AppActions);
+            && ElevationLogic.isInlineSudoEnabled(root.appActions);
     }
 
     function launchInlineSudo(): void {
@@ -130,7 +133,7 @@ PageBase {
             return;
         }
         const result = ElevationLogic.launchInlineSudo(
-            Native.AppActions, root.app, root, root.launchActionsEnabled);
+            root.appActions, root.app, root, root.launchActionsEnabled);
         const status = String(result?.status ?? "").toLowerCase();
         if (status === "queued" && result?.requestId !== undefined) {
             root.pendingInlineSudoRequest = String(result.requestId);
@@ -143,7 +146,7 @@ PageBase {
     }
 
     readonly property Connections inlineSudoResult: Connections {
-        target: Native.AppActions
+        target: root.appActions
         ignoreUnknownSignals: true
         function onShellActionFinished(requestId, status, error): void {
             if (!root.pendingInlineSudoRequest || String(requestId) !== root.pendingInlineSudoRequest)
@@ -246,8 +249,20 @@ PageBase {
         }
 
         RowButton {
-            objectName: "appInfoRunAsAdmin"
+            id: runButton
+
+            objectName: "appInfoRun"
             first: true
+            visible: root.launchActionsEnabled
+            icon: "play_arrow"
+            text: Tr.tr("Run")
+            subtext: Tr.tr("Start this application")
+            onClicked: Apps.launchWithFeedback(root.app, null)
+        }
+
+        RowButton {
+            objectName: "appInfoRunAsAdmin"
+            first: !runButton.visible
             visible: root.actionInfo.canRunAsAdmin === true && root.launchActionsEnabled
             icon: "admin_panel_settings"
             text: Tr.tr("Run as administrator")

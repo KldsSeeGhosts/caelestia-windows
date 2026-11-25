@@ -3,6 +3,7 @@
     "seconds": {
         "Test-AccessibilityLauncher": 4,
         "Test-AccessibilityNotifications": 4,
+        "Test-AppInfoActions": 2,
         "Test-CaptureBackendApi": 2,
         "Test-CapturePicker": 14,
         "Test-CaptureThumbnail": 25,

@@ -4,5 +4,6 @@ QtObject {
     property string currentName
     property bool hasCurrent
 
-    signal detachRequested(mode: string, client: var)
+    signal detachRequested(mode: string)
+    signal inspectWindowRequested(client: var)
 }

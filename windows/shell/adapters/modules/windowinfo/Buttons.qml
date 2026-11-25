@@ -92,6 +92,7 @@ ColumnLayout {
 
             WButton {
                 required property int index
+                objectName: "windowInfoMoveWorkspaceButton" + (index + 1)
                 readonly property int wsId: Math.floor((Hypr.activeWsId - 1) / 10) * 10 + index + 1
                 readonly property bool isCurrent: root.client?.workspace?.id === wsId
 
@@ -102,7 +103,7 @@ ColumnLayout {
                 color: isCurrent ? Colours.tPalette.m3surfaceContainerHighest : Colours.palette.m3tertiaryContainer
                 textColor: isCurrent ? Colours.palette.m3onSurface : Colours.palette.m3onTertiaryContainer
                 text: wsId
-                disabled: isCurrent
+                disabled: isCurrent || !Hypr.dispatchEnabled
             }
         }
     }
@@ -120,7 +121,7 @@ ColumnLayout {
             color: Colours.palette.m3secondaryContainer
             textColor: Colours.palette.m3onSecondaryContainer
             text: root.client?.lastIpcObject?.floating ? Tr.tr("Tile") : Tr.tr("Float")
-            disabled: !Hypr.tilingActive
+            disabled: !Hypr.dispatchEnabled || !Hypr.tilingActive
             onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.float({ window = "address:0x${root.client?.address}" })` : `togglefloating address:0x${root.client?.address}`)
         }
 
@@ -136,15 +137,17 @@ ColumnLayout {
                 color: Colours.palette.m3secondaryContainer
                 textColor: Colours.palette.m3onSecondaryContainer
                 text: root.client?.lastIpcObject?.pinned ? Tr.tr("Unpin") : Tr.tr("Pin")
-                disabled: !Hypr.pinSupported
+                disabled: !Hypr.dispatchEnabled || !Hypr.pinSupported
                 onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.pin({ window = "address:0x${root.client?.address}" })` : `pin address:0x${root.client?.address}`)
             }
         }
 
         WButton {
+            objectName: "windowInfoKillButton"
             color: Colours.palette.m3errorContainer
             textColor: Colours.palette.m3onErrorContainer
             text: Tr.tr("Kill")
+            disabled: !Hypr.dispatchEnabled
             onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.kill({ window = "address:0x${root.client?.address}" })` : `killwindow address:0x${root.client?.address}`)
         }
     }

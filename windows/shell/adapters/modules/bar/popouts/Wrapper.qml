@@ -6,7 +6,6 @@ import Quickshell.Hyprland
 import Quickshell.Wayland
 import Caelestia.Config
 import qs.components
-import qs.services as Services
 import qs.modules.bar.popouts
 import qs.modules.nexus
 import qs.modules.windowinfo as WindowInfoModule
@@ -72,21 +71,22 @@ Item {
         animCurve = dummy.Tokens.anim[type];
     }
 
-    function detach(mode: string, client: var): void {
-        setAnims(true);
-        if (mode === "winfo") {
-            setAnims(false);
-            const target = client ?? Services.Hypr.activeToplevel;
-            if (target)
-                WindowInfoModule.WindowInfoFactory.openForClient(target);
-            root.close();
+    function detach(mode: string): void {
+        if (mode === "winfo")
             return;
-        }
+        setAnims(true);
         const page = root.detachedPages.indexOf(mode);
         setAnims(false);
         WindowFactory.openPage(page >= 0 ? page : 0);
         root.hasCurrent = false;
         detachedMode = "";
+    }
+
+    function detachWindowInfo(client: var): void {
+        if (!client)
+            return;
+        WindowInfoModule.WindowInfoFactory.openForClient(client);
+        root.close();
     }
 
     function close(): void {
@@ -152,7 +152,8 @@ Item {
     PopoutState {
         id: popoutState
 
-        onDetachRequested: (mode, client) => root.detach(mode, client)
+        onDetachRequested: mode => root.detach(mode)
+        onInspectWindowRequested: client => root.detachWindowInfo(client)
     }
 
     Comp {

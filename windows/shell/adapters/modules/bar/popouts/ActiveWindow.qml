@@ -11,7 +11,6 @@ import Caelestia.Config
 import qs.components
 import qs.services as Services
 import qs.utils as Utils
-import qs.modules.windowinfo as WindowInfoModule
 
 Item {
     id: root
@@ -81,8 +80,16 @@ Item {
 
         popouts: root.popouts
         toplevel: root.preview
-        client: root.previewClient
         reservePreviewGeometry: true
+    }
+
+    Connections {
+        target: root.popouts
+
+        function onDetachRequested(mode): void {
+            if (mode === "winfo")
+                root.popouts.inspectWindowRequested(root.previewClient);
+        }
     }
 
     // The upstream content owns its chevron, so the elevation marker is a
@@ -329,8 +336,7 @@ Item {
         const client = Services.Hypr.toplevels.values.find(t => t.address === id) ?? null;
         if (!client)
             return;
-        WindowInfoModule.WindowInfoFactory.openForClient(client);
-        root.popouts.hasCurrent = false;
+        root.popouts.inspectWindowRequested(client);
     }
 
     function activate(id: string): void {

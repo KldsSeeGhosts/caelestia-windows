@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import Caelestia
 import qs.services as Services
 import qs.modules.drawers
+import qs.modules.nexus as Nexus
 import qs.modules.windowinfo as WindowInfoModule
 
 // The running-apps popout keyboard focus on the production host. The real
@@ -235,18 +236,45 @@ ShellRoot {
         } else if (step === 4) {
             if (!list())
                 return;
-            const chevron = CUtils.findChild(popouts.current, "activeWindowInspectChevron");
-            check(chevron !== null, "detach: inspect chevron exists");
+            const state = popouts.current?.popouts ?? null;
+            check(state !== null, "detach: active window popout exposes its state");
             check(Services.Hypr.activeToplevel === fixtureWindow,
                 "detach precondition: foreground remains the first window");
-            chevron.clicked(null);
+
+            hyprBackend.toplevels = ({ values: [fixtureWindow] });
+            check(popouts.current.previewClient === null,
+                "missing preview: the tracked client lookup is empty");
+            state.detachRequested("winfo");
+            check(WindowInfoModule.WindowInfoFactory.windowCount === 0,
+                "missing preview: detach opens no WindowInfo window");
+            check(popouts.hasCurrent === true,
+                "missing preview: detach leaves the popout unchanged");
+
+            hyprBackend.toplevels = ({ values: [fixtureWindow, fixtureWindowB] });
+            check(popouts.current.previewClient === fixtureWindowB,
+                "detach target: the previewed non-foreground window resolves");
+            state.detachRequested("winfo");
             check(WindowInfoModule.WindowInfoFactory.windowCount === 1,
                 "detach opens one WindowInfo window");
             check(WindowInfoModule.WindowInfoFactory.windows[0].client === fixtureWindowB,
                 "detach inspects the previewed non-foreground window");
+            check(WindowInfoModule.WindowInfoFactory.windows[0].client !== fixtureWindow,
+                "detach never falls back to the foreground window");
             WindowInfoModule.WindowInfoFactory.closeAll();
             check(WindowInfoModule.WindowInfoFactory.windowCount === 0,
                 "detach test releases the WindowInfo window");
+
+            state.detachRequested("audio");
+            check(Nexus.WindowFactory.windowCount === 1,
+                "one-argument audio detach opens Nexus without an argument error");
+            Nexus.WindowFactory.closeAll();
+            attempts = 0;
+            step = 5;
+        } else if (step === 5) {
+            if (Nexus.WindowFactory.windowCount !== 0 && ++attempts < 10)
+                return;
+            check(Nexus.WindowFactory.windowCount === 0,
+                "audio detach test releases Nexus");
             Services.Hypr.backend = null;
             Services.Hypr.enabled = false;
             console.log("CAELESTIA_PINNED_FOCUS_PASS " + assertions);

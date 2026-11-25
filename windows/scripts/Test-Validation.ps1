@@ -295,7 +295,7 @@ try {
             @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Test-*Service.ps1' -File | Sort-Object Name | ForEach-Object BaseName)
         } else {
             @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications',
-              'Test-CaptureBackendApi', 'Test-CapturePicker', 'Test-CaptureThumbnail', 'Test-CaptureRecording', 'Test-DragPreview', 'Test-DrawerFocusWindow', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-IdleWork', 'Test-LauncherHoverClose',
+              'Test-AppInfoActions', 'Test-CaptureBackendApi', 'Test-CapturePicker', 'Test-CaptureThumbnail', 'Test-CaptureRecording', 'Test-DragPreview', 'Test-DrawerFocusWindow', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-IdleWork', 'Test-LauncherHoverClose',
               'Test-NexusWindow', 'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers', 'Test-ShellReadiness',
               'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-ToasterIpc', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
