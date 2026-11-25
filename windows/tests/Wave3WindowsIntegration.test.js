@@ -383,7 +383,9 @@ test("WindowInfo is staged as a Windows adapter with null-safe identity, badge, 
         'objectName: "windowInfoPinButton"',
         "disabled: !Hypr.dispatchEnabled || !Hypr.tilingActive",
         "disabled: !Hypr.dispatchEnabled || !Hypr.pinSupported",
-        "disabled: isCurrent || !Hypr.dispatchEnabled",
+        'Hypr.desktopControlCapability?.availability === "available"',
+        "Hypr.desktopControlCapability?.operations?.move === true",
+        "disabled: isCurrent || !root.moveWorkspaceAvailable",
         "disabled: !Hypr.dispatchEnabled"
     ]) {
         assert.ok(windowInfoButtons.includes(marker), `WindowInfo buttons contain ${marker}`);

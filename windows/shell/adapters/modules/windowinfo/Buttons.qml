@@ -12,6 +12,9 @@ ColumnLayout {
 
     required property var client
     property bool moveToWsExpanded
+    readonly property bool moveWorkspaceAvailable: Hypr.dispatchEnabled
+        && Hypr.desktopControlCapability?.availability === "available"
+        && Hypr.desktopControlCapability?.operations?.move === true
 
     anchors.fill: parent
     spacing: Tokens.spacing.small
@@ -103,7 +106,7 @@ ColumnLayout {
                 color: isCurrent ? Colours.tPalette.m3surfaceContainerHighest : Colours.palette.m3tertiaryContainer
                 textColor: isCurrent ? Colours.palette.m3onSurface : Colours.palette.m3onTertiaryContainer
                 text: wsId
-                disabled: isCurrent || !Hypr.dispatchEnabled
+                disabled: isCurrent || !root.moveWorkspaceAvailable
             }
         }
     }

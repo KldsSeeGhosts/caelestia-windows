@@ -41,6 +41,7 @@ ShellRoot {
         property bool initialized: true
         property bool pinSupported: false
         property bool tilingActive: false
+        property var desktopControl: null
         property var monitors: ({ values: [] })
         property var workspaces: ({ values: [] })
         property var toplevels: ({ values: [] })
@@ -146,6 +147,7 @@ ShellRoot {
 
                 capabilityBackend.pinSupported = false;
                 capabilityBackend.tilingActive = false;
+                capabilityBackend.desktopControl = null;
                 Hypr.enabled = true;
                 Hypr.backend = capabilityBackend;
                 Hypr.dispatchEnabled = true;
@@ -153,15 +155,37 @@ ShellRoot {
                     "false backend capabilities propagate through the facade");
                 root.check(floatButton.disabled === true && pinButton.disabled === true,
                     "false backend capabilities keep both capability buttons disabled");
-                root.check(killButton.disabled === false && moveButton.disabled === false,
-                    "dispatch enables kill and workspace move without extra capabilities");
+                root.check(moveButton.disabled === true,
+                    "missing desktop move capability keeps workspace move disabled");
+                root.check(killButton.disabled === false,
+                    "dispatch enables kill without extra capabilities");
+
+                capabilityBackend.desktopControl = {
+                    capability: {
+                        availability: "available",
+                        reason: "",
+                        provider: "documented-api",
+                        operations: { switch: true, create: true, move: false, remove: false, pin: false }
+                    }
+                };
+                root.check(moveButton.disabled === true,
+                    "available desktop control with move=false keeps workspace move disabled");
 
                 capabilityBackend.pinSupported = true;
                 capabilityBackend.tilingActive = true;
+                capabilityBackend.desktopControl = {
+                    capability: {
+                        availability: "available",
+                        reason: "",
+                        provider: "documented-api",
+                        operations: { switch: true, create: true, move: true, remove: false, pin: true }
+                    }
+                };
                 root.check(Hypr.pinSupported === true && Hypr.tilingActive === true,
                     "true backend capabilities propagate through the facade");
-                root.check(floatButton.disabled === false && pinButton.disabled === false,
-                    "true backend capabilities enable both capability buttons");
+                root.check(floatButton.disabled === false && pinButton.disabled === false
+                    && moveButton.disabled === false && killButton.disabled === false,
+                    "available native capabilities enable float, pin, move, and kill buttons");
 
                 Hypr.dispatchEnabled = false;
                 root.check(floatButton.disabled === true && pinButton.disabled === true
