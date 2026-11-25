@@ -9,6 +9,7 @@ import qs.components
 import qs.components.controls
 import qs.services
 import qs.modules.launcher.services
+import "../../windows/services/apps/ElevationLogic.js" as ElevationLogic
 
 Item {
     id: root
@@ -23,11 +24,23 @@ Item {
     // Ctrl+Shift+Enter is elevation-only for an application row. The row itself
     // passes a live QQuickItem to the backend before it closes the launcher.
     function launchCurrentAppElevated(): bool {
+        if (Apps.launchEnabled !== true)
+            return false;
         const view = list.currentList;
         const item = view?.currentItem ?? null;
         if (view?.state !== "apps" || !item || typeof item.launchElevated !== "function")
             return false;
         return item.launchElevated();
+    }
+
+    function isElevationKeyEvent(event): bool {
+        return ElevationLogic.isCtrlShiftEnter(event.key, event.modifiers, {
+            returnKey: Qt.Key_Return,
+            enterKey: Qt.Key_Enter,
+            controlModifier: Qt.ControlModifier,
+            shiftModifier: Qt.ShiftModifier,
+            keypadModifier: Qt.KeypadModifier
+        });
     }
 
     implicitWidth: listWrapper.width + padding * 2
@@ -113,8 +126,7 @@ Item {
         Keys.onEscapePressed: root.screenState.launcher = false
 
         Keys.onPressed: event => {
-            if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                    && event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier)) {
+            if (root.isElevationKeyEvent(event)) {
                 event.accepted = true;
                 if (!event.isAutoRepeat)
                     root.launchCurrentAppElevated();

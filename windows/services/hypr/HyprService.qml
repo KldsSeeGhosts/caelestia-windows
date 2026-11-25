@@ -19,6 +19,8 @@ import QtQuick
 //   desktopControlSupported (optional) bool; absent means workspace control is
 //                      unavailable.
 //   desktopControl     (optional) object with capability and lastCommand maps.
+//   pinSupported       (optional) bool; absent means pin actions unsupported.
+//   tilingActive       (optional) bool; absent means float/tile unsupported.
 //
 // Per-monitor workspace ownership is NOT claimed. The pinned backend binds every
 // monitor's `activeWorkspace` and every workspace's `monitor` to the single
@@ -83,6 +85,11 @@ QtObject {
     readonly property bool available: root.nativeInitialized
     readonly property bool usingLua: false
     readonly property bool globalFocusPerMonitor: true
+
+    readonly property bool pinSupported:
+        root.nativeInitialized && root.backend.pinSupported === true
+    readonly property bool tilingActive:
+        root.nativeInitialized && root.backend.tilingActive === true
 
     readonly property var desktopControlCapability: {
         const unsupported = { switch: false, create: false, move: false, remove: false, pin: false };

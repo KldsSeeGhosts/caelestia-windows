@@ -33,6 +33,8 @@ HyprService {
     // Observable construction policy: false unless the observation opt-in
     // requests the native facade. The facade is what constructs Hyprland.
     readonly property bool nativeRequested: nativeLoader.active
+    // pinSupported and tilingActive are inherited from HyprService; they read
+    // the injected backend's capability projection and fail closed when absent.
 
     readonly property Loader _nativeLoader: Loader {
         id: nativeLoader

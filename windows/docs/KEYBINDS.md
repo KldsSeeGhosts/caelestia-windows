@@ -297,8 +297,8 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | --- | --- | --- |
 | Toggle the launcher (lone Super tap) | `Super` (tap on release) | `caelestia:launcher` |
 | Toggle the launcher over elevated windows | `Super+Shift+Space` (registered) | `caelestia:launcher` |
-| Open Windows Terminal | `Super+T` (registered) | `wt.exe` |
-| Open Windows Terminal as administrator | `Super+Shift+T` (registered, elevated) | `wt.exe` |
+| Open Windows Terminal | `Super+T` (hook-backed while `windows.hideTaskbar` is off; registered while it is on) | `wt.exe` |
+| Open Windows Terminal as administrator | `Ctrl+Super+Shift+T` (registered, elevated) | `wt.exe` |
 | Screenshot | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
 | Start or stop a recording | `Win+Shift+R` | `caelestia:record` |
 | Toggle the launcher, dashboard, OSD and utilities together | `Super+K` | `caelestia:showall` |
@@ -323,6 +323,17 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | Raise the active display brightness | `Ctrl+Alt+Page_Up` | `caelestia:brightnessUp` |
 | Lower the active display brightness | `Ctrl+Alt+Page_Down` | `caelestia:brightnessDown` |
 | Lock Windows | `Super+L` | `rundll32.exe user32.dll,LockWorkStation` |
+
+The launcher uses `Super+Shift+Space` rather than `Super+Space` because Windows
+reserves Win+Space for keyboard layout switching. The elevated terminal uses
+`Ctrl+Super+Shift+T` rather than `Super+Shift+T` because Win+Shift+T is a
+taskbar shortcut owned by the desktop supervisor while `windows.hideTaskbar`
+is off. Adding Ctrl keeps the chord outside that supervisor filter, so Windows
+delivers it through `RegisterHotKey` even when an elevated window owns the
+foreground. `Super+T` remains the unelevated terminal chord: with the default
+`windows.hideTaskbar` off it is hook-backed because the same taskbar filter
+owns Win+T, while turning `windows.hideTaskbar` on lets its `"register": true`
+preference use `RegisterHotKey`.
 
 > [!NOTE]
 > While `windows.hideTaskbar` is true, the shell's keyboard hook consumes

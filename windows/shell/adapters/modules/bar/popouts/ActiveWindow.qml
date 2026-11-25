@@ -53,6 +53,16 @@ Item {
         imagePath: root.selectedWindow?.imagePath ?? "",
         aumid: root.selectedWindow?.aumid ?? ""
     }) : root.toplevel
+    // The real tracked client behind the preview. WindowInfo must inspect this
+    // window rather than whichever window happens to own the foreground.
+    readonly property var previewClient: {
+        if (!root.group)
+            return root.toplevel;
+        const id = root.selectedId;
+        if (!id)
+            return null;
+        return (Services.Hypr.toplevels?.values ?? []).find(t => t.address === id) ?? null;
+    }
     readonly property bool previewElevated: root.group
         ? root.selectedWindow?.elevated === true
         : root.toplevel?.elevated === true || root.toplevel?.lastIpcObject?.elevated === true
@@ -71,6 +81,7 @@ Item {
 
         popouts: root.popouts
         toplevel: root.preview
+        client: root.previewClient
         reservePreviewGeometry: true
     }
 

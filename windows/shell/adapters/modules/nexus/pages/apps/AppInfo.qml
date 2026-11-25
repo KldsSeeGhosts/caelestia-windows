@@ -56,18 +56,15 @@ PageBase {
         return text.indexOf("windowsterminal") >= 0 || /(^|[\s\/\\])wt\.exe(\s|$)/.test(text);
     }
 
-    readonly property bool inlineSudoAvailable: {
-        if (!isTerminalEntry(root.app) || typeof Native.AppActions?.isInlineSudoEnabled !== "function")
-            return false;
-        try {
-            return Native.AppActions.isInlineSudoEnabled() === true;
-        } catch (error) {
-            return false;
-        }
-    }
-    readonly property bool hasNativeActions: actionInfo.canRunAsAdmin === true
+    property bool inlineSudoAvailable: isTerminalEntry(root.app)
+        && ElevationLogic.isInlineSudoEnabled(Native.AppActions)
+    readonly property bool propertiesAvailable: Boolean(actionInfo.canOpenProperties)
+        && typeof Native.AppActions.openProperties === "function"
+    readonly property bool launchActionsEnabled: Apps.launchEnabled === true
+    readonly property bool hasNativeActions: (actionInfo.canRunAsAdmin === true && launchActionsEnabled)
         || actionInfo.canOpenLocation === true || actionInfo.packaged === true
-        || actionInfo.canUninstall === true || inlineSudoAvailable
+        || propertiesAvailable || actionInfo.canUninstall === true
+        || (inlineSudoAvailable && launchActionsEnabled)
     property string pendingInlineSudoRequest: ""
 
     function reportElevation(result): void {
@@ -85,7 +82,8 @@ PageBase {
     }
 
     function runAsAdmin(): void {
-        const result = ElevationLogic.runAsAdminDetailed(Native.AppActions, root.app?.id ?? "", root);
+        const result = ElevationLogic.runAsAdminDetailed(
+            Native.AppActions, root.app?.id ?? "", root, root.launchActionsEnabled);
         root.reportElevation(result);
     }
 
@@ -103,19 +101,36 @@ PageBase {
             Toaster.toast(Tr.tr("App action unavailable"), failureText, "error", Toast.Warning);
     }
 
+    function openProperties(): void {
+        if (!root.app?.id || typeof Native.AppActions?.openProperties !== "function")
+            return;
+        let accepted = false;
+        try {
+            accepted = Native.AppActions.openProperties(root.app.id, root) === true;
+        } catch (error) {
+            accepted = false;
+        }
+        if (!accepted)
+            Toaster.toast(Tr.tr("App action unavailable"), Tr.tr("Windows could not open the application properties."), "error", Toast.Warning);
+    }
+
     function inlineSudoSpec(): var {
-        return { verb: "open", target: "wt.exe", args: ["sudo", "--inline"] };
+        return ElevationLogic.inlineSudoSpec(root.app);
+    }
+
+    function refreshInlineSudoAvailable(): void {
+        root.inlineSudoAvailable = isTerminalEntry(root.app)
+            && ElevationLogic.isInlineSudoEnabled(Native.AppActions);
     }
 
     function launchInlineSudo(): void {
-        if (!root.inlineSudoAvailable || typeof Native.AppActions?.launchShellAction !== "function")
+        root.refreshInlineSudoAvailable();
+        if (!root.inlineSudoAvailable) {
+            Toaster.toast(Tr.tr("Windows Terminal"), Tr.tr("Inline sudo is no longer enabled."), "terminal", Toast.Warning);
             return;
-        let result = null;
-        try {
-            result = Native.AppActions.launchShellAction(root.inlineSudoSpec(), root);
-        } catch (error) {
-            result = { status: "refused", error: String(error) };
         }
+        const result = ElevationLogic.launchInlineSudo(
+            Native.AppActions, root.app, root, root.launchActionsEnabled);
         const status = String(result?.status ?? "").toLowerCase();
         if (status === "queued" && result?.requestId !== undefined) {
             root.pendingInlineSudoRequest = String(result.requestId);
@@ -143,8 +158,11 @@ PageBase {
 
     onAppChanged: {
         // Auto close when app lost
-        if (!app)
+        if (!app) {
             nState.closeSubPage();
+            return;
+        }
+        root.refreshInlineSudoAvailable();
     }
 
     title: Tr.tr("App info")
@@ -230,7 +248,7 @@ PageBase {
         RowButton {
             objectName: "appInfoRunAsAdmin"
             first: true
-            visible: root.actionInfo.canRunAsAdmin === true
+            visible: root.actionInfo.canRunAsAdmin === true && root.launchActionsEnabled
             icon: "admin_panel_settings"
             text: Tr.tr("Run as administrator")
             subtext: Tr.tr("Start this app through Windows User Account Control")
@@ -247,6 +265,15 @@ PageBase {
         }
 
         RowButton {
+            objectName: "appInfoOpenProperties"
+            visible: root.propertiesAvailable
+            icon: "description"
+            text: Tr.tr("Properties")
+            subtext: Tr.tr("Open the Windows file or shortcut properties")
+            onClicked: root.openProperties()
+        }
+
+        RowButton {
             objectName: "appInfoOpenSettings"
             visible: root.actionInfo.packaged === true
             icon: "settings"
@@ -257,7 +284,7 @@ PageBase {
 
         RowButton {
             objectName: "appInfoInlineSudo"
-            visible: root.inlineSudoAvailable
+            visible: root.inlineSudoAvailable && root.launchActionsEnabled
             icon: "terminal"
             text: Tr.tr("Admin tab (inline sudo)")
             subtext: Tr.tr("Inline mode shares the console with medium-integrity processes and is less secure than a separate elevated window")

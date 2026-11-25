@@ -70,6 +70,8 @@ QtObject {
         property bool desktopControlSupported: true
         property var desktopControl: null
         property bool foregroundValidated: false
+        property bool pinSupported: false
+        property bool tilingActive: false
 
         function monitorFor(screen): var {
             return screen && screen.monitor ? screen.monitor : null;
@@ -427,6 +429,8 @@ QtObject {
         check(service.usingLua === false, "usingLua is false");
         check(service.globalFocusPerMonitor === true, "global focus limitation is explicit");
         check(service.desktopControlSupported === false, "disabled has no desktop control");
+        check(service.pinSupported === false && service.tilingActive === false,
+            "disabled window-action capabilities fail closed");
         check(service.monitors.values.length === 0 && service.workspaces.values.length === 0
             && service.toplevels.values.length === 0, "disabled exposes empty models");
         check(service.focusedMonitor === null && service.focusedWorkspace === null,
@@ -519,6 +523,16 @@ QtObject {
         check(service.focusedMonitor === monitor0, "focused monitor mapping");
         check(service.focusedWorkspace === ws2, "focused workspace mapping");
         check(service.activeWsId === 2, "active workspace id");
+        check(service.pinSupported === false && service.tilingActive === false,
+            "backend capability false values propagate");
+        fixture.pinSupported = true;
+        fixture.tilingActive = true;
+        check(service.pinSupported === true && service.tilingActive === true,
+            "backend capability true values propagate");
+        fixture.pinSupported = false;
+        fixture.tilingActive = false;
+        check(service.pinSupported === false && service.tilingActive === false,
+            "backend capability runtime flips propagate");
         check(service.monitorFor({
             monitor: monitor0
         }) === monitor0, "monitorFor first screen");
@@ -638,6 +652,8 @@ QtObject {
         check(service.nativeInitialized === true, "legacy backend is initialized");
         check(service.desktopControlSupported === false,
             "legacy backend without capability property fails closed");
+        check(service.pinSupported === false && service.tilingActive === false,
+            "legacy backend window-action capabilities fail closed");
         resetDispatch();
         expectDesktopControlRefusal("workspace 2", "workspace gated on absent capability");
         expectDesktopControlRefusal("movetoworkspace 3,address:0x1",

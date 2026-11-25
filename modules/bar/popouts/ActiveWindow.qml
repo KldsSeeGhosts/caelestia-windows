@@ -21,6 +21,9 @@ Item {
     // through this property. Linux leaves the default and keeps the upstream
     // single-window view.
     property var toplevel: Hypr.activeToplevel
+    // The tracked client the chevron inspects. Windows group previews pass the
+    // previewed window here; upstream single-window previews keep the default.
+    property var client: Hypr.activeToplevel
 
     implicitWidth: reservePreviewGeometry || toplevel ? child.implicitWidth : -Tokens.padding.extraLargeIncreased
     implicitHeight: child.implicitHeight
@@ -75,8 +78,9 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
 
                 StateLayer {
+                    objectName: "activeWindowInspectChevron"
                     radius: Tokens.rounding.large
-                    onClicked: root.popouts.detachRequested("winfo")
+                    onClicked: root.popouts.detachRequested("winfo", root.client)
                 }
 
                 MaterialIcon {

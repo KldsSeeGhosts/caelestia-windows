@@ -48,6 +48,12 @@ QtObject {
     readonly property var focusedWorkspace: Hyprland.focusedWorkspace
     readonly property var focusedMonitor: Hyprland.focusedMonitor
     readonly property bool usingLua: Hyprland.usingLua
+    // Backend window-action capabilities. Older pinned builds lack these
+    // properties; absent or non-boolean values fail closed.
+    readonly property bool pinSupported:
+        typeof Hyprland.pinSupported === "boolean" ? Hyprland.pinSupported : false
+    readonly property bool tilingActive:
+        typeof Hyprland.tilingActive === "boolean" ? Hyprland.tilingActive : false
     // Native foreground-thread layout, refreshed on foreground changes and
     // a 500 ms read-only poll for language switches within the same app.
     readonly property string kbLayout: Keyboard.currentLayoutCode.split("-")[0].toLowerCase()

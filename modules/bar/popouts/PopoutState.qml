@@ -4,5 +4,5 @@ QtObject {
     property string currentName
     property bool hasCurrent
 
-    signal detachRequested(mode: string)
+    signal detachRequested(mode: string, client: var)
 }

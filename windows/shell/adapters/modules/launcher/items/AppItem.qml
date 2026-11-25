@@ -78,8 +78,34 @@ Item {
     // open and owns the foreground. Closing is strictly a started-result effect.
     function launchElevated(): bool {
         const result = ElevationLogic.runAsAdminDetailed(
-            Native.AppActions, root.modelData?.id ?? "", root.elevationOwner());
+            Native.AppActions, root.modelData?.id ?? "", root.elevationOwner(), Apps.launchEnabled === true);
         return root.reportElevation(result);
+    }
+
+    function launchNormal(): void {
+        if (Apps.launchEnabled !== true)
+            return;
+        if (typeof Apps.launchWithFeedback === "function")
+            Apps.launchWithFeedback(root.modelData, root.screenState);
+        else {
+            Apps.launch(root.modelData);
+            root.screenState.launcher = false;
+        }
+    }
+
+    function openProperties(): void {
+        if (!root.modelData?.id || typeof Native.AppActions?.openProperties !== "function")
+            return;
+        let accepted = false;
+        try {
+            accepted = Native.AppActions.openProperties(root.modelData.id, root.elevationOwner()) === true;
+        } catch (error) {
+            accepted = false;
+        }
+        if (accepted)
+            root.screenState.launcher = false;
+        else
+            Toaster.toast(Tr.tr("App action unavailable"), Tr.tr("Windows could not open the application properties."), "error", Toast.Warning);
     }
 
     function runSimpleAction(name, failureText): void {
@@ -108,12 +134,7 @@ Item {
             }
             if (event.button !== Qt.LeftButton)
                 return;
-            if (typeof Apps.launchWithFeedback === "function")
-                Apps.launchWithFeedback(root.modelData, root.screenState);
-            else {
-                Apps.launch(root.modelData);
-                root.screenState.launcher = false;
-            }
+            root.launchNormal();
         }
     }
 
@@ -131,9 +152,16 @@ Item {
             onClosed: Qt.callLater(() => menuLoader.active = false)
 
             MenuItem {
+                objectName: "appItemRun"
+                text: Tr.tr("Run")
+                visible: Apps.launchEnabled === true
+                enabled: visible
+                onTriggered: root.launchNormal()
+            }
+            MenuItem {
                 objectName: "appItemRunAsAdmin"
                 text: Tr.tr("Run as administrator")
-                visible: root.actionInfo.canRunAsAdmin === true
+                visible: root.actionInfo.canRunAsAdmin === true && Apps.launchEnabled === true
                 enabled: visible
                 onTriggered: root.launchElevated()
             }
@@ -143,6 +171,14 @@ Item {
                 visible: root.actionInfo.canOpenLocation === true
                 enabled: visible
                 onTriggered: root.runSimpleAction("openFileLocation", Tr.tr("Windows could not open the application location."))
+            }
+            MenuItem {
+                objectName: "appItemOpenProperties"
+                text: Tr.tr("Properties")
+                visible: Boolean(root.actionInfo.canOpenProperties)
+                    && typeof Native.AppActions.openProperties === "function"
+                enabled: visible
+                onTriggered: root.openProperties()
             }
             MenuItem {
                 objectName: "appItemOpenSettings"

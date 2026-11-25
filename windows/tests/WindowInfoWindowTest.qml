@@ -25,6 +25,47 @@ ShellRoot {
         aumid: "Terminal.Package"
     })
 
+    readonly property var floatingHarnessClient: ({
+        address: "def",
+        title: "Capability harness client",
+        monitor: null,
+        workspace: { id: 1 },
+        wayland: null,
+        lastIpcObject: { floating: true, pinned: false, mapped: true },
+        elevated: false
+    })
+
+    QtObject {
+        id: capabilityBackend
+
+        property bool initialized: true
+        property bool pinSupported: false
+        property bool tilingActive: false
+        property var monitors: ({ values: [] })
+        property var workspaces: ({ values: [] })
+        property var toplevels: ({ values: [] })
+        property var activeToplevel: null
+        property var focusedWorkspace: null
+        property var focusedMonitor: null
+        function dispatch(): void {
+        }
+    }
+
+    // A direct Buttons instance lets the fixture toggle the singleton facade's
+    // injected backend and observe both capability-gated controls. The window
+    // lifecycle test above still exercises the same component in production.
+    Item {
+        id: capabilityHarness
+
+        width: 360
+        height: 180
+
+        Buttons {
+            anchors.fill: parent
+            client: root.floatingHarnessClient
+        }
+    }
+
     function check(value, message): void {
         assertions++;
         if (!value)
@@ -59,6 +100,8 @@ ShellRoot {
 
         property var first: null
         property bool clientReplaced: false
+        property bool capabilitiesDone: false
+        property int capabilityAttempts: 0
 
         function checkOnce(): void {
             if (first === null) {
@@ -86,6 +129,39 @@ ShellRoot {
             root.check(findObject(first.contentItem, "windowInfoAumid") !== null,
                 "AUMID row exists with null IPC");
             root.check(WindowInfoFactory.windowCount === 1, "one live WindowInfo window");
+
+            if (!capabilitiesDone) {
+                const floatButton = findObject(capabilityHarness, "windowInfoFloatTileButton");
+                const pinButton = findObject(capabilityHarness, "windowInfoPinButton");
+                if (!floatButton || !pinButton) {
+                    if (++capabilityAttempts < 10)
+                        return;
+                    root.check(false, "capability-gated WindowInfo buttons are created");
+                }
+                root.check(floatButton.disabled === true && pinButton.disabled === true,
+                    "missing Hypr capabilities disable float/tile and pin");
+
+                capabilityBackend.pinSupported = false;
+                capabilityBackend.tilingActive = false;
+                Hypr.enabled = true;
+                Hypr.backend = capabilityBackend;
+                root.check(Hypr.pinSupported === false && Hypr.tilingActive === false,
+                    "false backend capabilities propagate through the facade");
+                root.check(floatButton.disabled === true && pinButton.disabled === true,
+                    "false backend capabilities keep both buttons disabled");
+
+                capabilityBackend.pinSupported = true;
+                capabilityBackend.tilingActive = true;
+                root.check(Hypr.pinSupported === true && Hypr.tilingActive === true,
+                    "true backend capabilities propagate through the facade");
+                root.check(floatButton.disabled === false && pinButton.disabled === false,
+                    "true backend capabilities enable both buttons");
+                // The fixture-owned backend must not outlive the test root while
+                // the singleton facade is torn down later in engine shutdown.
+                Hypr.backend = null;
+                Hypr.enabled = false;
+                capabilitiesDone = true;
+            }
 
             if (!clientReplaced) {
                 clientReplaced = true;

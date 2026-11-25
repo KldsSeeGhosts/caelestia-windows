@@ -116,9 +116,11 @@ ColumnLayout {
         spacing: root.client?.lastIpcObject?.floating ? Tokens.spacing.medium : Tokens.spacing.small
 
         WButton {
+            objectName: "windowInfoFloatTileButton"
             color: Colours.palette.m3secondaryContainer
             textColor: Colours.palette.m3onSecondaryContainer
             text: root.client?.lastIpcObject?.floating ? Tr.tr("Tile") : Tr.tr("Float")
+            disabled: !Hypr.tilingActive
             onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.float({ window = "address:0x${root.client?.address}" })` : `togglefloating address:0x${root.client?.address}`)
         }
 
@@ -130,9 +132,11 @@ ColumnLayout {
             Layout.rightMargin: active ? 0 : -parent.spacing
 
             sourceComponent: WButton {
+                objectName: "windowInfoPinButton"
                 color: Colours.palette.m3secondaryContainer
                 textColor: Colours.palette.m3onSecondaryContainer
                 text: root.client?.lastIpcObject?.pinned ? Tr.tr("Unpin") : Tr.tr("Pin")
+                disabled: !Hypr.pinSupported
                 onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.pin({ window = "address:0x${root.client?.address}" })` : `pin address:0x${root.client?.address}`)
             }
         }

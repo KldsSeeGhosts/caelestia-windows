@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Windows as Native
 import "../../../components" as Components
 import "AppStoragePath.js" as StoragePath
+import "ElevationLogic.js" as ElevationLogic
 import "ShellActionSchema.js" as ShellActions
 import "../../shell/adapters/modules/launcher/services/LauncherActionMigration.js" as ActionMigration
 
@@ -275,6 +276,66 @@ QtObject {
             "icon resolution and the original image-missing fallback");
         check(service.nameFor(firefox) === "Firefox" && service.nameFor(null) === "",
             "name resolution");
+
+        // Qt on Windows sets KeypadModifier for numeric keypad Enter. The
+        // helper accepts both main Return and keypad Enter for Ctrl+Shift.
+        const keyConstants = {
+            returnKey: Qt.Key_Return,
+            enterKey: Qt.Key_Enter,
+            controlModifier: Qt.ControlModifier,
+            shiftModifier: Qt.ShiftModifier,
+            keypadModifier: Qt.KeypadModifier
+        };
+        const ctrlShift = Qt.ControlModifier | Qt.ShiftModifier;
+        check(ElevationLogic.isCtrlShiftEnter(Qt.Key_Return, ctrlShift, keyConstants),
+            "Ctrl+Shift+Return is the elevation chord");
+        check(ElevationLogic.isCtrlShiftEnter(Qt.Key_Enter, ctrlShift | Qt.KeypadModifier, keyConstants),
+            "Ctrl+Shift+numeric keypad Enter is the elevation chord");
+        check(ElevationLogic.isCtrlShiftEnter(Qt.Key_Enter, ctrlShift, keyConstants),
+            "Ctrl+Shift+Enter without the keypad bit is accepted");
+        check(!ElevationLogic.isCtrlShiftEnter(Qt.Key_Return, Qt.ControlModifier, keyConstants),
+            "Ctrl+Return without Shift is not elevation");
+        check(!ElevationLogic.isCtrlShiftEnter(Qt.Key_A, ctrlShift, keyConstants),
+            "Ctrl+Shift+A is not elevation");
+
+        // The pure native-action helpers fail closed for a browse-only catalog:
+        // neither elevation nor inline sudo reaches the backend. When launch is
+        // enabled, inline sudo still rechecks the Microsoft Sudo mode at click time.
+        let elevationDispatches = 0;
+        let shellDispatches = 0;
+        let inlineSudoEnabled = true;
+        let lastInlineSpec = null;
+        const nativeActionFake = {
+            runAsAdminDetailed: function() {
+                elevationDispatches++;
+                return {status: "started"};
+            },
+            isInlineSudoEnabled: function() {
+                return inlineSudoEnabled;
+            },
+            launchShellAction: function(spec) {
+                shellDispatches++;
+                lastInlineSpec = spec;
+                return {status: "started"};
+            }
+        };
+        const blockedElevation = ElevationLogic.runAsAdminDetailed(nativeActionFake, "terminal", null, false);
+        check(blockedElevation.status === "refused" && elevationDispatches === 0,
+            "browse-only elevation never dispatches");
+        const blockedInline = ElevationLogic.launchInlineSudo(nativeActionFake, terminal, null, false);
+        check(blockedInline.status === "refused" && shellDispatches === 0,
+            "browse-only inline sudo never dispatches");
+        const allowedInline = ElevationLogic.launchInlineSudo(nativeActionFake, terminal, null, true);
+        check(allowedInline.status === "started" && shellDispatches === 1,
+            "enabled inline sudo dispatches once");
+        check(lastInlineSpec.target === "wt.exe"
+            && JSON.stringify(lastInlineSpec.args) === JSON.stringify(["new-tab", "--", "sudo.exe", "--inline", "powershell.exe"]),
+            "inline sudo passes an explicit shell command");
+        inlineSudoEnabled = false;
+        const staleInline = ElevationLogic.launchInlineSudo(nativeActionFake, terminal, null, true);
+        check(staleInline.status === "refused" && staleInline.inlineSudoEnabled === false
+            && shellDispatches === 1,
+            "click-time inline sudo recheck blocks dispatch");
 
         // The adapter must expose the preserved launcher members and no
         // Database/AppDb surface.

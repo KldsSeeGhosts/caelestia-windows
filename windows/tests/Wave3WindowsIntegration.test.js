@@ -15,6 +15,9 @@ const appItem = read("windows/shell/adapters/modules/launcher/items/AppItem.qml"
 const launcherContent = read("windows/shell/adapters/modules/launcher/Content.qml");
 const appInfo = read("windows/shell/adapters/modules/nexus/pages/apps/AppInfo.qml");
 const activeWindowPopout = read("windows/shell/adapters/modules/bar/popouts/ActiveWindow.qml");
+const activeWindowContent = read("modules/bar/popouts/ActiveWindow.qml");
+const popoutState = read("modules/bar/popouts/PopoutState.qml");
+const popoutWrapper = read("windows/shell/adapters/modules/bar/popouts/Wrapper.qml");
 const activeWindowComponent = read("windows/shell/adapters/modules/bar/components/ActiveWindow.qml");
 const hyprService = read("windows/services/hypr/HyprService.qml");
 const hyprFacade = read("windows/services/hypr/Hypr.qml");
@@ -29,7 +32,8 @@ const staging = json("windows/shell/sources.json");
 
 function elevationLogic() {
     const source = read("windows/services/apps/ElevationLogic.js").replace(/^\.pragma library\s*/m, "");
-    return vm.runInNewContext(`${source}\n;({ canonicalStatus, errorText, runAsAdminDetailed, report })`, {});
+    return vm.runInNewContext(`${source}
+;({ canonicalStatus, errorText, runAsAdminDetailed, report, shellExecutableForEntry, inlineSudoSpec, isInlineSudoEnabled, launchInlineSudo, isCtrlShiftEnter })`, {});
 }
 
 test("ElevationLogic normalizes statuses and passes the live owner before result handling", () => {
@@ -42,7 +46,7 @@ test("ElevationLogic normalizes statuses and passes the live owner before result
             return { status: "started" };
         }
     };
-    const result = logic.runAsAdminDetailed(backend, "app.exe", owner);
+    const result = logic.runAsAdminDetailed(backend, "app.exe", owner, true);
     assert.equal(result.status, "started");
     assert.deepEqual(calls, [["app.exe", owner]]);
 
@@ -70,21 +74,98 @@ test("ElevationLogic normalizes statuses and passes the live owner before result
     });
     assert.deepEqual(seen, [["refused", "not here", "notSupported"]]);
 
-    const missing = logic.runAsAdminDetailed({}, "app.exe", owner);
+    const missing = logic.runAsAdminDetailed({}, "app.exe", owner, true);
     assert.equal(missing.status, "notSupported");
+
+    const blockedCalls = [];
+    const blocked = logic.runAsAdminDetailed({
+        runAsAdminDetailed: () => blockedCalls.push("elevated")
+    }, "app.exe", owner, false);
+    assert.equal(blocked.status, "refused");
+    assert.match(blocked.error, /launching is disabled/);
+    assert.deepEqual(blockedCalls, [], "browse-only elevation never reaches the backend");
+});
+
+test("ElevationLogic builds a real inline sudo command and rechecks the opt-in", () => {
+    const logic = elevationLogic();
+    assert.equal(logic.shellExecutableForEntry({ name: "Command Prompt", execString: "cmd.exe" }), "cmd.exe");
+    assert.equal(logic.shellExecutableForEntry({ name: "PowerShell 7", execString: "pwsh.exe" }), "pwsh.exe");
+    assert.equal(logic.shellExecutableForEntry({ name: "Windows Terminal", execString: "wt.exe" }), "powershell.exe");
+
+    for (const [entry, shell] of [
+        [{ id: "cmd.lnk", name: "Command Prompt", command: ["cmd.exe"] }, "cmd.exe"],
+        [{ id: "pwsh.lnk", name: "PowerShell 7", command: ["pwsh.exe"] }, "pwsh.exe"],
+        [{ id: "wt.exe", name: "Windows Terminal", command: ["wt.exe"] }, "powershell.exe"]
+    ]) {
+        assert.deepEqual(JSON.parse(JSON.stringify(logic.inlineSudoSpec(entry))), {
+            verb: "open",
+            target: "wt.exe",
+            args: ["new-tab", "--", "sudo.exe", "--inline", shell]
+        });
+    }
+
+    const calls = [];
+    let inlineEnabled = true;
+    const backend = {
+        isInlineSudoEnabled: () => inlineEnabled,
+        launchShellAction(spec, owner) {
+            calls.push([spec, owner]);
+            return { status: "queued", requestId: "req-1" };
+        }
+    };
+    const owner = { owner: true };
+    const entry = { id: "terminal", name: "Windows Terminal" };
+    const queued = logic.launchInlineSudo(backend, entry, owner, true);
+    assert.equal(queued.status, "queued");
+    assert.equal(calls.length, 1);
+    assert.equal(JSON.stringify(calls[0][0].args), JSON.stringify(["new-tab", "--", "sudo.exe", "--inline", "powershell.exe"]));
+    assert.equal(calls[0][1], owner);
+
+    inlineEnabled = false;
+    const refused = logic.launchInlineSudo(backend, entry, owner, true);
+    assert.equal(refused.status, "refused");
+    assert.equal(refused.inlineSudoEnabled, false);
+    assert.equal(calls.length, 1, "click-time recheck blocks dispatch when inline sudo is off");
+
+    const browseOnly = logic.launchInlineSudo(backend, entry, owner, false);
+    assert.equal(browseOnly.status, "refused");
+    assert.equal(calls.length, 1, "browse-only inline sudo never reaches the backend");
+});
+
+test("ElevationLogic keypad helper accepts Return and numeric keypad Enter", () => {
+    const logic = elevationLogic();
+    const keys = {
+        returnKey: 0x01000004,
+        enterKey: 0x01000005,
+        controlModifier: 0x04000000,
+        shiftModifier: 0x02000000,
+        keypadModifier: 0x20000000
+    };
+    const ctrlShift = keys.controlModifier | keys.shiftModifier;
+    assert.equal(logic.isCtrlShiftEnter(keys.returnKey, ctrlShift, keys), true);
+    assert.equal(logic.isCtrlShiftEnter(keys.enterKey, ctrlShift | keys.keypadModifier, keys), true);
+    assert.equal(logic.isCtrlShiftEnter(keys.enterKey, ctrlShift, keys), true);
+    assert.equal(logic.isCtrlShiftEnter(keys.returnKey, ctrlShift | keys.keypadModifier, keys), true);
+    assert.equal(logic.isCtrlShiftEnter(keys.returnKey, keys.controlModifier, keys), false);
+    assert.equal(logic.isCtrlShiftEnter(0x20, ctrlShift, keys), false);
 });
 
 test("launcher app rows expose native actions and close only after elevation starts", () => {
     for (const marker of [
         'objectName: "appItemContextMenu"',
+        'objectName: "appItemRun"',
         'objectName: "appItemRunAsAdmin"',
         'objectName: "appItemOpenFileLocation"',
+        'objectName: "appItemOpenProperties"',
         'objectName: "appItemOpenSettings"',
         'objectName: "appItemUninstall"',
         "root.actionInfo.canRunAsAdmin === true",
         "root.actionInfo.canOpenLocation === true",
         "root.actionInfo.packaged === true",
         "root.actionInfo.canUninstall === true",
+        "Boolean(root.actionInfo.canOpenProperties)",
+        "Native.AppActions.openProperties(root.modelData.id, root.elevationOwner())",
+        "Apps.launchEnabled === true",
         "root.elevationOwner()",
         "root.ListView.view ?? root"
     ]) {
@@ -102,14 +183,21 @@ test("launcher app rows expose native actions and close only after elevation sta
     const launchBody = appItem.match(/function launchElevated\(\): bool \{([\s\S]*?)\n    \}/)?.[1] ?? "";
     assert.ok(launchBody.indexOf("runAsAdminDetailed") < launchBody.indexOf("reportElevation"),
         "the backend receives the owner before the started handler can close the launcher");
+    assert.ok(launchBody.includes("Apps.launchEnabled === true"),
+        "launcher elevation passes the browse-only launch gate");
+    const normalBody = appItem.match(/function launchNormal\(\): void \{([\s\S]*?)\n    \}/)?.[1] ?? "";
+    assert.ok(normalBody.includes("if (Apps.launchEnabled !== true)"),
+        "the Run helper refuses before dispatch while launching is disabled");
 });
 
 test("launcher Ctrl+Shift+Enter and Ctrl+Shift+Return invoke only app-row elevation", () => {
     assert.ok(launcherContent.includes("function launchCurrentAppElevated(): bool"));
     assert.ok(launcherContent.includes('view?.state !== "apps"'));
     assert.ok(launcherContent.includes('typeof item.launchElevated !== "function"'));
-    assert.ok(launcherContent.includes("event.key === Qt.Key_Return || event.key === Qt.Key_Enter"));
-    assert.ok(launcherContent.includes("event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier)"));
+    assert.ok(launcherContent.includes("function isElevationKeyEvent(event): bool"));
+    assert.ok(launcherContent.includes("keypadModifier: Qt.KeypadModifier"));
+    assert.ok(launcherContent.includes("root.isElevationKeyEvent(event)"));
+    assert.ok(launcherContent.includes("if (Apps.launchEnabled !== true)"));
     assert.ok(launcherContent.includes("!event.isAutoRepeat"));
 });
 
@@ -118,19 +206,26 @@ test("Nexus app info exposes capability-gated actions and the inline sudo warnin
         'text: Tr.tr("Actions")',
         'objectName: "appInfoRunAsAdmin"',
         'objectName: "appInfoOpenFileLocation"',
+        'objectName: "appInfoOpenProperties"',
         'objectName: "appInfoOpenSettings"',
         'objectName: "appInfoInlineSudo"',
         'objectName: "appInfoUninstall"',
-        "Native.AppActions.isInlineSudoEnabled()",
+        "ElevationLogic.isInlineSudoEnabled(Native.AppActions)",
+        "root.refreshInlineSudoAvailable()",
         "Inline mode shares the console with medium-integrity processes and is less secure than a separate elevated window",
-        'target: "wt.exe"',
-        'args: ["sudo", "--inline"]',
+        "ElevationLogic.inlineSudoSpec(root.app)",
+        "ElevationLogic.launchInlineSudo(",
+        "root.launchActionsEnabled",
+        "Boolean(actionInfo.canOpenProperties)",
+        "Native.AppActions.openProperties(root.app.id, root)",
         "onShellActionFinished"
     ]) {
         assert.ok(appInfo.includes(marker), `AppInfo contains ${marker}`);
     }
-    assert.ok(appInfo.indexOf("isInlineSudoEnabled()") < appInfo.indexOf("launchInlineSudo"),
+    assert.ok(appInfo.indexOf("isInlineSudoEnabled") < appInfo.indexOf("function launchInlineSudo"),
         "inline sudo is gated before launch");
+    assert.ok(!appInfo.includes('args: ["sudo", "--inline"]'),
+        "inline sudo never invokes Microsoft Sudo without a command");
 });
 
 test("default keybinds add terminal elevation and registered escape chords", () => {
@@ -154,8 +249,8 @@ test("default keybinds add terminal elevation and registered escape chords", () 
         register: true,
         description: "Open Windows Terminal"
     });
-    assert.deepEqual({ ...byKeys["Super+Shift+T"] }, {
-        keys: "Super+Shift+T",
+    assert.deepEqual({ ...byKeys["Ctrl+Super+Shift+T"] }, {
+        keys: "Ctrl+Super+Shift+T",
         action: "exec",
         id: "terminalAdmin",
         command: "wt.exe",
@@ -177,13 +272,28 @@ test("default keybinds add terminal elevation and registered escape chords", () 
     const docs = read("windows/docs/KEYBINDS.md");
     for (const text of [
         "`Super+Shift+Space` (registered)",
-        "`Super+T` (registered)",
-        "`Super+Shift+T` (registered, elevated)",
+        "`Super+T` (hook-backed while `windows.hideTaskbar` is off; registered while it is on)",
+        "`Ctrl+Super+Shift+T` (registered, elevated)",
+        "reserves Win+Space for keyboard layout switching",
+        "taskbar shortcut owned by the desktop supervisor",
         '"elevate": true',
         "Open Windows Terminal as administrator"
     ]) {
         assert.ok(docs.includes(text), `KEYBINDS.md contains ${text}`);
     }
+});
+
+test("active-window winfo detach carries the previewed client instead of the foreground client", () => {
+    assert.ok(activeWindowPopout.includes("readonly property var previewClient"));
+    assert.ok(activeWindowPopout.includes("client: root.previewClient"));
+    assert.ok(activeWindowPopout.includes("(Services.Hypr.toplevels?.values ?? []).find(t => t.address === id)"));
+    assert.ok(activeWindowContent.includes("property var client: Hypr.activeToplevel"));
+    assert.ok(activeWindowContent.includes('detachRequested("winfo", root.client)'));
+    assert.ok(popoutState.includes("signal detachRequested(mode: string, client: var)"));
+    assert.ok(popoutWrapper.includes("function detach(mode: string, client: var): void"));
+    assert.ok(popoutWrapper.includes("const target = client ?? Services.Hypr.activeToplevel"));
+    assert.ok(popoutWrapper.includes("WindowInfoFactory.openForClient(target)"));
+    assert.ok(popoutWrapper.includes("onDetachRequested: (mode, client) => root.detach(mode, client)"));
 });
 
 test("elevated windows receive badges and native action refusals become warning toasts", () => {
@@ -201,7 +311,15 @@ test("elevated windows receive badges and native action refusals become warning 
 
     assert.ok(nativeHyprBackend.includes("signal actionRefused(string action, string reason, bool elevated)"));
     assert.ok(nativeHyprBackend.includes("function onActionRefused(action, reason, elevated)"));
+    assert.ok(nativeHyprBackend.includes("readonly property bool pinSupported"));
+    assert.ok(nativeHyprBackend.includes("readonly property bool tilingActive"));
+    assert.ok(nativeHyprBackend.includes('typeof Hyprland.pinSupported === "boolean"'));
+    assert.ok(nativeHyprBackend.includes('typeof Hyprland.tilingActive === "boolean"'));
     assert.ok(hyprService.includes("signal actionRefused(string action, string reason, bool elevated)"));
+    assert.ok(hyprService.includes("readonly property bool pinSupported"));
+    assert.ok(hyprService.includes("readonly property bool tilingActive"));
+    assert.ok(hyprService.includes("root.backend.pinSupported === true"));
+    assert.ok(hyprService.includes("root.backend.tilingActive === true"));
     assert.ok(hyprFacade.includes('Toaster.toast(Tr.tr("Window action blocked")'));
     assert.ok(hyprFacade.includes("because it runs as administrator"));
     assert.ok(hyprFacade.includes("Toast.Warning"));
@@ -247,6 +365,15 @@ test("WindowInfo is staged as a Windows adapter with null-safe identity, badge, 
         "root.client?.workspace?.name"
     ]) {
         assert.ok(windowInfoDetails.includes(marker), `WindowInfo Details contains ${marker}`);
+    }
+
+    for (const marker of [
+        'objectName: "windowInfoFloatTileButton"',
+        'objectName: "windowInfoPinButton"',
+        "disabled: !Hypr.tilingActive",
+        "disabled: !Hypr.pinSupported"
+    ]) {
+        assert.ok(windowInfoButtons.includes(marker), `WindowInfo buttons contain ${marker}`);
     }
 
     for (const dispatch of ["movetoworkspace ${wsId},address:0x${root.client?.address}",

@@ -72,13 +72,13 @@ Item {
         animCurve = dummy.Tokens.anim[type];
     }
 
-    function detach(mode: string): void {
+    function detach(mode: string, client: var): void {
         setAnims(true);
         if (mode === "winfo") {
             setAnims(false);
-            const client = Services.Hypr.activeToplevel;
-            if (client)
-                WindowInfoModule.WindowInfoFactory.openForClient(client);
+            const target = client ?? Services.Hypr.activeToplevel;
+            if (target)
+                WindowInfoModule.WindowInfoFactory.openForClient(target);
             root.close();
             return;
         }
@@ -152,7 +152,7 @@ Item {
     PopoutState {
         id: popoutState
 
-        onDetachRequested: mode => root.detach(mode)
+        onDetachRequested: (mode, client) => root.detach(mode, client)
     }
 
     Comp {

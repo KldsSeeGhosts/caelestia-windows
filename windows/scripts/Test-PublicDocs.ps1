@@ -278,6 +278,26 @@ foreach ($file in $docs) {
     }
 }
 
+# The keybind reference is user-facing API documentation. Every shipped default
+# chord must appear verbatim there; a stale table once documented a chord that
+# the default file did not ship.
+$keybindDefaults = Join-Path $RepoRoot 'defaults\windows\keybinds.json'
+$keybindDocs = Join-Path $RepoRoot 'windows\docs\KEYBINDS.md'
+if ((Test-Path -LiteralPath $keybindDefaults -PathType Leaf) -and (Test-Path -LiteralPath $keybindDocs -PathType Leaf)) {
+    $defaultKeys = @((Get-Content -LiteralPath $keybindDefaults -Raw -Encoding UTF8 | ConvertFrom-Json).binds | ForEach-Object { $_.keys })
+    $keybindText = Get-Content -LiteralPath $keybindDocs -Raw -Encoding UTF8
+    foreach ($keys in @($defaultKeys | Select-Object -Unique)) {
+        if ($keybindText -notmatch [regex]::Escape('`' + $keys + '`')) {
+            $findings.Add([pscustomobject]@{
+                File = 'windows/docs/KEYBINDS.md'
+                Line = 0
+                Kind = 'keybind-docs'
+                Message = "shipped default chord '$keys' is not documented verbatim"
+            })
+        }
+    }
+}
+
 $result = [pscustomobject]@{
     Check = 'Test-PublicDocs'
     Passed = ($findings.Count -eq 0)

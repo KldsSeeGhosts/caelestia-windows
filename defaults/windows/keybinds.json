@@ -27,7 +27,7 @@
       "description": "Open Windows Terminal"
     },
     {
-      "keys": "Super+Shift+T",
+      "keys": "Ctrl+Super+Shift+T",
       "action": "exec",
       "id": "terminalAdmin",
       "command": "wt.exe",
