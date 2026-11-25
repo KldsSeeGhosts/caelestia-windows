@@ -19,6 +19,8 @@ QtObject {
     property real progressCompleted: 0
     property real progressTotal: 0
     property string progressUnit: ""
+    property string refusalMessage: ""
+    property string manualCommand: ""
     readonly property bool determinate: progressTotal > 0 && progressUnit !== ""
     readonly property real progressFraction: complete ? 1 : determinate ? progressCompleted / progressTotal : 0
 
@@ -32,6 +34,8 @@ QtObject {
         progressCompleted = 0;
         progressTotal = 0;
         progressUnit = "";
+        refusalMessage = "";
+        manualCommand = "";
         deadline.restart();
         process.command = command;
         process.running = true;
@@ -83,6 +87,14 @@ QtObject {
             if (code === 0) {
                 try {
                     const data = JSON.parse(output.text.trim());
+                    if (data.schema === 1 && data.phase === "failed" && data.code === "scheduler-policy"
+                            && typeof data.message === "string" && typeof data.manualCommand === "string") {
+                        root.refusalMessage = data.message;
+                        root.manualCommand = data.manualCommand;
+                        deadline.stop();
+                        root.operationState = "failed";
+                        return;
+                    }
                     if (typeof data.operationId === "string" && /^[a-f0-9]{32}$/.test(data.operationId)) {
                         root.operationId = data.operationId;
                         return;

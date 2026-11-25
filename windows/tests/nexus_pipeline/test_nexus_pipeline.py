@@ -245,7 +245,7 @@ class StageRunner(unittest.TestCase):
         revision = git(source, "rev-parse", "HEAD")
         git(source, "tag", "unrelated-tag")
         git(source, "branch", "unrelated-branch")
-        subprocess.run(["git", "clone", "--quiet", "--depth=1", "--no-tags",
+        subprocess.run(["git", "-c", "protocol.file.allow=always", "clone", "--quiet", "--depth=1", "--no-tags",
                         "--single-branch", source.as_uri(), str(shallow)], check=True, capture_output=True)
         self.assertEqual("true", git(shallow, "rev-parse", "--is-shallow-repository"))
         quote = lambda value: "'" + str(value).replace("'", "''") + "'"

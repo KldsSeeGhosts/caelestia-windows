@@ -74,6 +74,44 @@ foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Mainten
     Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
     $cancelledOperations += $taskOperation
 }
+# Scheduled-task arguments are a command line, not a path. Extract the quoted
+# launcher and prefix values, then compare the paths through the normalizer so
+# 8.3, separator, casing and trailing-slash spellings cannot hide ownership.
+function Get-CaelestiaStartTaskInvocation([string]$Arguments) {
+    # Accept only the generated -File invocation. In particular, -Command
+    # consumes its remainder as script text, never as PowerShell host flags.
+    $match = [regex]::Match($Arguments,
+        '\A-NoProfile[ \t]+-ExecutionPolicy[ \t]+Bypass[ \t]+-WindowStyle[ \t]+Hidden[ \t]+-File[ \t]+"([^"\r\n]+)(?<!\\)"[ \t]+-Prefix[ \t]+"([^"\r\n]+)(?<!\\)"(?:[ \t]+-ReadinessRecordPath[ \t]+"[^"\r\n]+(?<!\\)")?(?:[ \t]+-(?:PreparedSchemeRuntime|SkipSchemeRuntime))?[ \t]*\z',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    if ($match.Success -and $match.Groups[1].Value -match '\A(?:[a-z]:[\\/]|[\\/]{2})' -and
+        $match.Groups[2].Value -match '\A(?:[a-z]:[\\/]|[\\/]{2})') {
+        return @{ Launcher = $match.Groups[1].Value; Prefix = $match.Groups[2].Value }
+    }
+}
+
+# One-shot Caelestia-Start-* tasks are normally unregistered by the launcher
+# finally block. A power loss or killed installer can orphan one; if it later
+# fires after the prefix tombstone move, it can execute a script path the user
+# no longer controls. Sweep only tasks whose single action exactly names this
+# prefix's launcher and -Prefix argument; similarly named foreign tasks stay.
+$taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Start-*' -ErrorAction SilentlyContinue)) {
+    if ($task.TaskName -cnotmatch '^Caelestia-Start-[a-f0-9]{32}$') { continue }
+    $taskUser = [string]$task.Principal.UserId
+    if ($taskUser -notin @($taskIdentity.Name, $taskIdentity.User.Value)) {
+        try { $taskSid = [Security.Principal.NTAccount]::new($taskUser).Translate([Security.Principal.SecurityIdentifier]).Value }
+        catch { continue }
+        if ($taskSid -ne $taskIdentity.User.Value) { continue }
+    }
+    $actions = @($task.Actions)
+    if ($actions.Count -ne 1 -or [IO.Path]::GetFileName([string]$actions[0].Execute) -notin @('powershell.exe', 'pwsh.exe')) { continue }
+    $arguments = [string]$actions[0].Arguments
+    $invocation = Get-CaelestiaStartTaskInvocation $arguments
+    if (-not $invocation -or -not (Test-CaelestiaSamePath $invocation.Launcher (Join-Path $Prefix 'Start-Caelestia.ps1')) -or
+        -not (Test-CaelestiaSamePath $invocation.Prefix $Prefix)) { continue }
+    Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
+}
 $operationFile = Join-Path $profile 'state\update-operation.json'
 if (Test-Path -LiteralPath $operationFile -PathType Leaf) {
     $null = Resolve-CaelestiaDirectory ([IO.Path]::GetDirectoryName($operationFile))

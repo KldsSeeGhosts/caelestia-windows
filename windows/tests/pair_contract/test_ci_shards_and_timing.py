@@ -63,11 +63,12 @@ class CiShardsAndTiming(unittest.TestCase):
             return json.loads(result.stdout)
         full, first, second, third = (names(), names("-Shard", "1/3"),
                                       names("-Shard", "2/3"), names("-Shard", "3/3"))
-        self.assertEqual(23, len(full))
+        self.assertEqual(24, len(full))
         self.assertIn("Test-DesktopSupervisorStop", third)
         self.assertIn("history-version", third)
         self.assertIn("public-release-metadata", third)
-        # Even 8/8/7 split. Shard 3 keeps every check that needs full git
+        self.assertIn("scheme-archive", third)
+        # Even 8/8/8 split. Shard 3 keeps every check that needs full git
         # history or Node so fetch-depth: 1 and setup-node stay conditional.
         self.assertCountEqual(
             ["Test-CIAcceleration", "Test-CaptureIntegration", "Test-CIChanges",

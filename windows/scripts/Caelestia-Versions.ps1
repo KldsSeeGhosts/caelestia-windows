@@ -87,8 +87,32 @@ function Publish-CaelestiaPayload([string]$Prefix, [string]$Payload, [string]$Id
     return $target
 }
 
-function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
+function Copy-CaelestiaRootEntry([string]$Source, [string]$Target) {
     # Same-directory replace avoids partially readable launcher scripts.
+    if ((Test-Path -LiteralPath $Target) -and ((Get-Item -LiteralPath $Target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Refusing to replace a linked launch entry.'
+    }
+    $temporary = $Target + '.tmp-' + [guid]::NewGuid().ToString('N')
+    try {
+        [IO.File]::Copy($Source, $temporary)
+        if ([IO.File]::Exists($Target)) { [IO.File]::Replace($temporary, $Target, [System.Management.Automation.Language.NullString]::Value) }
+        else { [IO.File]::Move($temporary, $Target) }
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
+}
+
+function Copy-CaelestiaRecoveryWatchdog([string]$Prefix, [string]$Runtime) {
+    # The task registered by an older release still opens the stable Manage
+    # path. Publish its imports first, then atomically replace that entrypoint.
+    # Keep the selected payload, Start router and update trust unchanged here.
+    foreach ($name in @('Caelestia-Versions.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-SemVer.ps1',
+        'Caelestia-UpdateSecurity.cs', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Manage-Caelestia.ps1')) {
+        Copy-CaelestiaRootEntry (Join-Path $Runtime $name) (Join-Path $Prefix $name)
+    }
+}
+
+function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
     foreach ($pair in @(
         @('Start-CaelestiaEntry.ps1', 'Start-Caelestia.ps1'),
         @('Uninstall-Caelestia.ps1', 'Uninstall-Caelestia.ps1'),
@@ -98,18 +122,7 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
         @('Switch-CaelestiaToWindows.ps1', 'Switch-CaelestiaToWindows.ps1'),
         @('Caelestia-Launcher.ps1', 'Caelestia-Launcher.ps1')
     )) {
-        $target = Join-Path $Prefix $pair[1]
-        if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw 'Refusing to replace a linked launch entry.'
-        }
-        $temporary = $target + '.tmp-' + [guid]::NewGuid().ToString('N')
-        try {
-            [IO.File]::Copy((Join-Path $Runtime $pair[0]), $temporary)
-            if ([IO.File]::Exists($target)) { [IO.File]::Replace($temporary, $target, [System.Management.Automation.Language.NullString]::Value) }
-            else { [IO.File]::Move($temporary, $target) }
-        } finally {
-            if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
-        }
+        Copy-CaelestiaRootEntry (Join-Path $Runtime $pair[0]) (Join-Path $Prefix $pair[1])
     }
     # Old retained payloads may predate Nexus. Switch never calls this helper,
     # so rolling back retains the newest self-sufficient root router.
@@ -117,17 +130,8 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
         'Caelestia-UpdateSecurity.cs', 'version.json', 'update-trust.json')) {
         $source = Join-Path $Runtime $name
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
-        $target = Join-Path $Prefix $name
         $null = Resolve-CaelestiaDirectory $Prefix
-        if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw 'Refusing to replace a linked update entry.'
-        }
-        $temporary = $target + '.tmp-' + [guid]::NewGuid().ToString('N')
-        try {
-            [IO.File]::Copy($source, $temporary)
-            if ([IO.File]::Exists($target)) { [IO.File]::Replace($temporary, $target, [System.Management.Automation.Language.NullString]::Value) }
-            else { [IO.File]::Move($temporary, $target) }
-        } finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
+        Copy-CaelestiaRootEntry $source (Join-Path $Prefix $name)
     }
 }
 
@@ -152,14 +156,71 @@ function Test-CaelestiaVersionPayload([string]$Prefix, [string]$Id) {
 # configured fallback is unusable. Excluded ids are skipped: the version whose
 # activation just failed is not a fallback. Selection starts nothing, because
 # whether a payload runs is only known from its next start.
+function Get-CaelestiaVersionOrderKey([string]$Name) {
+    # Migration backups use legacy-* names and are always older than every real
+    # version identifier. Plain descending text puts "legacy-*" after digits,
+    # causing a crash recovery to choose a legacy payload over a healthy
+    # timestamped or semantic-versioned one.
+    if ($Name -cmatch '^legacy-') { return '0|' + $Name }
+    if ($Name -cmatch '^\d{8}T\d{6}Z-') { return '3|' + $Name.Substring(0, 16) + '|' + $Name }
+    $semantic = [regex]::Match($Name, '^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$')
+    if ($semantic.Success) {
+        $parts = foreach ($group in 1..3) {
+            $digits = if ($semantic.Groups[$group].Success) { $semantic.Groups[$group].Value } else { '0' }
+            $digits.PadLeft(12, '0')
+        }
+        # Release versions outrank prereleases. Prerelease text remains ordinal;
+        # exact numeric identifier precedence is unnecessary for fallback order.
+        $release = if ($semantic.Groups[4].Success) { '0|' + $semantic.Groups[4].Value } else { '1|' }
+        return '2|' + ($parts -join '.') + '|' + $release + '|' + $Name
+    }
+    return '1|' + $Name
+}
+
 function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @()) {
     $versions = Join-Path $Prefix 'versions'
     if (-not (Test-Path -LiteralPath $versions -PathType Container)) { return '' }
-    foreach ($directory in @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue | Sort-Object Name -Descending)) {
+    $ordered = @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue |
+        Sort-Object @{ Expression = { Get-CaelestiaVersionOrderKey $_.Name }; Descending = $true }, @{ Expression = 'Name'; Descending = $true })
+    foreach ($directory in $ordered) {
         if ($Exclude -contains $directory.Name) { continue }
         if (Test-CaelestiaVersionPayload $Prefix $directory.Name) { return $directory.Name }
     }
     return ''
+}
+
+function Save-CaelestiaMaintenanceHandoff([string]$Prefix, $InstallRecord, [string]$RecoveryRuntime = '') {
+    # Set only by the tracked maintenance worker, on the same thread and
+    # under the prefix lock, including when it invokes a verified release.
+    $trackedId = [string](Get-Variable -Name CaelestiaTrackedOperationId -ValueOnly -ErrorAction SilentlyContinue)
+    if (-not $trackedId) {
+        # The installed worker drives the first upgrade. Older workers expose
+        # the same operation ID and task name after claiming their journal,
+        # but do not set CaelestiaTrackedOperationId.
+        $legacyTracked = Get-Variable -Name tracked -ValueOnly -ErrorAction SilentlyContinue
+        if ($legacyTracked -isnot [bool] -or -not $legacyTracked) { return }
+        $trackedId = [string](Get-Variable -Name operationId -ValueOnly -ErrorAction SilentlyContinue)
+        $legacyTask = [string](Get-Variable -Name TaskName -ValueOnly -ErrorAction SilentlyContinue)
+        if ($legacyTask -cne ('Caelestia-Maintenance-' + $trackedId)) { return }
+    }
+    if ($trackedId -notmatch '^[a-f0-9]{32}$') { return }
+    $path = Join-Path $InstallRecord.profile 'state\update-operation.json'
+    $state = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($state.schema -ne 1 -or $state.operationId -cne $trackedId -or $state.phase -cne 'working' -or
+        $state.expectedCurrent -cne $InstallRecord.current -or
+        $state.installId -cne $InstallRecord.installId -or -not (Test-CaelestiaSamePath $state.prefix $Prefix)) {
+        throw 'The maintenance worker lost its handoff journal before stopping the shell.'
+    }
+    $running = @(Get-CaelestiaProcesses $Prefix).Count -gt 0 -or @(Get-CaelestiaSupervisors $InstallRecord.profile).Count -gt 0
+    if ($running -and $RecoveryRuntime) {
+        # The old shell is still serving the desktop. If watchdog publication
+        # fails, abort without stopping it or writing a handoff.
+        Copy-CaelestiaRecoveryWatchdog $Prefix $RecoveryRuntime
+    }
+    $state | Add-Member -NotePropertyName handoff -NotePropertyValue @{
+        phase = 'stopping'; wasRunning = $running; sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    } -Force
+    Write-CaelestiaJsonAtomic $path $state
 }
 
 function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart, [switch]$Autostart, [switch]$NoIntegration) {
@@ -242,7 +303,14 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         # The launch task runs the incoming payload's host. Resolving the
         # selector here would build a task for the outgoing version, which is
         # still selected until Copy-CaelestiaRootEntries commits the new one.
-        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime }
+        if ($Restart) {
+            try { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime -ReplacingRoot }
+            catch {
+                if (-not (Test-CaelestiaTaskSchedulerAccessDenied $_)) { throw }
+                Write-Warning "Task Scheduler refused activation registration; a direct detached launcher will be used instead: $($_.Exception.Message)"
+                $launchTask = ''
+            }
+        }
         # Pick and verify this version's scheme generation while the old shell
         # still serves the desktop, so a slow or hung check is not an outage.
         $verifiedScheme = Select-CaelestiaSchemeGeneration $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
@@ -259,6 +327,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             # outgoing payload still needs its own 5.1 entry, and routing
             # through the just-written router would re-enter this install path.
             $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
+            Save-CaelestiaMaintenanceHandoff $Prefix $old -RecoveryRuntime $runtime
             $stopped = $true
             Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }
@@ -273,7 +342,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) {
-            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
+            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime -RuntimePrefix $runtime -ReplacingRoot
             Write-Host ('Caelestia ready; version activation {0:N2}s.' -f $clock.Elapsed.TotalSeconds)
         }
         return $runtime
@@ -366,8 +435,14 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
     }
     try {
         if ($Restart) {
-            $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime
+            try { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime }
+            catch {
+                if (-not (Test-CaelestiaTaskSchedulerAccessDenied $_)) { throw }
+                Write-Warning "Task Scheduler refused rollback registration; a direct detached launcher will be used instead: $($_.Exception.Message)"
+                $launchTask = ''
+            }
             $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
+            Save-CaelestiaMaintenanceHandoff $Prefix $old
             $stopped = $true
             Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }
@@ -388,7 +463,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
         # are already in place and rebuilding them would repeat the command
         # that was just refused.
         if (-not $SkipIntegration) { Update-CaelestiaIntegrationRecords $Prefix $runtime }
-        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
+        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime -RuntimePrefix $runtime }
     } catch {
         $failure = $_
         if ($activated -or $stopped) {

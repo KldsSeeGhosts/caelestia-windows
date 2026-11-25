@@ -76,9 +76,19 @@ QtObject {
             }
             journal(firstId, "failed");
             check(manager.failed, "update terminal phase not settled");
+            const manual = "& 'C:/fixture/Manage-Caelestia.ps1' -Command Update -Wait";
+            manager.request(["denied"], "update");
+            manager.process.running = false;
+            manager.process.stdout.text = JSON.stringify({schema: 1, phase: "failed", operationId: firstId,
+                code: "scheduler-policy", message: "Scheduler blocked update", manualCommand: manual});
+            manager.process.exited(0);
+            check(manager.failed && !manager.deadline.running && manager.operationId === "", "refusal was treated as queued");
+            check(manager.refusalMessage === "Scheduler blocked update" && manager.manualCommand === manual,
+                "refusal lost its manual recovery details");
             manager.operationKind = "rollback";
             manager.deadline.interval = 40;
             manager.request(["first"]);
+            check(manager.refusalMessage === "" && manager.manualCommand === "", "retry retained stale recovery details");
             check(manager.submitted && !manager.failed, "request was not waiting");
             check(manager.process.running && manager.deadline.running, "queue deadline did not start");
             manager.request(["duplicate"]);

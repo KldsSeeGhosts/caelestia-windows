@@ -111,7 +111,8 @@ function Set-CaelestiaSchemeRuntimeForRevision { return $null }
 function Remove-CaelestiaSchemeGenerations { }
 function New-CaelestiaLaunchTask { return 'fixture-no-task' }
 function Get-FixtureTaskPath([string]$TaskName) {
-    if ($TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-[a-f0-9]{32}$') { throw 'Blocked unexpected task name.' }
+    if ($TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-[a-f0-9]{32}$' -and
+        $TaskName -notmatch '^Caelestia-Start-[A-Za-z0-9-]+$') { throw 'Blocked unexpected task name.' }
     return Join-Path $env:CAELESTIA_FIXTURE_CASE "tasks\$TaskName.json"
 }
 function New-ScheduledTaskAction {
@@ -134,8 +135,9 @@ function Register-ScheduledTask {
 }
 function Get-ScheduledTask {
     param($TaskName, $TaskPath, $ErrorAction)
-    if ($TaskName -eq 'Caelestia-Maintenance*') {
-        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CASE 'tasks') -File) {
+    if ($TaskName -eq 'Caelestia-Maintenance*' -or $TaskName -eq 'Caelestia-Start-*') {
+        $pattern = if ($TaskName -eq 'Caelestia-Maintenance*') { 'Caelestia-Maintenance*.json' } else { 'Caelestia-Start-*.json' }
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CASE 'tasks') -Filter $pattern -File) {
             Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
         }
         return

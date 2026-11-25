@@ -167,24 +167,26 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $venv = "$env:RUNNER_TEMP\colour-test-venv"
-          python -m venv $venv
-          if ($LASTEXITCODE -ne 0) { throw 'Colour-test environment creation failed.' }
-          $python = "$venv\Scripts\python.exe"
-          & $python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: `
-            --require-hashes -r windows/scripts/scheme/requirements.lock.txt
-          if ($LASTEXITCODE -ne 0) { throw 'Locked colour dependencies failed.' }
           $lock = Get-Content windows/sources.lock.json -Raw | ConvertFrom-Json
           if ($lock.schemeCli.revision -notmatch '^[a-f0-9]{40}$') { throw 'Invalid colour CLI pin.' }
-          & $python -m pip install --disable-pip-version-check --no-deps --ignore-requires-python `
-            "git+https://github.com/caelestia-dots/cli@$($lock.schemeCli.revision)"
-          if ($LASTEXITCODE -ne 0) { throw 'Pinned colour CLI installation failed.' }
+          $archive = "windows/tests/scheme/caelestia-cli-$($lock.schemeCli.revision).tar.gz"
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw 'Pinned colour CLI test archive is missing.' }
+          $profile = "$env:RUNNER_TEMP\colour-test-profile"
+          $python = (Get-Command python -CommandType Application | Select-Object -First 1).Source
+          $result = & pwsh -NoProfile -NonInteractive -File windows/scripts/Install-SchemeRuntime.ps1 `
+            -ProfileRoot $profile -Python $python -CliArchive $archive -LockWaitSeconds 30 |
+            Select-Object -Last 1 | ConvertFrom-Json
+          if (-not $result -or $result.available -ne $true -or -not $result.python) {
+            throw 'Production colour runtime provisioning failed.'
+          }
+          Set-Content -LiteralPath "$env:RUNNER_TEMP\colour-test-python" -Value $result.python -Encoding ASCII
       - name: Colour worker and wallpaper-input regressions
         if: matrix.shard == 1
         shell: pwsh
         run: |
+          $schemePython = (Get-Content -LiteralPath "$env:RUNNER_TEMP\colour-test-python" -Raw).Trim()
           & pwsh -NoProfile -NonInteractive -File windows/scripts/Test-Validation.ps1 `
-            -Suite Scheme -Python "$env:RUNNER_TEMP\colour-test-venv\Scripts\python.exe" `
+            -Suite Scheme -Python $schemePython `
             -OutputRoot "$env:RUNNER_TEMP\validation-scheme"
           if ($LASTEXITCODE -ne 0) { throw 'Colour regressions failed.' }
       - name: Sanitized test summaries

@@ -527,7 +527,9 @@ Expected: 0.1, +0.1, 0.1-, 10%, +10%, 10%-`;
         return {
             lifecycle: {
                 generation: root.generation,
-                ready: readiness.ready
+                ready: readiness.ready,
+                payloadPath: Quickshell.env("CAELESTIA_PAYLOAD_ROOT") || "",
+                supervisorPid: Number(Quickshell.env("CAELESTIA_SUPERVISOR_PID") || "0")
             },
             smoke: root.smoke,
             smokeComplete: root.smoke && smokeCheck.step >= 5,

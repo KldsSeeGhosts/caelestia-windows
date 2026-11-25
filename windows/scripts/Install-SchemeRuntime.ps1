@@ -3,6 +3,13 @@ param(
     [Parameter(Mandatory)][string]$ProfileRoot,
     # Empty resolves windows/sources.lock.json's schemeCli revision.
     [string]$CliRevision = '',
+    # Exact python.exe/py.exe path used by tests and support scenarios. Empty
+    # uses only SystemRoot or Python registry discovery, never PATH.
+    [string]$Python = '',
+    # Verified local copy of the commit archive used by hermetic tests. Its
+    # bytes still must match sources.lock.json exactly; this is never a trust
+    # override, only a network avoidance path.
+    [string]$CliArchive = '',
     [switch]$Force,
     # After a failed provision, do not retry (and block startup) for this long.
     [int]$RetryCooldownMinutes = 360,
@@ -21,12 +28,14 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 
-if (-not $CliRevision) {
-    $CliRevision = Get-CaelestiaSchemeRevision $PSScriptRoot
-    if (-not $CliRevision) {
-        throw 'sources.lock.json does not pin the scheme CLI revision'
-    }
+$pinnedRevision = Get-CaelestiaSchemeRevision $PSScriptRoot
+if ($pinnedRevision -cnotmatch '^[a-f0-9]{40}$') {
+    throw 'sources.lock.json does not pin the scheme CLI revision'
 }
+if ($CliRevision -and $CliRevision -cne $pinnedRevision) {
+    throw 'The requested scheme CLI revision does not match sources.lock.json.'
+}
+$CliRevision = $pinnedRevision
 $ProfileRoot = [IO.Path]::GetFullPath($ProfileRoot)
 $schemeRoot = Join-Path $ProfileRoot 'scheme'
 $runtimesRoot = Join-Path $schemeRoot 'runtimes'
@@ -75,7 +84,7 @@ function Write-JsonAtomic([string]$Path, $Value) {
 
 # Runs a command with a hard time limit. Its output is redacted before it is
 # written to the generation log.
-function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
+function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step, [hashtable]$Environment = @{}) {
     $info = New-Object Diagnostics.ProcessStartInfo
     $info.FileName = $File
     $info.Arguments = ($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join ' '
@@ -83,6 +92,15 @@ function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step) {
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    # pip configuration is process-wide and user-controllable. Every child gets
+    # a clean pip environment rather than mutating and restoring the caller's;
+    # PIP_CONFIG_FILE=nul also ignores pip.ini and per-user pip config files.
+    foreach ($name in @($info.EnvironmentVariables.Keys)) {
+        if ($name -like 'PIP_*') { $info.EnvironmentVariables.Remove($name) }
+    }
+    $info.EnvironmentVariables['PIP_CONFIG_FILE'] = 'nul'
+    $info.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
+    foreach ($name in $Environment.Keys) { $info.EnvironmentVariables[$name] = [string]$Environment[$name] }
     $process = [Diagnostics.Process]::Start($info)
     $outTask = $process.StandardOutput.ReadToEndAsync()
     $errTask = $process.StandardError.ReadToEndAsync()
@@ -196,41 +214,79 @@ try {
     New-Item -ItemType Directory -Force -Path $staging | Out-Null
     try {
         $venv = Join-Path $staging 'venv'
-        $python = Join-Path $venv 'Scripts\python.exe'
-        $launcher = Get-Command py -ErrorAction SilentlyContinue
-        if (-not $launcher) {
-            throw 'the Python launcher (py) is not on PATH'
+        $archiveSha256 = Get-CaelestiaSchemeArchiveSha256 $PSScriptRoot
+        if ($archiveSha256 -cnotmatch '^[a-fA-F0-9]{64}$') { throw 'sources.lock.json does not pin the scheme CLI archive SHA-256' }
+        $hostSpec = Resolve-CaelestiaPythonHost $Python
+        if ($hostSpec.IsLauncher -and $env:PYLAUNCHER_ALLOW_INSTALL) {
+            throw 'automatic Python installation must be disabled before using the Python launcher'
         }
+        $venvPython = Join-Path $venv 'Scripts\python.exe'
         # Select a CPython minor version covered by scheme\requirements.lock.txt (3.11-3.14).
-        $pySelector = '-3'
-        foreach ($ver in @('-3.14', '-3.13', '-3.12', '-3.11')) {
-            try {
-                $null = & $launcher.Source $ver -c "import sys" 2>$null
-                if ($LASTEXITCODE -eq 0) { $pySelector = $ver; break }
-            } catch { }
+        $pythonPrefix = @()
+        if ($hostSpec.IsLauncher) {
+            $pySelector = ''
+            foreach ($ver in @('-3.14', '-3.13', '-3.12', '-3.11')) {
+                $probe = Invoke-CaelestiaBounded $hostSpec.Executable ($ver + ' -c "import sys"') 10
+                if ($probe -and $probe.ExitCode -eq 0) { $pySelector = $ver; break }
+            }
+            if (-not $pySelector) { throw 'no registered CPython 3.11-3.14 interpreter is available to the Python launcher' }
+            $pythonPrefix = @($pySelector)
+        } else {
+            $probe = Invoke-CaelestiaBounded $hostSpec.Executable '-c "import sys; raise SystemExit(0 if (3,11) <= sys.version_info[:2] < (3,15) else 1)"' 10
+            if (-not $probe -or $probe.ExitCode -ne 0) { throw 'the selected Python interpreter is not CPython 3.11-3.14' }
         }
-        Invoke-Bounded $launcher.Source @($pySelector, '-m', 'venv', $venv) 'creating the virtual environment'
-        if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+        $venvArguments = @($pythonPrefix) + @('-I', '-m', 'venv', $venv)
+        Invoke-Bounded $hostSpec.Executable $venvArguments 'creating the virtual environment'
+        if (-not (Test-Path -LiteralPath $venvPython -PathType Leaf)) {
             throw 'could not create the profile-local virtual environment'
         }
 
-        # Keep pip's download cache inside the isolated profile too.
-        $env:PIP_CACHE_DIR = Join-Path $ProfileRoot 'cache\pip'
-        New-Item -ItemType Directory -Force -Path $env:PIP_CACHE_DIR | Out-Null
+        # Keep pip's download cache inside the isolated profile too. It is child
+        # process state only; the caller's PIP_* environment is never mutated.
+        $pipCache = Join-Path $ProfileRoot 'cache\pip'
+        New-Item -ItemType Directory -Force -Path $pipCache | Out-Null
+        $pipArguments = @('-I', '-m', 'pip', 'install', '--cache-dir', $pipCache, '--disable-pip-version-check',
+            '--quiet', '--timeout', '30', '--retries', '1', '--no-deps')
 
         # Binary wheels only, each verified against the SHA-256 digests locked in
-        # scheme\requirements.lock.txt. The CLI declares Python >= 3.13; only its
-        # packaging metadata needs that. The scheme/material modules run on 3.12.
-        Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--only-binary=:all:', '--require-hashes', '-r', $requirements) 'installing materialyoucolor/pillow'
-        # The commit id in the URL content-addresses the CLI source (git verifies it).
-        Invoke-Bounded $python @('-m', 'pip', 'install', '--disable-pip-version-check', '--quiet', '--timeout', '30', '--retries', '1', '--no-deps', '--ignore-requires-python', "git+https://github.com/caelestia-dots/cli@$CliRevision") "installing the caelestia CLI at $CliRevision"
+        # scheme\requirements.lock.txt. The lock includes the hatchling/hatch-vcs
+        # build backend because pip no longer downloads a build backend in an
+        # unhashed isolated environment.
+        Invoke-Bounded $venvPython ($pipArguments + @('--only-binary=:all:', '--require-hashes', '-r', $requirements)) 'installing locked Python wheels'
+
+        # Download the commit-addressed source archive and verify its pinned
+        # digest before pip sees it. Installing that verified archive with
+        # --no-build-isolation removes both the runtime git dependency and the
+        # unhashed build-backend download.
+        $archive = Join-Path $staging 'caelestia-cli.tar.gz'
+        $archiveUrl = 'https://github.com/caelestia-dots/cli/archive/' + $CliRevision + '.tar.gz'
+        try {
+            if ($CliArchive) {
+                $archiveInput = [IO.Path]::GetFullPath($CliArchive)
+                if (-not (Test-Path -LiteralPath $archiveInput -PathType Leaf)) { throw "archive override does not exist: $CliArchive" }
+                Copy-Item -LiteralPath $archiveInput -Destination $archive -Force
+            } else {
+                Invoke-WebRequest -Uri $archiveUrl -OutFile $archive -UseBasicParsing -TimeoutSec 60
+            }
+        } catch {
+            $script:failure = [ordered]@{ step = 'obtaining the pinned caelestia CLI archive'; exitCode = 'network' }
+            throw "obtaining the pinned caelestia CLI archive failed: $($_.Exception.Message)"
+        }
+        if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $archiveSha256) {
+            $script:failure = [ordered]@{ step = 'verifying the pinned caelestia CLI archive'; exitCode = 'sha256' }
+            throw 'the downloaded caelestia CLI archive does not match its pinned SHA-256'
+        }
+        # GitHub archives intentionally omit .git. This exact, public version is
+        # metadata only; the commit id and archive digest above remain the
+        # provenance and integrity checks.
+        $cliEnvironment = @{ SETUPTOOLS_SCM_PRETEND_VERSION = '0.0.0+git' + $CliRevision.Substring(0, 12) }
+        Invoke-Bounded $venvPython ($pipArguments + @('--no-build-isolation', '--ignore-requires-python', $archive)) "installing the caelestia CLI at $CliRevision" $cliEnvironment
 
         Copy-Item -LiteralPath $helperSource -Destination (Join-Path $staging 'win_scheme.py') -Force
-        $shimDir = (& $python -c "import site; print(site.getsitepackages()[0])" 2>$null | Select-Object -First 1)
-        if ($shimDir) {
-            New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
-            Copy-Item -LiteralPath $shimSource -Destination (Join-Path $shimDir 'fcntl.py') -Force
-        }
+        # CPython creates this directory on Windows. Avoid round-tripping the
+        # path through Python's console encoding, which can mangle non-ASCII.
+        $shimDir = Join-Path $venv 'Lib\site-packages'
+        Copy-Item -LiteralPath $shimSource -Destination (Join-Path $shimDir 'fcntl.py') -Force
 
         # The bridge never applies upstream themes, but keep a profile-local CLI
         # config that disables every Linux theme writer in case the CLI is run by
