@@ -64,15 +64,17 @@ QtObject {
         }
     }
 
-    // AppsFolder tokens go to the backend unchanged. A void return from the
-    // older DesktopEntry API is unconfirmed and must not increment rank.
+    // The companion backend shares the AppsFolder launch routine: Explorer
+    // ShellExecute first, then IApplicationActivationManager when needed.
+    // A void return from the older DesktopEntry API stays unconfirmed.
     function execute(entry): var {
         if (!entry)
             return { state: "refused", requestId: "", error: "Unknown application entry." };
         let result;
         try {
             const commandToken = entry.command?.[0];
-            const token = typeof commandToken === "string" && commandToken.trim() ? commandToken : entry.execString;
+            const entryToken = typeof commandToken === "string" && commandToken.trim() ? commandToken : entry.execString;
+            const token = typeof entryToken === "string" ? entryToken.replace(/^shell:AppsFolder\\/i, "") : "";
             if (typeof token === "string" && token.trim() && typeof appActions?.launchShellAction === "function"
                 && appActions.shellActionFinished) {
                 const workingDir = typeof entry.workingDirectory === "string" ? entry.workingDirectory : "";

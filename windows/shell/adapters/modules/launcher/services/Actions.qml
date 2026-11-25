@@ -37,17 +37,16 @@ Searcher {
     function finishShellAction(requestId, status, error): void {
         const pending = new Map(root.pendingShellActions);
         const key = String(requestId);
-        const screenState = pending.get(key);
+        const session = pending.get(key);
         if (!pending.delete(key))
             return;
         root.pendingShellActions = pending;
-        root.reportShellAction(screenState, String(status).toLowerCase(), error);
+        root.reportShellAction(session, String(status).toLowerCase(), error);
     }
 
-    function reportShellAction(screenState, status, error): void {
+    function reportShellAction(session, status, error): void {
         if (status === "started") {
-            if (screenState)
-                screenState.launcher = false;
+            ShellActionSchema.dismissLauncherSession(session);
         } else if (status === "cancelled") {
             Toaster.toast(Tr.tr("Launcher action cancelled"), Tr.tr("Windows did not start the action."), "info", Toast.Info);
         } else {
@@ -102,20 +101,20 @@ Searcher {
                 return;
             }
             let result;
+            const session = ShellActionSchema.captureLauncherSession(list?.screenState);
             try {
-                result = Native.AppActions.launchShellAction(validated.action, list?.QsWindow?.window ?? null);
+                result = ShellActionSchema.dispatchLauncherAction(Native.AppActions, validated.action, list);
             } catch (error) {
                 refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
                 return;
             }
             const status = ShellActionSchema.launchStatus(result);
             const requestId = ShellActionSchema.launchRequestId(result);
-            const screenState = list?.screenState ?? null;
             if (status === "queued" && requestId && Native.AppActions.shellActionFinished) {
-                root.pendingShellActions = new Map([...root.pendingShellActions, [requestId, screenState]]);
+                root.pendingShellActions = new Map([...root.pendingShellActions, [requestId, session]]);
                 return;
             }
-            root.reportShellAction(screenState, status, result?.error);
+            root.reportShellAction(session, status, result?.error);
         }
 
         function onClicked(list: AppList): void {

@@ -25,9 +25,8 @@ function script(file, exports) {
 
 test("native shell actions forward their parent before closing and honor the result map", () => {
     const schema = script("windows/services/apps/ShellActionSchema.js",
-        "{validateShellAction, launchStatus, launchRequestId}");
-    const parent = {};
-    const list = {QsWindow: {window: parent}, screenState: {launcher: true}};
+        "{validateShellAction, launchStatus, launchRequestId, dispatchLauncherAction, captureLauncherSession, dismissLauncherSession}");
+    const list = {QsWindow: {window: {}}, screenState: {launcher: true, launcherGeneration: 1}};
     const messages = [];
     let reply;
     const context = vm.createContext({
@@ -39,7 +38,7 @@ test("native shell actions forward their parent before closing and honor the res
             shellActionFinished: true,
             launchShellAction(spec, window) {
                 assert.equal(list.screenState.launcher, true);
-                assert.equal(window, parent);
+                assert.equal(window, list);
                 assert.equal(spec.verb, context.modelData.verb);
                 return reply;
             }
@@ -90,6 +89,27 @@ test("native shell actions forward their parent before closing and honor the res
         else
             assert.equal(messages.length, 0);
     }
+
+    list.screenState.launcher = true;
+    reply = {status: "queued", requestId: 5};
+    context.runShellAction(list);
+    list.screenState.launcherGeneration += 2;
+    context.onShellActionFinished(5, "started", "");
+    assert.equal(list.screenState.launcher, true, "configured actions also ignore stale launcher sessions");
+});
+
+test("launcher clicks and keyboard activation forward screen state, and refusals toast", () => {
+    const facade = read("windows/services/apps/Apps.qml");
+    assert.match(read("modules/launcher/items/AppItem.qml"), /Apps\.launchWithFeedback\(root\.modelData, root\.screenState\)/);
+    assert.match(read("windows/shell/adapters/modules/launcher/Content.qml"),
+        /Apps\.launchWithFeedback\(currentItem\.modelData, root\.screenState\)/);
+    assert.match(facade, /onAsynchronousLaunchFailed: message => showLaunchFailure\(message\)/);
+    const messages = [];
+    const context = vm.createContext({Tr: {tr: value => value}, Toast: {Error: "error"},
+        Toaster: {toast: (...args) => messages.push(args)}});
+    vm.runInContext(qmlFunction(facade, "showLaunchFailure"), context);
+    context.showLaunchFailure("fixture OS refusal");
+    assert.deepEqual(messages[0], ["Could not start app", "fixture OS refusal", "error", "error"]);
 });
 
 test("production stages the Windows Settings action and existing action delegate", () => {

@@ -493,13 +493,14 @@ QtObject {
         const key = String(requestId ?? "");
         if (!key || !Object.prototype.hasOwnProperty.call(pendingLaunches, key))
             return;
-        const id = pendingLaunches[key];
+        const request = pendingLaunches[key];
         const pending = Object.assign({}, pendingLaunches);
         delete pending[key];
         pendingLaunches = pending;
-        if (launchStatusSucceeded(status))
-            recordConfirmedLaunch(id);
-        else {
+        if (launchStatusSucceeded(status)) {
+            recordConfirmedLaunch(request.id);
+            ShellActionSchema.dismissLauncherSession(request.session);
+        } else {
             lastLaunchError = String(error || "Windows could not start the application.");
             asynchronousLaunchFailed(lastLaunchError);
         }
@@ -513,7 +514,7 @@ QtObject {
     // Returns whether a native execute was requested. Only an explicitly
     // confirmed result or a later successful asynchronous completion increments
     // frequency. A void backend dispatch is unconfirmed and stays unranked.
-    function launch(entry): bool {
+    function launch(entry, screenState): bool {
         launchRequests++;
         lastLaunchError = "";
         lastLaunchState = "refused";
@@ -540,6 +541,7 @@ QtObject {
             return false;
         }
         const id = typeof entry.id === "string" ? entry.id : "";
+        const session = ShellActionSchema.captureLauncherSession(screenState);
         let outcome;
         if (entry.runInTerminal === true) {
             if (!terminalLaunchSupported) {
@@ -576,11 +578,15 @@ QtObject {
         lastLaunchState = outcome.state;
         if (outcome.state === "pending") {
             const pending = Object.assign({}, pendingLaunches);
-            Object.defineProperty(pending, outcome.requestId, {value: id, enumerable: true, configurable: true});
+            Object.defineProperty(pending, outcome.requestId, {
+                value: {id, session}, enumerable: true, configurable: true
+            });
             pendingLaunches = pending;
         }
-        if (outcome.state === "confirmed")
+        if (outcome.state === "confirmed") {
             recordConfirmedLaunch(id);
+            ShellActionSchema.dismissLauncherSession(session);
+        }
         launchesIssued++;
         return true;
     }

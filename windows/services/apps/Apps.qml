@@ -49,13 +49,12 @@ AppsService {
             message || Tr.tr("Windows could not start the application."), "error", Toast.Error);
     }
 
-    function launchWithFeedback(entry): bool {
-        if (!launch(entry))
+    function launchWithFeedback(entry, screenState): void {
+        if (!launch(entry, screenState))
             showLaunchFailure(lastLaunchError);
         else if (lastLaunchState === "unconfirmed")
             Toaster.toast(Tr.tr("Launch requested"), Tr.tr("This Windows backend cannot confirm whether the app started."),
                 "info", Toast.Info);
-        return lastLaunchState === "confirmed";
     }
 
     // Observable construction policy for host/smoke assertions.

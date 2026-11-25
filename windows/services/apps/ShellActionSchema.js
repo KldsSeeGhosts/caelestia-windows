@@ -124,6 +124,23 @@ function launchStatus(result) {
     return result === true ? "started" : String(result?.status ?? "").toLowerCase();
 }
 
+function dispatchLauncherAction(appActions, action, list) {
+    // The backend can resolve the HWND from QQuickItem::window(). The
+    // Quickshell QsWindow.window wrapper is not a QWindow.
+    return appActions.launchShellAction(action, list ?? null);
+}
+
+function captureLauncherSession(screenState) {
+    return screenState?.launcher === true && Number.isInteger(screenState.launcherGeneration)
+        ? {screenState, generation: screenState.launcherGeneration} : null;
+}
+
+function dismissLauncherSession(session) {
+    const state = session?.screenState;
+    if (state?.launcher === true && state.launcherGeneration === session.generation)
+        state.launcher = false;
+}
+
 function terminalAction(terminal, entry) {
     const terminalCommand = stringList(terminal, false);
     if (!terminalCommand)

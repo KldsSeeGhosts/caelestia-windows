@@ -3,7 +3,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Windows as Native
+import "../../../components" as Components
 import "AppStoragePath.js" as StoragePath
+import "ShellActionSchema.js" as ShellActions
+import "../../shell/adapters/modules/launcher/services/LauncherActionMigration.js" as ActionMigration
 
 // Standalone fixture for the Windows app catalog/search state object.
 // Quickshell.DesktopEntries is the small fake module under
@@ -15,6 +18,21 @@ import "AppStoragePath.js" as StoragePath
 // Intended runner: windows/scripts/Test-AppsService.ps1 -QtPrefix <Qt prefix>
 QtObject {
     id: test
+
+    readonly property Components.ScreenState launcherState: Components.ScreenState {
+        modelData: ShellScreen {}
+    }
+    readonly property Window launchWindow: Window {
+        Item { id: launcherItem }
+    }
+    readonly property QtObject ownerProbe: QtObject {
+        property Item received
+        function launchShellAction(spec, parentWindow: Item): var {
+            test.check(test.launcherState.launcher, "the launcher is still open at native dispatch");
+            received = parentWindow;
+            return {status: "started"};
+        }
+    }
 
     component FakeEntry: QtObject {
         property string id: ""
@@ -733,6 +751,15 @@ QtObject {
     // previous scan's applications: no applicationsChanged will arrive until
     // the next scan. The adapter must see that snapshot immediately.
     function checkNativeCatalogSnapshot(): void {
+        const migrated = ActionMigration.migrateActions([{name: "Settings", command: ["caelestia", "shell", "nexus", "open"]}]);
+        check(migrated[0].command[0] === "settings", "QJSEngine loads and runs the staged launcher migration");
+        launcherState.launcher = true;
+        const ownerResult = ShellActions.dispatchLauncherAction(ownerProbe, {verb: "runas"}, launcherItem);
+        check(ownerResult.status === "started" && ownerProbe.received === launcherItem
+            && launcherItem.Window.window === launchWindow,
+            "the native owner is the actual QQuickItem attached to its QQuickWindow");
+        launcherState.launcher = false;
+
         DesktopEntries.completeScan([firefox, files, calculator, settings, terminal]);
 
         const readyService = nativeServiceComponent.createObject(test);
@@ -790,36 +817,49 @@ QtObject {
         const nativeStore = Qt.createQmlObject("import QtQuick; QtObject { property int increments: 0; function increment(id) { increments++; } }", test);
         readyService.frequencyStore = nativeStore;
         const entry = entryComponent.createObject(test, {
-            id: "native", name: "Native fixture", command: ["shell:AppsFolder\\Vendor.App!Main"],
+            id: "native", name: "Native fixture", command: ["Vendor.App!Main"],
             execString: "ignored fallback", workingDirectory: "C:/Fixture", executeResult: undefined
         });
         DesktopEntries.completeScan([entry]);
         check(readyService.search("@t ").length === 0, "an AppsFolder-only catalog has no terminal filter results");
+        launcherState.launcher = true;
         Native.AppActions.reply = {status: "queued", requestId: 51, errorCode: 0, error: ""};
-        check(readyService.launch(entry) && readyService.lastLaunchState === "pending" && nativeStore.increments === 0,
+        check(readyService.launch(entry, launcherState) && readyService.lastLaunchState === "pending"
+            && nativeStore.increments === 0 && launcherState.launcher,
             "the production catalog queues an ordinary launch without ranking early");
         const spec = Native.AppActions.lastSpec;
         check(spec.verb === "open" && spec.aumid === entry.command[0] && spec.workingDir === entry.workingDirectory
             && entry.executions === 0, "the native request preserves the AppsFolder token and working directory");
         Native.AppActions.emitFinished("51", "started", "");
-        check(nativeStore.increments === 1, "a started native completion raises rank");
+        check(nativeStore.increments === 1 && !launcherState.launcher,
+            "a started native completion raises rank and dismisses its launcher session");
+
+        launcherState.launcher = true;
+        Native.AppActions.reply = {status: "queued", requestId: 53};
+        check(readyService.launch(entry, launcherState), "launch queues before the user reopens the drawer");
+        launcherState.launcher = false;
+        launcherState.launcher = true;
+        Native.AppActions.emitFinished("53", "started", "");
+        check(nativeStore.increments === 2 && launcherState.launcher,
+            "a stale success raises rank but keeps the newly opened session");
+
         let nativeError = "";
         readyService.asynchronousLaunchFailed.connect(message => nativeError = message);
         Native.AppActions.reply = {status: "queued", requestId: 52};
-        check(readyService.launch(entry), "a second native launch queues");
+        check(readyService.launch(entry, launcherState), "another native launch queues");
         Native.AppActions.emitFinished("52", "refused", "fixture OS refusal");
-        check(nativeError === "fixture OS refusal" && nativeStore.increments === 1,
-            "a refused native completion reaches launcher feedback without ranking");
+        check(nativeError === "fixture OS refusal" && nativeStore.increments === 2 && launcherState.launcher,
+            "a refused native completion keeps the drawer open and reaches launcher feedback without ranking");
         const appFolderToken = entry.command[0];
         entry.command = [];
-        entry.execString = appFolderToken;
+        entry.execString = "shell:AppsFolder\\" + appFolderToken;
         Native.AppActions.reply = {status: "notSupported", error: "fixture unsupported route"};
         check(!readyService.launch(entry) && readyService.lastLaunchError === "fixture unsupported route"
             && Native.AppActions.lastSpec.aumid === appFolderToken && entry.executions === 0,
-            "execString supplies the token and a native refusal never falls through to DesktopEntry.execute");
+            "execString drops the legacy prefix and a native refusal never falls through to DesktopEntry.execute");
         readyService.catalog.appActions = null;
         check(readyService.launch(entry) && readyService.lastLaunchState === "unconfirmed"
-            && entry.executions === 1 && nativeStore.increments === 1,
+            && entry.executions === 1 && nativeStore.increments === 2,
             "an old backend falls back to the unconfirmed, unranked void dispatch");
 
         // The same wrapper, created before any scan, still completes from the

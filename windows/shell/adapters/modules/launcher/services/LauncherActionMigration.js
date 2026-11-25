@@ -135,6 +135,6 @@ function migrateActions(values) {
     for (let index = 0; values && index < values.length; ++index)
         actions.push(values[index]);
     if (isStockLinuxList(actions))
-        return windowsDefaultActions().map(action => ({enabled: true, ...action}));
+        return windowsDefaultActions().map(action => Object.assign({enabled: true}, action));
     return actions.map(migrateOne);
 }

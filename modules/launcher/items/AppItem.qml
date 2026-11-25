@@ -32,13 +32,12 @@ Item {
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: {
-            let started = true;
             if (typeof Apps.launchWithFeedback === "function")
-                started = Apps.launchWithFeedback(root.modelData);
-            else
+                Apps.launchWithFeedback(root.modelData, root.screenState);
+            else {
                 Apps.launch(root.modelData);
-            if (started)
                 root.screenState.launcher = false;
+            }
         }
     }
 
