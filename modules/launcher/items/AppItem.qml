@@ -32,8 +32,12 @@ Item {
     StateLayer {
         radius: Tokens.rounding.large
         onClicked: {
-            Apps.launch(root.modelData);
-            root.screenState.launcher = false;
+            if (typeof Apps.launchWithFeedback === "function")
+                Apps.launchWithFeedback(root.modelData, root.screenState);
+            else {
+                Apps.launch(root.modelData);
+                root.screenState.launcher = false;
+            }
         }
     }
 

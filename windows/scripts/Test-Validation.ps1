@@ -296,7 +296,7 @@ try {
             @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications',
               'Test-CaptureBackendApi', 'Test-CapturePicker', 'Test-CaptureThumbnail', 'Test-CaptureRecording', 'Test-DragPreview', 'Test-DrawerFocusWindow', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-IdleWork', 'Test-LauncherHoverClose',
               'Test-NexusWindow', 'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers', 'Test-ShellReadiness',
-              'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-WallpaperColours',
+              'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-ToasterIpc', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
               'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-WindowsHoverRegions',
               'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')

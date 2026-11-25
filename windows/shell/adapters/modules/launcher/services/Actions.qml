@@ -3,12 +3,16 @@ pragma Singleton
 import ".."
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
+import Caelestia
 import Caelestia.Config
 import Caelestia.I18n
 import Caelestia.Services
 import qs.services
 import qs.utils
 import qs.modules.nexus
+import "../../../windows/services/apps/ShellActionSchema.js" as ShellActionSchema
+import "LauncherActionMigration.js" as Migration
 
 Searcher {
     id: root
@@ -20,24 +24,54 @@ Searcher {
     list: variants.instances
     useFuzzy: GlobalConfig.launcher.useFuzzy.actions
 
+    property var pendingShellActions: new Map()
+
+    Connections {
+        target: root.pendingShellActions.size > 0 ? Native.AppActions : null
+        ignoreUnknownSignals: true
+        function onShellActionFinished(requestId, status, error): void {
+            root.finishShellAction(requestId, status, error);
+        }
+    }
+
+    function finishShellAction(requestId, status, error): void {
+        const pending = new Map(root.pendingShellActions);
+        const key = String(requestId);
+        const session = pending.get(key);
+        if (!pending.delete(key))
+            return;
+        root.pendingShellActions = pending;
+        root.reportShellAction(session, String(status).toLowerCase(), error);
+    }
+
+    function reportShellAction(session, status, error): void {
+        if (status === "started") {
+            ShellActionSchema.dismissLauncherSession(session);
+        } else if (status === "cancelled") {
+            Toaster.toast(Tr.tr("Launcher action cancelled"), Tr.tr("Windows did not start the action."), "info", Toast.Info);
+        } else {
+            root.refuseShellAction(error || Tr.tr("Windows refused the configured launcher action."));
+        }
+    }
+
+    function refuseShellAction(message: string): void {
+        Toaster.toast(Tr.tr("Launcher action unavailable"), message, "help_outline", Toast.Warning);
+    }
+
+    function isDangerous(action): bool {
+        return action.dangerous || ShellActionSchema.isDangerousShellAction(action)
+            || ["shutdown", "reboot", "hibernate", "firmware", "logout"].includes(SessionManager.resolveCommand(action.command));
+    }
+
     Variants {
         id: variants
 
-        model: [
-            {name: "Calculator", description: "Arithmetic and functions", icon: "calculate", command: ["autocomplete", "calc"]},
-            {name: "Settings", description: "Open Caelestia settings (Nexus)", icon: "settings", command: ["settings"]},
-            {name: "Screenshot", description: "Capture an area or window", icon: "screenshot_region", command: ["screenshot"]},
-            {name: "Screenshot history", description: "Edit and export recent screenshots", icon: "history", command: ["screenshotHistory"]},
-            {name: "Record screen", description: "Glazier", icon: "screen_record", command: ["record"]},
-            {name: "Wallpaper", description: "Browse wallpaper folder", icon: "wallpaper", command: ["autocomplete", "wallpaper"]},
-            {name: "Choose wallpaper file", description: "Open Windows image picker (Live controls)", icon: "image", command: ["chooseWallpaper"]},
-            {name: "Schemes", description: "Choose a colour scheme and generate its palette", icon: "palette", command: ["autocomplete", "scheme"]},
-            {name: "Variants", description: "Choose the Material You scheme variant", icon: "colors", command: ["autocomplete", "variant"]},
-            {name: "Light mode", description: "Regenerate the palette in light mode", icon: "light_mode", command: ["generateMode", "light"]},
-            {name: "Dark mode", description: "Regenerate the palette in dark mode", icon: "dark_mode", command: ["generateMode", "dark"]},
-            {name: "Lock", description: "Lock Windows (Live controls)", icon: "lock", command: ["lock"]},
-            {name: "Sleep", description: "Suspend Windows (Live controls)", icon: "bedtime", command: ["suspend"]}
-        ]
+        model: {
+            const enableDangerous = GlobalConfig.launcher.enableDangerousActions;
+            return Migration.migrateActions(GlobalConfig.launcher.actions.values).filter(action => action.enabled
+                && action.decodeValid !== false
+                && (enableDangerous || !root.isDangerous(action)));
+        }
 
         Action {}
     }
@@ -50,14 +84,53 @@ Searcher {
         readonly property list<string> command: modelData.command ?? []
         readonly property bool enabled: modelData.enabled ?? true
         readonly property bool dangerous: modelData.dangerous ?? false
+        readonly property bool hasShellAction: ShellActionSchema.hasShellAction(modelData)
+
+        function refuseShellAction(message: string): void {
+            root.refuseShellAction(message);
+        }
+
+        function runShellAction(list: AppList): void {
+            const validated = ShellActionSchema.validateShellAction(modelData);
+            if (!validated.ok) {
+                refuseShellAction(validated.error);
+                return;
+            }
+            if (typeof Native.AppActions.launchShellAction !== "function") {
+                refuseShellAction(Tr.tr("This Windows shell backend cannot run configured launcher actions yet."));
+                return;
+            }
+            let result;
+            const session = ShellActionSchema.captureLauncherSession(list?.screenState);
+            try {
+                result = ShellActionSchema.dispatchLauncherAction(Native.AppActions, validated.action, list);
+            } catch (error) {
+                refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
+                return;
+            }
+            const status = ShellActionSchema.launchStatus(result);
+            const requestId = ShellActionSchema.launchRequestId(result);
+            if (status === "queued" && requestId && Native.AppActions.shellActionFinished) {
+                root.pendingShellActions = new Map([...root.pendingShellActions, [requestId, session]]);
+                return;
+            }
+            root.reportShellAction(session, status, result?.error);
+        }
 
         function onClicked(list: AppList): void {
+            if (!enabled || modelData.decodeValid === false
+                || (!GlobalConfig.launcher.enableDangerousActions && root.isDangerous(modelData)))
+                return;
+            if (hasShellAction) {
+                runShellAction(list);
+                return;
+            }
             if (command.length === 0)
                 return;
 
             if (command[0] === "autocomplete" && command.length > 1) {
                 list.search.text = `${GlobalConfig.launcher.actionPrefix}${command[1]} `;
-            } else if (command[0] === "settings") {
+            } else if (command[0] === "settings" && command.length === 1) {
                 WindowFactory.create();
                 // Transfer foreground before closing the launcher can return
                 // it to the previously focused application.
@@ -75,14 +148,15 @@ Searcher {
                 list.screenState.launcher = false;
                 Colours.setMode(command[1]);
             } else {
-                list.screenState.launcher = false;
-                // Windows adaptation: the Windows SessionManager consumes every
-                // command (including unknown ones) and sets allowDetachedFallback
-                // false, so this can never launch an arbitrary process. Upstream
-                // native SessionManager lacks the property, preserving the
-                // original Linux fallback when exec() declines a command.
-                if (!SessionManager.exec(command) && SessionManager.allowDetachedFallback !== false)
-                    Quickshell.execDetached(command);
+                if (!SessionManager.resolveCommand(command)) {
+                    refuseShellAction(Tr.tr("This launcher command is not supported by the Windows shell."));
+                    return;
+                }
+                const result = SessionManager.request(command);
+                if (result.dispatched)
+                    list.screenState.launcher = false;
+                else
+                    refuseShellAction(result.reason);
             }
         }
     }

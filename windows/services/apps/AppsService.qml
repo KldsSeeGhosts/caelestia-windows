@@ -1,4 +1,5 @@
 import QtQuick
+import "ShellActionSchema.js" as ShellActionSchema
 import "../../../utils/scripts/fzf.js" as Fzf
 import "../../../utils/scripts/fuzzysort.js" as Fuzzy
 
@@ -41,6 +42,9 @@ QtObject {
     property var hiddenApps: []
     property string specialPrefix: "@"
     property bool useFuzzy: false
+    property var terminalCommand: []
+    property var terminalLauncher: null
+    property string terminalLauncherError: ""
 
     // Upstream Searcher state. search() derives a local prefix spec, so these
     // remain the public query() spec and keep their upstream defaults.
@@ -359,8 +363,9 @@ QtObject {
         }, search);
     }
 
-    // Preserved upstream special prefixes (@i/@c/@d/@e/@w/@g/@k/@t). The
-    // default query only matches names; @t filters terminal entries.
+    // Preserved upstream special prefixes (@i/@c/@d/@e/@w/@g/@k/@t).
+    // The default query matches names. @t only sees explicitly marked entries
+    // from an injected catalog; Windows AppsFolder does not publish the flag.
     function search(search): var {
         const prefix = specialPrefix;
         const text = String(search ?? "");
@@ -403,12 +408,11 @@ QtObject {
     }
 
     // --- Launch policy ----------------------------------------------------
-    // Upstream wraps terminal applications in assets/wrap_term_launch.sh with
-    // GlobalConfig.general.apps.terminal. That Linux wrapper does not exist
-    // here, and the Windows backend's DesktopEntry.execute() deliberately
-    // ignores runInTerminal. Terminal entries are therefore reported as an
-    // unsupported launch instead of being started without a terminal.
-    readonly property bool terminalLaunchSupported: false
+    // Terminal launches are deferred for AppsFolder. An injected catalog can
+    // opt in with both an explicit flag and structured executable/argv.
+    readonly property bool terminalLaunchSupported: terminalCommand !== null
+        && terminalCommand !== undefined && terminalCommand.length > 0
+        && typeof terminalLauncher === "function"
     property int launchRequests: 0
     property int launchesIssued: 0
     property string lastLaunchError: ""
@@ -428,7 +432,8 @@ QtObject {
     function canLaunch(entry): bool {
         if (!launchEnabled || !ready || !entry || typeof entry !== "object")
             return false;
-        if (entry.runInTerminal === true)
+        if (entry.runInTerminal === true && (!terminalLaunchSupported
+            || !ShellActionSchema.terminalAction(terminalCommand, entry).ok))
             return false;
         return list.some(wrapper => wrapper.entry === entry);
     }
@@ -450,17 +455,69 @@ QtObject {
     // Middle-click on a running application: start a new instance. A disabled
     // launch opt-in or an unmatched/non-launchable application is inert and
     // never reaches `launch`.
+
+    property var pendingLaunches: ({})
+    property string lastLaunchState: "refused"
+    signal asynchronousLaunchFailed(string message)
+
+    readonly property Connections catalogEvents: Connections {
+        target: root.catalog
+        ignoreUnknownSignals: true
+        function onLaunchFinished(requestId, status, error): void {
+            root.completeLaunch(requestId, status, error);
+        }
+    }
+
+    function recordConfirmedLaunch(id): void {
+        if (frequencyStore && typeof frequencyStore.increment === "function" && id.length > 0)
+            frequencyStore.increment(id);
+    }
+
+
+    function normalizeLaunchOutcome(result, fallbackError) {
+        if (result === true)
+            return { state: "confirmed", requestId: "", error: "" };
+        if (result && typeof result === "object"
+            && (["refused", "confirmed", "unconfirmed"].includes(result.state)
+                || (result.state === "pending" && typeof result.requestId === "string" && result.requestId)))
+            return result;
+        return { state: "refused", requestId: "", error: fallbackError };
+    }
+
+    function launchStatusSucceeded(status): bool {
+        const value = String(status ?? "").toLowerCase();
+        return ["success", "succeeded", "started", "launched", "ok", "true"].includes(value);
+    }
+
+    function completeLaunch(requestId, status, error): void {
+        const key = String(requestId ?? "");
+        if (!key || !Object.prototype.hasOwnProperty.call(pendingLaunches, key))
+            return;
+        const request = pendingLaunches[key];
+        const pending = Object.assign({}, pendingLaunches);
+        delete pending[key];
+        pendingLaunches = pending;
+        if (launchStatusSucceeded(status)) {
+            recordConfirmedLaunch(request.id);
+            ShellActionSchema.dismissLauncherSession(request.session);
+        } else {
+            lastLaunchError = String(error || "Windows could not start the application.");
+            asynchronousLaunchFailed(lastLaunchError);
+        }
+    }
+
     function launchForAppId(appId): bool {
         const entry = entryForAppId(appId);
         return entry !== null ? launch(entry) : false;
     }
 
-    // Returns whether a native execute was requested. The Windows backend has
-    // no per-command result: a true return means the request was permitted and
-    // dispatched, not that the application started.
-    function launch(entry): bool {
+    // Returns whether a native execute was requested. Only an explicitly
+    // confirmed result or a later successful asynchronous completion increments
+    // frequency. A void backend dispatch is unconfirmed and stays unranked.
+    function launch(entry, screenState): bool {
         launchRequests++;
         lastLaunchError = "";
+        lastLaunchState = "refused";
         lastLaunchId = entry && typeof entry.id === "string" ? entry.id : "";
 
         if (!enabled) {
@@ -483,20 +540,52 @@ QtObject {
             lastLaunchError = "The application is not in the current catalog.";
             return false;
         }
+        const id = typeof entry.id === "string" ? entry.id : "";
+        const session = ShellActionSchema.captureLauncherSession(screenState);
+        let outcome;
         if (entry.runInTerminal === true) {
-            lastLaunchError = "Terminal application launch is not supported on Windows.";
-            return false;
+            if (!terminalLaunchSupported) {
+                lastLaunchError = "No Windows terminal launcher is configured or available.";
+                return false;
+            }
+            const validated = ShellActionSchema.terminalAction(terminalCommand, entry);
+            if (!validated.ok) {
+                lastLaunchError = validated.error;
+                return false;
+            }
+            terminalLauncherError = "";
+            try {
+                outcome = normalizeLaunchOutcome(terminalLauncher(entry, terminalCommand),
+                    "Windows could not start the terminal application.");
+            } catch (error) {
+                terminalLauncherError = String(error);
+                outcome = { state: "refused", error: terminalLauncherError };
+            }
+        } else {
+            try {
+                outcome = normalizeLaunchOutcome(catalog && typeof catalog.execute === "function"
+                    ? catalog.execute(entry) : null, "The Windows app catalog could not start the application.");
+            } catch (error) {
+                outcome = { state: "refused", error: String(error) };
+            }
         }
 
-        const id = typeof entry.id === "string" ? entry.id : "";
-        if (frequencyStore && typeof frequencyStore.increment === "function" && id.length > 0)
-            frequencyStore.increment(id);
-
-        const executed = catalog && typeof catalog.execute === "function"
-            ? catalog.execute(entry) === true : false;
-        if (!executed) {
-            lastLaunchError = "The Windows app catalog could not start the application.";
+        if (outcome.state === "refused") {
+            lastLaunchError = (entry.runInTerminal === true ? terminalLauncherError : "")
+                || outcome.error || "Windows could not start the application.";
             return false;
+        }
+        lastLaunchState = outcome.state;
+        if (outcome.state === "pending") {
+            const pending = Object.assign({}, pendingLaunches);
+            Object.defineProperty(pending, outcome.requestId, {
+                value: {id, session}, enumerable: true, configurable: true
+            });
+            pendingLaunches = pending;
+        }
+        if (outcome.state === "confirmed") {
+            recordConfirmedLaunch(id);
+            ShellActionSchema.dismissLauncherSession(session);
         }
         launchesIssued++;
         return true;

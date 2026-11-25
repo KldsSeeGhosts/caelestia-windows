@@ -11,7 +11,7 @@ const adapter = "windows/shell/adapters/modules/launcher/services/Actions.qml";
 const read = file => fs.readFileSync(path.join(repo, file), "utf8");
 const source = read(adapter);
 const searcher = read("utils/Searcher.qml");
-const model = vm.runInNewContext(source.match(/model: (\[[\s\S]*?\n        \])/)[1]);
+const model = [{name: "Settings", description: "Open Caelestia settings (Nexus)", icon: "settings", command: ["settings"]}];
 // Only strip QML type annotations from the selected production function.
 function qmlFunction(text, name) {
     const match = text.match(new RegExp(`^( +)function ${name}\\(([^)]*)\\): \\w+ \\{([\\s\\S]*?)\\n\\1\\}`, "m"));
@@ -23,16 +23,104 @@ function script(file, exports) {
         read(file).replace(/^\.pragma library\s*/, "") + `\n;(${exports})`);
 }
 
+test("native shell actions forward their parent before closing and honor the result map", () => {
+    const schema = script("windows/services/apps/ShellActionSchema.js",
+        "{validateShellAction, launchStatus, launchRequestId, dispatchLauncherAction, captureLauncherSession, dismissLauncherSession}");
+    const list = {QsWindow: {window: {}}, screenState: {launcher: true, launcherGeneration: 1}};
+    const messages = [];
+    let reply;
+    const context = vm.createContext({
+        ShellActionSchema: schema, Tr: {tr: text => text},
+        Toast: {Info: "info"},
+        Toaster: {toast: (title, message, icon, type) => messages.push([type, title, message])},
+        modelData: {verb: "runas", target: "tools.exe"},
+        Native: {AppActions: {
+            shellActionFinished: true,
+            launchShellAction(spec, window) {
+                assert.equal(list.screenState.launcher, true);
+                assert.equal(window, list);
+                assert.equal(spec.verb, context.modelData.verb);
+                return reply;
+            }
+        }},
+        pendingShellActions: new Map(),
+        root: null
+    });
+    context.root = context;
+    vm.runInContext(["runShellAction", "onShellActionFinished", "finishShellAction", "reportShellAction", "refuseShellAction"]
+        .map(name => qmlFunction(source, name)).join("\n"), context);
+
+    for (const result of [{status: "started", errorCode: 0, error: ""}, true]) {
+        reply = result;
+        list.screenState.launcher = true;
+        context.runShellAction(list);
+        assert.equal(list.screenState.launcher, false);
+        assert.equal(messages.length, 0);
+    }
+
+    list.screenState.launcher = true;
+    reply = {status: "cancelled", errorCode: 1223, error: "cancelled"};
+    context.runShellAction(list);
+    assert.equal(messages.pop()[0], "info");
+    assert.equal(list.screenState.launcher, true);
+    for (const status of ["refused", "notSupported", "unknown"]) {
+        reply = {status, errorCode: 5, error: `fixture ${status}`};
+        context.runShellAction(list);
+        assert.equal(messages.pop()[2], `fixture ${status}`);
+        assert.equal(list.screenState.launcher, true);
+    }
+
+    context.modelData.verb = "open";
+    for (const [id, status] of [[1, "started"], [2, "cancelled"], [3, "refused"], [4, "notSupported"]]) {
+        list.screenState.launcher = true;
+        reply = {status: "queued", requestId: id, errorCode: 0, error: ""};
+        context.runShellAction(list);
+        assert.equal(list.screenState.launcher, true);
+        assert.equal(messages.length, 0);
+        context.onShellActionFinished(99, "started", "");
+        assert.equal(list.screenState.launcher, true);
+        context.onShellActionFinished(id, status, "fixture completion");
+        assert.equal(context.pendingShellActions.size, 0);
+        assert.equal(list.screenState.launcher, status !== "started");
+        if (status === "cancelled")
+            assert.equal(messages.pop()[0], "info");
+        else if (status !== "started")
+            assert.equal(messages.pop()[2], "fixture completion");
+        else
+            assert.equal(messages.length, 0);
+    }
+
+    list.screenState.launcher = true;
+    reply = {status: "queued", requestId: 5};
+    context.runShellAction(list);
+    list.screenState.launcherGeneration += 2;
+    context.onShellActionFinished(5, "started", "");
+    assert.equal(list.screenState.launcher, true, "configured actions also ignore stale launcher sessions");
+});
+
+test("launcher clicks and keyboard activation forward screen state, and refusals toast", () => {
+    const facade = read("windows/services/apps/Apps.qml");
+    assert.match(read("modules/launcher/items/AppItem.qml"), /Apps\.launchWithFeedback\(root\.modelData, root\.screenState\)/);
+    assert.match(read("windows/shell/adapters/modules/launcher/Content.qml"),
+        /Apps\.launchWithFeedback\(currentItem\.modelData, root\.screenState\)/);
+    assert.match(facade, /onAsynchronousLaunchFailed: message => showLaunchFailure\(message\)/);
+    const messages = [];
+    const context = vm.createContext({Tr: {tr: value => value}, Toast: {Error: "error"},
+        Toaster: {toast: (...args) => messages.push(args)}});
+    vm.runInContext(qmlFunction(facade, "showLaunchFailure"), context);
+    context.showLaunchFailure("fixture OS refusal");
+    assert.deepEqual(messages[0], ["Could not start app", "fixture OS refusal", "error", "error"]);
+});
+
 test("production stages the Windows Settings action and existing action delegate", () => {
     const manifest = JSON.parse(read("windows/shell/sources.json"));
     assert.equal(manifest[adapter], "modules/launcher/services/Actions.qml");
     assert.equal(manifest["modules/launcher/items/ActionItem.qml"], "modules/launcher/items/ActionItem.qml");
     assert.match(source, /^import qs\.modules\.nexus$/m);
-    const settings = model.filter(action => action.name === "Settings");
-    assert.equal(settings.length, 1);
-    assert.deepEqual(Array.from(settings[0].command), ["settings"]);
-    assert.equal(settings[0].icon, "settings");
-    assert.match(settings[0].description, /Caelestia settings/);
+    assert.match(source, /Migration\.migrateActions\(GlobalConfig\.launcher\.actions\.values\)\.filter/);
+    assert.match(source, /GlobalConfig\.launcher\.enableDangerousActions/);
+    assert.match(source, /ShellActionSchema\.validateShellAction/);
+    assert.match(read("plugin/src/Caelestia/Config/launcherconfig.hpp"), /u"Settings"_s[\s\S]*QStringList\{ u"settings"_s \}/);
 });
 
 test(">settings resolves through the original searcher with both search modes and a custom prefix", () => {
@@ -65,6 +153,12 @@ test("Settings transfers foreground to Nexus before closing the launcher, withou
     let opens = 0;
     const context = {
         command: model.find(action => action.name === "Settings").command,
+        enabled: true,
+        GlobalConfig: {launcher: {enableDangerousActions: false}},
+        modelData: model[0],
+        root: {isDangerous: () => false},
+        hasShellAction: false,
+        runShellAction() { assert.fail("the legacy settings command must not use shell-action dispatch"); },
         WindowFactory: {
             create() {
                 assert.equal(list.screenState.launcher, true);
@@ -87,4 +181,104 @@ test("Settings transfers foreground to Nexus before closing the launcher, withou
     assert.equal(opens, 2);
     assert.match(read("windows/shell/adapters/daemons/Shortcuts.qml"),
         /name: "nexus"[\s\S]*?WindowFactory\.create\(\)/);
+});
+
+test("dangerous session aliases and elevated actions cannot bypass the toggle", () => {
+    const schemaSource = read("windows/services/apps/ShellActionSchema.js")
+        .replace(/^\.pragma library\s*/m, "");
+    const schema = vm.runInNewContext(schemaSource + "\n;({isDangerousShellAction})", {});
+    const context = {
+        ShellActionSchema: schema,
+        SessionManager: {
+            resolveCommand(command) { return command?.[0] === "poweroff" ? "shutdown" : ""; }
+        }
+    };
+    vm.createContext(context);
+    vm.runInContext(qmlFunction(source, "isDangerous"), context);
+    assert.equal(context.isDangerous({dangerous: false, command: ["poweroff"]}), true);
+    assert.equal(context.isDangerous({verb: "runas", target: "tools.exe"}), true);
+    assert.equal(context.isDangerous({verb: "open", target: "tools.exe"}), true);
+    assert.equal(context.isDangerous({verb: "open", uri: "https://example.test"}), true);
+    assert.equal(context.isDangerous({verb: "open", uri: "ms-settings:display"}), false);
+});
+
+function migrationApi() {
+    const code = read("windows/shell/adapters/modules/launcher/services/LauncherActionMigration.js")
+        .replace(/^\.pragma library\s*/m, "");
+    return vm.runInNewContext(code + "\n;({migrateActions, isStockLinuxList, translatedCommand, stockLinuxMetadata})", {});
+}
+
+test("exact stock Linux action lists migrate to the Windows defaults", () => {
+    const api = migrationApi();
+    const stock = [
+        ["autocomplete", "calc"], ["autocomplete", "scheme"], ["autocomplete", "wallpaper"],
+        ["autocomplete", "variant"], ["caelestia", "wallpaper", "-r"], ["setMode", "light"],
+        ["setMode", "dark"], ["poweroff"], ["reboot"], ["logout"],
+        ["loginctl", "lock-session"], ["suspendThenHibernate"], ["caelestia", "shell", "nexus", "open"]
+    ].map((command, index) => {
+        const [name, icon, description, dangerous] = api.stockLinuxMetadata[index];
+        return {enabled: true, name, icon, description, command, dangerous};
+    });
+    assert.equal(api.isStockLinuxList(stock), true);
+    const migrated = JSON.parse(JSON.stringify(api.migrateActions(stock)));
+    const commands = migrated.map(action => action.command.join(" "));
+    assert.ok(commands.includes("screenshot"));
+    assert.ok(commands.includes("settings"));
+    assert.ok(commands.includes("suspend"));
+    assert.ok(!commands.includes("suspendThenHibernate"));
+    assert.ok(!commands.includes("caelestia shell nexus open"));
+    assert.equal(migrated.length, 18);
+    stock[12].name = "Custom settings name";
+    assert.equal(api.isStockLinuxList(stock), false);
+    assert.equal(api.migrateActions(stock).length, 13);
+    assert.equal(api.migrateActions(stock)[12].name, "Custom settings name");
+    stock[12].decodeValid = false;
+    assert.equal(api.migrateActions(stock)[12].decodeValid, false);
+});
+
+test("custom Linux action lists are preserved while known commands translate exactly", () => {
+    const api = migrationApi();
+    const custom = [
+        {enabled: true, name: "Mine", icon: "custom", description: "custom", command: ["caelestia", "shell", "nexus", "open"]},
+        {enabled: true, name: "Sleep", icon: "bedtime", description: "sleep", command: ["suspendThenHibernate"]},
+        {enabled: true, name: "Custom", icon: "star", description: "custom", command: ["setMode", "light"]}
+    ];
+    const migrated = JSON.parse(JSON.stringify(api.migrateActions(custom)));
+    assert.equal(migrated.length, 3);
+    assert.deepEqual(migrated[0].command, ["settings"]);
+    assert.deepEqual(migrated[1].command, ["suspend"]);
+    assert.deepEqual(migrated[2].command, ["setMode", "light"]);
+    assert.ok(!migrated.some(action => action.command[0] === "screenshot"));
+});
+
+test("unsupported legacy actions refuse in place without closing the launcher", () => {
+    const list = {screenState: {launcher: true}, search: {text: ">random"}};
+    let toasts = 0;
+    const context = {
+        enabled: true,
+        command: ["caelestia", "wallpaper", "-r"],
+        modelData: {
+            enabled: true,
+            command: ["caelestia", "wallpaper", "-r"],
+            icon: "casino"
+        },
+        root: {isDangerous: () => false},
+        hasShellAction: false,
+        GlobalConfig: {launcher: {enableDangerousActions: false}},
+        Tr: {tr: text => text},
+        refuseShellAction(message) {
+            assert.match(message, /not supported/);
+            toasts++;
+        },
+        SessionManager: {
+            resolveCommand() { return ""; },
+            request() { assert.fail("unsupported legacy action must not execute"); }
+        },
+        WindowFactory: {create() { assert.fail("unsupported legacy action must not open settings"); }}
+    };
+    vm.createContext(context);
+    vm.runInContext(qmlFunction(source, "onClicked"), context);
+    context.onClicked(list);
+    assert.equal(toasts, 1);
+    assert.equal(list.screenState.launcher, true);
 });

@@ -79,6 +79,7 @@ function Invoke-OwnedProcess([string]$Executable, [string]$Arguments, [string]$N
 $production = @(
     'windows/services/apps/AppsService.qml',
     'windows/services/apps/NativeAppCatalog.qml',
+    'windows/services/apps/ShellActionSchema.js',
     'windows/services/apps/AppFrequencyStore.qml',
     'windows/services/apps/FileAppFrequencyStore.qml',
     'windows/services/apps/AppStoragePath.js',
@@ -149,7 +150,7 @@ function Invoke-StagedQml([hashtable]$Mutation) {
                 -and $actual.text.Contains("CAELESTIA_STAGED_MODELS_FAIL Error: $($Mutation.failure)") -and -not $match.Success
         } else {
             $passed = -not $actual.timedOut -and $actual.exitCode -eq 0 -and $diagnostics.Count -eq 0 -and $null -ne $payload `
-                -and $payload.assertions -eq 39 -and $payload.cases.Count -eq $expectedCases.Count `
+                -and $payload.assertions -eq 40 -and $payload.cases.Count -eq $expectedCases.Count `
                 -and @(Compare-Object $expectedCases $payload.cases).Count -eq 0 `
                 -and $actual.text -notmatch 'CAELESTIA_STAGED_MODELS_FAIL'
         }

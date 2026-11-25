@@ -32,7 +32,11 @@ QtObject {
         property string name: "Synthetic app"
         property bool runInTerminal: false
         property int executions: 0
-        function execute(): void { executions++; }
+        property bool confirmLaunch: false
+        function execute(): var {
+            executions++;
+            return confirmLaunch ? true : undefined;
+        }
     }
     component Notification: QtObject {
         property int id: 633
@@ -84,7 +88,9 @@ QtObject {
         check("apps.refreshed-binding", app.search("")[0] === newEntry && oldEntry !== newEntry);
         check("apps.same-id-stale", !app.canLaunch(oldEntry) && !app.launch(oldEntry));
         check("apps.no-stale-side-effects", oldEntry.executions === 0 && store.increments === 0);
-        check("apps.current-instance-launches", app.launch(newEntry) && newEntry.executions === 1 && store.increments === 1);
+        check("apps.current-instance-launches", app.launch(newEntry) && newEntry.executions === 1 && store.increments === 0);
+        newEntry.confirmLaunch = true;
+        check("apps.confirmed-launch-ranks", app.launch(newEntry) && newEntry.executions === 2 && store.increments === 1);
         check("apps.lookup-current-instance", app.entryForAppId("synthetic.app") === newEntry);
         app.destroy(); catalog.destroy(); oldEntry.destroy(); newEntry.destroy(); store.destroy();
         finishCase("apps-same-id-refresh");

@@ -2,7 +2,10 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Caelestia
 import Caelestia.Config
+import Caelestia.I18n
+import qs.services
 // The facade is staged next to the original launcher services, so this
 // relative import resolves to windows/services/apps in both the repository and
 // the staged prototype tree.
@@ -36,6 +39,23 @@ AppsService {
     hiddenApps: GlobalConfig.launcher.hiddenApps
     specialPrefix: GlobalConfig.launcher.specialPrefix
     useFuzzy: GlobalConfig.launcher.useFuzzy.apps
+    // Windows AppsFolder does not publish runInTerminal or a command argv
+    // for terminal entries. The configured terminal is not an @t launcher.
+
+    onAsynchronousLaunchFailed: message => showLaunchFailure(message)
+
+    function showLaunchFailure(message: string): void {
+        Toaster.toast(Tr.tr("Could not start app"),
+            message || Tr.tr("Windows could not start the application."), "error", Toast.Error);
+    }
+
+    function launchWithFeedback(entry, screenState): void {
+        if (!launch(entry, screenState))
+            showLaunchFailure(lastLaunchError);
+        else if (lastLaunchState === "unconfirmed")
+            Toaster.toast(Tr.tr("Launch requested"), Tr.tr("This Windows backend cannot confirm whether the app started."),
+                "info", Toast.Info);
+    }
 
     // Observable construction policy for host/smoke assertions.
     readonly property bool nativeRequested: nativeLoader.active
