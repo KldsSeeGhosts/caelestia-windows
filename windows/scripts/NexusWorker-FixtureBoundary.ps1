@@ -40,6 +40,7 @@ function Start-ScheduledTask {
     & $script:nexusStartTask @PSBoundParameters
 }
 function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
+    Invoke-FixtureBoundary 'before-copy-root-entries'
     & $script:nexusRealCopyRootEntries $Prefix $Runtime
     Invoke-FixtureBoundary 'after-copy-root-entries'
 }

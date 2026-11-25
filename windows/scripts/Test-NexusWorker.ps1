@@ -163,11 +163,20 @@ function Test-InterruptedHandoff([switch]$LegacyWorker) {
     $workerPath = "$case\prefix\Manage-Caelestia.ps1"
     if ($LegacyWorker) {
         # Model the installed worker on main: it validates TaskName, sets
-        # tracked/operationId, and writes a schema-1 journal, but never exports
-        # the new handoff variable. Leave the signed incoming bundle unchanged.
+        # tracked/operationId, and writes a schema-1 journal, but neither sets
+        # the new handoff variable nor handles shell recovery in Watch.
+        # Leave the signed incoming bundle unchanged.
         $outgoing = [IO.File]::ReadAllText($workerPath)
         $handoffVariable = '(?m)^[ \t]*\$CaelestiaTrackedOperationId = [^\r\n]*\r?\n'
         Assert ([regex]::Matches($outgoing, $handoffVariable).Count -eq 2) 'The installed legacy-worker fixture boundary changed.'
+        $tokens = $null; $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseInput($outgoing, [ref]$tokens, [ref]$parseErrors)
+        $recovery = $ast.Find({ param($node)
+            $node -is [Management.Automation.Language.IfStatementAst] -and
+            $node.Clauses[0].Item1.Extent.Text.Contains('$state.handoff.phase')
+        }, $true)
+        Assert ($parseErrors.Count -eq 0 -and $null -ne $recovery) 'The installed legacy-watchdog fixture boundary changed.'
+        $outgoing = $outgoing.Remove($recovery.Extent.StartOffset, $recovery.Extent.EndOffset - $recovery.Extent.StartOffset)
         Write-FixtureText $workerPath ([regex]::Replace($outgoing, $handoffVariable, ''))
     }
     Write-FixtureText "$case\running-shell" 'v2'
@@ -175,8 +184,11 @@ function Test-InterruptedHandoff([switch]$LegacyWorker) {
     Add-Content -LiteralPath $outgoingLauncher -Value "`r`n" -NoNewline
     Add-Content -LiteralPath $outgoingLauncher -Value '[IO.File]::Delete((Join-Path $env:CAELESTIA_FIXTURE_CASE ''running-shell''))'
     $before = (Get-FileHash "$case\prefix\install.json").Hash
+    $startRouter = (Get-FileHash "$case\prefix\Start-Caelestia.ps1").Hash
     $id = Queue $case
-    $worker = Start-Worker $case (TaskArgs $case $id) 'after-copy-root-entries'
+    $watchTask = Get-Content "$case\tasks\Caelestia-MaintenanceWatch-$id.json" -Raw | ConvertFrom-Json
+    $pause = if ($LegacyWorker) { 'before-copy-root-entries' } else { 'after-copy-root-entries' }
+    $worker = Start-Worker $case (TaskArgs $case $id) $pause
     $clock = [Diagnostics.Stopwatch]::StartNew()
     while (-not (Test-Path "$($worker.control)\ready")) {
         if ($worker.process.HasExited -or $clock.Elapsed.TotalSeconds -gt 20) {
@@ -185,12 +197,13 @@ function Test-InterruptedHandoff([switch]$LegacyWorker) {
         Start-Sleep -Milliseconds 20
     }
     if ($LegacyWorker) {
-        Assert ([IO.File]::ReadAllText($workerPath).Contains('$CaelestiaTrackedOperationId')) 'The legacy worker did not copy the new watchdog script before the kill.'
+        Assert ((Get-FileHash "$case\prefix\Start-Caelestia.ps1").Hash -ceq $startRouter) 'The legacy kill test reached the ordinary root copy.'
+        Assert ([IO.File]::ReadAllText($workerPath).Contains('$state.handoff.phase')) 'The legacy watchdog was not armed before stopping the shell.'
     }
     $handoff = (Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).handoff
     Assert ($handoff.phase -ceq 'stopping' -and $handoff.wasRunning -eq $true -and -not (Test-Path "$case\running-shell")) 'The live shell stop was not journaled before the kill.'
     $worker.process.Kill(); $worker.process.WaitForExit()
-    $watch = Start-Worker $case (Args $case ("-Command Watch -OperationId $id"))
+    $watch = Start-Worker $case $watchTask.Actions[0].Arguments
     $null = Finish $watch
     Assert ([IO.File]::ReadAllText((Join-Path $watch.control 'launched-runtime')) -ceq "$case\prefix\versions\v2") 'The watchdog did not relaunch the committed shell after the worker stopped it.'
     Assert ((Get-FileHash "$case\prefix\install.json").Hash -ceq $before) 'Interrupted root copy changed the committed selector.'

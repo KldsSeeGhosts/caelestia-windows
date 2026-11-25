@@ -87,8 +87,32 @@ function Publish-CaelestiaPayload([string]$Prefix, [string]$Payload, [string]$Id
     return $target
 }
 
-function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
+function Copy-CaelestiaRootEntry([string]$Source, [string]$Target) {
     # Same-directory replace avoids partially readable launcher scripts.
+    if ((Test-Path -LiteralPath $Target) -and ((Get-Item -LiteralPath $Target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Refusing to replace a linked launch entry.'
+    }
+    $temporary = $Target + '.tmp-' + [guid]::NewGuid().ToString('N')
+    try {
+        [IO.File]::Copy($Source, $temporary)
+        if ([IO.File]::Exists($Target)) { [IO.File]::Replace($temporary, $Target, [System.Management.Automation.Language.NullString]::Value) }
+        else { [IO.File]::Move($temporary, $Target) }
+    } finally {
+        if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
+    }
+}
+
+function Copy-CaelestiaRecoveryWatchdog([string]$Prefix, [string]$Runtime) {
+    # The task registered by an older release still opens the stable Manage
+    # path. Publish its imports first, then atomically replace that entrypoint.
+    # Keep the selected payload, Start router and update trust unchanged here.
+    foreach ($name in @('Caelestia-Versions.ps1', 'Caelestia-InstallCommon.ps1', 'Caelestia-SemVer.ps1',
+        'Caelestia-UpdateSecurity.cs', 'Caelestia-UpdateTrust.ps1', 'Caelestia-Update.ps1', 'Manage-Caelestia.ps1')) {
+        Copy-CaelestiaRootEntry (Join-Path $Runtime $name) (Join-Path $Prefix $name)
+    }
+}
+
+function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
     foreach ($pair in @(
         @('Start-CaelestiaEntry.ps1', 'Start-Caelestia.ps1'),
         @('Uninstall-Caelestia.ps1', 'Uninstall-Caelestia.ps1'),
@@ -98,18 +122,7 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
         @('Switch-CaelestiaToWindows.ps1', 'Switch-CaelestiaToWindows.ps1'),
         @('Caelestia-Launcher.ps1', 'Caelestia-Launcher.ps1')
     )) {
-        $target = Join-Path $Prefix $pair[1]
-        if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw 'Refusing to replace a linked launch entry.'
-        }
-        $temporary = $target + '.tmp-' + [guid]::NewGuid().ToString('N')
-        try {
-            [IO.File]::Copy((Join-Path $Runtime $pair[0]), $temporary)
-            if ([IO.File]::Exists($target)) { [IO.File]::Replace($temporary, $target, [System.Management.Automation.Language.NullString]::Value) }
-            else { [IO.File]::Move($temporary, $target) }
-        } finally {
-            if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) }
-        }
+        Copy-CaelestiaRootEntry (Join-Path $Runtime $pair[0]) (Join-Path $Prefix $pair[1])
     }
     # Old retained payloads may predate Nexus. Switch never calls this helper,
     # so rolling back retains the newest self-sufficient root router.
@@ -117,17 +130,8 @@ function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
         'Caelestia-UpdateSecurity.cs', 'version.json', 'update-trust.json')) {
         $source = Join-Path $Runtime $name
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { continue }
-        $target = Join-Path $Prefix $name
         $null = Resolve-CaelestiaDirectory $Prefix
-        if ((Test-Path -LiteralPath $target) -and ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw 'Refusing to replace a linked update entry.'
-        }
-        $temporary = $target + '.tmp-' + [guid]::NewGuid().ToString('N')
-        try {
-            [IO.File]::Copy($source, $temporary)
-            if ([IO.File]::Exists($target)) { [IO.File]::Replace($temporary, $target, [System.Management.Automation.Language.NullString]::Value) }
-            else { [IO.File]::Move($temporary, $target) }
-        } finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
+        Copy-CaelestiaRootEntry $source (Join-Path $Prefix $name)
     }
 }
 
@@ -185,7 +189,7 @@ function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @
     return ''
 }
 
-function Save-CaelestiaMaintenanceHandoff([string]$Prefix, $InstallRecord) {
+function Save-CaelestiaMaintenanceHandoff([string]$Prefix, $InstallRecord, [string]$RecoveryRuntime = '') {
     # Set only by the tracked maintenance worker, on the same thread and
     # under the prefix lock, including when it invokes a verified release.
     $trackedId = [string](Get-Variable -Name CaelestiaTrackedOperationId -ValueOnly -ErrorAction SilentlyContinue)
@@ -208,6 +212,11 @@ function Save-CaelestiaMaintenanceHandoff([string]$Prefix, $InstallRecord) {
         throw 'The maintenance worker lost its handoff journal before stopping the shell.'
     }
     $running = @(Get-CaelestiaProcesses $Prefix).Count -gt 0 -or @(Get-CaelestiaSupervisors $InstallRecord.profile).Count -gt 0
+    if ($running -and $RecoveryRuntime) {
+        # The old shell is still serving the desktop. If watchdog publication
+        # fails, abort without stopping it or writing a handoff.
+        Copy-CaelestiaRecoveryWatchdog $Prefix $RecoveryRuntime
+    }
     $state | Add-Member -NotePropertyName handoff -NotePropertyValue @{
         phase = 'stopping'; wasRunning = $running; sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
     } -Force
@@ -318,7 +327,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             # outgoing payload still needs its own 5.1 entry, and routing
             # through the just-written router would re-enter this install path.
             $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
-            Save-CaelestiaMaintenanceHandoff $Prefix $old
+            Save-CaelestiaMaintenanceHandoff $Prefix $old -RecoveryRuntime $runtime
             $stopped = $true
             Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }
