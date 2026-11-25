@@ -24,18 +24,34 @@ Searcher {
     list: variants.instances
     useFuzzy: GlobalConfig.launcher.useFuzzy.actions
 
-    property var pendingShellActions: new Set()
+    property var pendingShellActions: new Map()
 
     Connections {
         target: root.pendingShellActions.size > 0 ? Native.AppActions : null
         ignoreUnknownSignals: true
         function onShellActionFinished(requestId, status, error): void {
-            const pending = new Set(root.pendingShellActions);
-            if (!pending.delete(String(requestId)))
-                return;
-            root.pendingShellActions = pending;
-            if (!["success", "succeeded", "started", "launched", "ok", "true"].includes(String(status).toLowerCase()))
-                root.refuseShellAction(error || Tr.tr("Windows refused the configured launcher action."));
+            root.finishShellAction(requestId, status, error);
+        }
+    }
+
+    function finishShellAction(requestId, status, error): void {
+        const pending = new Map(root.pendingShellActions);
+        const key = String(requestId);
+        const screenState = pending.get(key);
+        if (!pending.delete(key))
+            return;
+        root.pendingShellActions = pending;
+        root.reportShellAction(screenState, String(status).toLowerCase(), error);
+    }
+
+    function reportShellAction(screenState, status, error): void {
+        if (status === "started") {
+            if (screenState)
+                screenState.launcher = false;
+        } else if (status === "cancelled") {
+            Toaster.toast(Tr.tr("Launcher action cancelled"), Tr.tr("Windows did not start the action."), "info", Toast.Info);
+        } else {
+            root.refuseShellAction(error || Tr.tr("Windows refused the configured launcher action."));
         }
     }
 
@@ -87,21 +103,19 @@ Searcher {
             }
             let result;
             try {
-                result = Native.AppActions.launchShellAction(validated.action);
+                result = Native.AppActions.launchShellAction(validated.action, list?.QsWindow?.window ?? null);
             } catch (error) {
                 refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
                 return;
             }
-            if (result === true) {
-                list.screenState.launcher = false;
-                return;
-            }
+            const status = ShellActionSchema.launchStatus(result);
             const requestId = ShellActionSchema.launchRequestId(result);
-            if (requestId && Native.AppActions.shellActionFinished) {
-                root.pendingShellActions = new Set([...root.pendingShellActions, requestId]);
+            const screenState = list?.screenState ?? null;
+            if (status === "queued" && requestId && Native.AppActions.shellActionFinished) {
+                root.pendingShellActions = new Map([...root.pendingShellActions, [requestId, screenState]]);
                 return;
             }
-            refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
+            root.reportShellAction(screenState, status, result?.error);
         }
 
         function onClicked(list: AppList): void {

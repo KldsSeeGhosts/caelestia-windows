@@ -2,7 +2,6 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
-import Quickshell.Windows
 import Caelestia
 import Caelestia.Config
 import Caelestia.I18n
@@ -11,7 +10,6 @@ import qs.services
 // relative import resolves to windows/services/apps in both the repository and
 // the staged prototype tree.
 import "../../../windows/services/apps"
-import "../../../windows/services/apps/ShellActionSchema.js" as ShellActionSchema
 
 // Windows `Apps` singleton. Preserves the useful original
 // modules/launcher/services/Apps.qml contract the launcher consumes:
@@ -41,8 +39,8 @@ AppsService {
     hiddenApps: GlobalConfig.launcher.hiddenApps
     specialPrefix: GlobalConfig.launcher.specialPrefix
     useFuzzy: GlobalConfig.launcher.useFuzzy.apps
-    terminalCommand: GlobalConfig.general.apps.terminal
-    terminalLauncher: root.terminalBackendSupported ? root.launchTerminalEntry : null
+    // Windows AppsFolder does not publish runInTerminal or a command argv
+    // for terminal entries. The configured terminal is not an @t launcher.
 
     onAsynchronousLaunchFailed: message => showLaunchFailure(message)
 
@@ -60,34 +58,6 @@ AppsService {
         return lastLaunchState === "confirmed";
     }
 
-    readonly property bool terminalBackendSupported: typeof AppActions.launchShellAction === "function"
-
-    function launchTerminalEntry(entry, terminal): var {
-        root.terminalLauncherError = "";
-        const validated = ShellActionSchema.terminalAction(terminal, entry);
-        if (!validated.ok) {
-            root.terminalLauncherError = validated.error;
-            return { state: "refused", requestId: "", error: root.terminalLauncherError };
-        }
-        if (typeof AppActions.launchShellAction !== "function") {
-            root.terminalLauncherError = "This Windows shell backend cannot run terminal applications yet.";
-            return { state: "refused", requestId: "", error: root.terminalLauncherError };
-        }
-        try {
-            const result = AppActions.launchShellAction(validated.action);
-            if (result === true)
-                return { state: "confirmed", requestId: "", error: "" };
-            const requestId = ShellActionSchema.launchRequestId(result);
-            if (requestId && AppActions.shellActionFinished)
-                return { state: "pending", requestId, error: "" };
-        } catch (error) {
-            root.terminalLauncherError = String(error);
-            return { state: "refused", requestId: "", error: root.terminalLauncherError };
-        }
-        root.terminalLauncherError = "Windows refused the terminal application launch.";
-        return { state: "refused", requestId: "", error: root.terminalLauncherError };
-    }
-
     // Observable construction policy for host/smoke assertions.
     readonly property bool nativeRequested: nativeLoader.active
     readonly property bool storeRequested: storeLoader.active
@@ -95,7 +65,7 @@ AppsService {
     readonly property string stateDir: Quickshell.env("CAELESTIA_STATE_DIR") || ""
 
     readonly property Component _catalogComponent: Component {
-        NativeAppCatalog { launchResults: AppActions }
+        NativeAppCatalog {}
     }
     readonly property Component _storeComponent: Component {
         FileAppFrequencyStore {

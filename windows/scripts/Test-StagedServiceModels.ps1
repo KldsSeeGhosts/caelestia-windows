@@ -79,6 +79,7 @@ function Invoke-OwnedProcess([string]$Executable, [string]$Arguments, [string]$N
 $production = @(
     'windows/services/apps/AppsService.qml',
     'windows/services/apps/NativeAppCatalog.qml',
+    'windows/services/apps/ShellActionSchema.js',
     'windows/services/apps/AppFrequencyStore.qml',
     'windows/services/apps/FileAppFrequencyStore.qml',
     'windows/services/apps/AppStoragePath.js',

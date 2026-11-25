@@ -23,6 +23,75 @@ function script(file, exports) {
         read(file).replace(/^\.pragma library\s*/, "") + `\n;(${exports})`);
 }
 
+test("native shell actions forward their parent before closing and honor the result map", () => {
+    const schema = script("windows/services/apps/ShellActionSchema.js",
+        "{validateShellAction, launchStatus, launchRequestId}");
+    const parent = {};
+    const list = {QsWindow: {window: parent}, screenState: {launcher: true}};
+    const messages = [];
+    let reply;
+    const context = vm.createContext({
+        ShellActionSchema: schema, Tr: {tr: text => text},
+        Toast: {Info: "info"},
+        Toaster: {toast: (title, message, icon, type) => messages.push([type, title, message])},
+        modelData: {verb: "runas", target: "tools.exe"},
+        Native: {AppActions: {
+            shellActionFinished: true,
+            launchShellAction(spec, window) {
+                assert.equal(list.screenState.launcher, true);
+                assert.equal(window, parent);
+                assert.equal(spec.verb, context.modelData.verb);
+                return reply;
+            }
+        }},
+        pendingShellActions: new Map(),
+        root: null
+    });
+    context.root = context;
+    vm.runInContext(["runShellAction", "onShellActionFinished", "finishShellAction", "reportShellAction", "refuseShellAction"]
+        .map(name => qmlFunction(source, name)).join("\n"), context);
+
+    for (const result of [{status: "started", errorCode: 0, error: ""}, true]) {
+        reply = result;
+        list.screenState.launcher = true;
+        context.runShellAction(list);
+        assert.equal(list.screenState.launcher, false);
+        assert.equal(messages.length, 0);
+    }
+
+    list.screenState.launcher = true;
+    reply = {status: "cancelled", errorCode: 1223, error: "cancelled"};
+    context.runShellAction(list);
+    assert.equal(messages.pop()[0], "info");
+    assert.equal(list.screenState.launcher, true);
+    for (const status of ["refused", "notSupported", "unknown"]) {
+        reply = {status, errorCode: 5, error: `fixture ${status}`};
+        context.runShellAction(list);
+        assert.equal(messages.pop()[2], `fixture ${status}`);
+        assert.equal(list.screenState.launcher, true);
+    }
+
+    context.modelData.verb = "open";
+    for (const [id, status] of [[1, "started"], [2, "cancelled"], [3, "refused"], [4, "notSupported"]]) {
+        list.screenState.launcher = true;
+        reply = {status: "queued", requestId: id, errorCode: 0, error: ""};
+        context.runShellAction(list);
+        assert.equal(list.screenState.launcher, true);
+        assert.equal(messages.length, 0);
+        context.onShellActionFinished(99, "started", "");
+        assert.equal(list.screenState.launcher, true);
+        context.onShellActionFinished(id, status, "fixture completion");
+        assert.equal(context.pendingShellActions.size, 0);
+        assert.equal(list.screenState.launcher, status !== "started");
+        if (status === "cancelled")
+            assert.equal(messages.pop()[0], "info");
+        else if (status !== "started")
+            assert.equal(messages.pop()[2], "fixture completion");
+        else
+            assert.equal(messages.length, 0);
+    }
+});
+
 test("production stages the Windows Settings action and existing action delegate", () => {
     const manifest = JSON.parse(read("windows/shell/sources.json"));
     assert.equal(manifest[adapter], "modules/launcher/services/Actions.qml");

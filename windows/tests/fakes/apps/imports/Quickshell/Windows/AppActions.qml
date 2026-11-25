@@ -7,6 +7,15 @@ import QtQuick
 // the connection and request correlation without the pinned Windows backend.
 QtObject {
     signal shellActionFinished(string requestId, string status, string error)
+    property var reply: ({status: "notSupported"})
+    property var lastSpec: null
+    property int launches: 0
+
+    function launchShellAction(spec, parentWindow): var {
+        launches++;
+        lastSpec = spec;
+        return reply;
+    }
 
     function emitFinished(requestId, status, error): void {
         shellActionFinished(requestId, status, error);

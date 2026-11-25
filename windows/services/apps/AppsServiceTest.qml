@@ -144,7 +144,7 @@ QtObject {
     // Quickshell.DesktopEntries singleton. A QML reload builds a replacement
     // catalog while the backend model still holds the previous scan's apps.
     readonly property Component nativeCatalogComponent: Component {
-        NativeAppCatalog { launchResults: Native.AppActions }
+        NativeAppCatalog {}
     }
     readonly property Component nativeServiceComponent: Component {
         AppsService {
@@ -563,6 +563,11 @@ QtObject {
         check(service.canLaunch(terminal) === false, "terminal entries need a terminal launcher");
         service.terminalCommand = ["wt.exe"];
         service.terminalLauncher = fakeTerminalLauncher;
+        const argv = terminal.command;
+        terminal.command = [];
+        check(!service.canLaunch(terminal) && !service.launch(terminal),
+            "a marked entry without argv is refused rather than launched unshelled");
+        terminal.command = argv;
         check(service.terminalLaunchSupported === true, "configured terminal support is exposed");
         check(service.canLaunch(terminal) === true, "terminal entries are launchable through the terminal");
         check(service.canLaunch({id: "foreign", name: "Foreign"}) === false,
@@ -738,6 +743,8 @@ QtObject {
         check(readyService.count === 5, "an existing snapshot exposes every application");
         check(readyService.search("fire").length === 1 && readyService.search("fire")[0] === firefox,
             "search reads the existing snapshot");
+        check(readyService.search("@t ").length === 1 && readyService.search("@t ")[0] === terminal,
+            "the terminal filter matches explicit flags only, not ordinary Windows entries");
         const lateCatalog = nativeCatalogComponent.createObject(test);
         check(lateCatalog !== null && lateCatalog.scanCompleted === true,
             "a catalog built over an existing snapshot records the completed scan");
@@ -778,6 +785,42 @@ QtObject {
             "the production catalog forwards the backend completion signal");
         settings.executeResult = true;
         check(lateCatalog.execute(settings).state === "confirmed", "the production catalog preserves explicit confirmation");
+
+        readyService.launchEnabled = true;
+        const nativeStore = Qt.createQmlObject("import QtQuick; QtObject { property int increments: 0; function increment(id) { increments++; } }", test);
+        readyService.frequencyStore = nativeStore;
+        const entry = entryComponent.createObject(test, {
+            id: "native", name: "Native fixture", command: ["shell:AppsFolder\\Vendor.App!Main"],
+            execString: "ignored fallback", workingDirectory: "C:/Fixture", executeResult: undefined
+        });
+        DesktopEntries.completeScan([entry]);
+        check(readyService.search("@t ").length === 0, "an AppsFolder-only catalog has no terminal filter results");
+        Native.AppActions.reply = {status: "queued", requestId: 51, errorCode: 0, error: ""};
+        check(readyService.launch(entry) && readyService.lastLaunchState === "pending" && nativeStore.increments === 0,
+            "the production catalog queues an ordinary launch without ranking early");
+        const spec = Native.AppActions.lastSpec;
+        check(spec.verb === "open" && spec.aumid === entry.command[0] && spec.workingDir === entry.workingDirectory
+            && entry.executions === 0, "the native request preserves the AppsFolder token and working directory");
+        Native.AppActions.emitFinished("51", "started", "");
+        check(nativeStore.increments === 1, "a started native completion raises rank");
+        let nativeError = "";
+        readyService.asynchronousLaunchFailed.connect(message => nativeError = message);
+        Native.AppActions.reply = {status: "queued", requestId: 52};
+        check(readyService.launch(entry), "a second native launch queues");
+        Native.AppActions.emitFinished("52", "refused", "fixture OS refusal");
+        check(nativeError === "fixture OS refusal" && nativeStore.increments === 1,
+            "a refused native completion reaches launcher feedback without ranking");
+        const appFolderToken = entry.command[0];
+        entry.command = [];
+        entry.execString = appFolderToken;
+        Native.AppActions.reply = {status: "notSupported", error: "fixture unsupported route"};
+        check(!readyService.launch(entry) && readyService.lastLaunchError === "fixture unsupported route"
+            && Native.AppActions.lastSpec.aumid === appFolderToken && entry.executions === 0,
+            "execString supplies the token and a native refusal never falls through to DesktopEntry.execute");
+        readyService.catalog.appActions = null;
+        check(readyService.launch(entry) && readyService.lastLaunchState === "unconfirmed"
+            && entry.executions === 1 && nativeStore.increments === 1,
+            "an old backend falls back to the unconfirmed, unranked void dispatch");
 
         // The same wrapper, created before any scan, still completes from the
         // backend signal: empty first, then populated.

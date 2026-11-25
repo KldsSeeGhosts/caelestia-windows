@@ -120,6 +120,10 @@ function launchRequestId(result) {
     return Number.isSafeInteger(value) && value > 0 ? String(value) : "";
 }
 
+function launchStatus(result) {
+    return result === true ? "started" : String(result?.status ?? "").toLowerCase();
+}
+
 function terminalAction(terminal, entry) {
     const terminalCommand = stringList(terminal, false);
     if (!terminalCommand)

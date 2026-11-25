@@ -1,4 +1,5 @@
 import QtQuick
+import "ShellActionSchema.js" as ShellActionSchema
 import "../../../utils/scripts/fzf.js" as Fzf
 import "../../../utils/scripts/fuzzysort.js" as Fuzzy
 
@@ -362,8 +363,9 @@ QtObject {
         }, search);
     }
 
-    // Preserved upstream special prefixes (@i/@c/@d/@e/@w/@g/@k/@t). The
-    // default query only matches names; @t filters terminal entries.
+    // Preserved upstream special prefixes (@i/@c/@d/@e/@w/@g/@k/@t).
+    // The default query matches names. @t only sees explicitly marked entries
+    // from an injected catalog; Windows AppsFolder does not publish the flag.
     function search(search): var {
         const prefix = specialPrefix;
         const text = String(search ?? "");
@@ -406,10 +408,8 @@ QtObject {
     }
 
     // --- Launch policy ----------------------------------------------------
-    // Upstream wraps terminal applications in assets/wrap_term_launch.sh with
-    // GlobalConfig.general.apps.terminal. Windows uses the configured terminal
-    // through the backend's validated shell-action boundary; without that
-    // backend the terminal entry is refused rather than started unshelled.
+    // Terminal launches are deferred for AppsFolder. An injected catalog can
+    // opt in with both an explicit flag and structured executable/argv.
     readonly property bool terminalLaunchSupported: terminalCommand !== null
         && terminalCommand !== undefined && terminalCommand.length > 0
         && typeof terminalLauncher === "function"
@@ -432,7 +432,8 @@ QtObject {
     function canLaunch(entry): bool {
         if (!launchEnabled || !ready || !entry || typeof entry !== "object")
             return false;
-        if (entry.runInTerminal === true && !terminalLaunchSupported)
+        if (entry.runInTerminal === true && (!terminalLaunchSupported
+            || !ShellActionSchema.terminalAction(terminalCommand, entry).ok))
             return false;
         return list.some(wrapper => wrapper.entry === entry);
     }
@@ -543,6 +544,11 @@ QtObject {
         if (entry.runInTerminal === true) {
             if (!terminalLaunchSupported) {
                 lastLaunchError = "No Windows terminal launcher is configured or available.";
+                return false;
+            }
+            const validated = ShellActionSchema.terminalAction(terminalCommand, entry);
+            if (!validated.ok) {
+                lastLaunchError = validated.error;
                 return false;
             }
             terminalLauncherError = "";

@@ -360,8 +360,16 @@ ShellRoot {
                 return "No active player";
             if (prop === "identity")
                 return root.ipcPlayerName(active);
-            const publicProperties = ["trackTitle", "trackArtist", "trackAlbum", "length", "position",
-                "playbackState", "isPlaying", "canPlay", "canPause", "canSeek", "canGoNext", "canGoPrevious"];
+            // Exclude raw app/session identifiers, artwork URLs (local cache
+            // paths), and metadata maps (arbitrary URLs or identifiers).
+            if (prop === "canStop" && active.canStop === undefined)
+                return String(Players.canStop(active));
+            const publicProperties = ["trackTitle", "trackArtist", "trackArtists", "trackAlbum", "trackAlbumArtist",
+                "length", "lengthSupported", "position", "positionSupported", "volume", "volumeSupported",
+                "playbackState", "isPlaying", "canPlay", "canPause", "canSeek", "canGoNext", "canGoPrevious",
+                "canControl", "canTogglePlaying", "canStop", "canQuit", "canRaise", "canSetFullscreen",
+                "shuffle", "shuffleSupported", "loopState", "loopSupported", "rate", "minRate", "maxRate",
+                "fullscreen", "supportedUriSchemes", "supportedMimeTypes"];
             return publicProperties.includes(prop) ? String(active[prop] ?? "Invalid property") : "Invalid property";
         }
         function play(): void {
@@ -450,12 +458,14 @@ Expected: 0.1, +0.1, 0.1-, 10%, +10%, 10%-`;
         }
     }
 
+    function openNexus(): bool {
+        return root.parityEnabled && !!Nexus.WindowFactory.create(null, {});
+    }
+
     IpcHandler {
         target: "nexus"
-
         function open(): void {
-            if (root.parityEnabled)
-                Nexus.WindowFactory.create(null, {});
+            root.openNexus();
         }
         function openPage(pageIdx: int): bool {
             if (!root.parityEnabled || pageIdx < 0)
@@ -475,7 +485,7 @@ Expected: 0.1, +0.1, 0.1-, 10%, +10%, 10%-`;
             if (Nexus.WindowFactory.windowCount > 0) {
                 Nexus.WindowFactory.closeAll();
             } else {
-                return open();
+                return root.openNexus();
             }
             return true;
         }

@@ -10,6 +10,7 @@ $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name apps
     -FakeDirectories @('windows/tests/fakes/apps') `
     -Sources @('windows/services/apps/AppsService.qml',
         'windows/services/apps/NativeAppCatalog.qml',
+        'windows/services/apps/ShellActionSchema.js',
         'windows/services/apps/AppFrequencyStore.qml',
         'windows/services/apps/AppStoragePath.js',
         'windows/services/apps/AppsServiceTest.qml',

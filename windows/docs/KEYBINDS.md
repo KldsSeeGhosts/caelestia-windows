@@ -431,6 +431,14 @@ and mute helpers, brightness up/down helpers, Nexus page/close/toggle helpers,
 and `shell.panel` report whether Windows accepted dispatch. Smoke fixtures
 disable parity mutations rather than reporting success for them.
 
+`mpris.getActive` exposes playback, track and capability fields. It omits raw app
+and session identifiers, artwork URLs, and metadata maps because they can contain
+local paths or private identifiers.
+
+Windows AppsFolder entries do not say whether an app needs a terminal, so the
+launcher's `@t` filter does not match native apps. `general.apps.terminal` still
+defaults to `wt.exe`, and a keybind can launch Windows Terminal directly.
+
 The installed shell also exposes the explicit
 panel-off action `displays off`. It asks the shell's own window to process
 Windows display power (`WM_SYSCOMMAND` / `SC_MONITORPOWER = 2`). A keybind call

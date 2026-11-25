@@ -1,5 +1,7 @@
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
+import "ShellActionSchema.js" as ShellActionSchema
 
 // Thin native wrapper over Quickshell.DesktopEntries.
 //
@@ -20,7 +22,8 @@ QtObject {
     id: root
 
     signal launchFinished(string requestId, string status, string error)
-    property var launchResults: null
+    property var appActions: Native.AppActions
+    readonly property var launchResults: root.appActions
     readonly property var observedEntries: new WeakSet()
 
     readonly property var applications: DesktopEntries.applications
@@ -46,7 +49,7 @@ QtObject {
             ? DesktopEntries.byId(appId) : null;
     }
 
-    // Forward the future backend's asynchronous result when it exists. The
+    // Forward the companion backend's asynchronous result when it exists. The
     // pinned backend has no shellActionFinished signal, so feature detection
     // leaves unconfirmed dispatches unranked instead of inventing success.
     function forwardShellActionFinished(requestId, status, error): void {
@@ -61,14 +64,30 @@ QtObject {
         }
     }
 
-    // The only native launch call in this slice. Enumeration/search read
-    // `applications` and never reach this function. A void return is only an
-    // unconfirmed dispatch: it is not success and must not increment rank.
+    // AppsFolder tokens go to the backend unchanged. A void return from the
+    // older DesktopEntry API is unconfirmed and must not increment rank.
     function execute(entry): var {
-        if (!entry || typeof entry.execute !== "function")
+        if (!entry)
             return { state: "refused", requestId: "", error: "Unknown application entry." };
         let result;
         try {
+            const commandToken = entry.command?.[0];
+            const token = typeof commandToken === "string" && commandToken.trim() ? commandToken : entry.execString;
+            if (typeof token === "string" && token.trim() && typeof appActions?.launchShellAction === "function"
+                && appActions.shellActionFinished) {
+                const workingDir = typeof entry.workingDirectory === "string" ? entry.workingDirectory : "";
+                result = appActions.launchShellAction({verb: "open", aumid: token, workingDir}, null);
+                const status = ShellActionSchema.launchStatus(result);
+                const requestId = ShellActionSchema.launchRequestId(result);
+                if (status === "started")
+                    return {state: "confirmed"};
+                if (status === "queued" && requestId)
+                    return {state: "pending", requestId};
+                return {state: "refused", error: result?.error || (status === "cancelled"
+                    ? "Windows cancelled the application launch." : "Windows refused the application launch.")};
+            }
+            if (typeof entry.execute !== "function")
+                return {state: "refused", error: "Unknown application entry."};
             const entryResult = entry.launchFinished;
             if (entryResult && typeof entryResult.connect === "function" && !observedEntries.has(entry)) {
                 entryResult.connect(root.forwardShellActionFinished);
@@ -82,9 +101,9 @@ QtObject {
             return { state: "confirmed", requestId: "", error: "" };
         if (result === false)
             return { state: "refused", requestId: "", error: "Windows refused the application launch." };
-        const request = result && typeof result === "object" ? result.requestId : result;
-        if ((typeof request === "string" && request.length > 0) || (Number.isSafeInteger(request) && request > 0))
-            return { state: "pending", requestId: String(request), error: "" };
+        const requestId = ShellActionSchema.launchRequestId(result);
+        if (requestId)
+            return { state: "pending", requestId, error: "" };
         return { state: "unconfirmed", requestId: "", error: "" };
     }
 }

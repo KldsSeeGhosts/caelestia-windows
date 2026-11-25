@@ -35,24 +35,58 @@ test("drawer and MPRIS public surface matches the staged Windows backend", () =>
     assert.match(shell, /"playbackState", "isPlaying", "canPlay", "canPause", "canSeek", "canGoNext", "canGoPrevious"/);
 });
 
-test("drawer toggles return nothing and media seek capability is public", () => {
-    function body(source, name) {
-        const match = source.match(new RegExp(String.raw`^(\s+)function ${name}\(([^)]*)\): \w+ (\{[\s\S]*?\n\1\})`, "m"));
-        assert.ok(match, `missing ${name} function`);
-        return `function ${name}(${match[2].replace(/: \w+/g, "")}) ${match[3]}`;
-    }
+function body(source, name) {
+    const match = source.match(new RegExp(String.raw`^([ ]+)function ${name}\(([^)]*)\): \w+ (\{[\s\S]*?\n\1\})`, "m"));
+    assert.ok(match, `missing ${name} function`);
+    return `function ${name}(${match[2].replace(/: \w+/g, "")}) ${match[3]}`;
+}
+
+test("drawer toggles return nothing and media playback and capabilities are public", () => {
     const state = {quota: false};
     const root = {
         ipcDrawerState: () => state,
         ipcSetDrawer: (name, open) => state[name] = open,
-        ipcActivePlayer: () => ({canSeek: true, dbusName: "private"})
+        ipcActivePlayer: () => ({
+            canSeek: true, shuffle: false, loopState: 2, shuffleSupported: true, loopSupported: true,
+            canControl: true, canTogglePlaying: true, trackArtists: "Fixture artist",
+            dbusName: "private", desktopEntry: "private", uniqueId: 4, trackArtUrl: "private", metadata: {}
+        })
     };
-    const context = vm.createContext({root});
+    const context = vm.createContext({root, Players: {canStop: () => false}});
     vm.runInContext(body(targetBlock("drawers"), "toggle") + "\n" + body(targetBlock("mpris"), "getActive"), context);
     assert.equal(context.toggle("quota"), undefined);
     assert.equal(state.quota, true);
     assert.equal(context.getActive("canSeek"), "true");
-    assert.equal(context.getActive("dbusName"), "Invalid property");
+    assert.equal(context.getActive("shuffle"), "false");
+    assert.equal(context.getActive("loopState"), "2");
+    assert.equal(context.getActive("canStop"), "false");
+    for (const prop of ["shuffleSupported", "loopSupported", "canControl", "canTogglePlaying"])
+        assert.equal(context.getActive(prop), "true");
+    assert.equal(context.getActive("trackArtists"), "Fixture artist");
+    for (const prop of ["dbusName", "desktopEntry", "uniqueId", "trackArtUrl", "metadata"])
+        assert.equal(context.getActive(prop), "Invalid property");
+});
+
+test("Nexus toggle reports success when opening and closing, while open stays void", () => {
+    const factory = {
+        windowCount: 0,
+        create() { this.windowCount++; return {}; },
+        closeAll() { this.windowCount = 0; }
+    };
+    const root = {parityEnabled: true};
+    const context = vm.createContext({root, Nexus: {WindowFactory: factory}});
+    vm.runInContext([body(shell, "openNexus"), body(targetBlock("nexus"), "open"),
+        body(targetBlock("nexus"), "toggle")].join("\n"), context);
+    root.openNexus = context.openNexus;
+    assert.equal(context.toggle(), true);
+    assert.equal(factory.windowCount, 1);
+    assert.equal(context.toggle(), true);
+    assert.equal(factory.windowCount, 0);
+    assert.equal(context.open(), undefined);
+    assert.equal(factory.windowCount, 1);
+    root.parityEnabled = false;
+    assert.equal(context.toggle(), false);
+    assert.equal(factory.windowCount, 1);
 });
 
 test("QML IPC code does not use Object.hasOwn, which QJSEngine lacks", () => {
