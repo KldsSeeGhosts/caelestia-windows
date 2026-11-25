@@ -47,7 +47,8 @@ QtObject {
     function execute(entry): bool {
         if (!entry || typeof entry.execute !== "function")
             return false;
-        entry.execute();
-        return true;
+        // The pinned backend returns void after dispatch; respect a backend
+        // that can report an immediate refusal without guessing OS success.
+        return entry.execute() !== false;
     }
 }

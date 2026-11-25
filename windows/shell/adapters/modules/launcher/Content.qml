@@ -80,8 +80,8 @@ Item {
                     else
                         currentItem.modelData.onClicked(list.currentList);
                 } else {
-                    Apps.launch(currentItem.modelData);
-                    root.screenState.launcher = false;
+                    if (Apps.launchWithFeedback(currentItem.modelData))
+                        root.screenState.launcher = false;
                 }
             }
         }

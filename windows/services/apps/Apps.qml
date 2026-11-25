@@ -2,11 +2,16 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Quickshell.Windows
+import Caelestia
 import Caelestia.Config
+import Caelestia.I18n
+import qs.services
 // The facade is staged next to the original launcher services, so this
 // relative import resolves to windows/services/apps in both the repository and
 // the staged prototype tree.
 import "../../../windows/services/apps"
+import "../../../windows/services/apps/ShellActionSchema.js" as ShellActionSchema
 
 // Windows `Apps` singleton. Preserves the useful original
 // modules/launcher/services/Apps.qml contract the launcher consumes:
@@ -36,6 +41,39 @@ AppsService {
     hiddenApps: GlobalConfig.launcher.hiddenApps
     specialPrefix: GlobalConfig.launcher.specialPrefix
     useFuzzy: GlobalConfig.launcher.useFuzzy.apps
+    terminalCommand: GlobalConfig.general.apps.terminal
+    terminalLauncher: root.launchTerminalEntry
+
+    function launchWithFeedback(entry): bool {
+        const started = launch(entry) === true;
+        if (!started)
+            Toaster.toast(Tr.tr("Could not start app"),
+                lastLaunchError || Tr.tr("Windows could not start the application."),
+                "error", Toast.Error);
+        return started;
+    }
+
+    function launchTerminalEntry(entry, terminal): bool {
+        root.terminalLauncherError = "";
+        const validated = ShellActionSchema.terminalAction(terminal, entry);
+        if (!validated.ok) {
+            root.terminalLauncherError = validated.error;
+            return false;
+        }
+        if (typeof AppActions.launchShellAction !== "function") {
+            root.terminalLauncherError = "This Windows shell backend cannot run terminal applications yet.";
+            return false;
+        }
+        try {
+            if (AppActions.launchShellAction(validated.action) === true)
+                return true;
+        } catch (error) {
+            root.terminalLauncherError = String(error);
+            return false;
+        }
+        root.terminalLauncherError = "Windows refused the terminal application launch.";
+        return false;
+    }
 
     // Observable construction policy for host/smoke assertions.
     readonly property bool nativeRequested: nativeLoader.active

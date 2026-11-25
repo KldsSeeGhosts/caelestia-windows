@@ -26,10 +26,14 @@ QtObject {
         property var keywords: []
         property string icon: ""
         property bool runInTerminal: false
+        property var command: []
+        property string workingDirectory: ""
+        property bool executeResult: true
         property int executions: 0
 
-        function execute(): void {
+        function execute(): bool {
             executions++;
+            return executeResult;
         }
     }
 
@@ -60,8 +64,7 @@ QtObject {
                 return false;
             executions++;
             lastExecutedId = entry.id;
-            entry.execute();
-            return true;
+            return entry.execute() === true;
         }
     }
 
@@ -155,6 +158,21 @@ QtObject {
     property FakeEntry duplicateB: null
 
     property int assertions: 0
+    property var terminalCalls: []
+    property int terminalLauncherCalls: 0
+    property bool terminalLaunchResult: true
+    property string terminalLaunchFailure: ""
+
+    function fakeTerminalLauncher(entry, terminal): bool {
+        terminalLauncherCalls++;
+        terminalCalls.push({
+            id: entry?.id ?? "",
+            command: entry?.command ?? [],
+            terminal: terminal
+        });
+        service.terminalLauncherError = terminalLaunchResult ? "" : terminalLaunchFailure;
+        return terminalLaunchResult;
+    }
 
     function buildFixture(): void {
         firefox = entryComponent.createObject(test, {
@@ -180,7 +198,8 @@ QtObject {
         });
         terminal = entryComponent.createObject(test, {
             id: "terminal", name: "Terminal", comment: "Command line",
-            execString: "/usr/bin/foot", runInTerminal: true, icon: "utilities-terminal"
+            execString: "C:/Tools/terminal-app.exe", command: ["C:/Tools/terminal-app.exe", "--echo"],
+            workingDirectory: "C:/Tools", runInTerminal: true, icon: "utilities-terminal"
         });
         duplicateA = entryComponent.createObject(test, {
             id: "dup-a", name: "Duplicate", icon: "appicon:dup-a"
@@ -529,7 +548,11 @@ QtObject {
         // --- Interactive launch policy ---------------------------------------
         service.launchEnabled = true;
         check(service.canLaunch(firefox) === true, "launch opt-in permits a listed entry");
-        check(service.canLaunch(terminal) === false, "terminal entries are not launchable");
+        check(service.canLaunch(terminal) === false, "terminal entries need a terminal launcher");
+        service.terminalCommand = ["wt.exe"];
+        service.terminalLauncher = fakeTerminalLauncher;
+        check(service.terminalLaunchSupported === true, "configured terminal support is exposed");
+        check(service.canLaunch(terminal) === true, "terminal entries are launchable through the terminal");
         check(service.canLaunch({id: "foreign", name: "Foreign"}) === false,
             "foreign entries are not launchable");
         check(service.canLaunch(null) === false, "null entries are not launchable");
@@ -551,11 +574,28 @@ QtObject {
         check(service.lastLaunchError.length > 0,
             "foreign launch reason");
 
-        check(service.launch(terminal) === false, "terminal launch is refused");
+        check(service.launch(terminal) === true, "terminal launch uses the configured terminal");
+        check(terminalLauncherCalls === 1 && terminalCalls.length === 1 && terminalCalls[0].id === "terminal"
+            && terminalCalls[0].terminal[0] === "wt.exe", "terminal launcher receives entry and configuration");
         check(terminal.executions === 0 && catalog.executions === 2,
-            "terminal launch executes nothing");
-        check(service.lastLaunchError.length > 0, "terminal refusal reason");
-        check(store.frequencyFor("terminal") === 0, "terminal refusal records no frequency");
+            "terminal launch bypasses the non-terminal catalog execute path");
+        check(store.frequencyFor("terminal") === 1, "successful terminal launch records its frequency");
+
+        terminalLaunchResult = false;
+        terminalLaunchFailure = "fixture terminal refusal";
+        check(service.launch(terminal) === false, "a refused terminal launch fails explicitly");
+        check(service.lastLaunchError === "fixture terminal refusal", "terminal refusal reason is preserved");
+        check(store.frequencyFor("terminal") === 1, "failed terminal launch does not record frequency");
+        terminalLaunchResult = true;
+        terminalLaunchFailure = "";
+
+        calculator.executeResult = false;
+        const frequencyBeforeFailedCatalogLaunch = store.increments;
+        check(service.launch(calculator) === false, "a failed catalog launch returns false");
+        check(service.lastLaunchError.length > 0, "failed catalog launch has a reason");
+        check(store.increments === frequencyBeforeFailedCatalogLaunch,
+            "failed catalog launch does not record frequency");
+        calculator.executeResult = true;
 
         check(service.launch(null) === false && service.launch("firefox") === false,
             "invalid entries are refused");
@@ -564,7 +604,7 @@ QtObject {
         // A stale entry removed by a rescan is refused.
         model.values = [files];
         check(service.canLaunch(firefox) === false, "removed entry is no longer launchable");
-        check(service.launch(firefox) === false && catalog.executions === 2,
+        check(service.launch(firefox) === false && catalog.executions === 3,
             "removed entry launch is refused without executing");
 
         // --- Running-application middle-click launch -------------------------
@@ -577,10 +617,10 @@ QtObject {
             "an app id matched by the catalog starts a new instance");
         check(catalog.lookups === 1 && catalog.lastLookupId === "running-firefox",
             "the running app id goes through the catalog's own lookup");
-        check(catalog.executions === 3 && firefox.executions === 3,
+        check(catalog.executions === 4 && firefox.executions === 3,
             "middle-click dispatches exactly one catalog execute");
         check(service.launchRequests === middleRequests + 1
-            && service.launchesIssued === 3, "middle-click is one launch request");
+            && service.launchesIssued === 4, "middle-click is one launch request");
         check(service.lastLaunchId === "firefox", "the matched entry is the launch target");
 
         // An unmatched app is inert and never reaches launch().
@@ -592,14 +632,14 @@ QtObject {
         check(catalog.lookups === missLookups + 1, "the catalog was consulted");
         check(service.launchRequests === missRequests,
             "an unmatched app never makes a launch request");
-        check(catalog.executions === 3, "an unmatched app executes nothing");
+        check(catalog.executions === 4, "an unmatched app executes nothing");
 
         // A matched entry that the launch policy refuses stays inert.
         catalog.lookupResults = {"running-terminal": terminal};
-        check(service.launchForAppId("running-terminal") === false,
-            "a matched terminal entry is not launchable");
-        check(terminal.executions === 0 && catalog.executions === 3,
-            "a refused match executes nothing");
+        check(service.launchForAppId("running-terminal") === true,
+            "a matched terminal entry launches through the configured terminal");
+        check(terminalLauncherCalls === 3 && terminal.executions === 0 && catalog.executions === 4,
+            "a terminal match uses the terminal launcher without catalog execute");
 
         // Without the launch opt-in nothing is matched and nothing is called.
         service.launchEnabled = false;
@@ -612,7 +652,7 @@ QtObject {
             "a disabled launch does not consult the catalog");
         check(service.launchRequests === disabledRequests,
             "a disabled launch makes no launch request");
-        check(catalog.executions === 3 && firefox.executions === 3,
+        check(catalog.executions === 4 && firefox.executions === 3,
             "a disabled middle-click executes nothing");
         service.launchEnabled = true;
         catalog.lookupResults = {};
@@ -633,7 +673,7 @@ QtObject {
         checkNativeCatalogSnapshot();
 
         // Final native/no-op invariant across the whole fixture.
-        check(catalog.executions === 3, "only the three permitted launches reached the catalog");
+        check(catalog.executions === 4, "the permitted launches and the failed attempt reached the catalog");
         check(firefox.executions === 3, "only explicit and middle-click launches reached DesktopEntry.execute");
 
         console.log("CAELESTIA_APPS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));

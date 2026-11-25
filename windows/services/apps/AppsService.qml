@@ -41,6 +41,9 @@ QtObject {
     property var hiddenApps: []
     property string specialPrefix: "@"
     property bool useFuzzy: false
+    property var terminalCommand: []
+    property var terminalLauncher: null
+    property string terminalLauncherError: ""
 
     // Upstream Searcher state. search() derives a local prefix spec, so these
     // remain the public query() spec and keep their upstream defaults.
@@ -404,11 +407,12 @@ QtObject {
 
     // --- Launch policy ----------------------------------------------------
     // Upstream wraps terminal applications in assets/wrap_term_launch.sh with
-    // GlobalConfig.general.apps.terminal. That Linux wrapper does not exist
-    // here, and the Windows backend's DesktopEntry.execute() deliberately
-    // ignores runInTerminal. Terminal entries are therefore reported as an
-    // unsupported launch instead of being started without a terminal.
-    readonly property bool terminalLaunchSupported: false
+    // GlobalConfig.general.apps.terminal. Windows uses the configured terminal
+    // through the backend's validated shell-action boundary; without that
+    // backend the terminal entry is refused rather than started unshelled.
+    readonly property bool terminalLaunchSupported: terminalCommand !== null
+        && terminalCommand !== undefined && terminalCommand.length > 0
+        && typeof terminalLauncher === "function"
     property int launchRequests: 0
     property int launchesIssued: 0
     property string lastLaunchError: ""
@@ -429,7 +433,7 @@ QtObject {
         if (!launchEnabled || !ready || !entry || typeof entry !== "object")
             return false;
         if (entry.runInTerminal === true)
-            return false;
+            return terminalLaunchSupported && list.some(wrapper => wrapper.entry === entry);
         return list.some(wrapper => wrapper.entry === entry);
     }
 
@@ -483,21 +487,39 @@ QtObject {
             lastLaunchError = "The application is not in the current catalog.";
             return false;
         }
+        const id = typeof entry.id === "string" ? entry.id : "";
+        let executed = false;
         if (entry.runInTerminal === true) {
-            lastLaunchError = "Terminal application launch is not supported on Windows.";
-            return false;
+            if (!terminalLaunchSupported) {
+                lastLaunchError = "No Windows terminal launcher is configured or available.";
+                return false;
+            }
+            terminalLauncherError = "";
+            try {
+                executed = terminalLauncher(entry, terminalCommand) === true;
+            } catch (error) {
+                terminalLauncherError = String(error);
+                executed = false;
+            }
+            if (!executed) {
+                lastLaunchError = terminalLauncherError || "Windows could not start the terminal application.";
+                return false;
+            }
+        } else {
+            try {
+                executed = catalog && typeof catalog.execute === "function"
+                    ? catalog.execute(entry) === true : false;
+            } catch (error) {
+                executed = false;
+            }
+            if (!executed) {
+                lastLaunchError = "The Windows app catalog could not start the application.";
+                return false;
+            }
         }
 
-        const id = typeof entry.id === "string" ? entry.id : "";
         if (frequencyStore && typeof frequencyStore.increment === "function" && id.length > 0)
             frequencyStore.increment(id);
-
-        const executed = catalog && typeof catalog.execute === "function"
-            ? catalog.execute(entry) === true : false;
-        if (!executed) {
-            lastLaunchError = "The Windows app catalog could not start the application.";
-            return false;
-        }
         launchesIssued++;
         return true;
     }

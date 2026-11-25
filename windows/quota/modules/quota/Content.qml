@@ -10,6 +10,7 @@ import qs.components.containers
 import qs.components.controls
 import qs.services
 import "QuotaLogic.js" as Logic
+import "../../utils/FileUrls.js" as FileUrls
 
 // A port of OpenUsage's menu bar panel (github.com/robinebers/openusage, MIT),
 // themed with the Caelestia scheme. Every size comes from its SwiftUI source:
@@ -169,11 +170,11 @@ Item {
         const name = Logic.iconName(providerId);
         if (!name || !QuotaConfig.providerIconsDir)
             return "";
-        return "file:///" + QuotaConfig.providerIconsDir + "/" + name + (Colours.light ? "-light.svg" : ".svg");
+        return FileUrls.fromLocalPath(QuotaConfig.providerIconsDir + "/" + name + (Colours.light ? "-light.svg" : ".svg"));
     }
     function providerIconAlt(providerId: string): url {
         const name = Logic.iconName(providerId);
-        return name && QuotaConfig.providerIconsDir && Colours.light ? "file:///" + QuotaConfig.providerIconsDir + "/" + name + ".svg" : "";
+        return name && QuotaConfig.providerIconsDir && Colours.light ? FileUrls.fromLocalPath(QuotaConfig.providerIconsDir + "/" + name + ".svg") : "";
     }
     function providerName(account: var): string {
         return account.providerLabel || Quota.providerDisplayName(account.provider);

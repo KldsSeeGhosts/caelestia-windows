@@ -3,12 +3,15 @@ pragma Singleton
 import ".."
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
+import Caelestia
 import Caelestia.Config
 import Caelestia.I18n
 import Caelestia.Services
 import qs.services
 import qs.utils
 import qs.modules.nexus
+import "../../../windows/services/apps/ShellActionSchema.js" as ShellActionSchema
 
 Searcher {
     id: root
@@ -20,24 +23,19 @@ Searcher {
     list: variants.instances
     useFuzzy: GlobalConfig.launcher.useFuzzy.actions
 
+    function isDangerous(action): bool {
+        return action.dangerous || action.verb === "runas"
+            || ["shutdown", "reboot", "hibernate", "firmware", "logout"].includes(SessionManager.resolveCommand(action.command));
+    }
+
     Variants {
         id: variants
 
-        model: [
-            {name: "Calculator", description: "Arithmetic and functions", icon: "calculate", command: ["autocomplete", "calc"]},
-            {name: "Settings", description: "Open Caelestia settings (Nexus)", icon: "settings", command: ["settings"]},
-            {name: "Screenshot", description: "Capture an area or window", icon: "screenshot_region", command: ["screenshot"]},
-            {name: "Screenshot history", description: "Edit and export recent screenshots", icon: "history", command: ["screenshotHistory"]},
-            {name: "Record screen", description: "Glazier", icon: "screen_record", command: ["record"]},
-            {name: "Wallpaper", description: "Browse wallpaper folder", icon: "wallpaper", command: ["autocomplete", "wallpaper"]},
-            {name: "Choose wallpaper file", description: "Open Windows image picker (Live controls)", icon: "image", command: ["chooseWallpaper"]},
-            {name: "Schemes", description: "Choose a colour scheme and generate its palette", icon: "palette", command: ["autocomplete", "scheme"]},
-            {name: "Variants", description: "Choose the Material You scheme variant", icon: "colors", command: ["autocomplete", "variant"]},
-            {name: "Light mode", description: "Regenerate the palette in light mode", icon: "light_mode", command: ["generateMode", "light"]},
-            {name: "Dark mode", description: "Regenerate the palette in dark mode", icon: "dark_mode", command: ["generateMode", "dark"]},
-            {name: "Lock", description: "Lock Windows (Live controls)", icon: "lock", command: ["lock"]},
-            {name: "Sleep", description: "Suspend Windows (Live controls)", icon: "bedtime", command: ["suspend"]}
-        ]
+        model: {
+            const enableDangerous = GlobalConfig.launcher.enableDangerousActions;
+            return GlobalConfig.launcher.actions.values.filter(action => action.enabled
+                && (enableDangerous || !root.isDangerous(action)));
+        }
 
         Action {}
     }
@@ -50,8 +48,42 @@ Searcher {
         readonly property list<string> command: modelData.command ?? []
         readonly property bool enabled: modelData.enabled ?? true
         readonly property bool dangerous: modelData.dangerous ?? false
+        readonly property bool hasShellAction: ShellActionSchema.hasShellAction(modelData)
+
+        function refuseShellAction(message: string): void {
+            Toaster.toast(Tr.tr("Launcher action unavailable"), message, modelData.icon ?? "help_outline", Toast.Warning);
+        }
+
+        function runShellAction(list: AppList): void {
+            const validated = ShellActionSchema.validateShellAction(modelData);
+            if (!validated.ok) {
+                refuseShellAction(validated.error);
+                return;
+            }
+            if (typeof Native.AppActions.launchShellAction !== "function") {
+                refuseShellAction(Tr.tr("This Windows shell backend cannot run configured launcher actions yet."));
+                return;
+            }
+            let accepted = false;
+            try {
+                accepted = Native.AppActions.launchShellAction(validated.action) === true;
+            } catch (error) {
+                accepted = false;
+            }
+            if (!accepted) {
+                refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
+                return;
+            }
+            list.screenState.launcher = false;
+        }
 
         function onClicked(list: AppList): void {
+            if (!enabled || (!GlobalConfig.launcher.enableDangerousActions && root.isDangerous(modelData)))
+                return;
+            if (hasShellAction) {
+                runShellAction(list);
+                return;
+            }
             if (command.length === 0)
                 return;
 
@@ -76,13 +108,7 @@ Searcher {
                 Colours.setMode(command[1]);
             } else {
                 list.screenState.launcher = false;
-                // Windows adaptation: the Windows SessionManager consumes every
-                // command (including unknown ones) and sets allowDetachedFallback
-                // false, so this can never launch an arbitrary process. Upstream
-                // native SessionManager lacks the property, preserving the
-                // original Linux fallback when exec() declines a command.
-                if (!SessionManager.exec(command) && SessionManager.allowDetachedFallback !== false)
-                    Quickshell.execDetached(command);
+                SessionManager.exec(command);
             }
         }
     }

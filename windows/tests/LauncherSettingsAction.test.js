@@ -11,7 +11,7 @@ const adapter = "windows/shell/adapters/modules/launcher/services/Actions.qml";
 const read = file => fs.readFileSync(path.join(repo, file), "utf8");
 const source = read(adapter);
 const searcher = read("utils/Searcher.qml");
-const model = vm.runInNewContext(source.match(/model: (\[[\s\S]*?\n        \])/)[1]);
+const model = [{name: "Settings", description: "Open Caelestia settings (Nexus)", icon: "settings", command: ["settings"]}];
 // Only strip QML type annotations from the selected production function.
 function qmlFunction(text, name) {
     const match = text.match(new RegExp(`^( +)function ${name}\\(([^)]*)\\): \\w+ \\{([\\s\\S]*?)\\n\\1\\}`, "m"));
@@ -28,11 +28,10 @@ test("production stages the Windows Settings action and existing action delegate
     assert.equal(manifest[adapter], "modules/launcher/services/Actions.qml");
     assert.equal(manifest["modules/launcher/items/ActionItem.qml"], "modules/launcher/items/ActionItem.qml");
     assert.match(source, /^import qs\.modules\.nexus$/m);
-    const settings = model.filter(action => action.name === "Settings");
-    assert.equal(settings.length, 1);
-    assert.deepEqual(Array.from(settings[0].command), ["settings"]);
-    assert.equal(settings[0].icon, "settings");
-    assert.match(settings[0].description, /Caelestia settings/);
+    assert.match(source, /GlobalConfig\.launcher\.actions\.values\.filter/);
+    assert.match(source, /GlobalConfig\.launcher\.enableDangerousActions/);
+    assert.match(source, /ShellActionSchema\.validateShellAction/);
+    assert.match(read("plugin/src/Caelestia/Config/launcherconfig.hpp"), /u"Settings"_s[\s\S]*QStringList\{ u"settings"_s \}/);
 });
 
 test(">settings resolves through the original searcher with both search modes and a custom prefix", () => {
@@ -65,6 +64,12 @@ test("Settings transfers foreground to Nexus before closing the launcher, withou
     let opens = 0;
     const context = {
         command: model.find(action => action.name === "Settings").command,
+        enabled: true,
+        GlobalConfig: {launcher: {enableDangerousActions: false}},
+        modelData: model[0],
+        root: {isDangerous: () => false},
+        hasShellAction: false,
+        runShellAction() { assert.fail("the legacy settings command must not use shell-action dispatch"); },
         WindowFactory: {
             create() {
                 assert.equal(list.screenState.launcher, true);
@@ -87,4 +92,17 @@ test("Settings transfers foreground to Nexus before closing the launcher, withou
     assert.equal(opens, 2);
     assert.match(read("windows/shell/adapters/daemons/Shortcuts.qml"),
         /name: "nexus"[\s\S]*?WindowFactory\.create\(\)/);
+});
+
+test("dangerous session aliases and elevated actions cannot bypass the toggle", () => {
+    const context = {
+        SessionManager: {
+            resolveCommand(command) { return command?.[0] === "poweroff" ? "shutdown" : ""; }
+        }
+    };
+    vm.createContext(context);
+    vm.runInContext(qmlFunction(source, "isDangerous"), context);
+    assert.equal(context.isDangerous({dangerous: false, command: ["poweroff"]}), true);
+    assert.equal(context.isDangerous({verb: "runas", target: "tools.exe"}), true);
+    assert.equal(context.isDangerous({verb: "open", target: "tools.exe"}), false);
 });

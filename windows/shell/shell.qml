@@ -43,6 +43,7 @@ ShellRoot {
     // Offscreen public smoke: skip the native monitor/panel schedule below and
     // exit after the drawers present two frames and readiness settles.
     readonly property bool smokeCi: Quickshell.env("CAELESTIA_SHELL_SMOKE_CI") === "1"
+    readonly property bool parityEnabled: !smoke && !smokeCi
     // Isolated install validation may reserve only the secondary monitor.
     // Normal starts always retain the complete per-monitor shell.
     readonly property int smokeScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "-1")
@@ -65,6 +66,8 @@ ShellRoot {
 
     WindowsBackground { id: desktopBackground }
     IdleInhibit { id: idleInhibitor }
+    BatteryMonitor { active: root.parityEnabled }
+    IdleMonitors { active: root.parityEnabled }
     Shortcuts {}
 
     // Windows' own clipboard history behind the Caelestia picker. Gated by
@@ -179,6 +182,65 @@ ShellRoot {
         function onReloadCallbackChanged(): void { reportSupervisorPause(); }
     }
 
+    function ipcDrawerNames(): var {
+        return ["launcher", "dashboard", "session", "sidebar", "utilities", "osd"];
+    }
+    function ipcDrawerScreen(): var {
+        const cursor = Native.Input.cursorScreenForFocus();
+        const focused = Hypr.focusedMonitor;
+        return (cursor ? root.shellScreens.find(screen => screen.name === cursor) : null)
+            ?? (focused ? root.shellScreens.find(screen => Hypr.monitorFor(screen) === focused) : null)
+            ?? root.shellScreens[0] ?? null;
+    }
+    function ipcDrawerState(): var {
+        if (!root.parityEnabled)
+            return null;
+        const screen = ipcDrawerScreen();
+        return screen ? ShellState.forScreen(screen) : null;
+    }
+    function ipcSetDrawer(name: string, open: bool): bool {
+        if (ipcDrawerNames().indexOf(name) < 0)
+            return false;
+        const state = ipcDrawerState();
+        if (!state)
+            return false;
+        state[name] = open;
+        return true;
+    }
+    function ipcActiveMonitor(): var {
+        return root.parityEnabled ? Brightness.activeMonitor : null;
+    }
+    function ipcActivePlayer(): var {
+        return root.parityEnabled ? Players.active : null;
+    }
+    function ipcPlayerName(player): string {
+        // GSMTC uses the raw AUMID as the identity when no friendly name is known.
+        const name = Players.getIdentity(player);
+        const sessionName = String(player.dbusName ?? "");
+        const rawId = sessionName.startsWith("gsmtc:") ? sessionName.slice(6, sessionName.lastIndexOf("#")) : "";
+        return !name || name === rawId ? "Unknown media player" : name;
+    }
+    function ipcBrightnessValue(value: string, current: real): real {
+        const text = String(value).trim();
+        let target;
+        if (text.endsWith("%-")) {
+            target = current - parseFloat(text.slice(0, -2)) / 100;
+        } else if (text.startsWith("+") && text.endsWith("%")) {
+            target = current + parseFloat(text.slice(1, -1)) / 100;
+        } else if (text.endsWith("%")) {
+            target = parseFloat(text.slice(0, -1)) / 100;
+        } else if (text.startsWith("+")) {
+            target = current + parseFloat(text.slice(1));
+        } else if (text.endsWith("-")) {
+            target = current - parseFloat(text.slice(0, -1));
+        } else if (text.includes("%") || text.includes("-") || text.includes("+")) {
+            return NaN;
+        } else {
+            target = parseFloat(text);
+        }
+        return Number.isFinite(target) ? target : NaN;
+    }
+
     IpcHandler {
         target: "shell"
         // IpcHandler invokes QML on the GUI thread. A transport worker or a
@@ -234,6 +296,208 @@ ShellRoot {
             if (!state)
                 return false;
             state[name] = !state[name];
+            return true;
+        }
+    }
+
+    IpcHandler {
+        target: "drawers"
+
+        function toggle(drawer: string): bool {
+            const state = root.ipcDrawerState();
+            return state ? root.ipcSetDrawer(drawer, !state[drawer]) : false;
+        }
+        function open(drawer: string): bool { return root.ipcSetDrawer(drawer, true); }
+        function close(drawer: string): bool { return root.ipcSetDrawer(drawer, false); }
+        function isOpen(drawer: string): string {
+            if (!root.parityEnabled || root.ipcDrawerNames().indexOf(drawer) < 0)
+                return "unknown";
+            return root.ipcDrawerState()?.[drawer] === true ? "1" : "0";
+        }
+        function list(): string { return root.ipcDrawerNames().join("\n"); }
+    }
+
+    IpcHandler {
+        target: "notifs"
+
+        function clear(): void {
+            if (root.parityEnabled)
+                Notifs.clearAll();
+        }
+        function isDndEnabled(): bool { return root.parityEnabled && Notifs.doNotDisturb === true; }
+        function toggleDnd(): void {
+            if (root.parityEnabled)
+                Notifs.doNotDisturb = !Notifs.doNotDisturb;
+        }
+        function enableDnd(): void {
+            if (root.parityEnabled)
+                Notifs.doNotDisturb = true;
+        }
+        function disableDnd(): void {
+            if (root.parityEnabled)
+                Notifs.doNotDisturb = false;
+        }
+        function open(): bool { return root.ipcSetDrawer("sidebar", true); }
+        function close(): bool { return root.ipcSetDrawer("sidebar", false); }
+        function list(): string {
+            return JSON.stringify({count: root.parityEnabled ? Notifs.list.length : 0, doNotDisturb: isDndEnabled()});
+        }
+    }
+
+    IpcHandler {
+        target: "mpris"
+
+        function list(): string {
+            if (!root.parityEnabled)
+                return "";
+            return Players.list.map(player => root.ipcPlayerName(player)).join("\n");
+        }
+        function getActive(prop: string): string {
+            const active = root.ipcActivePlayer();
+            if (!active)
+                return "No active player";
+            if (prop === "identity")
+                return root.ipcPlayerName(active);
+            const publicProperties = ["trackTitle", "trackArtist", "trackAlbum", "length", "position",
+                "playbackState", "isPlaying", "canPlay", "canPause", "canGoNext", "canGoPrevious"];
+            return publicProperties.includes(prop) ? String(active[prop] ?? "Invalid property") : "Invalid property";
+        }
+        function play(): bool {
+            const active = root.ipcActivePlayer();
+            if (!active || !Players.canPlay(active))
+                return false;
+            active.play();
+            return true;
+        }
+        function pause(): bool {
+            const active = root.ipcActivePlayer();
+            if (!active || !Players.canPause(active))
+                return false;
+            active.pause();
+            return true;
+        }
+        function playPause(): bool {
+            const active = root.ipcActivePlayer();
+            if (!active || !Players.canTogglePlaying(active))
+                return false;
+            active.togglePlaying();
+            return true;
+        }
+        function next(): bool {
+            const active = root.ipcActivePlayer();
+            if (!active || !Players.canGoNext(active))
+                return false;
+            active.next();
+            return true;
+        }
+        function previous(): bool {
+            const active = root.ipcActivePlayer();
+            if (!active || !Players.canGoPrevious(active))
+                return false;
+            active.previous();
+            return true;
+        }
+        function stop(): bool {
+            const active = root.ipcActivePlayer();
+            if (!active || !Players.canStop(active))
+                return false;
+            active.stop();
+            return true;
+        }
+    }
+
+    IpcHandler {
+        target: "toaster"
+
+        function toast(title: string, body: string, icon: string, kind: string): bool {
+            if (!root.parityEnabled)
+                return false;
+            const types = ({info: Toast.Info, success: Toast.Success, warn: Toast.Warning, error: Toast.Error});
+            const type = Object.hasOwn(types, kind) ? types[kind] : Toast.Info;
+            Toaster.toast(String(title), String(body), String(icon || "info"), type);
+            return true;
+        }
+        function info(title: string, message: string, icon: string): void { toast(title, message, icon, "info"); }
+        function success(title: string, message: string, icon: string): void { toast(title, message, icon, "success"); }
+        function warn(title: string, message: string, icon: string): void { toast(title, message, icon, "warn"); }
+        function error(title: string, message: string, icon: string): void { toast(title, message, icon, "error"); }
+    }
+
+    IpcHandler {
+        target: "audio"
+
+        function volumeUp(): bool { return root.parityEnabled && Audio.incrementVolume(Audio.audioIncrement); }
+        function volumeDown(): bool { return root.parityEnabled && Audio.decrementVolume(Audio.audioIncrement); }
+        function volumeSet(value: real): bool { return root.parityEnabled && Audio.setVolume(value); }
+        function mute(): bool { return root.parityEnabled && Audio.setMuted(true); }
+        function unmute(): bool { return root.parityEnabled && Audio.setMuted(false); }
+        function toggleMute(): bool { return root.parityEnabled && Audio.setMuted(!Audio.muted); }
+        function micMute(): bool { return root.parityEnabled && Audio.setSourceMuted(true); }
+        function micUnmute(): bool { return root.parityEnabled && Audio.setSourceMuted(false); }
+        function toggleMicMute(): bool { return root.parityEnabled && Audio.setSourceMuted(!Audio.sourceMuted); }
+        function cycleOutput(): bool { return root.parityEnabled && Audio.cycleNextAudioOutput(); }
+    }
+
+    IpcHandler {
+        target: "brightness"
+
+        function up(): bool {
+            const monitor = root.ipcActiveMonitor();
+            return !!monitor && Brightness.nudge(monitor.screenName, Brightness.brightnessIncrement);
+        }
+        function down(): bool {
+            const monitor = root.ipcActiveMonitor();
+            return !!monitor && Brightness.nudge(monitor.screenName, -Brightness.brightnessIncrement);
+        }
+        function set(value: string): string {
+            return setFor("active", value);
+        }
+        function setFor(query: string, value: string): string {
+            if (!root.parityEnabled)
+                return "Brightness IPC is disabled in smoke mode.";
+            const monitor = Brightness.getMonitor(query);
+            if (!monitor)
+                return "Invalid monitor";
+            const target = root.ipcBrightnessValue(value, monitor.brightness);
+            if (!Number.isFinite(target))
+                return `Failed to parse value: ${value}
+Expected: 0.1, +0.1, 0.1-, 10%, +10%, 10%-`;
+            if (!Brightness.write(monitor.screenName, target))
+                return "Windows brightness refused the write.";
+            return `Set brightness to ${+monitor.brightness.toFixed(2)}`;
+        }
+        function get(): real { return getFor("active"); }
+        function getFor(query: string): real {
+            return root.parityEnabled ? Brightness.getMonitor(query)?.brightness ?? -1 : -1;
+        }
+    }
+
+    IpcHandler {
+        target: "nexus"
+
+        function open(): bool {
+            return root.parityEnabled && !!Nexus.WindowFactory.create(null, {});
+        }
+        function openPage(pageIdx: int): bool {
+            if (!root.parityEnabled || pageIdx < 0)
+                return false;
+            Nexus.WindowFactory.openPage(pageIdx);
+            return true;
+        }
+        function close(): bool {
+            if (!root.parityEnabled || Nexus.WindowFactory.windowCount === 0)
+                return false;
+            Nexus.WindowFactory.closeAll();
+            return true;
+        }
+        function toggle(): bool {
+            if (!root.parityEnabled)
+                return false;
+            if (Nexus.WindowFactory.windowCount > 0) {
+                Nexus.WindowFactory.closeAll();
+            } else {
+                return open();
+            }
             return true;
         }
     }
