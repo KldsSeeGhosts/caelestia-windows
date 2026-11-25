@@ -192,6 +192,46 @@ if ($Mode -eq 'assembly') { $arguments.PayloadAssembly = $true }
     $normalExit = $LASTEXITCODE
     Assert ($normalExit -ne 0 -and (($normalOutput | Out-String).Contains('SIMULATED-ELEVATED-TOKEN'))) 'Normal Install-Caelestia.ps1 did not refuse the simulated elevated token.'
     Assert (-not (Test-Path -LiteralPath $normalPrefix) -and -not (Test-Path -LiteralPath $normalProfile)) 'Elevated normal installation wrote install or profile state.'
+    # Run the real license lifecycle against the installer whose elevation
+    # guard always refuses. The receipt describes only the inert test binaries.
+    $licenseCopy = Join-Path $fixtureScripts 'Test-InstallLicenses.ps1'
+    $licenseSource = [IO.File]::ReadAllText($licenseCopy)
+    if ((Test-Path -LiteralPath (Join-Path $repoRoot 'windows\deps\quickshell\.git')) -and
+        (Test-Path -LiteralPath (Join-Path $repoRoot 'windows\deps\m3shapes\LICENSE'))) {
+        . (Join-Path $repoRoot 'windows\capture\Source.ps1')
+        $captureFixture = Get-CaelestiaCaptureSource $repoRoot
+        $backendFixture = & git -C (Join-Path $repoRoot 'windows\deps\quickshell') rev-parse HEAD
+        $buildFixtureRecord = @{
+            sourceRevision = $captureFixture.sourceRevision; backendRevision = $backendFixture
+            captureBundled = $true; captureSourcePath = $captureFixture.relativePath
+            captureSourceRevision = $captureFixture.sourceRevision; captureOriginRevision = $captureFixture.originRevision
+            captureCargoLockSha256 = $captureFixture.cargoLockSha256; captureExecutable = $captureFixture.executable
+            captureSha256 = (Get-FileHash -LiteralPath (Join-Path $assemblyBuild 'install\caelestia-capture.exe')).Hash.ToLowerInvariant()
+        } | ConvertTo-Json
+        Write-Utf8NoBom (Join-Path $assemblyBuild 'logs\build.json') $buildFixtureRecord
+        $repoBoundary = '$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot ''..\..'')).Path'
+        Assert ($licenseSource.Contains($repoBoundary)) 'The license gate fixture source boundary changed.'
+        Write-Utf8NoBom $licenseCopy ($licenseSource.Replace($repoBoundary, ('$repoRoot = ''' + $repoRoot.Replace("'", "''") + "'")))
+        $licenseOutput = @(& $pwsh -NoProfile -NonInteractive -File $licenseCopy -NoIntegration `
+            -BuildRoot $assemblyBuild -QtPrefix $assemblyQt -VCRuntimeRoot $assemblyVc 2>&1) | Out-String
+        Assert ($LASTEXITCODE -eq 0 -and $licenseOutput -match 'INSTALL_LICENSES_PASS') ("The license lifecycle failed under a simulated elevated token:`n" + $licenseOutput)
+    } else {
+        # Packaging shards do not fetch submodules. Run the ownership check
+        # with the actual license-gate argument construction in that checkout.
+        $licenseArgs = [regex]::Match($licenseSource, '(?ms)^\$arguments = @\{.*?^(?=# Confine every integration entry)').Value
+        Assert ($licenseArgs.Length -gt 0) 'The license gate argument fixture boundary changed.'
+        & {
+            $BuildRoot = $assemblyBuild; $QtPrefix = $assemblyQt; $VCRuntimeRoot = $assemblyVc
+            $prefix = Join-Path $assemblyFixture 'license-prefix'
+            $profile = Join-Path $assemblyFixture 'foreign-license-profile'
+            Write-Utf8NoBom (Join-Path $profile 'notes.txt') 'unowned'
+            $NoIntegration = $true
+            . ([scriptblock]::Create($licenseArgs))
+            $diagnostic = ''
+            try { & $installerCopy @arguments | Out-Null } catch { $diagnostic = $_.Exception.Message }
+            Assert ($diagnostic -match 'ownership marker') 'The hosted license gate failed before exercising profile ownership.'
+        }
+    }
 
     $releaseInstallerText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Install-CaelestiaRelease.ps1'))
     $releaseImport = ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')"
@@ -247,6 +287,28 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     Assert ($LASTEXITCODE -eq 0 -and [IO.File]::ReadAllText((Join-Path $edgeRuntime 'received.txt')) -ceq $edgeRecordPath) 'The stable router lost the readiness argument.'
     Write-Output 'PASS profile paths: spaces, apostrophes and non-ASCII names preserve identity and readiness.'
 
+    # Quickshell emits UTF-8 regardless of the Windows console code page.
+    $ipcFixturePath = Join-Path $edgeRuntime 'qs.exe'
+    New-CaelestiaTestExecutable $ipcFixturePath @'
+using System;
+using System.IO;
+using System.Text;
+public static class Utf8IpcFixture {
+    public static void Main(string[] args) {
+        string path = Path.GetDirectoryName(Path.GetDirectoryName(args[2]));
+        byte[] data = Encoding.UTF8.GetBytes("{\"lifecycle\":{\"payloadPath\":\"" + path.Replace("\\", "\\\\") + "\"}}");
+        Stream stdout = Console.OpenStandardOutput();
+        stdout.Write(data, 0, data.Length);
+    }
+}
+'@
+    $savedEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.Encoding]::GetEncoding(437)
+        $decoded = Invoke-CaelestiaIpc $edgePrefix state | ConvertFrom-Json
+        Assert ($decoded.lifecycle.payloadPath -ceq $edgeRuntime) 'UTF-8 IPC mangled the Unicode path under CP437.'
+    } finally { [Console]::OutputEncoding = $savedEncoding }
+
     # Ready/0 scheduled tasks are a normal startup race. Once a durable ready
     # record exists, one final IPC readiness probe must succeed rather than
     # classifying a healthy shell as exited-before-ready. The injected IPC
@@ -270,7 +332,8 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
         param([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000)
         $script:raceIpcCalls++
         if (-not $script:raceInfoObserved) { throw 'injected cold IPC' }
-        '{"lifecycle":{"generation":"edge-generation","ready":true}}'
+        @{ lifecycle = @{ generation = 'edge-generation'; ready = $true; supervisorPid = 4321; payloadPath = $Prefix } } |
+            ConvertTo-Json -Compress
     }
     Wait-CaelestiaReady $racePrefix -TimeoutSeconds 5 -TaskName 'Caelestia-Start-race'
     Assert ($script:raceIpcCalls -ge 2) 'Ready race did not perform both cold and final IPC probes.'
@@ -286,6 +349,20 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
         Assert ($_.Exception.Message -match 'exited before readiness') 'Nonzero Ready task failure lost its diagnostic.'
     }
     Write-Output 'PASS readiness race: Ready/0 plus durable ready state performs a final IPC probe.'
+    function Get-ScheduledTaskInfo {
+        param($TaskName, $TaskPath, $ErrorAction)
+        $script:raceInfoObserved = $true
+        [pscustomobject]@{ LastTaskResult = 0; LastRunTime = [DateTime]::UtcNow }
+    }
+    $script:raceInfoObserved = $false
+    $script:postExitProbes = 0
+    function Invoke-CaelestiaIpc {
+        param([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000)
+        if (-not $script:raceInfoObserved -or ++$script:postExitProbes -lt 3) { throw 'transient IPC failure' }
+        '{"lifecycle":{"generation":"receiptless-generation","ready":true}}'
+    }
+    Wait-CaelestiaReady $racePrefix -TimeoutSeconds 5 -TaskName 'Caelestia-Start-missing'
+    Assert ($script:postExitProbes -eq 3) 'Ready/0 without a receipt did not retry two failed post-exit probes.'
 
     # Payload identity, not the first child generation, defines readiness. An
     # already-running old payload must never satisfy a newly selected one, while
@@ -306,8 +383,10 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     $script:identityPayload = Join-Path $identityRoot 'versions\old'
     $script:identityGeneration = 'old-generation'
     $script:identitySupervisor = 9999
+    $script:identityProbes = 0
     function Invoke-CaelestiaIpc {
         param([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000)
+        $script:identityProbes++
         ('{"lifecycle":{"generation":"' + $script:identityGeneration + '","ready":true,"payloadPath":"' +
             $script:identityPayload.Replace('\', '\\') + '","supervisorPid":' + $script:identitySupervisor + '}}')
     }
@@ -319,6 +398,14 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     } catch { }
     Assert (-not $wrongAccepted) 'An already-running old payload satisfied readiness for a new payload.'
     $script:identityPayload = $identityRuntime
+    $script:identityProbes = 0
+    $wrongAccepted = $false
+    try {
+        Wait-CaelestiaReady $identityRoot -TimeoutSeconds 2 -TaskName 'Caelestia-Start-identity' `
+            -ExpectedPayload $identityRuntime -RequireIdentity
+        $wrongAccepted = $true
+    } catch { }
+    Assert (-not $wrongAccepted -and $script:identityProbes -gt 2) 'A wrong supervisor passed the initial or a later probe.'
     $script:identityGeneration = 'watchdog-replacement-generation'
     $script:identitySupervisor = 4321
     Wait-CaelestiaReady $identityRoot -TimeoutSeconds 3 -TaskName 'Caelestia-Start-identity' `
@@ -411,7 +498,7 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     $uninstallAst = [Management.Automation.Language.Parser]::ParseFile($uninstallSourcePath, [ref]$tokens, [ref]$parseErrors)
     Assert ($parseErrors.Count -eq 0) 'Uninstall-Caelestia.ps1 does not parse.'
     $argumentFunction = $uninstallAst.Find({ param($node)
-        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-CaelestiaQuotedTaskArgument'
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-CaelestiaStartTaskInvocation'
     }, $true)
     Assert ($null -ne $argumentFunction) 'Uninstall lost its scheduled-task argument parser.'
     . ([scriptblock]::Create($argumentFunction.Extent.Text))
@@ -419,10 +506,12 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     [IO.Directory]::CreateDirectory($taskPrefix) | Out-Null
     $forwardPrefix = $taskPrefix.Replace('\', '/')
     $forwardLauncher = (Join-Path $taskPrefix 'Start-Caelestia.ps1').Replace('\', '/')
-    $taskArguments = '-NoProfile -File "' + $forwardLauncher + '" -Prefix "' + $forwardPrefix + '"'
-    Assert ((Get-CaelestiaQuotedTaskArgument $taskArguments 'Prefix') -eq $forwardPrefix) 'Task parser did not extract the prefix argument.'
-    Assert (Test-CaelestiaSamePath (Get-CaelestiaQuotedTaskArgument $taskArguments 'Prefix') $taskPrefix) 'Normalized prefix comparison failed.'
-    Assert (Test-CaelestiaSamePath (Get-CaelestiaQuotedTaskArgument $taskArguments 'File') (Join-Path $taskPrefix 'Start-Caelestia.ps1')) 'Normalized launcher comparison failed.'
+    $taskArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $forwardLauncher + '" -Prefix "' + $forwardPrefix + '"'
+    $invocation = Get-CaelestiaStartTaskInvocation $taskArguments
+    Assert ($invocation.Prefix -eq $forwardPrefix) 'Task parser did not extract the prefix argument.'
+    Assert (Test-CaelestiaSamePath $invocation.Prefix $taskPrefix) 'Normalized prefix comparison failed.'
+    Assert (Test-CaelestiaSamePath $invocation.Launcher (Join-Path $taskPrefix 'Start-Caelestia.ps1')) 'Normalized launcher comparison failed.'
+    Assert (-not (Get-CaelestiaStartTaskInvocation ('-Command "Write-Output ''fixture ' + $taskArguments + '''"'))) 'Task parser interpreted command text as host parameters.'
     $uninstallSource = [IO.File]::ReadAllText($uninstallSourcePath)
     Assert (-not $uninstallSource.Contains('$arguments -ne $launchArguments')) 'Uninstall returned to raw argument string equality.'
     Write-Output 'PASS uninstall task matching: parsed arguments compare normalized paths.'
@@ -431,16 +520,15 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     # real same-session launch and assert both the breakaway request and the
     # access-denied fallback are present in production.
     $outOfJobScript = Join-Path $root 'out-of-job-child.ps1'
-    $outOfJobMarker = Join-Path $root 'out-of-job-marker'
-    Write-Utf8NoBom $outOfJobScript ('[IO.File]::WriteAllText("' + $outOfJobMarker.Replace('\', '\\') + '", "ok")')
-    $breakawayUsed = $false
-    $outOfJobPid = Start-CaelestiaOutOfJobProcess (Get-CaelestiaPowerShellPath) ('-NoProfile -NonInteractive -File "' + $outOfJobScript + '"') $env:USERPROFILE ([ref]$breakawayUsed)
-    Assert ($outOfJobPid -gt 0) 'Out-of-job CreateProcess helper did not return a child PID.'
-    $outOfJobDeadline = [DateTime]::UtcNow.AddSeconds(5)
-    while (-not (Test-Path -LiteralPath $outOfJobMarker) -and [DateTime]::UtcNow -lt $outOfJobDeadline) { Start-Sleep -Milliseconds 25 }
-    Assert (Test-Path -LiteralPath $outOfJobMarker) 'Out-of-job child did not execute.'
-    $commonSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1'))
-    Assert ($commonSource.Contains('CreateBreakawayFromJob') -and $commonSource.Contains('ERROR_ACCESS_DENIED')) 'Out-of-job launch lost breakaway or its access-denied fallback.'
+    Write-Utf8NoBom $outOfJobScript 'param($Marker); [IO.File]::WriteAllText($Marker, "ok"); Start-Sleep -Seconds 30'
+    foreach ($allow in @($false, $true)) {
+        $jobArguments = @('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'InstallerUpdate-JobFixture.ps1'),
+            '-Common', (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1'), '-Child', $outOfJobScript,
+            '-Marker', (Join-Path $root ("out-of-job-marker-$allow")))
+        if ($allow) { $jobArguments += '-AllowBreakaway' }
+        $jobOutput = @(& $pwsh @jobArguments 2>&1) | Out-String
+        Assert ($LASTEXITCODE -eq 0 -and $jobOutput -match 'LAUNCH-JOB-PASS') ("Native job fixture failed: " + $jobOutput)
+    }
     Write-Output 'PASS direct launch fallback: same-session CreateProcess helper runs with breakaway control.'
 
     # Group Policy can refuse either registration or task start. Both failures
@@ -474,18 +562,14 @@ param([string]$Prefix, [string]$ReadinessRecordPath)
     }
     function Wait-CaelestiaReady { param([string]$Prefix, [int]$TimeoutSeconds, [string]$TaskName = '', [string]$ExpectedPayload = '', [int]$ExpectedSupervisorPid = 0, [switch]$RequireIdentity) }
     function Start-CaelestiaOutOfJobProcess {
-        param([string]$FilePath, [string]$Arguments, [string]$WorkingDirectory, [ref]$BreakawayUsed)
+        param([string]$FilePath, [string]$Arguments, [string]$WorkingDirectory)
         $script:directLaunches++
         $script:directArguments += [string]$Arguments
-        $BreakawayUsed.Value = $true
-        return 4242
-    }
-    function Get-Process {
-        param($Id, $ErrorAction)
         $process = [pscustomobject]@{ HasExited = $false }
         $process | Add-Member -MemberType ScriptMethod Dispose { }
         return $process
     }
+    function Get-Process { throw 'Direct launch reopened a process by PID.' }
     Start-CaelestiaDetached -Prefix $gpoPrefix -PreparedSchemeRuntime
     Assert ($script:directLaunches -eq 1) 'Registration denial did not use direct detached fallback.'
     Assert (($script:directArguments[0] -match [regex]::Escape('-PreparedSchemeRuntime'))) 'Direct fallback dropped prepared scheme runtime state.'
@@ -537,22 +621,37 @@ function New-ScheduledTaskSettingsSet { param([switch]$AllowStartIfOnBatteries, 
 function New-ScheduledTaskTrigger { param([switch]$Once, $At) [pscustomobject]@{} }
 function Register-ScheduledTask {
     param($TaskName, $Action, $Trigger, $Principal, $Settings, $ErrorAction)
-    throw [UnauthorizedAccessException]::new('Group Policy blocks maintenance registration.')
+    if ($env:CAELESTIA_FIXTURE_SCHEDULER_DENIAL -eq 'register') { throw [UnauthorizedAccessException]::new('Group Policy blocks maintenance registration.') }
+    Add-Content -LiteralPath (Join-Path $PSScriptRoot 'registered.txt') -Value $TaskName
 }
-function Unregister-ScheduledTask { param($TaskName, $TaskPath, [switch]$Confirm, $ErrorAction) }
+function Start-ScheduledTask {
+    param($TaskName, $ErrorAction)
+    throw [UnauthorizedAccessException]::new('Group Policy blocks maintenance start.')
+}
+function Unregister-ScheduledTask {
+    param($TaskName, $TaskPath, [switch]$Confirm, $ErrorAction)
+    Add-Content -LiteralPath (Join-Path $PSScriptRoot 'unregistered.txt') -Value $TaskName
+}
 '@
     $manageText = $manageText.Replace($manageImport, $schedulerFixture)
     Write-Utf8NoBom $manageCopy $manageText
-    $manageOutput = @(& $pwsh -NoProfile -NonInteractive -File $manageCopy -Prefix $managePrefix -Command Rollback 2>&1)
-    $manageExit = $LASTEXITCODE
-    $manageTextOut = $manageOutput | Out-String
-    Assert ($manageExit -ne 0) 'Manage-Caelestia unexpectedly queued rollback while registration was denied.'
-    Assert ($manageTextOut.Contains('Task Scheduler is blocked by policy') -and $manageTextOut.Contains('was not queued') -and
-        $manageTextOut.Contains('Manage-Caelestia.ps1 -Command Rollback -Wait')) ('Manage-Caelestia did not surface manual GPO recovery instructions. Output: ' + $manageTextOut)
     $operationJournal = Join-Path $manageProfile 'state\update-operation.json'
-    Assert (Test-Path -LiteralPath $operationJournal -PathType Leaf) 'Registration failure did not write a terminal operation journal.'
-    $operationState = Get-Content -LiteralPath $operationJournal -Raw | ConvertFrom-Json
-    Assert ($operationState.phase -eq 'failed' -and $operationState.kind -eq 'rollback') 'GPO registration failure left a nonterminal or corrupt operation journal.'
+    $savedDenial = $env:CAELESTIA_FIXTURE_SCHEDULER_DENIAL
+    try {
+        foreach ($denial in @('register', 'start')) {
+            $env:CAELESTIA_FIXTURE_SCHEDULER_DENIAL = $denial
+            $manageOutput = & $pwsh -NoProfile -NonInteractive -File $manageCopy -Prefix $managePrefix -Command Rollback
+            Assert ($LASTEXITCODE -eq 0) "Policy denial at $denial did not return a structured refusal."
+            $reply = $manageOutput | ConvertFrom-Json
+            $expectedManual = "& '$manageCopy' -Prefix '$managePrefix' -Command Rollback -Wait -ExpectedCurrent 'v2'"
+            Assert ($reply.code -ceq 'scheduler-policy' -and $reply.phase -ceq 'failed' -and $reply.manualCommand -ceq $expectedManual) "Policy denial at $denial lost its manual command."
+            $operationState = Get-Content -LiteralPath $operationJournal -Raw | ConvertFrom-Json
+            Assert ($operationState.operationId -ceq $reply.operationId -and $operationState.phase -ceq 'failed') "Policy denial at $denial left the request queued."
+        }
+        $registered = Get-Content -LiteralPath (Join-Path $managePrefix 'registered.txt')
+        $removed = Get-Content -LiteralPath (Join-Path $managePrefix 'unregistered.txt')
+        Assert (@($registered).Count -eq 2 -and @($registered | Where-Object { $_ -notin $removed }).Count -eq 0) 'Start policy denial did not remove both registrations.'
+    } finally { $env:CAELESTIA_FIXTURE_SCHEDULER_DENIAL = $savedDenial }
     Write-Output 'PASS Nexus GPO refusal: update state reaches terminal failure with manual recovery instructions.'
 
     # Multi-session taskbar coordination is behavioral, not textual. Compile a

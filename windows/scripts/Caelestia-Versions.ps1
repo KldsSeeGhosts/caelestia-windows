@@ -185,6 +185,24 @@ function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @
     return ''
 }
 
+function Save-CaelestiaMaintenanceHandoff([string]$Prefix, $InstallRecord) {
+    # Set only by the tracked maintenance worker, on the same thread and
+    # under the prefix lock, including when it invokes a verified release.
+    $trackedId = [string](Get-Variable -Name CaelestiaTrackedOperationId -ValueOnly -ErrorAction SilentlyContinue)
+    if ($trackedId -notmatch '^[a-f0-9]{32}$') { return }
+    $path = Join-Path $InstallRecord.profile 'state\update-operation.json'
+    $state = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($state.operationId -cne $trackedId -or $state.phase -cne 'working' -or
+        $state.installId -cne $InstallRecord.installId -or -not (Test-CaelestiaSamePath $state.prefix $Prefix)) {
+        throw 'The maintenance worker lost its handoff journal before stopping the shell.'
+    }
+    $running = @(Get-CaelestiaProcesses $Prefix).Count -gt 0 -or @(Get-CaelestiaSupervisors $InstallRecord.profile).Count -gt 0
+    $state | Add-Member -NotePropertyName handoff -NotePropertyValue @{
+        phase = 'stopping'; wasRunning = $running; sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    } -Force
+    Write-CaelestiaJsonAtomic $path $state
+}
+
 function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Restart, [switch]$Autostart, [switch]$NoIntegration) {
     $old = if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) { Read-CaelestiaInstall $Prefix } else { $null }
     if ($old -and $old.installRoot -and -not (Test-CaelestiaSamePath $old.installRoot $Prefix)) {
@@ -289,6 +307,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
             # outgoing payload still needs its own 5.1 entry, and routing
             # through the just-written router would re-enter this install path.
             $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
+            Save-CaelestiaMaintenanceHandoff $Prefix $old
             $stopped = $true
             Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }
@@ -403,6 +422,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
                 $launchTask = ''
             }
             $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
+            Save-CaelestiaMaintenanceHandoff $Prefix $old
             $stopped = $true
             Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
         }

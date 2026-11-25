@@ -19,6 +19,9 @@ $arguments = @{ BuildRoot = $BuildRoot; QtPrefix = $QtPrefix; Prefix = $prefix; 
 if ($VCRuntimeRoot) { $arguments.VCRuntimeRoot = $VCRuntimeRoot }
 if ($NoIntegration) {
     $arguments.NoIntegration = $true
+    # Hosted release validation runs elevated. This test owns disposable
+    # roots and only audits payload bytes and the install journal.
+    $arguments.PayloadAssembly = $true
     # Existing installer provenance checks permit a reused ancestor build only
     # when its native inputs are unchanged. No -Force or receipt rewriting.
     $arguments.SourceRoot = $repoRoot

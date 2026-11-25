@@ -758,6 +758,7 @@ try {
     $ownedName = 'Caelestia-Start-' + ('a' * 32)
     $foreignName = 'Caelestia-Start-' + ('b' * 32)
     $otherUserName = 'Caelestia-Start-' + ('c' * 32)
+    $commandName = 'Caelestia-Start-' + ('d' * 32)
     $launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "'
     $ownedTask = [ordered]@{
         TaskName = $ownedName
@@ -783,6 +784,12 @@ try {
     $otherUser = [ordered]@{ TaskName = $otherUserName; Principal = @{ UserId = 'S-1-5-18' }; Actions = $ownedTask.Actions }
     $otherUserPath = Join-Path $case "tasks\$otherUserName.json"
     Write-FixtureText $otherUserPath ($otherUser | ConvertTo-Json -Depth 5)
+    $commandTask = [ordered]@{
+        TaskName = $commandName; Principal = $ownedTask.Principal
+        Actions = @(@{ Execute = 'pwsh.exe'; Arguments = '-Command "Write-Output '' -File "' + $launcher + '" -Prefix "' + $prefix + '"''"' })
+    }
+    $commandTaskPath = Join-Path $case "tasks\$commandName.json"
+    Write-FixtureText $commandTaskPath ($commandTask | ConvertTo-Json -Depth 5)
     $uninstall = Start-Worker $case 'Uninstall'
     Assert-Result $uninstall 'Success'
     Finish-Worker $uninstall
@@ -790,6 +797,7 @@ try {
     Assert (-not (Test-Path -LiteralPath $ownedPath)) 'Orphaned owned launch task survived uninstall.'
     Assert ([IO.File]::ReadAllText($foreignPath) -ceq $foreignBefore) 'Uninstall changed a similarly named foreign launch task.'
     Assert (Test-Path -LiteralPath $otherUserPath) 'Uninstall removed a launch task owned by a different user.'
+    Assert (Test-Path -LiteralPath $commandTaskPath) 'Uninstall removed a -Command task containing launch flags in script text.'
     $script:scenarios += 'orphaned-launch-task-sweep'
         }; A = @{} })
 
@@ -1112,7 +1120,7 @@ try {
     $taskPath = Join-Path $case "tasks\Caelestia-MaintenanceWatch-$id.json"
     $task = Get-Content -LiteralPath $taskPath -Raw | ConvertFrom-Json
     Assert ($task.Settings.RestartCount -eq 3 -and $task.Settings.RestartIntervalSeconds -eq 60) 'Watchdog has no bounded contention retry policy.'
-    Assert ($task.Settings.ExecutionTimeLimitSeconds -eq 30) 'Watchdog execution is unbounded.'
+    Assert ($task.Settings.ExecutionTimeLimitSeconds -eq 180) 'Watchdog execution lost its bounded restart allowance.'
     $owner = Start-Worker $case 'SourceInstall' 'processes' -ThrowAtBoundary:$true
     Wait-Marker $owner 'ready'
     $before = Snapshot $case

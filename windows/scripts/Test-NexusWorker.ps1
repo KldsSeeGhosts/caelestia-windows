@@ -78,7 +78,7 @@ function Prepare-Case([string]$Name, [string]$Mutation = '') {
     # verified supplied common helper import.
     $bootstrap = [IO.File]::ReadAllText("$bundle\Install-CaelestiaRelease.ps1")
     $releaseImport = ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')"
-    $bootstrap = Replace-Exactly $bootstrap $releaseImport `
+    $bootstrap = Replace-Exactly $bootstrap ($releaseImport + $importBoundary) `
         ($releaseImport + "`r`n. '" + (Join-Path $PSScriptRoot 'NexusWorker-FixtureBoundary.ps1').Replace("'", "''") + "'")
     Write-FixtureText "$bundle\Install-CaelestiaRelease.ps1" $bootstrap
     # New bootstrap compatibility fields are intentionally additive to this
@@ -159,6 +159,15 @@ function TaskArgs([string]$Case, [string]$Id) {
     return (Get-Content "$Case\tasks\Caelestia-Maintenance-$Id.json" -Raw | ConvertFrom-Json).Actions[0].Arguments
 }
 try {
+    foreach ($denial in @('policy-register', 'policy-start')) {
+        $case = Prepare-Case $denial
+        $reply = Finish (Start-Worker $case (Args $case '-Command Update -ExpectedCurrent v2 -ExpectedBuild 0.2.0-dev.1.2.1 -Channel development') $denial) |
+            ConvertFrom-Json
+        $state = Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json
+        Assert ($reply.code -ceq 'scheduler-policy' -and $reply.phase -ceq 'failed' -and $state.operationId -ceq $reply.operationId -and
+            $state.phase -ceq 'failed' -and -not @(Get-ChildItem "$case\tasks").Count) 'Policy refusal did not settle the update request and remove its tasks.'
+        Assert ($reply.manualCommand -ceq "& '$case\prefix\Manage-Caelestia.ps1' -Prefix '$case\prefix' -Command Update -Wait -ExpectedCurrent 'v2' -ExpectedBuild '0.2.0-dev.1.2.1' -Channel 'development'") 'Policy refusal did not preserve the exact authenticated update arguments.'
+    }
     $case = Prepare-Case 'happy'
     $profileHash = (Get-FileHash "$case\profile\config\sentinel.txt").Hash
     $configHashes = @{}
@@ -281,6 +290,10 @@ try {
     # Force termination after the new router is published but before the
     # selector commit. Recovery must still use the old immutable payload.
     $case = Prepare-Case 'interrupted-root-copy'
+    Write-FixtureText "$case\running-shell" 'v2'
+    $outgoingLauncher = "$case\prefix\versions\v2\Start-Caelestia.ps1"
+    Add-Content -LiteralPath $outgoingLauncher -Value "`r`n" -NoNewline
+    Add-Content -LiteralPath $outgoingLauncher -Value '[IO.File]::Delete((Join-Path $env:CAELESTIA_FIXTURE_CASE ''running-shell''))'
     $before = (Get-FileHash "$case\prefix\install.json").Hash
     $id = Queue $case
     $worker = Start-Worker $case (TaskArgs $case $id) 'after-copy-root-entries'
@@ -291,8 +304,12 @@ try {
         }
         Start-Sleep -Milliseconds 20
     }
+    $handoff = (Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).handoff
+    Assert ($handoff.phase -ceq 'stopping' -and $handoff.wasRunning -eq $true -and -not (Test-Path "$case\running-shell")) 'The live shell stop was not journaled before the kill.'
     $worker.process.Kill(); $worker.process.WaitForExit()
-    $null = Finish (Start-Worker $case (Args $case ("-Command Watch -OperationId $id")))
+    $watch = Start-Worker $case (Args $case ("-Command Watch -OperationId $id"))
+    $null = Finish $watch
+    Assert ([IO.File]::ReadAllText((Join-Path $watch.control 'launched-runtime')) -ceq "$case\prefix\versions\v2") 'The watchdog did not relaunch the committed shell after the worker stopped it.'
     Assert ((Get-FileHash "$case\prefix\install.json").Hash -ceq $before) 'Interrupted root copy changed the committed selector.'
     Assert (Test-CaelestiaVersionPayload "$case\prefix" 'v2') 'Interrupted root copy damaged the committed payload.'
     Assert ((Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).phase -ceq 'failed') 'Watchdog did not settle interrupted root copy.'

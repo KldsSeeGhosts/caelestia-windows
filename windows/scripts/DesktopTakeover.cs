@@ -987,6 +987,19 @@ namespace Caelestia.Takeover {
         }
         static bool ReadTaskbarBaseline(RegistryKey key, out int? baseline) {
             baseline = null;
+            var encoded = key.GetValue("Baseline");
+            if (encoded != null) {
+                if (Object.Equals(encoded, "missing")) return true;
+                var text = encoded as string;
+                uint value32;
+                if (text != null && text.StartsWith("dword:", StringComparison.Ordinal) &&
+                    UInt32.TryParse(text.Substring(6), NumberStyles.None, CultureInfo.InvariantCulture, out value32)) {
+                    baseline = unchecked((int)value32);
+                    return true;
+                }
+                throw new InvalidDataException("Invalid shared taskbar preference baseline.");
+            }
+            // Previous builds persisted the marker and optional DWORD separately.
             var present = key.GetValue("BaselinePresent");
             if (!(present is int) || (int)present != 1) return false;
             var value = key.GetValue("BaselineValue");
@@ -994,13 +1007,15 @@ namespace Caelestia.Takeover {
             return true;
         }
         static void WriteTaskbarBaseline(RegistryKey key, int? baseline) {
-            key.SetValue("BaselinePresent", 1, RegistryValueKind.DWord);
-            if (baseline.HasValue) key.SetValue("BaselineValue", baseline.Value, RegistryValueKind.DWord);
-            else key.DeleteValue("BaselineValue", false);
+            var encoded = baseline.HasValue
+                ? "dword:" + unchecked((uint)baseline.Value).ToString(CultureInfo.InvariantCulture)
+                : "missing";
+            key.SetValue("Baseline", encoded, RegistryValueKind.String);
         }
         static void ClearTaskbarBaseline(RegistryKey key) {
             key.DeleteValue("BaselinePresent", false);
             key.DeleteValue("BaselineValue", false);
+            key.DeleteValue("Baseline", false);
         }
         static string TaskbarOwnerText(Process process) {
             return process.SessionId.ToString(CultureInfo.InvariantCulture) + ":" + process.Id.ToString(CultureInfo.InvariantCulture) +
@@ -1039,12 +1054,11 @@ namespace Caelestia.Takeover {
             WithTaskbarCoordination(delegate(RegistryKey key) {
                 int? baseline;
                 bool hasBaseline = ReadTaskbarBaseline(key, out baseline);
+                if (!hasBaseline) {
+                    baseline = snapshot.MultiMonitorTaskbarSaved ? snapshot.MultiMonitorTaskbar : ReadMultiMonitorTaskbar();
+                    WriteTaskbarBaseline(key, baseline);
+                }
                 if (!snapshot.MultiMonitorTaskbarSaved) {
-                    if (!hasBaseline) {
-                        baseline = ReadMultiMonitorTaskbar();
-                        WriteTaskbarBaseline(key, baseline);
-                        hasBaseline = true;
-                    }
                     snapshot.MultiMonitorTaskbar = baseline;
                     snapshot.MultiMonitorTaskbarSaved = true;
                     // Roll back so a retry persists again instead of mutating unsaved.

@@ -221,13 +221,25 @@ PageBase {
                 StyledText {
                     objectName: "updateStatusLabel"
                     Layout.fillWidth: true
-                    text: Tr.tr(root.primary.status)
+                    text: UpdateManager.refusalMessage || Tr.tr(root.primary.status)
                     font: Tokens.font.body.medium
                     color: root.rollbackFailed || root.loadState === "error"
                         ? Colours.palette.m3error : Colours.palette.m3onSurfaceVariant
                     wrapMode: Text.WordWrap
                     Accessible.role: Accessible.StaticText
                     Accessible.name: text
+                }
+                TextEdit {
+                    objectName: "manualMaintenanceCommand"
+                    Layout.fillWidth: true
+                    visible: UpdateManager.manualCommand !== ""
+                    text: UpdateManager.manualCommand
+                    textFormat: TextEdit.PlainText
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    color: Colours.palette.m3onSurface
+                    font: Tokens.font.body.medium
                 }
                 T.ProgressBar {
                     id: updateProgress

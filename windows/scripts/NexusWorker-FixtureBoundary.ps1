@@ -4,6 +4,19 @@
 . (Join-Path $PSScriptRoot 'UninstallTransaction-FixtureBoundary.ps1')
 function Get-CaelestiaAutostartKey { Join-Path $env:CAELESTIA_FIXTURE_CASE 'integration' }
 function Get-CaelestiaUpdateStatePath { Join-Path $env:CAELESTIA_FIXTURE_CASE 'trust\highwater.json' }
+function Get-CaelestiaProcesses([string]$Prefix) {
+    Assert-FixturePrefix $Prefix
+    if (Test-Path -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CASE 'running-shell')) {
+        [pscustomobject]@{ Path = Join-Path $Prefix 'versions\v2\qs.exe' }
+    }
+}
+function Start-CaelestiaDetached {
+    param([string]$Prefix, [switch]$LegacyReady, [string]$TaskName, [switch]$PreparedSchemeRuntime, [string]$RuntimePrefix, [switch]$ReplacingRoot)
+    Assert-FixturePrefix $Prefix
+    if (-not $PreparedSchemeRuntime) { throw 'Unexpected unprepared launch.' }
+    Invoke-FixtureBoundary 'launch'
+    [IO.File]::WriteAllText((Join-Path $env:CAELESTIA_FIXTURE_CONTROL 'launched-runtime'), $RuntimePrefix)
+}
 function Complete-CaelestiaInstallIntegration {
     param($Prefix, $Runtime, $Previous, [switch]$Restart, [switch]$Autostart, [switch]$DesktopShortcut)
     Assert-FixturePrefix $Prefix
@@ -14,6 +27,18 @@ $script:nexusRealCheck = (Get-Command Invoke-CaelestiaUpdateCheck).ScriptBlock
 $script:nexusRealSave = (Get-Command Save-CaelestiaUpdateBundle).ScriptBlock
 $script:nexusRealWriteJson = (Get-Command Write-CaelestiaJsonAtomic).ScriptBlock
 $script:nexusRealCopyRootEntries = (Get-Command Copy-CaelestiaRootEntries).ScriptBlock
+$script:nexusRegisterTask = (Get-Command Register-ScheduledTask).ScriptBlock
+$script:nexusStartTask = (Get-Command Start-ScheduledTask).ScriptBlock
+function Register-ScheduledTask {
+    param($TaskName, $Action, $Trigger, $Principal, $Settings, $ErrorAction)
+    if ($env:CAELESTIA_FIXTURE_PAUSE -ceq 'policy-register') { throw [UnauthorizedAccessException]::new('Registration denied by policy.') }
+    & $script:nexusRegisterTask @PSBoundParameters
+}
+function Start-ScheduledTask {
+    param($TaskName, $ErrorAction)
+    if ($env:CAELESTIA_FIXTURE_PAUSE -ceq 'policy-start') { throw [UnauthorizedAccessException]::new('Start denied by policy.') }
+    & $script:nexusStartTask @PSBoundParameters
+}
 function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
     & $script:nexusRealCopyRootEntries $Prefix $Runtime
     Invoke-FixtureBoundary 'after-copy-root-entries'
