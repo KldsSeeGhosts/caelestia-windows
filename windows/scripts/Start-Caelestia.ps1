@@ -275,6 +275,7 @@ $info.EnvironmentVariables['CAELESTIA_PROFILE_ROOT'] = $profile
 $info.EnvironmentVariables['CAELESTIA_INSTALL_ROOT'] = $installRoot
 $info.EnvironmentVariables['CAELESTIA_POWERSHELL'] = Get-CaelestiaPayloadPowerShellPath $Prefix
 $info.EnvironmentVariables['CAELESTIA_VERSION_ID'] = [string]$record.versionId
+$info.EnvironmentVariables['CAELESTIA_PAYLOAD_ROOT'] = $Prefix
 $info.EnvironmentVariables['CAELESTIA_SOURCE_REVISION'] = [string]$record.sourceRevision
 foreach ($directory in @('config', 'state', 'data', 'cache')) {
     $info.EnvironmentVariables["XDG_$($directory.ToUpperInvariant())_HOME"] = Join-Path $profile $directory
@@ -450,9 +451,17 @@ if ($Smoke) {
     # Preserve the pre-takeover launcher contract: strict IPC readiness failure
     # reports an error but does not stop the live shell. Activation/rollback
     # callers own their separate cleanup policy.
-    $readyState = Wait-CaelestiaReady $Prefix -PassThru
+    $readyState = Wait-CaelestiaReady $Prefix -PassThru -ExpectedPayload $Prefix -ExpectedSupervisorPid $process.Id
     if ($ReadinessRecordPath) {
-        Write-CaelestiaReadinessRecord $ReadinessRecordPath ([string]$readyState.lifecycle.generation) $process.Id 0 $true
+        # The receipt is installer telemetry for the scheduled-task race, not
+        # part of shell startup. A profile ACL or transient file error must not
+        # turn a verified healthy launch into a rollback.
+        try {
+            Write-CaelestiaReadinessRecord $ReadinessRecordPath ([string]$readyState.lifecycle.generation) $process.Id 0 $true `
+                -PayloadPath $Prefix -SupervisorPid $process.Id
+        } catch {
+            Write-Warning ('Could not write the launch readiness receipt; the verified shell remains running. ' + $_.Exception.Message)
+        }
     }
     Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
 }

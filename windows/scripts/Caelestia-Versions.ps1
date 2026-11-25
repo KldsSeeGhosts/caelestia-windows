@@ -303,7 +303,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) {
-            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime -RuntimePrefix $runtime
+            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime -RuntimePrefix $runtime -ReplacingRoot
             Write-Host ('Caelestia ready; version activation {0:N2}s.' -f $clock.Elapsed.TotalSeconds)
         }
         return $runtime

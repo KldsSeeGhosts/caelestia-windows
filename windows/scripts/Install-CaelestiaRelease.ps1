@@ -134,7 +134,10 @@ function Confirm-ReleaseVCRuntimeInstall([switch]$Unattended) {
 function New-ReleasePrivateStagingDirectory([string]$Kind) {
     $candidate = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-' + $Kind + '-' + [guid]::NewGuid().ToString('N'))
     # Even a short-lived download is a privileged-installer input. Deny
-    # inheritance at directory creation, leaving only this user and SYSTEM.
+    # inheritance at directory creation. Only this user and SYSTEM can change
+    # the tree; administrators receive read/execute so over-the-shoulder UAC
+    # using a different administrator account can run the verified binary,
+    # without receiving write or modify rights.
     $acl = [Security.AccessControl.DirectorySecurity]::new()
     $acl.SetAccessRuleProtection($true, $false)
     $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
@@ -147,6 +150,12 @@ function New-ReleasePrivateStagingDirectory([string]$Kind) {
             [Security.AccessControl.AccessControlType]::Allow)
         [void]$acl.AddAccessRule($rule)
     }
+    $adminRule = [Security.AccessControl.FileSystemAccessRule]::new(
+        [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'),
+        [Security.AccessControl.FileSystemRights]::ReadAndExecute,
+        $inheritance, [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow)
+    [void]$acl.AddAccessRule($adminRule)
     $directory = if ($PSVersionTable.PSEdition -eq 'Desktop') {
         [IO.Directory]::CreateDirectory($candidate, $acl)
     } else {

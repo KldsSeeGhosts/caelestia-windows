@@ -94,11 +94,11 @@ function Invoke-Bounded([string]$File, [string[]]$Arguments, [string]$Step, [has
     $info.RedirectStandardError = $true
     # pip configuration is process-wide and user-controllable. Every child gets
     # a clean pip environment rather than mutating and restoring the caller's;
-    # PIP_CONFIG_FILE=NUL also ignores pip.ini and per-user pip config files.
+    # PIP_CONFIG_FILE=nul also ignores pip.ini and per-user pip config files.
     foreach ($name in @($info.EnvironmentVariables.Keys)) {
         if ($name -like 'PIP_*') { $info.EnvironmentVariables.Remove($name) }
     }
-    $info.EnvironmentVariables['PIP_CONFIG_FILE'] = 'NUL'
+    $info.EnvironmentVariables['PIP_CONFIG_FILE'] = 'nul'
     $info.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
     foreach ($name in $Environment.Keys) { $info.EnvironmentVariables[$name] = [string]$Environment[$name] }
     $process = [Diagnostics.Process]::Start($info)

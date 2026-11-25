@@ -214,9 +214,16 @@ try {
             Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null
             $queuedTask = $name
         } catch {
+            $registrationError = $_
             Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName $watchName -Confirm:$false -ErrorAction SilentlyContinue
             Write-Operation $operationId 'failed'
+            if (Test-CaelestiaTaskSchedulerAccessDenied $registrationError) {
+                throw ('Task Scheduler is blocked by policy, so the ' + $Command.ToLowerInvariant() + ' was not queued and no update state is in progress. ' +
+                    'Ask an administrator to allow per-user scheduled tasks, or perform the operation manually from an unelevated PowerShell prompt: ' +
+                    'for rollback run Manage-Caelestia.ps1 -Command Rollback -Wait; for an update, install the verified release with Install-CaelestiaRelease.ps1. ' +
+                    'Original error: ' + $registrationError.Exception.Message)
+            }
             throw
         }
     } else {

@@ -23,6 +23,10 @@ param(
     [string]$SourceRoot,
     # Disposable-prefix packaging: no shortcut, HKCU Run entry or launch task.
     [switch]$NoIntegration,
+    # Internal release assembly only. This bypasses the interactive per-user
+    # elevation refusal solely when every integration and scheme mutation is off
+    # and both roots are explicit disposable paths. Normal installs never use it.
+    [switch]$PayloadAssembly,
     [string]$TimingFile,
     # Diagnostics: compare compilation with the verified immutable cache.
     [switch]$NoSupervisorCache
@@ -32,9 +36,20 @@ param(
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if ($SourceRoot) { $repoRoot = (Resolve-Path -LiteralPath $SourceRoot).Path }
 . (Join-Path $repoRoot 'windows\capture\Source.ps1')
-Assert-CaelestiaInstallerNotElevated
+$defaultPrefix = Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows'
+$defaultProfile = Join-Path $env:LOCALAPPDATA 'caelestia-windows'
+$payloadAssemblyOnly = $false
+if ($PayloadAssembly) {
+    if (-not ($NoIntegration -and $SkipSchemeRuntime -and -not $Restart -and -not $Autostart -and -not $DesktopShortcut) -or
+        -not $PSBoundParameters.ContainsKey('Prefix') -or -not $PSBoundParameters.ContainsKey('ProfileRoot') -or
+        (Test-CaelestiaSamePath $Prefix $defaultPrefix) -or (Test-CaelestiaSamePath $ProfileRoot $defaultProfile)) {
+        throw '-PayloadAssembly requires -NoIntegration, -SkipSchemeRuntime, no launch or integration switches, and explicit disposable Prefix/ProfileRoot paths.'
+    }
+    $payloadAssemblyOnly = $true
+}
+if (-not $payloadAssemblyOnly) { Assert-CaelestiaInstallerNotElevated }
 if ($NoIntegration -and ($Restart -or $Autostart -or $DesktopShortcut -or
-    (Test-CaelestiaSamePath $Prefix (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')))) {
+    (Test-CaelestiaSamePath $Prefix $defaultPrefix))) {
     throw '-NoIntegration requires a separate prefix and cannot launch or register autostart or a desktop shortcut.'
 }
 $timings = [ordered]@{}

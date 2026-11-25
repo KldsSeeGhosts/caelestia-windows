@@ -447,9 +447,12 @@ function Invoke-WebRequest($Uri, $OutFile, [switch]$UseBasicParsing) {
     Assert $UseBasicParsing 'Download must support Windows PowerShell.'
     Assert (-not (Test-Path -LiteralPath $OutFile)) 'Download must use a fresh file.'
     $acl = Get-Acl -LiteralPath (Split-Path -Parent $OutFile)
-    $expected = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18')
+    $expected = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18', 'S-1-5-32-544')
     $owners = @($acl.Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value })
-    Assert ($acl.AreAccessRulesProtected -and $owners.Count -eq 2 -and -not (Compare-Object $expected $owners)) 'Download staging is not restricted to this user and SYSTEM.'
+    Assert ($acl.AreAccessRulesProtected -and $owners.Count -eq 3 -and -not (Compare-Object $expected $owners)) 'Download staging is not restricted to this user, SYSTEM and read-only administrators.'
+    $adminRule = @($acl.Access | Where-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq 'S-1-5-32-544' }) | Select-Object -First 1
+    $readExecute = [Security.AccessControl.FileSystemRights]::ReadAndExecute -bor [Security.AccessControl.FileSystemRights]::Synchronize
+    Assert ($adminRule -and $adminRule.FileSystemRights -eq $readExecute) 'Administrator staging access must be ReadAndExecute without write or modify rights.'
     $global:CaelestiaPrereqFixtureState.download = $OutFile
     [IO.File]::WriteAllText($OutFile, 'inert fixture, never execute')
     if ($global:CaelestiaPrereqFixtureState.networkFailure) { throw 'fixture network failure' }

@@ -111,6 +111,9 @@ foreach (var path in Directory.GetFiles(Environment.CurrentDirectory, "slow-read
             if (value.HasValue) File.WriteAllText(path, value.Value.ToString());
             else File.Delete(path);
 '@
+    $source = Replace-Exactly $source `
+        'const string TaskbarCoordinationKey = @"Software\Caelestia\Windows\TaskbarSuppression";' `
+        ('const string TaskbarCoordinationKey = @"Software\CaelestiaTest-' + $Token + '\TaskbarSuppression";')
     $source = Replace-Exactly $source 'Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);' `
         'Native.SuppressSecondaryTaskbars(saved, SaveSnapshot); File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "secondary\n");'
     $source = Replace-Exactly $source 'Native.Hide(recordUnchanged);' `

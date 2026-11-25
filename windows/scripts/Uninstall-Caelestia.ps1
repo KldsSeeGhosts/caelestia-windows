@@ -74,14 +74,21 @@ foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Mainten
     Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
     $cancelledOperations += $taskOperation
 }
+# Scheduled-task arguments are a command line, not a path. Extract the quoted
+# launcher and prefix values, then compare the paths through the normalizer so
+# 8.3, separator, casing and trailing-slash spellings cannot hide ownership.
+function Get-CaelestiaQuotedTaskArgument([string]$Arguments, [string]$Name) {
+    $match = [regex]::Match($Arguments, '(?i)(?:^|\s)-' + [regex]::Escape($Name) + '\s+"([^"]+)"')
+    if (-not $match.Success) { return '' }
+    return $match.Groups[1].Value
+}
+
 # One-shot Caelestia-Start-* tasks are normally unregistered by the launcher
 # finally block. A power loss or killed installer can orphan one; if it later
 # fires after the prefix tombstone move, it can execute a script path the user
 # no longer controls. Sweep only tasks whose single action exactly names this
 # prefix's launcher and -Prefix argument; similarly named foreign tasks stay.
 $taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
-    (Join-Path $Prefix 'Start-Caelestia.ps1') + '" -Prefix "' + $Prefix + '"'
 foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Start-*' -ErrorAction SilentlyContinue)) {
     if ($task.TaskName -cnotmatch '^Caelestia-Start-[a-f0-9]{32}$') { continue }
     $taskUser = [string]$task.Principal.UserId
@@ -93,8 +100,10 @@ foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Start-*
     $actions = @($task.Actions)
     if ($actions.Count -ne 1 -or [IO.Path]::GetFileName([string]$actions[0].Execute) -notin @('powershell.exe', 'pwsh.exe')) { continue }
     $arguments = [string]$actions[0].Arguments
-    if ($arguments -ne $launchArguments -and
-        -not $arguments.StartsWith($launchArguments + ' ', [StringComparison]::OrdinalIgnoreCase)) { continue }
+    $taskLauncher = Get-CaelestiaQuotedTaskArgument $arguments 'File'
+    $taskPrefix = Get-CaelestiaQuotedTaskArgument $arguments 'Prefix'
+    if (-not (Test-CaelestiaSamePath $taskLauncher (Join-Path $Prefix 'Start-Caelestia.ps1')) -or
+        -not (Test-CaelestiaSamePath $taskPrefix $Prefix)) { continue }
     Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
 }

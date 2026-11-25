@@ -45,7 +45,7 @@ try {
         function Start-ScheduledTask { [CmdletBinding()] param([string]$TaskName) }
         function Stop-ScheduledTask { [CmdletBinding()] param([string]$TaskName) throw 'fixture cleanup failure' }
         function Wait-CaelestiaReady {
-            [CmdletBinding()] param([string]$Prefix, [int]$TimeoutSeconds, [switch]$LegacyReady, [string]$TaskName)
+            [CmdletBinding()] param([string]$Prefix, [int]$TimeoutSeconds, [switch]$LegacyReady, [string]$TaskName, [string]$ExpectedPayload = '', [int]$ExpectedSupervisorPid = 0, [switch]$RequireIdentity)
             if ($TimeoutSeconds -ne 75) { throw 'Scheduled startup lost its full launcher budget.' }
             $script:waits++
             throw 'fixture launch failure'
@@ -63,11 +63,22 @@ try {
     Write-Output 'PASS startup: cleanup failure preserves the launch error and prevents a retry.'
     & {
         $activation = [pscustomobject]@{ Starts = 0; Stops = 0; Unregisters = 0 }
+        # The install-common cleanup path resolves the running payload through
+        # the versioning module; this flat fixture prefix is its own payload.
+        function Resolve-CaelestiaRuntimePrefix { param([string]$Prefix, [switch]$Running) return $Prefix }
         function Start-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $activation.Starts++ }
         function Stop-ScheduledTask { [CmdletBinding()] param([string]$TaskName) $activation.Stops++ }
         function Unregister-ScheduledTask { [CmdletBinding()] param([string]$TaskName, [switch]$Confirm) $activation.Unregisters++ }
+        # Retry registration must use a fresh task identity without touching the
+        # real scheduler. The production contract is one new name per attempt.
+        $script:retryRegistrations = 0
+        function New-CaelestiaLaunchTask {
+            param([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '', [switch]$ReplacingRoot)
+            $script:retryRegistrations++
+            return 'fixture-retry-' + $script:retryRegistrations
+        }
         function Wait-CaelestiaReady {
-            [CmdletBinding()] param([string]$Prefix, [int]$TimeoutSeconds, [switch]$LegacyReady, [string]$TaskName)
+            [CmdletBinding()] param([string]$Prefix, [int]$TimeoutSeconds, [switch]$LegacyReady, [string]$TaskName, [string]$ExpectedPayload = '', [int]$ExpectedSupervisorPid = 0, [switch]$RequireIdentity)
             if ($TimeoutSeconds -ne 75) { throw 'Activation lost its outer launcher allowance.' }
             throw 'fixture readiness missing'
         }
@@ -81,8 +92,11 @@ Add-Content -LiteralPath (Join-Path $Prefix 'quit-calls') -Value 'quit'
         $refused = $false
         try { Start-CaelestiaDetached $detached -TaskName 'fixture-task' 3>$null }
         catch { $refused = $_.Exception.Message -eq 'fixture readiness missing' }
+        # Both failed tasks are unregistered: the original before fresh retry
+        # registration, the retry task by the terminal-failure finally sweep.
         if (-not $refused -or $activation.Starts -ne 2 -or $activation.Stops -ne 2 -or
-            $activation.Unregisters -ne 1 -or @(Get-Content -LiteralPath (Join-Path $detached 'quit-calls')).Count -ne 2) {
+            $activation.Unregisters -ne 2 -or $script:retryRegistrations -ne 1 -or
+            @(Get-Content -LiteralPath (Join-Path $detached 'quit-calls')).Count -ne 2) {
             throw 'Transactional activation did not stop/quit each failed attempt and report failure for rollback.'
         }
     }

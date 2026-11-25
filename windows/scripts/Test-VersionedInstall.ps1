@@ -260,7 +260,7 @@ public static class FakeSchemePython {
                     if (name.StartsWith("PIP_", StringComparison.OrdinalIgnoreCase) &&
                         !name.Equals("PIP_CONFIG_FILE", StringComparison.OrdinalIgnoreCase)) return 20;
                 }
-                if (Environment.GetEnvironmentVariable("PIP_CONFIG_FILE") != "NUL") return 21;
+                if (Environment.GetEnvironmentVariable("PIP_CONFIG_FILE") != "nul") return 21;
                 if (Array.IndexOf(args, "--require-hashes") < 0 &&
                     (Array.IndexOf(args, "--no-build-isolation") < 0 || Array.IndexOf(args, "--no-deps") < 0)) return 22;
                 string failText = Environment.GetEnvironmentVariable("CAELESTIA_TEST_PIP_FAIL");

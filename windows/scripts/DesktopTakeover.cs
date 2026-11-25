@@ -962,25 +962,115 @@ namespace Caelestia.Takeover {
             // Preserve Settings' notification semantics, outside the message pump.
             NotifyTraySettings();
         }
+        // MMTaskbarEnabled is shared by every session of one user, while
+        // takeover ownership is session-local. Coordinate the original value and
+        // the live supervisor owners in one small HKCU state key, atomically
+        // under a per-user global mutex. Owner liveness is exact process identity
+        // (session, PID and start time), so a dead session cannot keep the
+        // preference suppressed and a second session cannot overwrite baseline.
+        const string TaskbarCoordinationKey = @"Software\Caelestia\Windows\TaskbarSuppression";
+        static string TaskbarCoordinationMutexName() {
+            var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var id = identity.User == null ? identity.Name : identity.User.Value;
+            return @"Global\CaelestiaTaskbarPreference-" + id.Replace('\\', '-');
+        }
+        static void WithTaskbarCoordination(Action<RegistryKey> action) {
+            using (var mutex = new Mutex(false, TaskbarCoordinationMutexName())) {
+                bool owned = false;
+                try { owned = mutex.WaitOne(5000); }
+                catch (AbandonedMutexException) { owned = true; }
+                if (!owned) throw new TimeoutException("Timed out coordinating the multi-monitor taskbar preference.");
+                try {
+                    using (var key = Registry.CurrentUser.CreateSubKey(TaskbarCoordinationKey)) action(key);
+                } finally { mutex.ReleaseMutex(); }
+            }
+        }
+        static bool ReadTaskbarBaseline(RegistryKey key, out int? baseline) {
+            baseline = null;
+            var present = key.GetValue("BaselinePresent");
+            if (!(present is int) || (int)present != 1) return false;
+            var value = key.GetValue("BaselineValue");
+            if (value is int) baseline = (int)value;
+            return true;
+        }
+        static void WriteTaskbarBaseline(RegistryKey key, int? baseline) {
+            key.SetValue("BaselinePresent", 1, RegistryValueKind.DWord);
+            if (baseline.HasValue) key.SetValue("BaselineValue", baseline.Value, RegistryValueKind.DWord);
+            else key.DeleteValue("BaselineValue", false);
+        }
+        static void ClearTaskbarBaseline(RegistryKey key) {
+            key.DeleteValue("BaselinePresent", false);
+            key.DeleteValue("BaselineValue", false);
+        }
+        static string TaskbarOwnerText(Process process) {
+            return process.SessionId.ToString(CultureInfo.InvariantCulture) + ":" + process.Id.ToString(CultureInfo.InvariantCulture) +
+                ":" + process.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture);
+        }
+        static bool TaskbarOwnerAlive(string text) {
+            if (String.IsNullOrEmpty(text)) return false;
+            var parts = text.Split(':');
+            int session, pid; long ticks;
+            if (parts.Length != 3 || !Int32.TryParse(parts[0], out session) || !Int32.TryParse(parts[1], out pid) || !Int64.TryParse(parts[2], out ticks)) return false;
+            try {
+                using (var process = Process.GetProcessById(pid))
+                    return process.SessionId == session && process.StartTime.ToUniversalTime().Ticks == ticks;
+            } catch (ArgumentException) { return false; }
+              catch (InvalidOperationException) { return false; }
+              catch (System.ComponentModel.Win32Exception) { return false; }
+        }
+        static bool PruneTaskbarOwners(RegistryKey key) {
+            var live = false;
+            using (var owners = key.CreateSubKey("Owners")) {
+                foreach (var name in owners.GetValueNames()) {
+                    var text = owners.GetValue(name) as string;
+                    if (TaskbarOwnerAlive(text)) { live = true; continue; }
+                    owners.DeleteValue(name, false);
+                }
+            }
+            return live;
+        }
         // Explorer replaces a secondary taskbar's window region while it re-lays
         // the taskbar out after a display mode change (for example an HDR
         // toggle), so it is drawn for a few hundred milliseconds before the
         // region can be suppressed again. Without secondary taskbars there is
-        // nothing to flash. The original value is persisted before the change.
+        // nothing to flash. The per-user original value and this owner are
+        // persisted before the shared preference changes.
         public static void SuppressSecondaryTaskbars(Snapshot snapshot, Action persist) {
-            if (!snapshot.MultiMonitorTaskbarSaved) {
-                snapshot.MultiMonitorTaskbar = ReadMultiMonitorTaskbar();
-                snapshot.MultiMonitorTaskbarSaved = true;
-                // Roll back so a retry persists again instead of mutating unsaved.
-                try { persist(); } catch { snapshot.MultiMonitorTaskbarSaved = false; throw; }
-            }
-            if (ReadMultiMonitorTaskbar() != 0) WriteMultiMonitorTaskbar(0);
+            WithTaskbarCoordination(delegate(RegistryKey key) {
+                int? baseline;
+                bool hasBaseline = ReadTaskbarBaseline(key, out baseline);
+                if (!snapshot.MultiMonitorTaskbarSaved) {
+                    if (!hasBaseline) {
+                        baseline = ReadMultiMonitorTaskbar();
+                        WriteTaskbarBaseline(key, baseline);
+                        hasBaseline = true;
+                    }
+                    snapshot.MultiMonitorTaskbar = baseline;
+                    snapshot.MultiMonitorTaskbarSaved = true;
+                    // Roll back so a retry persists again instead of mutating unsaved.
+                    try { persist(); } catch { snapshot.MultiMonitorTaskbarSaved = false; throw; }
+                }
+                using (var current = Process.GetCurrentProcess())
+                using (var owners = key.CreateSubKey("Owners"))
+                    owners.SetValue(current.Id.ToString(CultureInfo.InvariantCulture), TaskbarOwnerText(current), RegistryValueKind.String);
+                PruneTaskbarOwners(key);
+                if (ReadMultiMonitorTaskbar() != 0) WriteMultiMonitorTaskbar(0);
+            });
         }
         internal static void RestoreSecondaryTaskbars(Snapshot saved) {
             if (saved == null || !saved.MultiMonitorTaskbarSaved) return;
-            // Leave a value the user changed while the shell was running.
-            if (ReadMultiMonitorTaskbar() == 0 && saved.MultiMonitorTaskbar != 0)
-                WriteMultiMonitorTaskbar(saved.MultiMonitorTaskbar);
+            WithTaskbarCoordination(delegate(RegistryKey key) {
+                using (var current = Process.GetCurrentProcess())
+                using (var owners = key.CreateSubKey("Owners"))
+                    owners.DeleteValue(current.Id.ToString(CultureInfo.InvariantCulture), false);
+                if (PruneTaskbarOwners(key)) return;
+                int? baseline;
+                if (!ReadTaskbarBaseline(key, out baseline)) baseline = saved.MultiMonitorTaskbar;
+                // Leave a value the user changed while the shell was running.
+                if (ReadMultiMonitorTaskbar() == 0 && baseline != 0)
+                    WriteMultiMonitorTaskbar(baseline);
+                ClearTaskbarBaseline(key);
+            });
         }
         public delegate void WinEventCallback(IntPtr hook, uint eventType, IntPtr window,
             int objectId, int childId, uint thread, uint eventTime);
@@ -2642,8 +2732,13 @@ namespace Caelestia.Takeover {
                 };
             // Snapshot is durable before the child can register AppBars, but
             // Explorer remains untouched until every monitor has drawn.
-            using (var current = Process.GetCurrentProcess())
+            using (var current = Process.GetCurrentProcess()) {
+                // Public IPC state exposes this non-secret owner id. Installers
+                // can then distinguish this supervisor's replacement shell from
+                // an already-running payload of another version.
+                info.EnvironmentVariables["CAELESTIA_SUPERVISOR_PID"] = current.Id.ToString(CultureInfo.InvariantCulture);
                 control = SupervisorControl.Create(current.Id, info.EnvironmentVariables);
+            }
             try { process.Start(); }
             finally { SupervisorControl.RemoveInherited(info.EnvironmentVariables); }
             child = process;
