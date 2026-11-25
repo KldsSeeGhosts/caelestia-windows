@@ -152,10 +152,33 @@ function Test-CaelestiaVersionPayload([string]$Prefix, [string]$Id) {
 # configured fallback is unusable. Excluded ids are skipped: the version whose
 # activation just failed is not a fallback. Selection starts nothing, because
 # whether a payload runs is only known from its next start.
+function Get-CaelestiaVersionOrderKey([string]$Name) {
+    # Migration backups use legacy-* names and are always older than every real
+    # version identifier. Plain descending text puts "legacy-*" after digits,
+    # causing a crash recovery to choose a legacy payload over a healthy
+    # timestamped or semantic-versioned one.
+    if ($Name -cmatch '^legacy-') { return '0|' + $Name }
+    if ($Name -cmatch '^\d{8}T\d{6}Z-') { return '3|' + $Name.Substring(0, 16) + '|' + $Name }
+    $semantic = [regex]::Match($Name, '^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$')
+    if ($semantic.Success) {
+        $parts = foreach ($group in 1..3) {
+            $digits = if ($semantic.Groups[$group].Success) { $semantic.Groups[$group].Value } else { '0' }
+            $digits.PadLeft(12, '0')
+        }
+        # Release versions outrank prereleases. Prerelease text remains ordinal;
+        # exact numeric identifier precedence is unnecessary for fallback order.
+        $release = if ($semantic.Groups[4].Success) { '0|' + $semantic.Groups[4].Value } else { '1|' }
+        return '2|' + ($parts -join '.') + '|' + $release + '|' + $Name
+    }
+    return '1|' + $Name
+}
+
 function Select-CaelestiaExistingVersion([string]$Prefix, [string[]]$Exclude = @()) {
     $versions = Join-Path $Prefix 'versions'
     if (-not (Test-Path -LiteralPath $versions -PathType Container)) { return '' }
-    foreach ($directory in @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue | Sort-Object Name -Descending)) {
+    $ordered = @(Get-ChildItem -LiteralPath $versions -Directory -Force -ErrorAction SilentlyContinue |
+        Sort-Object @{ Expression = { Get-CaelestiaVersionOrderKey $_.Name }; Descending = $true }, @{ Expression = 'Name'; Descending = $true })
+    foreach ($directory in $ordered) {
         if ($Exclude -contains $directory.Name) { continue }
         if (Test-CaelestiaVersionPayload $Prefix $directory.Name) { return $directory.Name }
     }
@@ -242,7 +265,14 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         # The launch task runs the incoming payload's host. Resolving the
         # selector here would build a task for the outgoing version, which is
         # still selected until Copy-CaelestiaRootEntries commits the new one.
-        if ($Restart) { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime }
+        if ($Restart) {
+            try { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime -ReplacingRoot }
+            catch {
+                if (-not (Test-CaelestiaTaskSchedulerAccessDenied $_)) { throw }
+                Write-Warning "Task Scheduler refused activation registration; a direct detached launcher will be used instead: $($_.Exception.Message)"
+                $launchTask = ''
+            }
+        }
         # Pick and verify this version's scheme generation while the old shell
         # still serves the desktop, so a slow or hung check is not an outage.
         $verifiedScheme = Select-CaelestiaSchemeGeneration $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime
@@ -273,7 +303,7 @@ function Install-CaelestiaVersion([string]$Prefix, [string]$Payload, [switch]$Re
         $null = Set-CaelestiaSchemeRuntimeForRevision $newRecord.profile (Get-CaelestiaSchemeRevision $runtime) $runtime -Verified $verifiedScheme
         $activated = $true
         if ($Restart) {
-            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime
+            Start-CaelestiaDetached $Prefix -TaskName $launchTask -PreparedSchemeRuntime -RuntimePrefix $runtime
             Write-Host ('Caelestia ready; version activation {0:N2}s.' -f $clock.Elapsed.TotalSeconds)
         }
         return $runtime
@@ -366,7 +396,12 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
     }
     try {
         if ($Restart) {
-            $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime
+            try { $launchTask = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime -RuntimePrefix $runtime }
+            catch {
+                if (-not (Test-CaelestiaTaskSchedulerAccessDenied $_)) { throw }
+                Write-Warning "Task Scheduler refused rollback registration; a direct detached launcher will be used instead: $($_.Exception.Message)"
+                $launchTask = ''
+            }
             $outgoingRuntime = Resolve-CaelestiaRuntimePrefix $Prefix -Running
             $stopped = $true
             Invoke-CaelestiaPayloadCommand $outgoingRuntime @{ Command = 'Quit' } | Out-Null
@@ -388,7 +423,7 @@ function Switch-CaelestiaVersion([string]$Prefix, [string]$Id, [switch]$Restart,
         # are already in place and rebuilding them would repeat the command
         # that was just refused.
         if (-not $SkipIntegration) { Update-CaelestiaIntegrationRecords $Prefix $runtime }
-        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime }
+        if ($Restart) { Start-CaelestiaDetached $Prefix -LegacyReady -TaskName $launchTask -PreparedSchemeRuntime -RuntimePrefix $runtime }
     } catch {
         $failure = $_
         if ($activated -or $stopped) {

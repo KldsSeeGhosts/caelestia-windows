@@ -976,7 +976,7 @@ namespace Caelestia.Takeover {
             }
             if (ReadMultiMonitorTaskbar() != 0) WriteMultiMonitorTaskbar(0);
         }
-        static void RestoreSecondaryTaskbars(Snapshot saved) {
+        internal static void RestoreSecondaryTaskbars(Snapshot saved) {
             if (saved == null || !saved.MultiMonitorTaskbarSaved) return;
             // Leave a value the user changed while the shell was running.
             if (ReadMultiMonitorTaskbar() == 0 && saved.MultiMonitorTaskbar != 0)
@@ -2376,8 +2376,11 @@ namespace Caelestia.Takeover {
         void SuppressRegions() {
             if (invisible) foreach (var bar in Native.Taskbars()) Reconcile(bar);
         }
+        void SuppressSecondaryTaskbars() {
+            Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
+        }
         void MaintainTaskbars(bool recordUnchanged) {
-            if (!takeover) return;
+            if (!takeover || endingSession) return;
             RefreshShowHook(false);
             Native.Hide(recordUnchanged);
             SuppressRegions();
@@ -2454,6 +2457,35 @@ namespace Caelestia.Takeover {
             control = null;
             controlAuthenticated = controlLiveness = controlLifecycle = controlExplorer = controlAppBars = false;
         }
+        void RestoreTaskbarsForSessionEnd() {
+            // Do not change Explorer from a supervisor that has not taken
+            // ownership. The saved preference is written before suppression.
+            if (!takeover && !taskbarRestorePending) return;
+            try {
+                if (!isolatedTest)
+                    Native.RestoreOwned(saved, -1, false, true);
+                taskbarRestorePending = false;
+            } catch (Exception error) {
+                SupervisorSafety.Log(delegate {
+                    File.AppendAllText(Path.Combine(launch.StateDirectory, "watchdog-error.log"),
+                        "Session-end taskbar restore: " + error.Message + Environment.NewLine);
+                });
+            }
+        }
+        void ResuppressTaskbarsAfterCancelledSessionEnd() {
+            // WM_ENDSESSION with wParam false means another client vetoed the
+            // logoff after WM_QUERYENDSESSION. Re-apply suppression only when
+            // this same supervised shell is still active; never retake a
+            // desktop already released for stop or replacement.
+            if (!hide || child == null || child.HasExited || !childBecameReady || recovering) return;
+            try {
+                if (takeover) {
+                    SuppressSecondaryTaskbars();
+                    MaintainTaskbars(true);
+                } else TakeOver();
+            }
+            catch (Exception error) { Fail(error, "Session-cancel taskbar suppression: "); }
+        }
         protected override void WndProc(ref Message message) {
             if (message.Msg == 0x02B1) { // WM_WTSSESSION_CHANGE
                 int reason = message.WParam.ToInt32();
@@ -2472,6 +2504,12 @@ namespace Caelestia.Takeover {
                 endingSession = message.Msg == 0x0011 || message.WParam != IntPtr.Zero;
                 liveness.Reset(MonotonicMilliseconds());
                 CancelProbe();
+                // Logoff does not wait for the shell's normal drain. Return the
+                // persisted multi-monitor preference and taskbar regions as soon
+                // as the session-end broadcast arrives; otherwise a killed
+                // supervisor can leave MMTaskbarEnabled=0 in the next logon.
+                if (endingSession) RestoreTaskbarsForSessionEnd();
+                else ResuppressTaskbarsAfterCancelledSessionEnd();
             }
             // WM_SETTINGCHANGE and WM_DISPLAYCHANGE also cover work-area,
             // taskbar preference and monitor topology changes. The broadcast
@@ -2527,7 +2565,7 @@ namespace Caelestia.Takeover {
             // This is the callback-delivery timestamp, not the actual show time.
             long ticks = Stopwatch.GetTimestamp();
             try {
-                if (done || !takeover || child == null || child.HasExited || !showHook.Matches(hook)) return;
+                if (done || endingSession || !takeover || child == null || child.HasExited || !showHook.Matches(hook)) return;
                 showHandler.Handle(showHook.Owner, window, objectId, childId, ticks);
             } catch (Exception error) {
                 // Do not let a persistence failure escape an unmanaged callback
@@ -2624,12 +2662,13 @@ namespace Caelestia.Takeover {
             Status("starting", child.Id);
         }
         void TakeOver() {
+            if (endingSession) return;
             takeoverGraceDeadline = 0;
             taskbarRestorePending = false;
             // Includes secondary suppression, regions, show hook and audit.
             if (hide && !takeover) {
                 tookOver = takeover = true;
-                Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);
+                SuppressSecondaryTaskbars();
             }
             ObserveExplorer();
             SendTakeover();

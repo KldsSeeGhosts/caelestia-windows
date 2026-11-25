@@ -278,6 +278,24 @@ try {
     $null = Finish (Start-Worker $case (Args $case ("-Command Watch -OperationId $id")))
     Assert ((Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).phase -ceq 'failed') 'Watchdog did not settle interrupted update.'
     Assert ((Read-CaelestiaInstall "$case\prefix").current -eq 'v2') 'Interrupted download changed selector.'
+    # Force termination after the new router is published but before the
+    # selector commit. Recovery must still use the old immutable payload.
+    $case = Prepare-Case 'interrupted-root-copy'
+    $before = (Get-FileHash "$case\prefix\install.json").Hash
+    $id = Queue $case
+    $worker = Start-Worker $case (TaskArgs $case $id) 'after-copy-root-entries'
+    $clock.Restart()
+    while (-not (Test-Path "$($worker.control)\ready")) {
+        if ($worker.process.HasExited -or $clock.Elapsed.TotalSeconds -gt 20) {
+            throw ('Root copy interruption boundary not reached. ' + $(if ($worker.process.HasExited) { $worker.stderr.GetAwaiter().GetResult() }))
+        }
+        Start-Sleep -Milliseconds 20
+    }
+    $worker.process.Kill(); $worker.process.WaitForExit()
+    $null = Finish (Start-Worker $case (Args $case ("-Command Watch -OperationId $id")))
+    Assert ((Get-FileHash "$case\prefix\install.json").Hash -ceq $before) 'Interrupted root copy changed the committed selector.'
+    Assert (Test-CaelestiaVersionPayload "$case\prefix" 'v2') 'Interrupted root copy damaged the committed payload.'
+    Assert ((Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).phase -ceq 'failed') 'Watchdog did not settle interrupted root copy.'
     # A watchdog that wins before a queued worker fences its later start.
     $case = Prepare-Case 'watchdog'
     $id = Queue $case; $arguments = TaskArgs $case $id

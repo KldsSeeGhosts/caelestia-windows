@@ -68,7 +68,7 @@ try {
     }
     $env:NEXUS_TEST_KEY_MATERIAL = $material | ConvertTo-Json -Depth 20 -Compress
     $env:PYTHONDONTWRITEBYTECODE = '1'
-    & $Python -I -B "$PSScriptRoot\..\tests\nexus_pipeline\test_nexus_pipeline.py" -v
+    & $Python -I -B -m unittest discover -s "$PSScriptRoot\..\tests\nexus_pipeline" -v
     if ($LASTEXITCODE -ne 0) { throw 'Nexus publication/candidate behavioral controls failed.' }
 } finally {
     $env:NEXUS_TEST_KEY_MATERIAL = $null

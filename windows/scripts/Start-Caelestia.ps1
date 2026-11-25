@@ -15,6 +15,9 @@ param(
     # Activation only consumes a runtime the installer prepared before the
     # handoff; it must never run pip inside the readiness budget.
     [switch]$PreparedSchemeRuntime,
+    # Transactional launches pass a unique atomic record path. The launcher
+    # writes it only after IPC readiness succeeds, before it exits with code 0.
+    [string]$ReadinessRecordPath = '',
     [switch]$Wait
 )
 
@@ -65,6 +68,14 @@ if (-not $Prefix) {
 }
 $Prefix = Resolve-CaelestiaDirectory $Prefix
 $record = Read-CaelestiaInstall $Prefix
+if ($ReadinessRecordPath) {
+    $launchId = [IO.Path]::GetFileNameWithoutExtension($ReadinessRecordPath)
+    $expectedRecord = Get-CaelestiaReadinessRecordPath $Prefix $launchId
+    if ($Command -ne 'Start' -or $Smoke -or $launchId -cnotmatch '^Caelestia-Start-[a-f0-9]{32}$' -or
+        -not [string]::Equals($ReadinessRecordPath, $expectedRecord, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The readiness record must be in this installation profile and identify a scheduled Start.'
+    }
+}
 # A version dir's own install.json has version=1 (the payload record) and
 # installRoot pointing at the stable prefix. When Invoke-CaelestiaPayloadCommand
 # calls this script in a version dir it is the payload, not the router: the
@@ -111,6 +122,8 @@ if ($record.version -eq 2 -and -not $isPayload) {
         # The stable root already consumed this switch; the runtime prefix must
         # not compute a different, hashed Run name.
         if ($key -eq 'DisableAutostart') { continue }
+        if ($key -eq 'ReadinessRecordPath' -and
+            -not (Test-CaelestiaLauncherSupportsReadiness (Join-Path $runtime 'Start-Caelestia.ps1'))) { continue }
         $arguments[$key] = $PSBoundParameters[$key]
     }
     # Invoke-CaelestiaPayloadCommand always rebinds Prefix to the resolved
@@ -437,7 +450,10 @@ if ($Smoke) {
     # Preserve the pre-takeover launcher contract: strict IPC readiness failure
     # reports an error but does not stop the live shell. Activation/rollback
     # callers own their separate cleanup policy.
-    Wait-CaelestiaReady $Prefix
+    $readyState = Wait-CaelestiaReady $Prefix -PassThru
+    if ($ReadinessRecordPath) {
+        Write-CaelestiaReadinessRecord $ReadinessRecordPath ([string]$readyState.lifecycle.generation) $process.Id 0 $true
+    }
     Write-Output "Started supervised Caelestia. Profile: $profile; status: $($supervised.StatusPath)"
 }
 if (-not $Smoke -and -not $Wait) { return }

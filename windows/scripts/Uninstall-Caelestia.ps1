@@ -74,6 +74,30 @@ foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Mainten
     Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
     $cancelledOperations += $taskOperation
 }
+# One-shot Caelestia-Start-* tasks are normally unregistered by the launcher
+# finally block. A power loss or killed installer can orphan one; if it later
+# fires after the prefix tombstone move, it can execute a script path the user
+# no longer controls. Sweep only tasks whose single action exactly names this
+# prefix's launcher and -Prefix argument; similarly named foreign tasks stay.
+$taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+    (Join-Path $Prefix 'Start-Caelestia.ps1') + '" -Prefix "' + $Prefix + '"'
+foreach ($task in @(Get-ScheduledTask -TaskPath '\' -TaskName 'Caelestia-Start-*' -ErrorAction SilentlyContinue)) {
+    if ($task.TaskName -cnotmatch '^Caelestia-Start-[a-f0-9]{32}$') { continue }
+    $taskUser = [string]$task.Principal.UserId
+    if ($taskUser -notin @($taskIdentity.Name, $taskIdentity.User.Value)) {
+        try { $taskSid = [Security.Principal.NTAccount]::new($taskUser).Translate([Security.Principal.SecurityIdentifier]).Value }
+        catch { continue }
+        if ($taskSid -ne $taskIdentity.User.Value) { continue }
+    }
+    $actions = @($task.Actions)
+    if ($actions.Count -ne 1 -or [IO.Path]::GetFileName([string]$actions[0].Execute) -notin @('powershell.exe', 'pwsh.exe')) { continue }
+    $arguments = [string]$actions[0].Arguments
+    if ($arguments -ne $launchArguments -and
+        -not $arguments.StartsWith($launchArguments + ' ', [StringComparison]::OrdinalIgnoreCase)) { continue }
+    Stop-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskPath '\' -TaskName $task.TaskName -Confirm:$false -ErrorAction Stop
+}
 $operationFile = Join-Path $profile 'state\update-operation.json'
 if (Test-Path -LiteralPath $operationFile -PathType Leaf) {
     $null = Resolve-CaelestiaDirectory ([IO.Path]::GetDirectoryName($operationFile))

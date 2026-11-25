@@ -13,6 +13,11 @@ function Complete-CaelestiaInstallIntegration {
 $script:nexusRealCheck = (Get-Command Invoke-CaelestiaUpdateCheck).ScriptBlock
 $script:nexusRealSave = (Get-Command Save-CaelestiaUpdateBundle).ScriptBlock
 $script:nexusRealWriteJson = (Get-Command Write-CaelestiaJsonAtomic).ScriptBlock
+$script:nexusRealCopyRootEntries = (Get-Command Copy-CaelestiaRootEntries).ScriptBlock
+function Copy-CaelestiaRootEntries([string]$Prefix, [string]$Runtime) {
+    & $script:nexusRealCopyRootEntries $Prefix $Runtime
+    Invoke-FixtureBoundary 'after-copy-root-entries'
+}
 function Write-CaelestiaJsonAtomic([string]$Path, $Value) {
     & $script:nexusRealWriteJson $Path $Value
     if ((Split-Path -Leaf $Path) -eq 'update-operation.json') {

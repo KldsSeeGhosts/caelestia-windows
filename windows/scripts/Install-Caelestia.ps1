@@ -32,6 +32,7 @@ param(
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 if ($SourceRoot) { $repoRoot = (Resolve-Path -LiteralPath $SourceRoot).Path }
 . (Join-Path $repoRoot 'windows\capture\Source.ps1')
+Assert-CaelestiaInstallerNotElevated
 if ($NoIntegration -and ($Restart -or $Autostart -or $DesktopShortcut -or
     (Test-CaelestiaSamePath $Prefix (Join-Path $env:LOCALAPPDATA 'Programs\caelestia-windows')))) {
     throw '-NoIntegration requires a separate prefix and cannot launch or register autostart or a desktop shortcut.'

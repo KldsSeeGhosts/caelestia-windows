@@ -131,12 +131,44 @@ function Confirm-ReleaseVCRuntimeInstall([switch]$Unattended) {
     return $answer -match '^(?i:y|yes)$'
 }
 
+function New-ReleasePrivateStagingDirectory([string]$Kind) {
+    $candidate = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-' + $Kind + '-' + [guid]::NewGuid().ToString('N'))
+    # Even a short-lived download is a privileged-installer input. Deny
+    # inheritance at directory creation, leaving only this user and SYSTEM.
+    $acl = [Security.AccessControl.DirectorySecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    foreach ($sid in @(
+        [Security.Principal.WindowsIdentity]::GetCurrent().User,
+        [Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $sid, [Security.AccessControl.FileSystemRights]::FullControl,
+            $inheritance, [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow)
+        [void]$acl.AddAccessRule($rule)
+    }
+    $directory = if ($PSVersionTable.PSEdition -eq 'Desktop') {
+        [IO.Directory]::CreateDirectory($candidate, $acl)
+    } else {
+        [IO.FileSystemAclExtensions]::CreateDirectory($acl, $candidate)
+    }
+    return $directory.FullName
+}
+
+# Keep the exact verified bytes open with no write sharing until the elevated
+# installer process has finished reading them. This closes the replace-after-
+# signature race without trusting the temporary path or ACL alone.
+function Open-ReleaseVerifiedInstaller([string]$Path) {
+    return [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+}
+
 function Install-ReleaseVCRuntime($Prerequisite, [switch]$Consent, [switch]$Unattended) {
     $refusal = ('Microsoft Visual C++ x64 Redistributable 14.44.35211.0 or newer is required. ' +
         'Install or repair it using Microsoft''s official download, then rerun Install.cmd: ' +
         'https://aka.ms/vc14/vc_redist.x64.exe . The runtime installer may require administrator approval. ' +
         'Caelestia has not changed your installation.')
     $temporary = $null
+    $verifiedStream = $null
     try {
         if ($Prerequisite.downloadUrl -cne 'https://aka.ms/vc14/vc_redist.x64.exe') {
             throw 'Unsupported runtime download URL.'
@@ -146,11 +178,10 @@ function Install-ReleaseVCRuntime($Prerequisite, [switch]$Consent, [switch]$Unat
                 throw 'Runtime installation declined or non-interactive. Use -InstallPrerequisites to consent without prompting.'
             }
         }
-        $candidate = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-vcredist-' + [guid]::NewGuid().ToString('N'))
-        $directory = New-Item -ItemType Directory -Path $candidate
-        $temporary = $directory.FullName
+        $temporary = New-ReleasePrivateStagingDirectory 'vcredist'
         $download = Join-Path $temporary 'vc_redist.x64.exe'
         Invoke-WebRequest -Uri $Prerequisite.downloadUrl -OutFile $download -UseBasicParsing
+        $verifiedStream = Open-ReleaseVerifiedInstaller $download
         Assert-ReleaseVCRuntimeSignature $download
         $process = Start-Process -FilePath $download -ArgumentList '/install', '/quiet', '/norestart' `
             -Verb RunAs -Wait -PassThru
@@ -163,6 +194,7 @@ function Install-ReleaseVCRuntime($Prerequisite, [switch]$Consent, [switch]$Unat
     } catch {
         throw ($refusal + ' ' + $_.Exception.Message)
     } finally {
+        if ($verifiedStream) { $verifiedStream.Dispose() }
         if ($temporary -and (Test-Path -LiteralPath $temporary)) {
             Remove-Item -LiteralPath $temporary -Recurse -Force
         }
@@ -468,6 +500,7 @@ function Install-ReleasePowerShell7($Prerequisite, [switch]$Consent, [switch]$Un
         '), `winget install --id Microsoft.PowerShell --source winget`, or the Microsoft Store, then rerun Install.cmd. ' +
         'Caelestia has not changed your installation.')
     $temporary = $null
+    $verifiedStream = $null
     try {
         if ($Prerequisite.downloadUrl -isnot [string] -or
             $Prerequisite.downloadUrl -cnotmatch '\Ahttps://github\.com/PowerShell/PowerShell/releases/download/v7\.[0-9]+\.[0-9]+/PowerShell-7\.[0-9]+\.[0-9]+-win-x64\.msi\z') {
@@ -478,11 +511,10 @@ function Install-ReleasePowerShell7($Prerequisite, [switch]$Consent, [switch]$Un
                 throw 'PowerShell 7 installation declined or non-interactive. Use -InstallPrerequisites to consent without prompting.'
             }
         }
-        $candidate = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-pwsh-' + [guid]::NewGuid().ToString('N'))
-        $directory = New-Item -ItemType Directory -Path $candidate
-        $temporary = $directory.FullName
+        $temporary = New-ReleasePrivateStagingDirectory 'pwsh'
         $download = Join-Path $temporary 'PowerShell-win-x64.msi'
         Invoke-WebRequest -Uri $Prerequisite.downloadUrl -OutFile $download -UseBasicParsing
+        $verifiedStream = Open-ReleaseVerifiedInstaller $download
         # Same Authenticode gate as the Visual C++ redistributable: a Microsoft
         # signature and a trusted Microsoft root, not only a readable file.
         $signature = Get-AuthenticodeSignature -LiteralPath $download
@@ -492,7 +524,7 @@ function Install-ReleasePowerShell7($Prerequisite, [switch]$Consent, [switch]$Un
             throw 'PowerShell download must have a valid Microsoft Corporation signature and trusted Microsoft root chain.'
         }
         $msiArgs = if ($Unattended) { '/qn' } else { '/passive' }
-        $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList '/i', ('"' + $download + '"'), $msiArgs, '/norestart' `
+        $process = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\msiexec.exe') -ArgumentList '/i', ('"' + $download + '"'), $msiArgs, '/norestart' `
             -Verb RunAs -Wait -PassThru
         $exitCode = $process.ExitCode
         if ($exitCode -notin @(0, 3010)) { throw "PowerShell installer exited with code $exitCode." }
@@ -503,6 +535,7 @@ function Install-ReleasePowerShell7($Prerequisite, [switch]$Consent, [switch]$Un
     } catch {
         throw ($refusal + ' ' + $_.Exception.Message)
     } finally {
+        if ($verifiedStream) { $verifiedStream.Dispose() }
         if ($temporary -and (Test-Path -LiteralPath $temporary)) {
             Remove-Item -LiteralPath $temporary -Recurse -Force
         }
@@ -728,6 +761,12 @@ if ((Get-FileHash -LiteralPath (Join-Path $BundleRoot 'release.json') -Algorithm
     throw 'Release manifest changed during verification.'
 }
 if ($VerifyOnly) { $release; return }
+# The bundle is fully verified at this point, so its shared installer library
+# is trusted. Elevation is refused before prerequisite downloads or any per-user
+# state is touched; VerifyOnly remains a data-only diagnostic on elevated hosts.
+$payloadSource = Join-Path $BundleRoot 'payload'
+. (Join-Path $payloadSource 'Caelestia-InstallCommon.ps1')
+Assert-CaelestiaInstallerNotElevated
 if ([Environment]::OSVersion.Version.Build -lt 22000) {
     throw 'Installation requires Windows 11 x64. VerifyOnly is data-only and is not installation acceptance.'
 }
@@ -746,9 +785,7 @@ if ($null -ne $powerShell7Minimum) {
     # manifest floor is honored everywhere instead of a hardcoded 7.4.0.
     $env:CAELESTIA_MIN_POWERSHELL_VERSION = $powerShell7Minimum.ToString()
 }
-$payloadSource = Join-Path $BundleRoot 'payload'
-# Supplied maintenance code is loaded only after every file passed verification.
-. (Join-Path $payloadSource 'Caelestia-InstallCommon.ps1')
+# Supplied maintenance code was loaded immediately after verification above.
 $Prefix = Assert-ReleaseDirectory (Resolve-CaelestiaDirectory $Prefix)
 if (-not $ProfileRoot) {
     $ProfileRoot = if (Test-Path -LiteralPath (Join-Path $Prefix 'install.json')) {

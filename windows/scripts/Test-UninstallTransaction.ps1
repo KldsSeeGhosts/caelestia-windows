@@ -420,13 +420,18 @@ function Test-PrerequisiteInstallation {
     function Read-Host { throw 'Unattended prerequisite handling must not prompt.' }
     Assert (-not (Confirm-ReleaseVCRuntimeInstall -Unattended)) 'Unattended consent was implicit.'
     $source = Replace-Exactly $source 'if ([Environment]::OSVersion.Version.Build -lt 22000) {' 'if ($false) {'
-    $source = Replace-Exactly $source ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')" "throw 'fixture-prerequisite-passed'"
+    # Prerequisites now run after the verified payload import and elevation
+    # gate. Remove both for this in-memory prerequisite slice, then stop at the
+    # first real installation mutation after prerequisite handling.
+    $source = Replace-Exactly $source ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')" ''
+    $source = Replace-Exactly $source 'Assert-CaelestiaInstallerNotElevated' "`$null = 'fixture elevation gate'"
+    $source = Replace-Exactly $source '# Supplied maintenance code was loaded immediately after verification above.' "throw 'fixture-prerequisite-passed'"
     $injection = @'
 function Test-ReleaseVCRuntime([version]$MinimumVersion) {
     Assert ($MinimumVersion -eq [version]'14.44.35211.0') 'Detection ignored manifest minimum.'
-    $state.probes++
-    if (($state.probes -eq 1 -and -not $state.present) -or $state.stillMissing) {
-        if ($state.missing) { return Test-ReleaseVCRuntimeVersions 0 '' @() $MinimumVersion }
+    $global:CaelestiaPrereqFixtureState.probes++
+    if (($global:CaelestiaPrereqFixtureState.probes -eq 1 -and -not $global:CaelestiaPrereqFixtureState.present) -or $global:CaelestiaPrereqFixtureState.stillMissing) {
+        if ($global:CaelestiaPrereqFixtureState.missing) { return Test-ReleaseVCRuntimeVersions 0 '' @() $MinimumVersion }
         $v = [version]'14.0.0.0'
         return Test-ReleaseVCRuntimeVersions 1 'v14.0.0.0' @($v, $v, $v) $MinimumVersion
     }
@@ -434,30 +439,38 @@ function Test-ReleaseVCRuntime([version]$MinimumVersion) {
     return Test-ReleaseVCRuntimeVersions 1 'v14.44.35211.0' @($v, $v, $v) $MinimumVersion
 }
 function Confirm-ReleaseVCRuntimeInstall([switch]$Unattended) {
-    $state.prompts++
-    return $state.consent -and -not $Unattended
+    $global:CaelestiaPrereqFixtureState.prompts++
+    return $global:CaelestiaPrereqFixtureState.consent -and -not $Unattended
 }
 function Invoke-WebRequest($Uri, $OutFile, [switch]$UseBasicParsing) {
     Assert ($Uri -ceq 'https://aka.ms/vc14/vc_redist.x64.exe') 'Unexpected download URL.'
     Assert $UseBasicParsing 'Download must support Windows PowerShell.'
     Assert (-not (Test-Path -LiteralPath $OutFile)) 'Download must use a fresh file.'
-    $state.download = $OutFile
+    $acl = Get-Acl -LiteralPath (Split-Path -Parent $OutFile)
+    $expected = @([Security.Principal.WindowsIdentity]::GetCurrent().User.Value, 'S-1-5-18')
+    $owners = @($acl.Access | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value })
+    Assert ($acl.AreAccessRulesProtected -and $owners.Count -eq 2 -and -not (Compare-Object $expected $owners)) 'Download staging is not restricted to this user and SYSTEM.'
+    $global:CaelestiaPrereqFixtureState.download = $OutFile
     [IO.File]::WriteAllText($OutFile, 'inert fixture, never execute')
-    if ($state.networkFailure) { throw 'fixture network failure' }
+    if ($global:CaelestiaPrereqFixtureState.networkFailure) { throw 'fixture network failure' }
 }
 function Get-AuthenticodeSignature($LiteralPath) {
-    Assert ($LiteralPath -eq $state.download) 'Signature checked a different file.'
-    $state.signatures++
-    return [pscustomobject]@{ Status = $state.signature; SignerCertificate = [pscustomobject]@{ Subject = $state.subject } }
+    Assert ($LiteralPath -eq $global:CaelestiaPrereqFixtureState.download) 'Signature checked a different file.'
+    $locked = $false
+    try { [IO.File]::Open($LiteralPath, 'Open', 'ReadWrite', 'ReadWrite').Dispose() }
+    catch [IO.IOException] { $locked = $true }
+    Assert $locked 'Signature verification ran before the no-write-share lock was acquired.'
+    $global:CaelestiaPrereqFixtureState.signatures++
+    return [pscustomobject]@{ Status = $global:CaelestiaPrereqFixtureState.signature; SignerCertificate = [pscustomobject]@{ Subject = $global:CaelestiaPrereqFixtureState.subject } }
 }
-function Test-ReleaseMicrosoftChain($Certificate) { return $state.chain }
+function Test-ReleaseMicrosoftChain($Certificate) { return $global:CaelestiaPrereqFixtureState.chain }
 function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$PassThru) {
-    Assert ($FilePath -eq $state.download -and $state.signatures -eq 1) 'Launch preceded signature verification.'
+    Assert ($FilePath -eq $global:CaelestiaPrereqFixtureState.download -and $global:CaelestiaPrereqFixtureState.signatures -eq 1) 'Launch preceded signature verification.'
     Assert (($ArgumentList -join ' ') -ceq '/install /quiet /norestart') 'Unexpected runtime arguments.'
     Assert ($Verb -ceq 'RunAs' -and $Wait -and $PassThru) 'Runtime launch must elevate once and wait.'
-    $state.launches++
-    if ($state.uacFailure) { throw 'fixture UAC cancelled' }
-    return [pscustomobject]@{ ExitCode = $state.exitCode }
+    $global:CaelestiaPrereqFixtureState.launches++
+    if ($global:CaelestiaPrereqFixtureState.uacFailure) { throw 'fixture UAC cancelled' }
+    return [pscustomobject]@{ ExitCode = $global:CaelestiaPrereqFixtureState.exitCode }
 }
 '@
     $gate = 'if (-not (Test-ReleaseVCRuntime ([version]$release.prerequisites.visualCppRuntime.minimumVersion))) {'
@@ -467,22 +480,23 @@ function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$
         'network-failure', 'uac-cancelled', 'failure-exit', 'still-missing', 'success', 'reboot', 'newer', 'prompt-consent', 'already-present')) {
         $case = New-Case "prerequisite-$scenario"
         $before = Snapshot $case
-        $state = @{
+        $scenarioExitCode = 0
+        if ($scenario -eq 'failure-exit') { $scenarioExitCode = 1603 }
+        elseif ($scenario -eq 'reboot') { $scenarioExitCode = 3010 }
+        elseif ($scenario -eq 'newer') { $scenarioExitCode = 1638 }
+        # Build the complete inputs in one object. The in-memory bootstrap runs
+        # as a child scriptblock, especially inside parallel lane runspaces, so
+        # post-hoc mutation of an object initialized before scenario selection
+        # is not the contract being tested here.
+        $global:CaelestiaPrereqFixtureState = @{
             probes = 0; prompts = 0; consent = $scenario -ne 'declined'; download = ''
-            signature = 'Valid'; subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US'
-            chain = $true; signatures = 0; launches = 0; exitCode = 0
+            signature = $(if ($scenario -eq 'bad-signature') { 'HashMismatch' } else { 'Valid' })
+            subject = $(if ($scenario -eq 'wrong-signer') { 'CN=Microsoft Corporation, O=Not Microsoft Corporation, C=US' } else { 'CN=Microsoft Corporation, O=Microsoft Corporation, C=US' })
+            chain = ($scenario -ne 'wrong-root'); signatures = 0; launches = 0; exitCode = $scenarioExitCode
             networkFailure = $scenario -eq 'network-failure'; uacFailure = $scenario -eq 'uac-cancelled'
             stillMissing = $scenario -eq 'still-missing'
             missing = $scenario -in @('declined', 'network-failure', 'success', 'reboot')
             present = $scenario -eq 'already-present'
-        }
-        switch ($scenario) {
-            'bad-signature' { $state.signature = 'HashMismatch' }
-            'wrong-signer' { $state.subject = 'CN=Microsoft Corporation, O=Not Microsoft Corporation, C=US' }
-            'wrong-root' { $state.chain = $false }
-            'failure-exit' { $state.exitCode = 1603 }
-            'reboot' { $state.exitCode = 3010 }
-            'newer' { $state.exitCode = 1638 }
         }
         $message = ''
         $warnings = @()
@@ -495,25 +509,25 @@ function Start-Process($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$
         $success = $scenario -in @('success', 'reboot', 'newer', 'prompt-consent', 'already-present')
         if ($success) {
             Assert ($message -eq 'fixture-prerequisite-passed') "Prerequisite did not pass: $message"
-            if ($state.present) {
-                Assert ($state.probes -eq 1 -and -not $state.download -and $state.prompts -eq 0) 'Present runtime triggered prerequisite installation.'
+            if ($global:CaelestiaPrereqFixtureState.present) {
+                Assert ($global:CaelestiaPrereqFixtureState.probes -eq 1 -and -not $global:CaelestiaPrereqFixtureState.download -and $global:CaelestiaPrereqFixtureState.prompts -eq 0) 'Present runtime triggered prerequisite installation.'
             } else {
-                Assert ($state.probes -eq 2 -and $state.launches -eq 1) 'Success skipped re-detection or launched twice.'
+                Assert ($global:CaelestiaPrereqFixtureState.probes -eq 2 -and $global:CaelestiaPrereqFixtureState.launches -eq 1) 'Success skipped re-detection or launched twice.'
             }
         } else {
             Assert ($message -match 'Microsoft Visual C\+\+ x64 Redistributable') "Missing refusal: $message"
         }
-        if ($scenario -eq 'failure-exit') { Assert ($message -match '1603') 'Failure omitted exit code.' }
-        if ($scenario -eq 'still-missing') { Assert ($state.probes -eq 2) 'Missing post-install detection.' }
+        if ($scenario -eq 'failure-exit') { Assert ($message -match '1603') "Failure omitted exit code: $message" }
+        if ($scenario -eq 'still-missing') { Assert ($global:CaelestiaPrereqFixtureState.probes -eq 2) 'Missing post-install detection.' }
         if ($scenario -eq 'reboot') { Assert (($warnings -join ' ') -match 'reboot') 'Missing reboot notice.' }
         if ($scenario -in @('declined', 'noninteractive')) {
-            Assert (-not $state.download) 'Declined consent downloaded a file.'
+            Assert (-not $global:CaelestiaPrereqFixtureState.download) 'Declined consent downloaded a file.'
         }
         if ($scenario -in @('bad-signature', 'wrong-signer', 'wrong-root', 'network-failure')) {
-            Assert ($state.launches -eq 0) 'Untrusted or partial download was launched.'
+            Assert ($global:CaelestiaPrereqFixtureState.launches -eq 0) 'Untrusted or partial download was launched.'
         }
-        if ($state.download) {
-            Assert (-not (Test-Path -LiteralPath (Split-Path -Parent $state.download))) 'Runtime temporary directory leaked.'
+        if ($global:CaelestiaPrereqFixtureState.download) {
+            Assert (-not (Test-Path -LiteralPath (Split-Path -Parent $global:CaelestiaPrereqFixtureState.download))) 'Runtime temporary directory leaked.'
         }
         Assert ((Snapshot $case) -ceq $before) 'Prerequisite handling wrote Caelestia-owned files.'
         Assert (-not (Test-Path -LiteralPath (Join-Path $case 'new-prefix')) -and
@@ -660,7 +674,11 @@ try {
     $units = [Collections.Generic.List[object]]::new()
     $script:caseTemplate = Join-Path $runRoot '.template'
     New-CaseTemplate $script:caseTemplate
-    if (-not $StaleReadOnly) { $units.Add(@{ S = { Test-PrerequisiteInstallation }; A = @{} }) }
+    # The in-memory prerequisite bootstrap relies on function redefinition and
+    # global fixture state. Run this fast unit in the invoking runspace rather
+    # than an extracted parallel lane, whose function scoping is intentionally
+    # unlike the production script scope it is simulating.
+    if (-not $StaleReadOnly) { Test-PrerequisiteInstallation }
     if (-not $StaleReadOnly) {
     foreach ($recovery in @('orphan-queued', 'dead-working', 'expired-queued', 'legacy-queued', 'foreign-task')) {
         $units.Add(@{ S = { param($recovery)
@@ -728,6 +746,48 @@ try {
     Finish-Worker $uninstall
     Assert-Uninstalled $case $false
     $script:scenarios += 'malformed-journal-uninstall'
+        }; A = @{} })
+
+        $units.Add(@{ S = {
+    $case = New-Case 'orphaned-launch-task-sweep'
+    $prefix = Join-Path $case 'prefix'
+    $launcher = Join-Path $prefix 'Start-Caelestia.ps1'
+    $ownedName = 'Caelestia-Start-' + ('a' * 32)
+    $foreignName = 'Caelestia-Start-' + ('b' * 32)
+    $otherUserName = 'Caelestia-Start-' + ('c' * 32)
+    $launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "'
+    $ownedTask = [ordered]@{
+        TaskName = $ownedName
+        Principal = @{ UserId = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+        Actions = @([ordered]@{
+            Execute = 'powershell.exe'; WorkingDirectory = $env:USERPROFILE
+            Arguments = $launchArguments + $prefix + '"'
+        })
+    }
+    $ownedPath = Join-Path $case "tasks\$ownedName.json"
+    Write-FixtureText $ownedPath ($ownedTask | ConvertTo-Json -Depth 5)
+    $foreignTask = [ordered]@{
+        TaskName = $foreignName
+        Principal = $ownedTask.Principal
+        Actions = @([ordered]@{
+            Execute = 'powershell.exe'; WorkingDirectory = $env:USERPROFILE
+            Arguments = $launchArguments + (Join-Path $case 'other-prefix') + '"'
+        })
+    }
+    $foreignPath = Join-Path $case "tasks\$foreignName.json"
+    Write-FixtureText $foreignPath ($foreignTask | ConvertTo-Json -Depth 5)
+    $foreignBefore = [IO.File]::ReadAllText($foreignPath)
+    $otherUser = [ordered]@{ TaskName = $otherUserName; Principal = @{ UserId = 'S-1-5-18' }; Actions = $ownedTask.Actions }
+    $otherUserPath = Join-Path $case "tasks\$otherUserName.json"
+    Write-FixtureText $otherUserPath ($otherUser | ConvertTo-Json -Depth 5)
+    $uninstall = Start-Worker $case 'Uninstall'
+    Assert-Result $uninstall 'Success'
+    Finish-Worker $uninstall
+    Assert-Uninstalled $case $false
+    Assert (-not (Test-Path -LiteralPath $ownedPath)) 'Orphaned owned launch task survived uninstall.'
+    Assert ([IO.File]::ReadAllText($foreignPath) -ceq $foreignBefore) 'Uninstall changed a similarly named foreign launch task.'
+    Assert (Test-Path -LiteralPath $otherUserPath) 'Uninstall removed a launch task owned by a different user.'
+    $script:scenarios += 'orphaned-launch-task-sweep'
         }; A = @{} })
 
         $units.Add(@{ S = {
@@ -1219,7 +1279,7 @@ try {
     $laneResult = Invoke-ScenarioLanes $units $LaneCount
     if ($laneResult) {
         $script:assertions += $laneResult.Assertions
-        $script:scenarios = @($laneResult.Scenarios)
+        $script:scenarios += @($laneResult.Scenarios)
         if ($laneResult.Error) {
             $failure = $laneResult.Error.Message
             $failureLine = $laneResult.Error.Line

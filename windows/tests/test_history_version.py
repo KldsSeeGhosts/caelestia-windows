@@ -90,7 +90,7 @@ class HistoryVersionTests(unittest.TestCase):
 
     def test_shallow_history_fails_closed(self):
         shallow = self.root / "shallow"
-        subprocess.run(["git", "clone", "-q", "--depth=1", self.root.as_uri(), str(shallow)],
+        subprocess.run(["git", "-c", "protocol.file.allow=always", "clone", "-q", "--depth=1", self.root.as_uri(), str(shallow)],
                        check=True, capture_output=True)
         with self.assertRaisesRegex(ValueError, "version-history-shallow"):
             v.resolve(shallow)
