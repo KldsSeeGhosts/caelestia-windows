@@ -15,7 +15,7 @@ test("open and runas actions validate with exactly one endpoint", () => {
         assert.equal(result.ok, true);
         assert.deepEqual(JSON.parse(JSON.stringify(result.action)), { verb, target: "wt.exe", args: ["cmd"], workingDir: "C:/" });
     }
-    assert.equal(context.validateShellAction({ verb: "open", aumid: "Example_a1b2c3" }).ok, true);
+    assert.equal(context.validateShellAction({ verb: "open", aumid: "Example_abc123!App" }).ok, true);
     assert.equal(context.validateShellAction({ verb: "open", uri: "ms-settings:" }).ok, true);
 });
 
@@ -57,4 +57,40 @@ test("terminal actions fail closed without a terminal or command", () => {
     assert.equal(context.terminalAction([], { command: ["demo.exe"] }).ok, false);
     assert.equal(context.terminalAction(["wt.exe"], {}).ok, false);
     assert.equal(context.terminalAction(["wt.exe"], { command: [3] }).ok, false);
+});
+
+test("terminal launch refuses raw command text", () => {
+    const result = context.terminalAction(["wt.exe"], {
+        execString: "\"C:/Tools/demo app.exe\" --flag %U",
+        workingDirectory: "C:/Tools"
+    });
+    assert.equal(result.ok, false);
+});
+
+test("endpoint kinds and syntax are validated strictly", () => {
+    assert.equal(context.validateShellAction({ verb: "open", target: "https://example.test" }).ok, false);
+    assert.equal(context.validateShellAction({ verb: "open", aumid: "not-an-aumid" }).ok, false);
+    assert.equal(context.validateShellAction({ verb: "open", uri: "not a uri" }).ok, false);
+    assert.equal(context.validateShellAction({ verb: "open", target: "C:/Program Files/App/app.exe" }).ok, true);
+    assert.equal(context.validateShellAction({ verb: "open", target: "C:\\Program Files\\App\\app.exe" }).ok, true);
+    assert.equal(context.validateShellAction({ verb: "open", target: "app.lnk" }).ok, false);
+    assert.equal(context.validateShellAction({ verb: "open", uri: "https://example.test/%xyz" }).ok, false);
+    assert.equal(context.validateShellAction({ verb: "open", aumid: "apps/family!App" }).ok, false);
+});
+
+test("executable targets and unrestricted protocols are dangerous", () => {
+    assert.equal(context.isDangerousShellAction({ verb: "open", target: "wt.exe" }), true);
+    assert.equal(context.isDangerousShellAction({ verb: "open", uri: "https://example.test" }), true);
+    assert.equal(context.isDangerousShellAction({ verb: "open", uri: "ms-settings:display" }), false);
+    assert.equal(context.isDangerousShellAction({ verb: "open", aumid: "Example_abc123!App" }), true);
+    assert.equal(context.isDangerousShellAction({ verb: "open", uri: "ms-settings:display?x=y" }), true);
+    assert.equal(context.isDangerousShellAction({ verb: "runas", aumid: "Example_abc123!App" }), true);
+});
+
+test("request ids do not confuse boolean acceptance with a pending result", () => {
+    assert.equal(context.launchRequestId(true), "");
+    assert.equal(context.launchRequestId(false), "");
+    assert.equal(context.launchRequestId(0), "");
+    assert.equal(context.launchRequestId(42), "42");
+    assert.equal(context.launchRequestId({requestId: "fixture"}), "fixture");
 });

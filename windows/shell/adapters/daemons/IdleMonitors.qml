@@ -18,7 +18,7 @@ Scope {
     readonly property var entries: GlobalConfig.general.idle.timeouts.values
     readonly property bool inhibited: IdleHold.held === true || RuntimeState.inhibitIdle === true
     readonly property bool hasPlayer: Players.list.some(player => player.isPlaying)
-    readonly property bool isCharging: WindowsBattery.charging
+    readonly property bool onAcPower: WindowsBattery.onBatteryKnown && !WindowsBattery.onBattery
     property var fired: ({})
     property int previousIdleSeconds: 0
 
@@ -27,9 +27,9 @@ Scope {
     function idleSeconds(): int {
         const provider = Native.IdlePower;
         if (!provider || typeof provider.idleSeconds !== "function")
-            return 0;
+            return -1;
         const value = Number(provider.idleSeconds());
-        return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+        return Number.isFinite(value) && value >= 0 ? Math.floor(value) : -1;
     }
 
     function perform(action): bool {
@@ -39,6 +39,8 @@ Scope {
             return SessionManager.exec(["lock"]);
         if (action.kind === "displayOff")
             return WindowsDisplayPower.off();
+        if (action.kind === "displayOn")
+            return true; // Windows turns the panel on for the input that ended idle.
         if (action.kind === "session") {
             if (GlobalConfig.general.idle.lockBeforeSleep)
                 SessionManager.exec(["lock"]);
@@ -48,12 +50,14 @@ Scope {
     }
 
     function poll(): void {
-        if (!root.active || root.inhibited)
+        if (!root.active)
             return;
         const seconds = idleSeconds();
-        const currentCycle = seconds < previousIdleSeconds ? {} : fired;
-        const result = Logic.transitions(entries, currentCycle, seconds, inhibited, hasPlayer, isCharging,
-            GlobalConfig.general.idle.inhibitWhenAudio, GlobalConfig.general.idle.inhibitWhenCharging);
+        if (seconds < 0)
+            return;
+        const result = Logic.transitions(entries, fired, seconds, inhibited, hasPlayer, onAcPower,
+            GlobalConfig.general.idle.inhibitWhenAudio, GlobalConfig.general.idle.inhibitWhenCharging,
+            seconds < previousIdleSeconds);
         previousIdleSeconds = seconds;
         fired = result.fired;
         for (let i = 0; i < result.actions.length; ++i)
@@ -63,7 +67,7 @@ Scope {
     Timer {
         interval: 1000
         repeat: true
-        running: root.active && !root.inhibited
+        running: root.active
         onTriggered: root.poll()
     }
 }

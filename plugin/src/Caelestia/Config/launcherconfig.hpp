@@ -44,6 +44,27 @@ class CAELESTIA_CONFIG_API LauncherAction : public settings::ObjectNode {
     CONFIG_PROPERTY(QString, workingDir, {})
 #endif
     CONFIG_PROPERTY(bool, dangerous, false)
+
+    Q_PROPERTY(bool decodeValid READ decodeValid NOTIFY decodeValidChanged)
+
+public:
+    [[nodiscard]] bool decodeValid() const { return m_decodeValid; }
+
+signals:
+    void decodeValidChanged();
+
+protected:
+    // Launcher shell actions execute as one unit. If any supplied field is
+    // malformed, the action must not run with the bad field silently reset.
+    void onJsonDecoded(bool valid) override {
+        if (m_decodeValid == valid)
+            return;
+        m_decodeValid = valid;
+        emit decodeValidChanged();
+    }
+
+private:
+    bool m_decodeValid = true;
 };
 CONFIG_LIST_TYPE(LauncherAction, LauncherActionList)
 

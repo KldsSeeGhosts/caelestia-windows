@@ -23,6 +23,7 @@ import qs.modules.clipboard
 import qs.modules.launcher.services
 import qs.modules.nexus as Nexus
 import qs.modules.tiling
+import qs.ipc
 
 // Original upstream drawer geometry and motion, with the combined Windows
 // facades, per-monitor AppBar reservation and opt-in Windows controllers.
@@ -183,7 +184,7 @@ ShellRoot {
     }
 
     function ipcDrawerNames(): var {
-        return ["launcher", "dashboard", "session", "sidebar", "utilities", "osd"];
+        return ["launcher", "dashboard", "session", "sidebar", "utilities", "osd", "bar", "quota"];
     }
     function ipcDrawerScreen(): var {
         const cursor = Native.Input.cursorScreenForFocus();
@@ -303,9 +304,10 @@ ShellRoot {
     IpcHandler {
         target: "drawers"
 
-        function toggle(drawer: string): bool {
+        function toggle(drawer: string): void {
             const state = root.ipcDrawerState();
-            return state ? root.ipcSetDrawer(drawer, !state[drawer]) : false;
+            if (state)
+                root.ipcSetDrawer(drawer, !state[drawer]);
         }
         function open(drawer: string): bool { return root.ipcSetDrawer(drawer, true); }
         function close(drawer: string): bool { return root.ipcSetDrawer(drawer, false); }
@@ -359,69 +361,42 @@ ShellRoot {
             if (prop === "identity")
                 return root.ipcPlayerName(active);
             const publicProperties = ["trackTitle", "trackArtist", "trackAlbum", "length", "position",
-                "playbackState", "isPlaying", "canPlay", "canPause", "canGoNext", "canGoPrevious"];
+                "playbackState", "isPlaying", "canPlay", "canPause", "canSeek", "canGoNext", "canGoPrevious"];
             return publicProperties.includes(prop) ? String(active[prop] ?? "Invalid property") : "Invalid property";
         }
-        function play(): bool {
+        function play(): void {
             const active = root.ipcActivePlayer();
-            if (!active || !Players.canPlay(active))
-                return false;
-            active.play();
-            return true;
+            if (active && Players.canPlay(active))
+                active.play();
         }
-        function pause(): bool {
+        function pause(): void {
             const active = root.ipcActivePlayer();
-            if (!active || !Players.canPause(active))
-                return false;
-            active.pause();
-            return true;
+            if (active && Players.canPause(active))
+                active.pause();
         }
-        function playPause(): bool {
+        function playPause(): void {
             const active = root.ipcActivePlayer();
-            if (!active || !Players.canTogglePlaying(active))
-                return false;
-            active.togglePlaying();
-            return true;
+            if (active && Players.canTogglePlaying(active))
+                active.togglePlaying();
         }
-        function next(): bool {
+        function next(): void {
             const active = root.ipcActivePlayer();
-            if (!active || !Players.canGoNext(active))
-                return false;
-            active.next();
-            return true;
+            if (active && Players.canGoNext(active))
+                active.next();
         }
-        function previous(): bool {
+        function previous(): void {
             const active = root.ipcActivePlayer();
-            if (!active || !Players.canGoPrevious(active))
-                return false;
-            active.previous();
-            return true;
+            if (active && Players.canGoPrevious(active))
+                active.previous();
         }
-        function stop(): bool {
+        function stop(): void {
             const active = root.ipcActivePlayer();
-            if (!active || !Players.canStop(active))
-                return false;
-            active.stop();
-            return true;
+            if (active && Players.canStop(active))
+                active.stop();
         }
     }
 
-    IpcHandler {
-        target: "toaster"
-
-        function toast(title: string, body: string, icon: string, kind: string): bool {
-            if (!root.parityEnabled)
-                return false;
-            const types = ({info: Toast.Info, success: Toast.Success, warn: Toast.Warning, error: Toast.Error});
-            const type = Object.hasOwn(types, kind) ? types[kind] : Toast.Info;
-            Toaster.toast(String(title), String(body), String(icon || "info"), type);
-            return true;
-        }
-        function info(title: string, message: string, icon: string): void { toast(title, message, icon, "info"); }
-        function success(title: string, message: string, icon: string): void { toast(title, message, icon, "success"); }
-        function warn(title: string, message: string, icon: string): void { toast(title, message, icon, "warn"); }
-        function error(title: string, message: string, icon: string): void { toast(title, message, icon, "error"); }
-    }
+    ToasterIpc { parityEnabled: root.parityEnabled }
 
     IpcHandler {
         target: "audio"
@@ -435,7 +410,10 @@ ShellRoot {
         function micMute(): bool { return root.parityEnabled && Audio.setSourceMuted(true); }
         function micUnmute(): bool { return root.parityEnabled && Audio.setSourceMuted(false); }
         function toggleMicMute(): bool { return root.parityEnabled && Audio.setSourceMuted(!Audio.sourceMuted); }
-        function cycleOutput(): bool { return root.parityEnabled && Audio.cycleNextAudioOutput(); }
+        function cycleOutput(): void {
+            if (root.parityEnabled)
+                Audio.cycleNextAudioOutput();
+        }
     }
 
     IpcHandler {
@@ -475,8 +453,9 @@ Expected: 0.1, +0.1, 0.1-, 10%, +10%, 10%-`;
     IpcHandler {
         target: "nexus"
 
-        function open(): bool {
-            return root.parityEnabled && !!Nexus.WindowFactory.create(null, {});
+        function open(): void {
+            if (root.parityEnabled)
+                Nexus.WindowFactory.create(null, {});
         }
         function openPage(pageIdx: int): bool {
             if (!root.parityEnabled || pageIdx < 0)

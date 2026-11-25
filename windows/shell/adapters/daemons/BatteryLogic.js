@@ -11,19 +11,31 @@ function sortedLevels(levels) {
 }
 
 function warnings(notified, percentage, levels, criticalLevel) {
-    const next = {};
+    const next = Object.assign({}, notified);
     let warning = null;
     for (const level of levels) {
         const key = String(level.level);
         if (percentage <= level.level && !notified[key] && !warning)
             warning = level;
         // Mark every crossed threshold, but show only the most severe.
-        // Require a two-point recovery before rearming a warning.
-        if (percentage <= level.level || (notified[key] && percentage < level.level + 2))
+        // Discharge readings can fluctuate. Only a confirmed AC transition
+        // clears the latches in the monitor.
+        if (percentage <= level.level)
             next[key] = true;
     }
     const critical = percentage <= criticalLevel && !notified.critical;
-    if (percentage <= criticalLevel || (notified.critical && percentage < criticalLevel + 2))
+    if (percentage <= criticalLevel)
         next.critical = true;
     return {notified: next, warning, critical};
+}
+
+function powerTransition(current, known, onBattery) {
+    if (!known)
+        return {source: current, event: "unknown"};
+    const source = onBattery ? 1 : 0;
+    if (current === source)
+        return {source, event: "unchanged"};
+    if (current === -1)
+        return {source, event: "seed"};
+    return {source, event: source === 1 ? "unplugged" : "plugged"};
 }

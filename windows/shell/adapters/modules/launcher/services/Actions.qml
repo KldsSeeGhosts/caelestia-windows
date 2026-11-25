@@ -12,6 +12,7 @@ import qs.services
 import qs.utils
 import qs.modules.nexus
 import "../../../windows/services/apps/ShellActionSchema.js" as ShellActionSchema
+import "LauncherActionMigration.js" as Migration
 
 Searcher {
     id: root
@@ -23,8 +24,27 @@ Searcher {
     list: variants.instances
     useFuzzy: GlobalConfig.launcher.useFuzzy.actions
 
+    property var pendingShellActions: new Set()
+
+    Connections {
+        target: root.pendingShellActions.size > 0 ? Native.AppActions : null
+        ignoreUnknownSignals: true
+        function onShellActionFinished(requestId, status, error): void {
+            const pending = new Set(root.pendingShellActions);
+            if (!pending.delete(String(requestId)))
+                return;
+            root.pendingShellActions = pending;
+            if (!["success", "succeeded", "started", "launched", "ok", "true"].includes(String(status).toLowerCase()))
+                root.refuseShellAction(error || Tr.tr("Windows refused the configured launcher action."));
+        }
+    }
+
+    function refuseShellAction(message: string): void {
+        Toaster.toast(Tr.tr("Launcher action unavailable"), message, "help_outline", Toast.Warning);
+    }
+
     function isDangerous(action): bool {
-        return action.dangerous || action.verb === "runas"
+        return action.dangerous || ShellActionSchema.isDangerousShellAction(action)
             || ["shutdown", "reboot", "hibernate", "firmware", "logout"].includes(SessionManager.resolveCommand(action.command));
     }
 
@@ -33,7 +53,8 @@ Searcher {
 
         model: {
             const enableDangerous = GlobalConfig.launcher.enableDangerousActions;
-            return GlobalConfig.launcher.actions.values.filter(action => action.enabled
+            return Migration.migrateActions(GlobalConfig.launcher.actions.values).filter(action => action.enabled
+                && action.decodeValid !== false
                 && (enableDangerous || !root.isDangerous(action)));
         }
 
@@ -51,7 +72,7 @@ Searcher {
         readonly property bool hasShellAction: ShellActionSchema.hasShellAction(modelData)
 
         function refuseShellAction(message: string): void {
-            Toaster.toast(Tr.tr("Launcher action unavailable"), message, modelData.icon ?? "help_outline", Toast.Warning);
+            root.refuseShellAction(message);
         }
 
         function runShellAction(list: AppList): void {
@@ -64,21 +85,28 @@ Searcher {
                 refuseShellAction(Tr.tr("This Windows shell backend cannot run configured launcher actions yet."));
                 return;
             }
-            let accepted = false;
+            let result;
             try {
-                accepted = Native.AppActions.launchShellAction(validated.action) === true;
+                result = Native.AppActions.launchShellAction(validated.action);
             } catch (error) {
-                accepted = false;
-            }
-            if (!accepted) {
                 refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
                 return;
             }
-            list.screenState.launcher = false;
+            if (result === true) {
+                list.screenState.launcher = false;
+                return;
+            }
+            const requestId = ShellActionSchema.launchRequestId(result);
+            if (requestId && Native.AppActions.shellActionFinished) {
+                root.pendingShellActions = new Set([...root.pendingShellActions, requestId]);
+                return;
+            }
+            refuseShellAction(Tr.tr("Windows refused the configured launcher action."));
         }
 
         function onClicked(list: AppList): void {
-            if (!enabled || (!GlobalConfig.launcher.enableDangerousActions && root.isDangerous(modelData)))
+            if (!enabled || modelData.decodeValid === false
+                || (!GlobalConfig.launcher.enableDangerousActions && root.isDangerous(modelData)))
                 return;
             if (hasShellAction) {
                 runShellAction(list);
@@ -89,7 +117,7 @@ Searcher {
 
             if (command[0] === "autocomplete" && command.length > 1) {
                 list.search.text = `${GlobalConfig.launcher.actionPrefix}${command[1]} `;
-            } else if (command[0] === "settings") {
+            } else if (command[0] === "settings" && command.length === 1) {
                 WindowFactory.create();
                 // Transfer foreground before closing the launcher can return
                 // it to the previously focused application.
@@ -107,8 +135,15 @@ Searcher {
                 list.screenState.launcher = false;
                 Colours.setMode(command[1]);
             } else {
-                list.screenState.launcher = false;
-                SessionManager.exec(command);
+                if (!SessionManager.resolveCommand(command)) {
+                    refuseShellAction(Tr.tr("This launcher command is not supported by the Windows shell."));
+                    return;
+                }
+                const result = SessionManager.request(command);
+                if (result.dispatched)
+                    list.screenState.launcher = false;
+                else
+                    refuseShellAction(result.reason);
             }
         }
     }

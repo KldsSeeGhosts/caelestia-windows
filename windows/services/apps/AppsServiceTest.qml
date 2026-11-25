@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
 import "AppStoragePath.js" as StoragePath
 
 // Standalone fixture for the Windows app catalog/search state object.
@@ -28,10 +29,10 @@ QtObject {
         property bool runInTerminal: false
         property var command: []
         property string workingDirectory: ""
-        property bool executeResult: true
+        property var executeResult: true
         property int executions: 0
 
-        function execute(): bool {
+        function execute(): var {
             executions++;
             return executeResult;
         }
@@ -42,6 +43,8 @@ QtObject {
     }
 
     component FakeCatalog: QtObject {
+        signal launchFinished(string requestId, string status, string error)
+
         property var applications: null
         property bool scanCompleted: false
         property string scanError: ""
@@ -59,12 +62,19 @@ QtObject {
             return lookupResults[appId] ?? null;
         }
 
-        function execute(entry): bool {
+        function execute(entry): var {
             if (!entry || typeof entry.execute !== "function")
-                return false;
+                return { state: "refused", requestId: "", error: "Unknown application entry." };
             executions++;
             lastExecutedId = entry.id;
-            return entry.execute() === true;
+            const result = entry.execute();
+            if (result === true)
+                return { state: "confirmed", requestId: "", error: "" };
+            if (result === false)
+                return { state: "refused", requestId: "", error: "fixture refusal" };
+            if (typeof result === "string" && result.length > 0)
+                return { state: "pending", requestId: result, error: "" };
+            return { state: "unconfirmed", requestId: "", error: "" };
         }
     }
 
@@ -134,7 +144,7 @@ QtObject {
     // Quickshell.DesktopEntries singleton. A QML reload builds a replacement
     // catalog while the backend model still holds the previous scan's apps.
     readonly property Component nativeCatalogComponent: Component {
-        NativeAppCatalog {}
+        NativeAppCatalog { launchResults: Native.AppActions }
     }
     readonly property Component nativeServiceComponent: Component {
         AppsService {
@@ -160,7 +170,7 @@ QtObject {
     property int assertions: 0
     property var terminalCalls: []
     property int terminalLauncherCalls: 0
-    property bool terminalLaunchResult: true
+    property var terminalLaunchResult: true
     property string terminalLaunchFailure: ""
 
     function fakeTerminalLauncher(entry, terminal): bool {
@@ -171,6 +181,8 @@ QtObject {
             terminal: terminal
         });
         service.terminalLauncherError = terminalLaunchResult ? "" : terminalLaunchFailure;
+        if (typeof terminalLaunchResult === "string" && terminalLaunchResult.length > 0)
+            return { state: "pending", requestId: terminalLaunchResult, error: "" };
         return terminalLaunchResult;
     }
 
@@ -597,6 +609,37 @@ QtObject {
             "failed catalog launch does not record frequency");
         calculator.executeResult = true;
 
+        // A void pinned-backend dispatch is accepted as unconfirmed work, but
+        // it never increments frequency without an explicit outcome.
+        calculator.executeResult = undefined;
+        const beforeUnconfirmed = store.increments;
+        check(service.launch(calculator) === true, "a void backend dispatch is unconfirmed rather than refused");
+        check(service.lastLaunchState === "unconfirmed", "the launcher can distinguish dispatch from confirmation");
+        check(store.increments === beforeUnconfirmed, "a void backend dispatch does not record frequency");
+
+        calculator.executeResult = "req-calculator";
+        check(service.launch(calculator) === true, "an asynchronous backend dispatch is accepted as pending");
+        check(service.lastLaunchState === "pending", "the launcher can distinguish pending from confirmation");
+        check(store.increments === beforeUnconfirmed, "a pending dispatch does not record frequency early");
+        catalog.launchFinished("req-calculator", "succeeded", "");
+        check(store.frequencyFor("calc") === 1 && store.increments === beforeUnconfirmed + 1,
+            "a successful asynchronous completion records frequency once");
+        calculator.executeResult = "req-calculator-failure";
+        check(service.launch(calculator) === true, "a second asynchronous dispatch is accepted as pending");
+        catalog.launchFinished("req-calculator-failure", "failed", "fixture launch failure");
+        check(store.frequencyFor("calc") === 1 && store.increments === beforeUnconfirmed + 1,
+            "a failed asynchronous completion does not record frequency");
+        check(service.lastLaunchError === "fixture launch failure", "asynchronous failure is surfaced");
+        service.lastLaunchError = "";
+        calculator.executeResult = true;
+
+        terminalLaunchResult = "req-terminal";
+        check(service.launch(terminal) === true, "a terminal launch can be pending");
+        check(store.frequencyFor("terminal") === 1, "a pending terminal launch does not record frequency early");
+        catalog.launchFinished("req-terminal", "succeeded", "");
+        check(store.frequencyFor("terminal") === 2, "terminal asynchronous completion records frequency");
+        terminalLaunchResult = true;
+
         check(service.launch(null) === false && service.launch("firefox") === false,
             "invalid entries are refused");
         check(service.lastLaunchError.length > 0, "invalid launch has a reason");
@@ -604,7 +647,7 @@ QtObject {
         // A stale entry removed by a rescan is refused.
         model.values = [files];
         check(service.canLaunch(firefox) === false, "removed entry is no longer launchable");
-        check(service.launch(firefox) === false && catalog.executions === 3,
+        check(service.launch(firefox) === false && catalog.executions === 6,
             "removed entry launch is refused without executing");
 
         // --- Running-application middle-click launch -------------------------
@@ -617,10 +660,10 @@ QtObject {
             "an app id matched by the catalog starts a new instance");
         check(catalog.lookups === 1 && catalog.lastLookupId === "running-firefox",
             "the running app id goes through the catalog's own lookup");
-        check(catalog.executions === 4 && firefox.executions === 3,
+        check(catalog.executions === 7 && firefox.executions === 3,
             "middle-click dispatches exactly one catalog execute");
         check(service.launchRequests === middleRequests + 1
-            && service.launchesIssued === 4, "middle-click is one launch request");
+            && service.launchesIssued === 8, "middle-click is one launch request");
         check(service.lastLaunchId === "firefox", "the matched entry is the launch target");
 
         // An unmatched app is inert and never reaches launch().
@@ -632,13 +675,13 @@ QtObject {
         check(catalog.lookups === missLookups + 1, "the catalog was consulted");
         check(service.launchRequests === missRequests,
             "an unmatched app never makes a launch request");
-        check(catalog.executions === 4, "an unmatched app executes nothing");
+        check(catalog.executions === 7, "an unmatched app executes nothing");
 
         // A matched entry that the launch policy refuses stays inert.
         catalog.lookupResults = {"running-terminal": terminal};
         check(service.launchForAppId("running-terminal") === true,
             "a matched terminal entry launches through the configured terminal");
-        check(terminalLauncherCalls === 3 && terminal.executions === 0 && catalog.executions === 4,
+        check(terminalLauncherCalls === 4 && terminal.executions === 0 && catalog.executions === 7,
             "a terminal match uses the terminal launcher without catalog execute");
 
         // Without the launch opt-in nothing is matched and nothing is called.
@@ -652,7 +695,7 @@ QtObject {
             "a disabled launch does not consult the catalog");
         check(service.launchRequests === disabledRequests,
             "a disabled launch makes no launch request");
-        check(catalog.executions === 4 && firefox.executions === 3,
+        check(catalog.executions === 7 && firefox.executions === 3,
             "a disabled middle-click executes nothing");
         service.launchEnabled = true;
         catalog.lookupResults = {};
@@ -673,7 +716,7 @@ QtObject {
         checkNativeCatalogSnapshot();
 
         // Final native/no-op invariant across the whole fixture.
-        check(catalog.executions === 4, "the permitted launches and the failed attempt reached the catalog");
+        check(catalog.executions === 7, "the permitted launches and the failed attempt reached the catalog");
         check(firefox.executions === 3, "only explicit and middle-click launches reached DesktopEntry.execute");
 
         console.log("CAELESTIA_APPS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
@@ -718,6 +761,23 @@ QtObject {
         check(DesktopEntries.byIdCalls === callsBefore + 4,
             "only non-empty app ids reach DesktopEntries.byId");
         DesktopEntries.aliases = {};
+
+        settings.executeResult = undefined;
+        const voidOutcome = lateCatalog.execute(settings);
+        check(voidOutcome.state === "unconfirmed", "the production catalog keeps void execute unconfirmed");
+        settings.executeResult = false;
+        check(lateCatalog.execute(settings).state === "refused", "the production catalog preserves explicit refusal");
+        settings.executeResult = "req-native";
+        const pendingOutcome = lateCatalog.execute(settings);
+        check(pendingOutcome.state === "pending" && pendingOutcome.requestId === "req-native",
+            "the production catalog preserves asynchronous request correlation");
+        let nativeCompletion = null;
+        lateCatalog.launchFinished.connect((id, status, error) => nativeCompletion = [id, status, error]);
+        Native.AppActions.emitFinished("req-native", "failed", "fixture asynchronous refusal");
+        check(nativeCompletion?.join("|") === "req-native|failed|fixture asynchronous refusal",
+            "the production catalog forwards the backend completion signal");
+        settings.executeResult = true;
+        check(lateCatalog.execute(settings).state === "confirmed", "the production catalog preserves explicit confirmation");
 
         // The same wrapper, created before any scan, still completes from the
         // backend signal: empty first, then populated.

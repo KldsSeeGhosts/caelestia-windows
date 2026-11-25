@@ -14,6 +14,14 @@ const context = vm.createContext({});
 vm.runInContext(functions.join("\n"), context);
 const {levenshteinGreaterThan, shouldAnimateTitleChange} = context;
 
+test("Windows stages the icon strip, not the unused rotated title component", () => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../shell/sources.json"), "utf8"));
+    assert.equal(manifest["modules/bar/components/ActiveWindow.qml"], undefined);
+    assert.equal(manifest["windows/shell/adapters/modules/bar/components/ActiveWindow.qml"],
+        "modules/bar/components/ActiveWindow.qml");
+    assert.equal(manifest["modules/bar/popouts/ActiveWindow.qml"], "modules/bar/popouts/ActiveWindowContent.qml");
+});
+
 test("small title edits stay within the animation suppression threshold", () => {
     assert.equal(levenshteinGreaterThan("Document (1)", "Document (2)", 2), false);
     assert.equal(levenshteinGreaterThan("shell 10%", "shell 11%", 2), false);

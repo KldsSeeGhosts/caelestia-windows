@@ -149,7 +149,7 @@ function Invoke-StagedQml([hashtable]$Mutation) {
                 -and $actual.text.Contains("CAELESTIA_STAGED_MODELS_FAIL Error: $($Mutation.failure)") -and -not $match.Success
         } else {
             $passed = -not $actual.timedOut -and $actual.exitCode -eq 0 -and $diagnostics.Count -eq 0 -and $null -ne $payload `
-                -and $payload.assertions -eq 39 -and $payload.cases.Count -eq $expectedCases.Count `
+                -and $payload.assertions -eq 40 -and $payload.cases.Count -eq $expectedCases.Count `
                 -and @(Compare-Object $expectedCases $payload.cases).Count -eq 0 `
                 -and $actual.text -notmatch 'CAELESTIA_STAGED_MODELS_FAIL'
         }

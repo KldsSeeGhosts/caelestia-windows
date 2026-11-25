@@ -42,37 +42,50 @@ AppsService {
     specialPrefix: GlobalConfig.launcher.specialPrefix
     useFuzzy: GlobalConfig.launcher.useFuzzy.apps
     terminalCommand: GlobalConfig.general.apps.terminal
-    terminalLauncher: root.launchTerminalEntry
+    terminalLauncher: root.terminalBackendSupported ? root.launchTerminalEntry : null
 
-    function launchWithFeedback(entry): bool {
-        const started = launch(entry) === true;
-        if (!started)
-            Toaster.toast(Tr.tr("Could not start app"),
-                lastLaunchError || Tr.tr("Windows could not start the application."),
-                "error", Toast.Error);
-        return started;
+    onAsynchronousLaunchFailed: message => showLaunchFailure(message)
+
+    function showLaunchFailure(message: string): void {
+        Toaster.toast(Tr.tr("Could not start app"),
+            message || Tr.tr("Windows could not start the application."), "error", Toast.Error);
     }
 
-    function launchTerminalEntry(entry, terminal): bool {
+    function launchWithFeedback(entry): bool {
+        if (!launch(entry))
+            showLaunchFailure(lastLaunchError);
+        else if (lastLaunchState === "unconfirmed")
+            Toaster.toast(Tr.tr("Launch requested"), Tr.tr("This Windows backend cannot confirm whether the app started."),
+                "info", Toast.Info);
+        return lastLaunchState === "confirmed";
+    }
+
+    readonly property bool terminalBackendSupported: typeof AppActions.launchShellAction === "function"
+
+    function launchTerminalEntry(entry, terminal): var {
         root.terminalLauncherError = "";
         const validated = ShellActionSchema.terminalAction(terminal, entry);
         if (!validated.ok) {
             root.terminalLauncherError = validated.error;
-            return false;
+            return { state: "refused", requestId: "", error: root.terminalLauncherError };
         }
         if (typeof AppActions.launchShellAction !== "function") {
             root.terminalLauncherError = "This Windows shell backend cannot run terminal applications yet.";
-            return false;
+            return { state: "refused", requestId: "", error: root.terminalLauncherError };
         }
         try {
-            if (AppActions.launchShellAction(validated.action) === true)
-                return true;
+            const result = AppActions.launchShellAction(validated.action);
+            if (result === true)
+                return { state: "confirmed", requestId: "", error: "" };
+            const requestId = ShellActionSchema.launchRequestId(result);
+            if (requestId && AppActions.shellActionFinished)
+                return { state: "pending", requestId, error: "" };
         } catch (error) {
             root.terminalLauncherError = String(error);
-            return false;
+            return { state: "refused", requestId: "", error: root.terminalLauncherError };
         }
         root.terminalLauncherError = "Windows refused the terminal application launch.";
-        return false;
+        return { state: "refused", requestId: "", error: root.terminalLauncherError };
     }
 
     // Observable construction policy for host/smoke assertions.
@@ -82,7 +95,7 @@ AppsService {
     readonly property string stateDir: Quickshell.env("CAELESTIA_STATE_DIR") || ""
 
     readonly property Component _catalogComponent: Component {
-        NativeAppCatalog {}
+        NativeAppCatalog { launchResults: AppActions }
     }
     readonly property Component _storeComponent: Component {
         FileAppFrequencyStore {

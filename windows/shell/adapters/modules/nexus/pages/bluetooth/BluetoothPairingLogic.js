@@ -11,7 +11,7 @@ function isUnnamed(device) {
 }
 
 function compareDevices(a, b) {
-    return ((b && b.pairing ? 1 : 0) - (a && a.pairing ? 1 : 0))
-        || (isUnnamed(a) - isUnnamed(b))
+    return (isUnnamed(a) - isUnnamed(b))
+        || ((b && b.pairing ? 1 : 0) - (a && a.pairing ? 1 : 0))
         || String(a && a.name || "").localeCompare(String(b && b.name || ""));
 }

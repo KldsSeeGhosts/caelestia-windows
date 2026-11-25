@@ -29,6 +29,16 @@ test("pairing devices stay first within the named and unnamed groups", () => {
         { name: "Keyboard", deviceName: "Keyboard" }
     ];
     assert.deepEqual(devices.sort(context.compareDevices).map(device => device.name), [
-        "Headphones", "AA-BB-CC-DD-EE-FF", "Keyboard"
+        "Headphones", "Keyboard", "AA-BB-CC-DD-EE-FF"
+    ]);
+});
+
+test("an unnamed pairing device never sorts before a named non-pairing device", () => {
+    const devices = [
+        { name: "Keyboard", deviceName: "Keyboard" },
+        { name: "AA-BB-CC-DD-EE-FF", deviceName: "AA-BB-CC-DD-EE-FF", pairing: true }
+    ];
+    assert.deepEqual(devices.sort(context.compareDevices).map(device => device.name), [
+        "Keyboard", "AA-BB-CC-DD-EE-FF"
     ]);
 });

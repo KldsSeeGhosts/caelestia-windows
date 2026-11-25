@@ -266,11 +266,48 @@ Singleton {
         }
     }
 
+    function validateScanResponse(data, statusOnly: bool): void {
+        const isRecord = value => !!value && typeof value === "object" && !Array.isArray(value);
+        const isProject = value => isRecord(value) && typeof value.path === "string"
+            && (value.preview === undefined || typeof value.preview === "string");
+        const isProjectMap = value => isRecord(value) && Object.values(value).every(isProject);
+        if (!isRecord(data) || (data.ok !== true && data.ok !== false))
+            throw new Error("Invalid discovery response");
+        if (!data.ok)
+            throw new Error(typeof data.error === "string" && data.error || "Discovery failed");
+        if (typeof data.running !== "boolean")
+            throw new Error("Invalid discovery process state");
+        if (data.discoveryError !== undefined) {
+            if (typeof data.discoveryError !== "string" || !data.discoveryError)
+                throw new Error("Invalid discovery error");
+            return;
+        }
+        if (typeof data.detected !== "boolean" || !isProjectMap(data.monitors)
+            || (data.displays !== undefined && !isProjectMap(data.displays))
+            || (data.configPath !== undefined && typeof data.configPath !== "string")
+            || (!statusOnly && (!Array.isArray(data.items) || !data.items.every(isProject))))
+            throw new Error("Invalid discovery snapshot");
+    }
+
     function finishScan(text: string): void {
         if (!scanInFlight)
             return;
-        // A protocol response proves the worker survived startup. Immediate
-        // exit loops therefore keep increasing backoff instead of resetting it.
+        // Validate the protocol payload before treating the worker as healthy.
+        // Malformed output followed by process exit is a restart loop, so its
+        // backoff must keep increasing instead of resetting to one second.
+        let data = null;
+        try {
+            data = JSON.parse(text);
+            validateScanResponse(data, scan.statusOnly);
+        } catch (error) {
+            scanFailed(String(error));
+            scanPending = false;
+            scanInFlight = false;
+            activeScan = false;
+            scanWatchdog.stop();
+            drainScanQueue();
+            return;
+        }
         scanRestartAttempts = 0;
         scanPending = false;
         scanInFlight = false;
@@ -280,9 +317,6 @@ Singleton {
             console.debug("CAELESTIA_PALETTE_TIMING stage=active_scan_done ts=" + Date.now() + " elapsed_ms=" + (Date.now() - scanStartedAt));
         }
         try {
-            const data = JSON.parse(text);
-            if (!data.ok)
-                throw new Error(data.error || "discovery failed");
             if (data.discoveryError)
                 applyDiscoveryFailure(data);
             else if (scan.statusOnly)
@@ -761,6 +795,7 @@ Singleton {
     }
     Timer {
         id: scanRestartTimer
+        objectName: "wallpaperEngineScanRestart"
         repeat: false
         onTriggered: {
             if (root.scanPending) {
@@ -772,6 +807,7 @@ Singleton {
     }
     Process {
         id: scan
+        objectName: "wallpaperEngineScan"
         property bool statusOnly: false
         command: [root.python, root.helper, "--serve"]
         environment: ({

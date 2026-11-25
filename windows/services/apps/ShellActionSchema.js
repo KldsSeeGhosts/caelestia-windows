@@ -24,6 +24,29 @@ function cleanText(value) {
         && !/[\u0000-\u001f\u007f]/.test(value) ? value : "";
 }
 
+function validExecutableTarget(value) {
+    const text = cleanText(value);
+    if (!text || text !== text.trim() || !/\.(exe|com)$/i.test(text) || /[<>:"|?*]/.test(text.replace(/^[A-Za-z]:/, "")))
+        return "";
+    // Allow executable names, drive-absolute paths and ordinary UNC paths.
+    // Reject relative paths and Windows device/extended namespaces.
+    return /^[\w.-]+$/i.test(text) || /^[A-Za-z]:[\\/][^\\/]/.test(text)
+        || /^(?:\\\\|\/\/)[\w.-]+[\\/][^\\/]+[\\/]/.test(text) ? text : "";
+}
+
+function validAumid(value) {
+    const text = cleanText(value);
+    return /^[A-Za-z0-9._-]+![A-Za-z0-9._-]+$/.test(text) ? text : "";
+}
+
+function uriScheme(value) {
+    const text = cleanText(value);
+    if (!text || /[\s\\<>"{}|^`]/.test(text) || /%(?![0-9a-f]{2})/i.test(text))
+        return "";
+    const match = text.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+    return match && match[1].length > 1 ? match[1].toLowerCase() : "";
+}
+
 function validateShellAction(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
         return { ok: false, error: "The launcher action is not an object." };
@@ -34,7 +57,13 @@ function validateShellAction(value) {
     const endpoints = [];
     for (const key of ["target", "aumid", "uri"]) {
         if (value[key] !== undefined && value[key] !== null && value[key] !== "") {
-            const endpoint = cleanText(value[key]);
+            let endpoint = "";
+            if (key === "target")
+                endpoint = validExecutableTarget(value[key]);
+            else if (key === "aumid")
+                endpoint = validAumid(value[key]);
+            else
+                endpoint = uriScheme(value[key]) ? cleanText(value[key]) : "";
             if (!endpoint)
                 return { ok: false, error: "The launcher action " + key + " is invalid." };
             endpoints.push([key, endpoint]);
@@ -42,6 +71,8 @@ function validateShellAction(value) {
     }
     if (endpoints.length !== 1)
         return { ok: false, error: "The launcher action needs exactly one target, aumid or uri." };
+    if (verb === "runas" && endpoints[0][0] !== "target")
+        return { ok: false, error: "Elevation requires an executable target." };
 
     const action = { verb: verb };
     action[endpoints[0][0]] = endpoints[0][1];
@@ -59,11 +90,34 @@ function validateShellAction(value) {
             return { ok: false, error: "The launcher action working directory is invalid." };
         action.workingDir = workingDir;
     }
+    if (endpoints[0][0] === "uri" && (action.args || action.workingDir))
+        return { ok: false, error: "URI actions cannot specify arguments or a working directory." };
     return { ok: true, action: action, error: "" };
 }
 
+
+function isDangerousShellAction(value) {
+    if (!value || typeof value !== "object")
+        return false;
+    if (!hasShellAction(value))
+        return false;
+    const result = validateShellAction(value);
+    // Only direct Settings page identifiers are allowed without opt-in.
+    return !result.ok || result.action.verb !== "open"
+        || !/^ms-settings:[a-z0-9-]*$/i.test(result.action.uri || "");
+}
+
 function hasShellAction(value) {
-    return !!value && typeof value === "object" && typeof value.verb === "string" && value.verb.length > 0;
+    return !!value && typeof value === "object"
+        && (value.args?.length > 0
+            || [value.verb, value.target, value.aumid, value.uri, value.workingDir].some(field => field !== "" && field != null));
+}
+
+function launchRequestId(result) {
+    const value = result && typeof result === "object" ? result.requestId : result;
+    if (typeof value === "string")
+        return value;
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : "";
 }
 
 function terminalAction(terminal, entry) {
@@ -73,13 +127,9 @@ function terminalAction(terminal, entry) {
     if (!entry || typeof entry !== "object")
         return { ok: false, error: "Unknown terminal application entry." };
 
-    let command = stringList(entry.command, true);
-    if (!command || command.length === 0) {
-        const execString = cleanText(entry.execString);
-        if (!execString)
-            return { ok: false, error: "The terminal application has no command." };
-        command = [execString];
-    }
+    const command = stringList(entry.command, false);
+    if (!command || !validExecutableTarget(command[0]))
+        return { ok: false, error: "The terminal application needs a structured executable and argument list." };
 
     const spec = {
         verb: "open",

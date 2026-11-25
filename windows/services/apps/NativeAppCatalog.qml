@@ -19,6 +19,10 @@ import Quickshell
 QtObject {
     id: root
 
+    signal launchFinished(string requestId, string status, string error)
+    property var launchResults: null
+    readonly property var observedEntries: new WeakSet()
+
     readonly property var applications: DesktopEntries.applications
 
     // DesktopEntryManager and its model outlive QML engines. A replacement
@@ -42,13 +46,45 @@ QtObject {
             ? DesktopEntries.byId(appId) : null;
     }
 
+    // Forward the future backend's asynchronous result when it exists. The
+    // pinned backend has no shellActionFinished signal, so feature detection
+    // leaves unconfirmed dispatches unranked instead of inventing success.
+    function forwardShellActionFinished(requestId, status, error): void {
+        root.launchFinished(String(requestId ?? ""), String(status ?? ""), String(error ?? ""));
+    }
+
+    readonly property Connections nativeResults: Connections {
+        target: root.launchResults
+        ignoreUnknownSignals: true
+        function onShellActionFinished(requestId, status, error): void {
+            root.forwardShellActionFinished(requestId, status, error);
+        }
+    }
+
     // The only native launch call in this slice. Enumeration/search read
-    // `applications` and never reach this function.
-    function execute(entry): bool {
+    // `applications` and never reach this function. A void return is only an
+    // unconfirmed dispatch: it is not success and must not increment rank.
+    function execute(entry): var {
         if (!entry || typeof entry.execute !== "function")
-            return false;
-        // The pinned backend returns void after dispatch; respect a backend
-        // that can report an immediate refusal without guessing OS success.
-        return entry.execute() !== false;
+            return { state: "refused", requestId: "", error: "Unknown application entry." };
+        let result;
+        try {
+            const entryResult = entry.launchFinished;
+            if (entryResult && typeof entryResult.connect === "function" && !observedEntries.has(entry)) {
+                entryResult.connect(root.forwardShellActionFinished);
+                observedEntries.add(entry);
+            }
+            result = entry.execute();
+        } catch (error) {
+            return { state: "refused", requestId: "", error: String(error) };
+        }
+        if (result === true)
+            return { state: "confirmed", requestId: "", error: "" };
+        if (result === false)
+            return { state: "refused", requestId: "", error: "Windows refused the application launch." };
+        const request = result && typeof result === "object" ? result.requestId : result;
+        if ((typeof request === "string" && request.length > 0) || (Number.isSafeInteger(request) && request > 0))
+            return { state: "pending", requestId: String(request), error: "" };
+        return { state: "unconfirmed", requestId: "", error: "" };
     }
 }

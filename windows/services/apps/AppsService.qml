@@ -432,8 +432,8 @@ QtObject {
     function canLaunch(entry): bool {
         if (!launchEnabled || !ready || !entry || typeof entry !== "object")
             return false;
-        if (entry.runInTerminal === true)
-            return terminalLaunchSupported && list.some(wrapper => wrapper.entry === entry);
+        if (entry.runInTerminal === true && !terminalLaunchSupported)
+            return false;
         return list.some(wrapper => wrapper.entry === entry);
     }
 
@@ -454,17 +454,68 @@ QtObject {
     // Middle-click on a running application: start a new instance. A disabled
     // launch opt-in or an unmatched/non-launchable application is inert and
     // never reaches `launch`.
+
+    property var pendingLaunches: ({})
+    property string lastLaunchState: "refused"
+    signal asynchronousLaunchFailed(string message)
+
+    readonly property Connections catalogEvents: Connections {
+        target: root.catalog
+        ignoreUnknownSignals: true
+        function onLaunchFinished(requestId, status, error): void {
+            root.completeLaunch(requestId, status, error);
+        }
+    }
+
+    function recordConfirmedLaunch(id): void {
+        if (frequencyStore && typeof frequencyStore.increment === "function" && id.length > 0)
+            frequencyStore.increment(id);
+    }
+
+
+    function normalizeLaunchOutcome(result, fallbackError) {
+        if (result === true)
+            return { state: "confirmed", requestId: "", error: "" };
+        if (result && typeof result === "object"
+            && (["refused", "confirmed", "unconfirmed"].includes(result.state)
+                || (result.state === "pending" && typeof result.requestId === "string" && result.requestId)))
+            return result;
+        return { state: "refused", requestId: "", error: fallbackError };
+    }
+
+    function launchStatusSucceeded(status): bool {
+        const value = String(status ?? "").toLowerCase();
+        return ["success", "succeeded", "started", "launched", "ok", "true"].includes(value);
+    }
+
+    function completeLaunch(requestId, status, error): void {
+        const key = String(requestId ?? "");
+        if (!key || !Object.prototype.hasOwnProperty.call(pendingLaunches, key))
+            return;
+        const id = pendingLaunches[key];
+        const pending = Object.assign({}, pendingLaunches);
+        delete pending[key];
+        pendingLaunches = pending;
+        if (launchStatusSucceeded(status))
+            recordConfirmedLaunch(id);
+        else {
+            lastLaunchError = String(error || "Windows could not start the application.");
+            asynchronousLaunchFailed(lastLaunchError);
+        }
+    }
+
     function launchForAppId(appId): bool {
         const entry = entryForAppId(appId);
         return entry !== null ? launch(entry) : false;
     }
 
-    // Returns whether a native execute was requested. The Windows backend has
-    // no per-command result: a true return means the request was permitted and
-    // dispatched, not that the application started.
+    // Returns whether a native execute was requested. Only an explicitly
+    // confirmed result or a later successful asynchronous completion increments
+    // frequency. A void backend dispatch is unconfirmed and stays unranked.
     function launch(entry): bool {
         launchRequests++;
         lastLaunchError = "";
+        lastLaunchState = "refused";
         lastLaunchId = entry && typeof entry.id === "string" ? entry.id : "";
 
         if (!enabled) {
@@ -488,7 +539,7 @@ QtObject {
             return false;
         }
         const id = typeof entry.id === "string" ? entry.id : "";
-        let executed = false;
+        let outcome;
         if (entry.runInTerminal === true) {
             if (!terminalLaunchSupported) {
                 lastLaunchError = "No Windows terminal launcher is configured or available.";
@@ -496,30 +547,34 @@ QtObject {
             }
             terminalLauncherError = "";
             try {
-                executed = terminalLauncher(entry, terminalCommand) === true;
+                outcome = normalizeLaunchOutcome(terminalLauncher(entry, terminalCommand),
+                    "Windows could not start the terminal application.");
             } catch (error) {
                 terminalLauncherError = String(error);
-                executed = false;
-            }
-            if (!executed) {
-                lastLaunchError = terminalLauncherError || "Windows could not start the terminal application.";
-                return false;
+                outcome = { state: "refused", error: terminalLauncherError };
             }
         } else {
             try {
-                executed = catalog && typeof catalog.execute === "function"
-                    ? catalog.execute(entry) === true : false;
+                outcome = normalizeLaunchOutcome(catalog && typeof catalog.execute === "function"
+                    ? catalog.execute(entry) : null, "The Windows app catalog could not start the application.");
             } catch (error) {
-                executed = false;
-            }
-            if (!executed) {
-                lastLaunchError = "The Windows app catalog could not start the application.";
-                return false;
+                outcome = { state: "refused", error: String(error) };
             }
         }
 
-        if (frequencyStore && typeof frequencyStore.increment === "function" && id.length > 0)
-            frequencyStore.increment(id);
+        if (outcome.state === "refused") {
+            lastLaunchError = (entry.runInTerminal === true ? terminalLauncherError : "")
+                || outcome.error || "Windows could not start the application.";
+            return false;
+        }
+        lastLaunchState = outcome.state;
+        if (outcome.state === "pending") {
+            const pending = Object.assign({}, pendingLaunches);
+            Object.defineProperty(pending, outcome.requestId, {value: id, enumerable: true, configurable: true});
+            pendingLaunches = pending;
+        }
+        if (outcome.state === "confirmed")
+            recordConfirmedLaunch(id);
         launchesIssued++;
         return true;
     }

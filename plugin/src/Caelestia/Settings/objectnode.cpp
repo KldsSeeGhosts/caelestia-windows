@@ -95,11 +95,15 @@ bool ObjectNode::syncJson(const QJsonValue& json, QList<Diagnostic>& diagnostics
     qCDebug(lcSettings) << "Loading JSON into" << metaObject()->className() << "with" << obj.size()
                         << "keys:" << obj.keys();
 
+    const auto diagnosticCount = diagnostics.size();
     const auto visited = loadFromJson(obj, diagnostics);
     resetUnvisited(visited);
+    onJsonDecoded(diagnostics.size() == diagnosticCount);
 
     return true;
 }
+
+void ObjectNode::onJsonDecoded(bool) {}
 
 void ObjectNode::quarantineKey(const QString& key, const QJsonValue& value) {
     if (!m_quarantine)
