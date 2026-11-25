@@ -113,11 +113,18 @@ function Write-PolicyRefusal([string]$Id) {
     $quotedPrefix = $Prefix.Replace("'", "''")
     $manual = "& '$scriptPath' -Prefix '$quotedPrefix' -Command $Command -Wait -ExpectedCurrent '$($record.current)'"
     if ($Command -eq 'Update') { $manual += " -ExpectedBuild '$ExpectedBuild' -Channel '$Channel'" }
-    @{
+    $response = @{
         schema = 1; operationId = $Id; phase = 'failed'; code = 'scheduler-policy'
         message = 'Task Scheduler blocked the request. Run this command in an unelevated PowerShell window:'
         manualCommand = $manual
     } | ConvertTo-Json -Compress
+    # ASCII JSON is also UTF-8, even when the hidden host writes through an
+    # OEM code page. Escape UTF-16 code units after JSON serialization so
+    # backslashes, apostrophes and surrogate pairs round-trip unchanged.
+    [regex]::Replace($response, '[^\x00-\x7f]', {
+        param($match)
+        '\u{0:x4}' -f [int][char]$match.Value
+    })
 }
 function Get-OperationTasks([string]$Id) {
     foreach ($name in @("Caelestia-Maintenance-$Id", "Caelestia-MaintenanceWatch-$Id")) {

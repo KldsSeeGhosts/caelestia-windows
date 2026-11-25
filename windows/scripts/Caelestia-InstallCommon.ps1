@@ -2294,6 +2294,7 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $launcherFinished = $false
+    $launcherFailed = $false
     $observedSupervisor = $ExpectedSupervisorPid
     $receiptObserved = $false
     $recordPath = if ($TaskName) { Get-CaelestiaReadinessRecordPath $Prefix $TaskName }
@@ -2317,8 +2318,8 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
             if ($task.State -eq 'Ready') {
                 $result = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
                 if ($result.LastRunTime.Year -gt 2000) {
-                    if ($result.LastTaskResult -ne 0) { throw 'Scheduled Caelestia launch exited before readiness.' }
                     $launcherFinished = $true
+                    $launcherFailed = $result.LastTaskResult -ne 0
                     # A clean exit does not stop the polling budget, even when
                     # the launcher could not write its best-effort receipt.
                 }
@@ -2326,14 +2327,18 @@ function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string
         }
         try {
             $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
-            if ($remaining -le 0) { break }
-            $state = Invoke-CaelestiaIpc $Prefix state ([Math]::Min(1000, $remaining)) | ConvertFrom-Json
+            if ($remaining -le 0 -and -not $launcherFailed) { break }
+            $probeTimeout = [Math]::Max(1, [Math]::Min(1000, $remaining))
+            $state = Invoke-CaelestiaIpc $Prefix state $probeTimeout | ConvertFrom-Json
             if ((Test-CaelestiaReadyState $state $PreviousGeneration -LegacyReady:$LegacyReady) -and
                 (Test-CaelestiaReadyIdentity $state $ExpectedPayload $observedSupervisor -RequireIdentity:($RequireIdentity -or $observedSupervisor -gt 0))) {
                 if ($PassThru) { return $state }
                 return
             }
         } catch { }
+        # The launcher can time out while its supervisor is still starting.
+        # Only fail after checking the live shell against the same identity.
+        if ($launcherFailed) { throw 'Scheduled Caelestia launch exited before readiness.' }
         Start-Sleep -Milliseconds 50
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "Caelestia did not become ready within $TimeoutSeconds seconds. See the profile logs and runtime\supervisor-*\watchdog*.log."

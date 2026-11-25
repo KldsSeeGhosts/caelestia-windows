@@ -339,16 +339,29 @@ public static class Utf8IpcFixture {
     Assert ($script:raceIpcCalls -ge 2) 'Ready race did not perform both cold and final IPC probes.'
     function Get-ScheduledTaskInfo {
         param($TaskName, $TaskPath, $ErrorAction)
+        $script:raceInfoObserved = $true
         [pscustomobject]@{ LastTaskResult = 1; LastRunTime = [DateTime]::UtcNow }
     }
     $script:raceInfoObserved = $false
+    $finalReady = Wait-CaelestiaReady $racePrefix -TimeoutSeconds 3 -TaskName 'Caelestia-Start-race' -PassThru
+    Assert ($script:raceInfoObserved -and $finalReady.lifecycle.ready -and $finalReady.lifecycle.supervisorPid -eq 4321) 'Nonzero launcher exit hid a ready reply from the expected supervisor.'
+    $script:raceInfoObserved = $false
+    $script:postFailureProbes = 0
+    function Invoke-CaelestiaIpc {
+        param([string]$Prefix, [string]$Command, [int]$TimeoutMs = 10000)
+        if (-not $script:raceInfoObserved) { throw 'injected cold IPC' }
+        $script:postFailureProbes++
+        @{ lifecycle = @{ generation = 'edge-generation'; ready = $true; supervisorPid = 9999; payloadPath = $Prefix } } |
+            ConvertTo-Json -Compress
+    }
     try {
         Wait-CaelestiaReady $racePrefix -TimeoutSeconds 3 -TaskName 'Caelestia-Start-race'
         throw 'A nonzero Ready task result was accepted.'
     } catch {
         Assert ($_.Exception.Message -match 'exited before readiness') 'Nonzero Ready task failure lost its diagnostic.'
     }
-    Write-Output 'PASS readiness race: Ready/0 plus durable ready state performs a final IPC probe.'
+    Assert ($script:postFailureProbes -eq 1) 'Nonzero launcher exit did not give the wrong-supervisor reply exactly one final probe.'
+    Write-Output 'PASS readiness race: a failed launcher gets one last identity-checked probe.'
     function Get-ScheduledTaskInfo {
         param($TaskName, $TaskPath, $ErrorAction)
         $script:raceInfoObserved = $true
@@ -586,7 +599,7 @@ public static class Utf8IpcFixture {
     # real fixture copy of Manage-Caelestia with only Task Scheduler boundaries
     # replaced; its prefix lock, journal write and error path are production.
     $manageFixture = Join-Path $root 'manage-gpo'
-    $managePrefix = Join-Path $manageFixture 'prefix'
+    $managePrefix = Join-Path $manageFixture ("O'Brien\Caf" + [char]0x00E9)
     $manageProfile = Join-Path $manageFixture 'profile'
     $manageCurrent = Join-Path $managePrefix 'versions\v2'
     $managePrevious = Join-Path $managePrefix 'versions\v1'
@@ -615,6 +628,7 @@ public static class Utf8IpcFixture {
     Assert ($manageText.Contains($manageImport)) 'Manage-Caelestia fixture import boundary changed.'
     $schedulerFixture = $manageImport + @'
 
+[Console]::OutputEncoding = [Text.Encoding]::GetEncoding(437)
 function New-ScheduledTaskAction { param($Execute, $WorkingDirectory, $Argument) [pscustomobject]@{ Execute = $Execute; WorkingDirectory = $WorkingDirectory; Arguments = $Argument } }
 function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel) $null }
 function New-ScheduledTaskSettingsSet { param([switch]$AllowStartIfOnBatteries, [switch]$DontStopIfGoingOnBatteries, $ExecutionTimeLimit, [switch]$StartWhenAvailable, $RestartCount, $RestartInterval) [pscustomobject]@{} }
@@ -640,10 +654,25 @@ function Unregister-ScheduledTask {
     try {
         foreach ($denial in @('register', 'start')) {
             $env:CAELESTIA_FIXTURE_SCHEDULER_DENIAL = $denial
-            $manageOutput = & $pwsh -NoProfile -NonInteractive -File $manageCopy -Prefix $managePrefix -Command Rollback
-            Assert ($LASTEXITCODE -eq 0) "Policy denial at $denial did not return a structured refusal."
+            $processInfo = [Diagnostics.ProcessStartInfo]::new($pwsh)
+            $processInfo.UseShellExecute = $false
+            $processInfo.CreateNoWindow = $true
+            $processInfo.RedirectStandardOutput = $true
+            $processInfo.RedirectStandardError = $true
+            $processInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false, $true)
+            foreach ($argument in @('-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', $manageCopy,
+                '-Prefix', $managePrefix, '-Command', 'Rollback')) { $processInfo.ArgumentList.Add($argument) }
+            $manageProcess = [Diagnostics.Process]::Start($processInfo)
+            try {
+                $stdout = $manageProcess.StandardOutput.ReadToEndAsync()
+                $stderr = $manageProcess.StandardError.ReadToEndAsync()
+                if (-not $manageProcess.WaitForExit(10000)) { $manageProcess.Kill(); throw 'Policy refusal fixture timed out.' }
+                Assert ($manageProcess.ExitCode -eq 0) ("Policy denial at $denial did not return a structured refusal: " + $stderr.GetAwaiter().GetResult())
+                $manageOutput = $stdout.GetAwaiter().GetResult()
+            } finally { $manageProcess.Dispose() }
+            Assert ($manageOutput -match '\\u00e9' -and $manageOutput -notmatch '[^\x00-\x7f]') "Hidden CP437 host emitted non-ASCII or corrupted JSON for $denial."
             $reply = $manageOutput | ConvertFrom-Json
-            $expectedManual = "& '$manageCopy' -Prefix '$managePrefix' -Command Rollback -Wait -ExpectedCurrent 'v2'"
+            $expectedManual = "& '$($manageCopy.Replace("'", "''"))' -Prefix '$($managePrefix.Replace("'", "''"))' -Command Rollback -Wait -ExpectedCurrent 'v2'"
             Assert ($reply.code -ceq 'scheduler-policy' -and $reply.phase -ceq 'failed' -and $reply.manualCommand -ceq $expectedManual) "Policy denial at $denial lost its manual command."
             $operationState = Get-Content -LiteralPath $operationJournal -Raw | ConvertFrom-Json
             Assert ($operationState.operationId -ceq $reply.operationId -and $operationState.phase -ceq 'failed') "Policy denial at $denial left the request queued."

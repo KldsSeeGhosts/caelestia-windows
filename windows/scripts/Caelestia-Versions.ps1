@@ -189,10 +189,21 @@ function Save-CaelestiaMaintenanceHandoff([string]$Prefix, $InstallRecord) {
     # Set only by the tracked maintenance worker, on the same thread and
     # under the prefix lock, including when it invokes a verified release.
     $trackedId = [string](Get-Variable -Name CaelestiaTrackedOperationId -ValueOnly -ErrorAction SilentlyContinue)
+    if (-not $trackedId) {
+        # The installed worker drives the first upgrade. Older workers expose
+        # the same operation ID and task name after claiming their journal,
+        # but do not set CaelestiaTrackedOperationId.
+        $legacyTracked = Get-Variable -Name tracked -ValueOnly -ErrorAction SilentlyContinue
+        if ($legacyTracked -isnot [bool] -or -not $legacyTracked) { return }
+        $trackedId = [string](Get-Variable -Name operationId -ValueOnly -ErrorAction SilentlyContinue)
+        $legacyTask = [string](Get-Variable -Name TaskName -ValueOnly -ErrorAction SilentlyContinue)
+        if ($legacyTask -cne ('Caelestia-Maintenance-' + $trackedId)) { return }
+    }
     if ($trackedId -notmatch '^[a-f0-9]{32}$') { return }
     $path = Join-Path $InstallRecord.profile 'state\update-operation.json'
     $state = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($state.operationId -cne $trackedId -or $state.phase -cne 'working' -or
+    if ($state.schema -ne 1 -or $state.operationId -cne $trackedId -or $state.phase -cne 'working' -or
+        $state.expectedCurrent -cne $InstallRecord.current -or
         $state.installId -cne $InstallRecord.installId -or -not (Test-CaelestiaSamePath $state.prefix $Prefix)) {
         throw 'The maintenance worker lost its handoff journal before stopping the shell.'
     }
