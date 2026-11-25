@@ -299,7 +299,7 @@ try {
               'Test-NexusWindow', 'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers', 'Test-ShellReadiness',
               'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-ToasterIpc', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
-              'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-WindowsHoverRegions',
+              'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowInfoWindow', 'Test-WindowsBackground', 'Test-WindowsHoverRegions',
               'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }

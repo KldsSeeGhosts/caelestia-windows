@@ -11,7 +11,10 @@ function observe(toplevels) {
         mapped: !!t.lastIpcObject.mapped,
         minimized: t.wayland.minimized,
         active: t.activated,
-        desktop: t.workspace?.id ?? 0
+        desktop: t.workspace?.id ?? 0,
+        elevated: t.elevated === true || t.lastIpcObject.elevated === true,
+        imagePath: t.imagePath || t.lastIpcObject.imagePath || "",
+        aumid: t.aumid || t.lastIpcObject.aumid || ""
     }));
 }
 

@@ -50,6 +50,20 @@ release and Actions runs.
   not follow Windows wallpaper changes, including one made by an older
   Caelestia build after a rollback; it keeps its Caelestia pick or the bundled
   asset. An existing profile keeps following Windows as before.
+- **Administrator protection (KB5120998):** on Windows 11 builds with
+  Administrator protection, elevated terminals and applications run under a
+  hidden profile-separated system-managed administrator account. They do not
+  inherit the user account's Windows Terminal `settings.json` or PowerShell
+  `$PROFILE`. Windows blocks prompt-free elevation by design; the user must
+  approve the consent prompt, and cancelling it starts nothing.
+- **Elevated windows and UIPI:** the medium-integrity shell cannot close,
+  minimize, maximize, move, float or pin a window that runs as administrator.
+  Windows blocks those actions and the shell reports the refusal in a warning
+  toast. The low-level keyboard hook also receives no Win chords while an
+  elevated window has foreground focus, so hook-backed chords such as the lone
+  `Super` tap do not fire there. Win chords marked `"register": true` use
+  `RegisterHotKey` and remain available as escape chords for opening shell
+  surfaces; they still cannot make the shell control the elevated window.
 - **Capture:** shipped screenshots, recordings and previews are 8-bit SDR sRGB.
   They do not preserve an HDR source as an HDR output. See
   [capture color policy](CAPTURE-COLOR.md).

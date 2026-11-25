@@ -40,7 +40,7 @@ class ParallelQmlTests(unittest.TestCase):
         self.output = self.root / "output"
 
     def populate(self, failure=False, jobs=2):
-        self.assertEqual(31, len(INVENTORY))
+        self.assertEqual(32, len(INVENTORY))
         self.assertIn("Test-ShellReadiness", INVENTORY)
         self.assertIn("Test-ToasterIpc", INVENTORY)
         first = ["Test-CaptureThumbnail", "Test-CapturePicker",

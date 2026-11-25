@@ -25,6 +25,7 @@
         "Test-WallpaperHandback": 2,
         "Test-WallpaperIpc": 2,
         "Test-WallpaperPreview": 2,
+        "Test-WindowInfoWindow": 2,
         "Test-WindowsBackground": 5,
         "Test-WindowsHoverRegions": 2,
         "Test-UpdateManager": 1,

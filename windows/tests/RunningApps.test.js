@@ -285,3 +285,41 @@ test("a wide interleaved fanout assigns each handle to its group in stable order
     const total = next.groupIds.reduce((n, key) => n + next.groups[key].windowIds.length, 0);
     assert.equal(total, next.windowIds.length, "every visible handle belongs to exactly one group");
 });
+
+test("observation propagates elevated state and Windows app identity", () => {
+    const observations = context.observe([
+        {
+            address: "abc",
+            title: "Elevated terminal",
+            activated: true,
+            elevated: true,
+            imagePath: "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            aumid: "Microsoft.WindowsTerminal",
+            lastIpcObject: { class: "Terminal", mapped: true },
+            workspace: { id: 1 },
+            wayland: { minimized: false }
+        },
+        {
+            address: "def",
+            title: "IPC-only elevation",
+            activated: false,
+            lastIpcObject: {
+                class: "Editor", mapped: true, elevated: true,
+                imagePath: "editor.exe", aumid: "Editor.Package"
+            },
+            workspace: { id: 1 },
+            wayland: { minimized: false }
+        }
+    ]);
+
+    assert.equal(observations[0].elevated, true);
+    assert.equal(observations[0].imagePath, "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe");
+    assert.equal(observations[0].aumid, "Microsoft.WindowsTerminal");
+    assert.equal(observations[1].elevated, true);
+    assert.equal(observations[1].imagePath, "editor.exe");
+    assert.equal(observations[1].aumid, "Editor.Package");
+
+    const state = context.project(observations, [], []);
+    assert.equal(state.byId.abc.elevated, true);
+    assert.equal(state.byId.def.imagePath, "editor.exe");
+});

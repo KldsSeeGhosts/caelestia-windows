@@ -11,6 +11,7 @@ import Caelestia.Config
 import qs.components
 import qs.services as Services
 import qs.utils as Utils
+import qs.modules.windowinfo as WindowInfoModule
 
 Item {
     id: root
@@ -47,8 +48,14 @@ Item {
     readonly property var preview: root.group ? ({
         title: root.selectedWindow?.title ?? "",
         lastIpcObject: { class: root.selectedWindow?.appId ?? "" },
-        wayland: root.selectedWindow && !root.selectedWindow.minimized ? root.captureToplevel : null
+        wayland: root.selectedWindow && !root.selectedWindow.minimized ? root.captureToplevel : null,
+        elevated: root.selectedWindow?.elevated === true,
+        imagePath: root.selectedWindow?.imagePath ?? "",
+        aumid: root.selectedWindow?.aumid ?? ""
     }) : root.toplevel
+    readonly property bool previewElevated: root.group
+        ? root.selectedWindow?.elevated === true
+        : root.toplevel?.elevated === true || root.toplevel?.lastIpcObject?.elevated === true
     readonly property bool previewUnavailable: root.group !== null
         && (root.selectedWindow === null || root.selectedWindow.minimized || !root.captureToplevel)
     readonly property int rowHeight: 40
@@ -65,6 +72,30 @@ Item {
         popouts: root.popouts
         toplevel: root.preview
         reservePreviewGeometry: true
+    }
+
+    // The upstream content owns its chevron, so the elevation marker is a
+    // small pill inset beside it rather than a fork of that component.
+    StyledRect {
+        objectName: "activeWindowAdminBadge"
+        z: 10
+        anchors.top: content.top
+        anchors.right: content.right
+        anchors.topMargin: Tokens.padding.extraSmall
+        anchors.rightMargin: Tokens.padding.extraLargeIncreased * 2
+        visible: root.previewElevated
+        radius: Tokens.rounding.full
+        color: Services.Colours.palette.m3errorContainer
+        implicitWidth: adminLabel.implicitWidth + Tokens.padding.small * 2
+        implicitHeight: adminLabel.implicitHeight + Tokens.padding.extraSmall
+
+        StyledText {
+            id: adminLabel
+            anchors.centerIn: parent
+            text: qsTr("Admin")
+            color: Services.Colours.palette.m3onErrorContainer
+            font: Tokens.font.label.small
+        }
     }
 
     // Covers the reserved preview viewport. The upstream layout reserves that
@@ -193,11 +224,55 @@ Item {
                     elide: Text.ElideRight
                 }
 
+                StyledRect {
+                    objectName: "activeWindowRowAdminBadge"
+                    Layout.alignment: Qt.AlignVCenter
+                    visible: row.window?.elevated === true
+                    radius: Tokens.rounding.full
+                    color: Services.Colours.palette.m3errorContainer
+                    implicitWidth: rowAdminLabel.implicitWidth + Tokens.padding.small
+                    implicitHeight: rowAdminLabel.implicitHeight + 2
+
+                    StyledText {
+                        id: rowAdminLabel
+                        anchors.centerIn: parent
+                        text: qsTr("Admin")
+                        color: Services.Colours.palette.m3onErrorContainer
+                        font: Tokens.font.label.small
+                    }
+                }
+
                 StyledText {
                     Layout.alignment: Qt.AlignVCenter
                     visible: row.window?.minimized ?? false
                     text: qsTr("Minimized")
                     color: Services.Colours.palette.m3onSurfaceVariant
+                }
+
+                Item {
+                    Layout.alignment: Qt.AlignVCenter
+                    implicitWidth: inspectIcon.implicitHeight + Tokens.padding.small
+                    implicitHeight: inspectIcon.implicitHeight + Tokens.padding.small
+
+                    MaterialIcon {
+                        id: inspectIcon
+                        anchors.centerIn: parent
+                        text: "info"
+                        color: Services.Colours.palette.m3onSurfaceVariant
+                    }
+
+                    StateLayer {
+                        objectName: "activeWindowWindowInspect"
+                        anchors.fill: parent
+                        radius: Tokens.rounding.full
+                        onClicked: root.inspect(row.modelData)
+                        activeFocusOnTab: true
+                        Keys.onReturnPressed: root.inspect(row.modelData)
+                        Keys.onSpacePressed: root.inspect(row.modelData)
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("Inspect ") + (row.window?.title ?? "")
+                        Accessible.onPressAction: root.inspect(row.modelData)
+                    }
                 }
 
                 // Close stays inside the row, so a click never activates the
@@ -237,6 +312,14 @@ Item {
     function focusWindowList(): void {
         if (root.group)
             list.forceActiveFocus();
+    }
+
+    function inspect(id: string): void {
+        const client = Services.Hypr.toplevels.values.find(t => t.address === id) ?? null;
+        if (!client)
+            return;
+        WindowInfoModule.WindowInfoFactory.openForClient(client);
+        root.popouts.hasCurrent = false;
     }
 
     function activate(id: string): void {

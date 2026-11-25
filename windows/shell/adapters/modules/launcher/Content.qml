@@ -20,6 +20,16 @@ Item {
     readonly property int padding: Tokens.padding.large
     readonly property int rounding: Tokens.rounding.extraLarge
 
+    // Ctrl+Shift+Enter is elevation-only for an application row. The row itself
+    // passes a live QQuickItem to the backend before it closes the launcher.
+    function launchCurrentAppElevated(): bool {
+        const view = list.currentList;
+        const item = view?.currentItem ?? null;
+        if (view?.state !== "apps" || !item || typeof item.launchElevated !== "function")
+            return false;
+        return item.launchElevated();
+    }
+
     implicitWidth: listWrapper.width + padding * 2
     implicitHeight: search.height + listWrapper.height + padding + search.anchors.bottomMargin
 
@@ -103,6 +113,13 @@ Item {
         Keys.onEscapePressed: root.screenState.launcher = false
 
         Keys.onPressed: event => {
+            if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                    && event.modifiers === (Qt.ControlModifier | Qt.ShiftModifier)) {
+                event.accepted = true;
+                if (!event.isAutoRepeat)
+                    root.launchCurrentAppElevated();
+                return;
+            }
             if (!GlobalConfig.launcher.vimKeybinds)
                 return;
 

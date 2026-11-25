@@ -63,6 +63,17 @@ QtObject {
     readonly property var desktopControl:
         typeof Hyprland.desktopControl === "object" ? Hyprland.desktopControl : null
 
+    signal actionRefused(string action, string reason, bool elevated)
+
+    readonly property Connections _nativeSignals: Connections {
+        target: Hyprland
+        ignoreUnknownSignals: true
+
+        function onActionRefused(action, reason, elevated): void {
+            root.actionRefused(action, reason, elevated);
+        }
+    }
+
     function monitorFor(screen): var {
         return Hyprland.monitorFor(screen);
     }

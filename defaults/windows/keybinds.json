@@ -10,6 +10,33 @@
       "description": "Toggle the launcher (lone Super tap)"
     },
     {
+      "keys": "Super+Shift+Space",
+      "action": "global",
+      "name": "caelestia:launcher",
+      "register": true,
+      "since": "2.7.0",
+      "description": "Toggle the launcher over elevated windows"
+    },
+    {
+      "keys": "Super+T",
+      "action": "exec",
+      "id": "terminal",
+      "command": "wt.exe",
+      "since": "2.7.0",
+      "register": true,
+      "description": "Open Windows Terminal"
+    },
+    {
+      "keys": "Super+Shift+T",
+      "action": "exec",
+      "id": "terminalAdmin",
+      "command": "wt.exe",
+      "elevate": true,
+      "since": "2.7.0",
+      "register": true,
+      "description": "Open Windows Terminal as administrator"
+    },
+    {
       "keys": "PrintScreen",
       "action": "global",
       "name": "caelestia:screenshot",
@@ -34,25 +61,29 @@
       "keys": "Super+K",
       "action": "global",
       "name": "caelestia:showall",
-      "description": "Toggle the launcher, dashboard, OSD and utilities together"
+      "description": "Toggle the launcher, dashboard, OSD and utilities together",
+      "register": true
     },
     {
       "keys": "Super+Shift+D",
       "action": "global",
       "name": "caelestia:dashboard",
-      "description": "Toggle the dashboard"
+      "description": "Toggle the dashboard",
+      "register": true
     },
     {
       "keys": "Super+N",
       "action": "global",
       "name": "caelestia:sidebar",
-      "description": "Toggle the notification sidebar"
+      "description": "Toggle the notification sidebar",
+      "register": true
     },
     {
       "keys": "Super+Shift+U",
       "action": "global",
       "name": "caelestia:utilities",
-      "description": "Toggle utilities"
+      "description": "Toggle utilities",
+      "register": true
     },
     {
       "keys": "Ctrl+Alt+End",
@@ -70,7 +101,8 @@
       "keys": "Super+Shift+N",
       "action": "global",
       "name": "caelestia:toggleDnd",
-      "description": "Toggle do not disturb"
+      "description": "Toggle do not disturb",
+      "register": true
     },
     {
       "keys": "Ctrl+Super+Space",
@@ -144,7 +176,8 @@
       "keys": "Super+Shift+M",
       "action": "global",
       "name": "caelestia:volumeMute",
-      "description": "Mute or unmute the default output"
+      "description": "Mute or unmute the default output",
+      "register": true
     },
     {
       "keys": "Ctrl+Alt+Page_Up",

@@ -26,6 +26,9 @@ test("upstream IPC mutations keep upstream void return contracts", () => {
 
     assert.match(targetBlock("audio"), /function cycleOutput\(\): void/);
     assert.match(targetBlock("nexus"), /function open\(\): void/);
+    assert.match(targetBlock("windowinfo"), /function open\(\): bool/);
+    assert.match(targetBlock("windowinfo"), /function close\(\): bool/);
+    assert.match(targetBlock("windowinfo"), /function isOpen\(\): string/);
     for (const name of ["info", "success", "warn", "error"])
         assert.match(toaster, new RegExp(String.raw`function ${name}\(title: string, message: string, icon: string\): void`));
 });

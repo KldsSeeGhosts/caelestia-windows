@@ -70,7 +70,7 @@ Write key combinations as `Modifier+Modifier+Key` (case-insensitive):
 
 ## Bind actions (`action`)
 
-Each object in `"binds"` supports `"keys"`, `"action"`, `"description"`, `"onRelease"` (`bool`), `"repeat"` (`bool`) and `"register"` (`bool`, see [Routing](#routing-registerhotkey-or-the-keyboard-hook)), plus action-specific fields:
+Each object in `"binds"` supports `"keys"`, `"action"`, `"description"`, `"onRelease"` (`bool`), `"repeat"` (`bool`) and `"register"` (`bool`, see [Routing](#routing-registerhotkey-or-the-keyboard-hook)), plus action-specific fields. `"exec"` binds also support `"id"`/`"name"` and `"elevate"` (`bool`).
 
 ### 1. `"global"` — trigger a Caelestia `CustomShortcut`
 
@@ -296,6 +296,9 @@ A hook-backed Win chord also swallows the Windows key release and replays a mask
 | Action | Default keys | Target |
 | --- | --- | --- |
 | Toggle the launcher (lone Super tap) | `Super` (tap on release) | `caelestia:launcher` |
+| Toggle the launcher over elevated windows | `Super+Shift+Space` (registered) | `caelestia:launcher` |
+| Open Windows Terminal | `Super+T` (registered) | `wt.exe` |
+| Open Windows Terminal as administrator | `Super+Shift+T` (registered, elevated) | `wt.exe` |
 | Screenshot | `PrintScreen`, `Win+Shift+S` | `caelestia:screenshot`, `caelestia:screenshotFreeze` |
 | Start or stop a recording | `Win+Shift+R` | `caelestia:record` |
 | Toggle the launcher, dashboard, OSD and utilities together | `Super+K` | `caelestia:showall` |
@@ -428,8 +431,9 @@ screen state and includes `bar` and `quota` when those drawers are staged.
 Windows-only extensions are explicit: `drawers.open` and `drawers.close`,
 notification drawer open/close/list helpers, `toaster.toast`, audio volume
 and mute helpers, brightness up/down helpers, Nexus page/close/toggle helpers,
-and `shell.panel` report whether Windows accepted dispatch. Smoke fixtures
-disable parity mutations rather than reporting success for them.
+and `shell.panel` report whether Windows accepted dispatch. The `windowinfo`
+target exposes `open`, `close` and `isOpen` for the floating window inspector.
+Smoke fixtures disable parity mutations rather than reporting success for them.
 
 `mpris.getActive` exposes playback, track and capability fields. It omits raw app
 and session identifiers, artwork URLs, and metadata maps because they can contain
@@ -485,6 +489,24 @@ Runs a command line in a detached process:
     "description": "Open Windows Terminal"
 }
 ```
+
+`"id"` (or the older `"name"` alias) gives the exec bind a stable identity for default merging. `"command"` may contain `|` alternatives; the backend tries them in order.
+
+Set `"elevate": true` to start the command through Windows User Account Control:
+
+```json
+{
+    "keys": "Super+Shift+Return",
+    "action": "exec",
+    "id": "terminalAdmin",
+    "command": "wt.exe",
+    "elevate": true,
+    "register": true,
+    "description": "Open Windows Terminal as administrator"
+}
+```
+
+Windows shows its consent prompt unless policy forbids elevation. Cancelling the prompt starts nothing. An elevated bind does not need `"register": true` to reach UAC, but registration is useful for a Win chord because the low-level keyboard hook does not fire while an elevated window owns the foreground.
 
 ### 5. `"key"` — synthesize a virtual key tap
 

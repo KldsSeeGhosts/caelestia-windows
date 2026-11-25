@@ -19,7 +19,7 @@ class CiShardsAndTiming(unittest.TestCase):
         self.assertIn("'Test-NexusWindow'", shell)
         self.assertIn("'Test-ShellReadiness'", shell)
         self.assertIn("'Test-ToasterIpc'", shell)
-        self.assertEqual(31, 1 + len(re.findall(r"'Test-[A-Za-z0-9]+'", shell)))
+        self.assertEqual(32, 1 + len(re.findall(r"'Test-[A-Za-z0-9]+'", shell)))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="ci-diagnostics-",

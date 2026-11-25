@@ -23,6 +23,7 @@ import qs.modules.clipboard
 import qs.modules.launcher.services
 import qs.modules.nexus as Nexus
 import qs.modules.tiling
+import qs.modules.windowinfo as WindowInfoModule
 import qs.ipc
 
 // Original upstream drawer geometry and motion, with the combined Windows
@@ -405,6 +406,26 @@ ShellRoot {
     }
 
     ToasterIpc { parityEnabled: root.parityEnabled }
+
+    IpcHandler {
+        target: "windowinfo"
+
+        function open(): bool {
+            if (!root.parityEnabled)
+                return false;
+            const client = Hypr.activeToplevel;
+            return !!client && WindowInfoModule.WindowInfoFactory.openForClient(client) !== null;
+        }
+        function close(): bool {
+            if (!root.parityEnabled || WindowInfoModule.WindowInfoFactory.windowCount === 0)
+                return false;
+            WindowInfoModule.WindowInfoFactory.closeAll();
+            return true;
+        }
+        function isOpen(): string {
+            return root.parityEnabled && WindowInfoModule.WindowInfoFactory.windowCount > 0 ? "1" : "0";
+        }
+    }
 
     IpcHandler {
         target: "audio"

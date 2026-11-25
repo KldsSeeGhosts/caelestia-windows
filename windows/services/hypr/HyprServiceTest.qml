@@ -54,6 +54,8 @@ QtObject {
     }
 
     component FakeBackend: QtObject {
+        signal actionRefused(string action, string reason, bool elevated)
+
         property bool initialized: false
         property var monitors: null
         property var workspaces: null
@@ -90,6 +92,13 @@ QtObject {
     }
 
     readonly property HyprService service: HyprService {}
+    property var refusedActions: []
+    readonly property Connections serviceRefusals: Connections {
+        target: test.service
+        function onActionRefused(action, reason, elevated): void {
+            test.refusedActions.push({ action: action, reason: reason, elevated: elevated });
+        }
+    }
     readonly property FakeBackend fixture: FakeBackend {}
     readonly property LegacyBackend legacyFixture: LegacyBackend {}
     readonly property QtObject nativeControl: QtObject {
@@ -678,10 +687,12 @@ QtObject {
             "killwindow translation");
         expectSend("killwindow address:0xABCD", "closewindow address:0xabcd",
             "closewindow", "killwindow normalizes address");
-        check(service.commandsSent === 13 && fixture.dispatchCalls === 13,
+        expectSend("togglefloating address:0x1A2B", "togglefloating address:0x1a2b",
+            "togglefloating", "togglefloating normalizes address");
+        expectSend("pin address:0xABCD", "pin address:0xabcd",
+            "pin", "pin normalizes address");
+        check(service.commandsSent === 15 && fixture.dispatchCalls === 15,
             "allowlisted dispatches reached the backend once each");
-        check(fixture.dispatchLog.indexOf("togglefloating address:0x1") < 0,
-            "no refused request was forwarded");
 
         // dispatch is allowed only while observation is active too.
         const callsBeforeDisable = fixture.dispatchCalls;
@@ -734,8 +745,7 @@ QtObject {
 
         // --- Refusals, malformed forms and injection --------------------------
         resetDispatch();
-        for (const request of ["togglefloating address:0x1", "pin address:0x1",
-            "dpms off", "dpms on", "focusmonitor 1", "cyclenext", "swapnext",
+        for (const request of ["dpms off", "dpms on", "focusmonitor 1", "cyclenext", "swapnext",
             "togglegroup", "submap foo", "exec sh", "movewindowpixel exact 1 1,address:0x1"]) {
             expectRefusal(request, "unsupported", "unsupported " + request);
         }
@@ -774,6 +784,15 @@ QtObject {
         expectRefusal("killwindow address:0xzz", "invalid", "killwindow non-hex address");
         expectRefusal("killwindow  address:0x1", "invalid", "killwindow double space");
         expectRefusal("killwindow", "invalid", "killwindow without argument");
+        // floating and pin selectors use the same strict address form.
+        expectRefusal("togglefloating address:0x", "invalid", "togglefloating empty address");
+        expectRefusal("togglefloating address:0xzz", "invalid", "togglefloating non-hex address");
+        expectRefusal("togglefloating  address:0x1", "invalid", "togglefloating double space");
+        expectRefusal("togglefloating", "invalid", "togglefloating without argument");
+        expectRefusal("pin address:0x", "invalid", "pin empty address");
+        expectRefusal("pin address:1", "invalid", "pin address without 0x");
+        expectRefusal("pin address:0x1 ", "invalid", "pin trailing space");
+        expectRefusal("pin", "invalid", "pin without argument");
         // special-workspace malformed forms
         expectRefusal("togglespecialworkspace  scratch", "invalid",
             "togglespecialworkspace double space");
@@ -800,6 +819,10 @@ QtObject {
             "movetoworkspace newline injection");
         expectRefusal("togglespecialworkspace a;b", "injection",
             "special semicolon injection");
+        expectRefusal("togglefloating address:0x1;workspace 2", "injection",
+            "togglefloating semicolon injection");
+        expectRefusal("pin address:0x1\nworkspace 2", "injection",
+            "pin newline injection");
         expectRefusal("workspace 1\nkillwindow address:0x1", "injection",
             "multiple command injection");
         // non-string and bounded-size requests
@@ -837,6 +860,12 @@ QtObject {
         check(service.activeToplevel === toplevel1, "validated Windows foreground is independent of workspace membership");
         fixture.activeToplevel = null;
         check(service.activeToplevel === null, "validated desktop remains empty");
+
+        refusedActions = [];
+        fixture.actionRefused("close", "access-denied", true);
+        check(refusedActions.length === 1 && refusedActions[0].action === "close"
+            && refusedActions[0].reason === "access-denied" && refusedActions[0].elevated === true,
+            "backend actionRefused reaches service consumers");
 
         nativeContractStates();
 

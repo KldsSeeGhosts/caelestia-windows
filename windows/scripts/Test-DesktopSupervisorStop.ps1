@@ -16,8 +16,11 @@ function Assert($Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 function Replace-Exactly([string]$Text, [string]$Old, [string]$New) {
-    Assert ([regex]::Matches($Text, [regex]::Escape($Old)).Count -eq 1) ("Fixture injection boundary changed; refusing to run: " + $Old)
-    return $Text.Replace($Old, $New)
+    $normalizedText = $Text.Replace("`r`n", "`n")
+    $normalizedOld = $Old.Replace("`r`n", "`n")
+    $normalizedNew = $New.Replace("`r`n", "`n")
+    Assert ([regex]::Matches($normalizedText, [regex]::Escape($normalizedOld)).Count -eq 1) ("Fixture injection boundary changed; refusing to run: " + $Old)
+    return $normalizedText.Replace($normalizedOld, $normalizedNew)
 }
 function Start-FixtureProcess([string]$Executable, [string]$Arguments, [string]$Directory, [string]$Log) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -WorkingDirectory $Directory `

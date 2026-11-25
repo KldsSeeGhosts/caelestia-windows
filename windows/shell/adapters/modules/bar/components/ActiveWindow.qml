@@ -219,6 +219,20 @@ StyledRect {
                 color: Services.Colours.palette.m3onSurfaceVariant
             }
 
+            MaterialIcon {
+                objectName: "activeWindowAdminIndicator"
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.rightMargin: Tokens.padding.extraSmall
+                anchors.bottomMargin: Tokens.padding.extraSmall
+                visible: (Services.Hypr.activeToplevel?.elevated === true
+                    || Services.Hypr.activeToplevel?.lastIpcObject?.elevated === true)
+                    && (app.group?.windowIds ?? []).indexOf(Services.Hypr.activeToplevel?.address ?? "") >= 0
+                text: "admin_panel_settings"
+                color: Services.Colours.palette.m3error
+                font.pixelSize: Math.round(root.rowSize * 0.32)
+            }
+
             StateLayer {
                 id: appButton
                 disabled: !Services.RunningApps.actionsEnabled
