@@ -17,6 +17,16 @@ StyledListView {
     required property ScreenState screenState
 
     property string displayText
+    // While rows are displaced by a filter change, follow the animated row
+    // position directly. A Behavior does not retarget every frame of that row
+    // animation, so it leaves the pill behind in empty space.
+    property bool trackDisplacedItems: false
+
+    function resetCurrentIndex(): void {
+        currentIndex = 0;
+        trackDisplacedItems = true;
+        displacedItemsTimer.restart();
+    }
 
     // Windows-localized hook. The bounded Windows host has no launcher action,
     // calculator, scheme or variant providers, so it keeps this list on
@@ -67,7 +77,14 @@ StyledListView {
 
     model: ScriptModel {
         values: root.resultsForText(root.displayText)
-        onValuesChanged: root.currentIndex = 0
+        onValuesChanged: root.resetCurrentIndex()
+    }
+
+    Timer {
+        id: displacedItemsTimer
+
+        interval: Tokens.anim.durations.expressiveDefaultSpatial + 50
+        onTriggered: root.trackDisplacedItems = false
     }
 
     spacing: Tokens.spacing.small
@@ -89,6 +106,8 @@ StyledListView {
         implicitHeight: root.currentItem?.implicitHeight ?? 0
 
         Behavior on y {
+            enabled: !root.trackDisplacedItems
+
             Anim {}
         }
     }

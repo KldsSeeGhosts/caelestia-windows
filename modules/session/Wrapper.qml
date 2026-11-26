@@ -10,6 +10,11 @@ Item {
     required property ScreenState screenState
     required property bool sidebarVisible
     property var focusWindow: null
+    readonly property matrix4x4 identityFocusTransform: Qt.matrix4x4(1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1)
+    property matrix4x4 focusTransformMatrix: identityFocusTransform
     readonly property real nonAnimWidth: content.implicitWidth
 
     readonly property bool shouldBeActive: screenState.session && Config.session.enabled
@@ -35,19 +40,30 @@ Item {
         Anim {}
     }
 
-    Loader {
-        id: content
+    FocusCardProxy {
+        id: focusProxy
 
-        parent: root.inFocusWindow ? root.focusWindow.contentHost : root
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.left: parent.left
-        opacity: root.inFocusWindow ? root.opacity : 1
-        z: root.inFocusWindow ? 1 : 0
+        focusWindow: root.focusWindow
+        sourceItem: root
+        focusSurface: "session"
+        active: root.inFocusWindow
 
-        active: root.shouldBeActive || root.visible
+        Loader {
+            id: content
 
-        sourceComponent: Content {
-            screenState: root.screenState
+            parent: focusProxy
+            x: root.inFocusWindow ? focusProxy.contentOffsetX : 0
+            y: (root.inFocusWindow ? focusProxy.contentOffsetY : 0) + Math.max(0, (root.height - height) / 2)
+            opacity: root.inFocusWindow ? root.opacity : 1
+
+            active: root.shouldBeActive || root.visible
+            transform: Matrix4x4 {
+                matrix: root.inFocusWindow ? root.focusTransformMatrix : root.identityFocusTransform
+            }
+
+            sourceComponent: Content {
+                screenState: root.screenState
+            }
         }
     }
 }

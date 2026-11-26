@@ -13,6 +13,11 @@ Item {
     required property ScreenState screenState
     required property var panels
     property var focusWindow: null
+    readonly property matrix4x4 identityFocusTransform: Qt.matrix4x4(1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1)
+    property matrix4x4 focusTransformMatrix: identityFocusTransform
 
     readonly property bool shouldBeActive: screenState.launcher && Config.launcher.enabled
     readonly property bool usesFocusWindow: focusWindow?.surface === "launcher"
@@ -47,21 +52,32 @@ Item {
         Anim {}
     }
 
-    Loader {
-        id: content
+    FocusCardProxy {
+        id: focusProxy
 
-        parent: root.usesFocusWindow ? root.focusWindow.contentHost : root
-        anchors.top: parent.top
-        anchors.horizontalCenter: parent.horizontalCenter
-        opacity: root.usesFocusWindow ? root.opacity : 1
-        z: root.usesFocusWindow ? 1 : 0
+        focusWindow: root.focusWindow
+        sourceItem: root
+        focusSurface: "launcher"
+        active: root.usesFocusWindow
 
-        active: root.shouldBeActive || root.visible
+        Loader {
+            id: content
 
-        sourceComponent: Content {
-            screenState: root.screenState
-            panels: root.panels
-            maxHeight: root.maxHeight
+            parent: focusProxy
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            opacity: root.usesFocusWindow ? root.opacity : 1
+
+            active: root.shouldBeActive || root.visible
+            transform: Matrix4x4 {
+                matrix: root.usesFocusWindow ? root.focusTransformMatrix : root.identityFocusTransform
+            }
+
+            sourceComponent: Content {
+                screenState: root.screenState
+                panels: root.panels
+                maxHeight: root.maxHeight
+            }
         }
     }
 }
