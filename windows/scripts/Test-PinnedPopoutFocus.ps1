@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name pinned-popout-focus -ShellFixture -UseQuickshell `
     -Sources @('windows/tests/PinnedPopoutFocusTest.qml') -FixtureFile 'windows/tests/PinnedPopoutFocusTest.qml' `
     -Marker CAELESTIA_PINNED_FOCUS -MinimumAssertions 65 -TimeoutMs 30000 `
-    -ShellConfig '{"bar":{"workspaces":{"showWindows":false}}}'
+    -ShellConfig '{"bar":{"workspaces":{"showWindows":false}}}' `
+    -ShellTokens '{"sizes":{"bar":{"windowPreviewSize":640}}}'
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Pinned popout focus fixture failed. See $($result.stderr)." }

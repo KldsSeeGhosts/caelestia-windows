@@ -51,14 +51,29 @@ StyledWindow {
             : surface === "popouts" ? panels.popoutsWrapper : null
         readonly property bool active: surface !== "" && target !== null
         readonly property int fullscreenWidthClearance: 64
+        readonly property int minimumFullscreenWidthClearance: 32
         readonly property int nonFullscreenWidth: Math.max(1, Math.round(screen.width - fullscreenWidthClearance))
-        readonly property int launcherBandWidth: nonFullscreenWidth
+        readonly property int maximumNonFullscreenWidth: Math.max(1, Math.round(screen.width - minimumFullscreenWidthClearance))
+        readonly property real settledPanelLeft: Math.max(panels.x, bar.contentWidth)
+        readonly property real settledPanelRight: screen.width - root.borderLayoutThickness
+        readonly property real settledPanelWidth: Math.max(0, settledPanelRight - settledPanelLeft)
+        readonly property real launcherCenterX: settledPanelLeft + settledPanelWidth / 2
+        readonly property real launcherSettledWidth: Math.max(settledPanelWidth, panels.launcher.maximumFocusWidth ?? 0)
+        readonly property int launcherBandWidth: Math.max(1, Math.min(maximumNonFullscreenWidth, Math.ceil(launcherSettledWidth)))
+        readonly property int launcherBandX: {
+            const maximumX = Math.max(0, Math.round(screen.width - launcherBandWidth));
+            return Math.max(0, Math.min(maximumX, Math.round(launcherCenterX - launcherBandWidth / 2)));
+        }
         readonly property int sessionBandWidth: Math.min(nonFullscreenWidth, 640)
-        readonly property int popoutBandWidth: Math.min(nonFullscreenWidth, 640)
+        readonly property int popoutBandMargin: 33
+        property real popoutBandContentWidth: 0
+        readonly property real popoutBandWidthSource: Math.round(popoutBandContentWidth > 0 ? popoutBandContentWidth : panels.popouts.nonAnimWidth)
+        readonly property real popoutSettledWidth: Math.round(settledPanelLeft) + popoutBandWidthSource + popoutBandMargin
+        readonly property int popoutBandWidth: Math.max(1, Math.min(maximumNonFullscreenWidth, Math.ceil(popoutSettledWidth)))
         readonly property int bandWidth: surface === "session" ? sessionBandWidth
             : surface === "popouts" ? popoutBandWidth : launcherBandWidth
         readonly property int bandX: surface === "session" ? Math.max(0, Math.round(screen.width - bandWidth))
-            : surface === "launcher" ? Math.max(0, Math.round((screen.width - bandWidth) / 2)) : 0
+            : surface === "launcher" ? launcherBandX : 0
         readonly property Item card: surface === "launcher" ? panels.launcher
             : surface === "session" ? panels.session
             : surface === "popouts" ? panels.popouts : null
@@ -129,15 +144,19 @@ StyledWindow {
         readonly property bool pointerHovered: {
             if (!active || !inputItem || !cardHover.hovered)
                 return false;
-            const bounds = inputBounds;
             const pos = cardHover.point.scenePosition;
-            return bounds.width > 0 && bounds.height > 0
-                && pos.x >= bounds.x && pos.x < bounds.x + bounds.width
-                && pos.y >= bounds.y && pos.y < bounds.y + bounds.height;
+            return inputItem.containsPoint(pos.x, pos.y);
         }
 
         readonly property alias contentHost: focusContent
         readonly property alias inputRegion: focusInputRegion
+
+        onSurfaceChanged: {
+            if (surface === "popouts")
+                popoutBandContentWidth = panels.popouts.nonAnimWidth;
+            else if (surface === "")
+                popoutBandContentWidth = 0;
+        }
 
         screen: root.screen
         name: "drawers-focus"
@@ -162,6 +181,29 @@ StyledWindow {
             y: drawerFocusWindow.inputRegionBounds.y
             width: drawerFocusWindow.inputRegionBounds.width
             height: drawerFocusWindow.inputRegionBounds.height
+            regions: focusInputSlices.instances
+        }
+
+        Variants {
+            id: focusInputSlices
+
+            model: {
+                const count = drawerFocusWindow.inputItem?.inputMaskSlices.length ?? 0;
+                const indices = [];
+                for (let i = 0; i < count; i++)
+                    indices.push(i);
+                return indices;
+            }
+
+            Region {
+                required property int modelData
+                readonly property rect slice: drawerFocusWindow.inputItem?.inputMaskSlices[modelData] ?? Qt.rect(0, 0, 0, 0)
+
+                x: slice.x
+                y: slice.y
+                width: slice.width
+                height: slice.height
+            }
         }
 
         FocusScope {

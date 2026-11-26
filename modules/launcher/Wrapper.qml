@@ -28,6 +28,15 @@ Item {
             max -= panels.dashboard.nonAnimHeight;
         return max;
     }
+    readonly property real maximumFocusWidth: {
+        const wallpaperItemWidth = Tokens.sizes.launcher.wallpaperWidth * 0.8 + Tokens.padding.medium * 2;
+        const availableWidth = screen.width - Config.border.rounding * 4 - Config.border.thickness * 2;
+        const wallpaperCount = wallpaperItemWidth > 0
+            ? Math.min(Config.launcher.maxWallpapers, Math.max(0, Math.floor(availableWidth / wallpaperItemWidth)))
+            : 0;
+        const wallpaperListWidth = Math.max(Tokens.sizes.launcher.itemWidth * 1.2, wallpaperCount * wallpaperItemWidth);
+        return Math.max(Tokens.sizes.launcher.itemWidth, wallpaperListWidth) + Tokens.padding.large * 2;
+    }
 
     property real offsetScale: shouldBeActive ? 0 : 1
 

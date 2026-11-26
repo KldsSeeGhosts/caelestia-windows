@@ -3,6 +3,7 @@ import QtTest
 import Quickshell
 import Quickshell.Wayland
 import Caelestia
+import Caelestia.Config
 import qs.services as Services
 import qs.modules.drawers
 import qs.modules.nexus as Nexus
@@ -107,9 +108,12 @@ ShellRoot {
             && focusWindow.margins.top === nativeGeometry.top
             && focusWindow.implicitWidth === nativeGeometry.width
             && focusWindow.implicitHeight === nativeGeometry.height,
-            label + ": native margins and implicit size remain stable");
-        check(focusWindow.implicitWidth <= win.width - focusWindow.fullscreenWidthClearance,
-            label + ": companion keeps the fullscreen width clearance");
+            label + ": native margins and implicit size remain stable; expected "
+            + JSON.stringify(nativeGeometry) + " got left " + focusWindow.margins.left
+            + " top " + focusWindow.margins.top + " width " + focusWindow.implicitWidth
+            + " height " + focusWindow.implicitHeight);
+        check(focusWindow.implicitWidth <= win.width - focusWindow.minimumFullscreenWidthClearance,
+            label + ": companion keeps the guaranteed fullscreen width clearance");
         check(focusWindow.implicitHeight <= win.height,
             label + ": companion height stays within the monitor");
     }
@@ -170,6 +174,12 @@ ShellRoot {
             label + ": input bounds " + rectText(focusWindow.inputBounds)
             + " track the transformed clipped card " + rectText(expected));
         const region = integerBounds(expected);
+        if (proxy.inputHasShear) {
+            check(focusWindow.inputRegion.width === 0 && focusWindow.inputRegion.height === 0
+                && proxy.inputMaskSlices.length > 0,
+                label + ": sheared input uses banded slices instead of one rectangular mask");
+            return;
+        }
         check(Math.abs(focusWindow.inputRegion.x - region.x) <= 1
             && Math.abs(focusWindow.inputRegion.y - region.y) <= 1
             && Math.abs(focusWindow.inputRegion.width - region.width) <= 1
@@ -266,10 +276,24 @@ ShellRoot {
                 "pinned: companion uses the overlay layer");
             check(focusWindow.color.a === 0, "pinned: companion background is transparent");
             check(focusWindow.surface === "popouts", "pinned: companion targets the popout");
-            check(focusWindow.width > 0 && focusWindow.width <= win.width - focusWindow.fullscreenWidthClearance,
-                "pinned: companion keeps the fullscreen width clearance");
+            check(focusWindow.width > 0 && focusWindow.width <= win.width - focusWindow.minimumFullscreenWidthClearance,
+                "pinned: companion keeps the guaranteed fullscreen width clearance");
             check(focusWindow.height > 0 && focusWindow.height <= win.height,
                 "pinned: companion height stays within the monitor");
+            check(Tokens.sizes.bar.windowPreviewSize === 640,
+                "wide popout fixture: token config raises the preview width to 640");
+            check(popouts.nonAnimWidth >= 640,
+                "wide popout fixture: settled popout width reaches the 640 px preview");
+            check(focusWindow.width > 640,
+                "wide popout fixture: companion band is not capped at 640 px");
+            check(focusWindow.width + 1 >= content.interactionWrapper.panels.x + popouts.nonAnimWidth + focusWindow.popoutBandMargin,
+                "wide popout fixture: companion band covers the settled popout edge plus margin; width "
+                + focusWindow.width + " panels.x " + content.interactionWrapper.panels.x
+                + " nonAnimWidth " + popouts.nonAnimWidth + " margin " + focusWindow.popoutBandMargin
+                + " frozen " + focusWindow.popoutBandContentWidth);
+            check(focusWindow.inputBounds.x >= -1
+                && focusWindow.inputBounds.x + focusWindow.inputBounds.width <= focusWindow.width + 1,
+                "wide popout fixture: transformed input stays inside the companion band");
             check(focusWindow.margins.left === focusWindow.bandX && focusWindow.margins.top === 0
                 && focusWindow.implicitWidth === focusWindow.bandWidth,
                 "pinned: native geometry matches the stable popout band");

@@ -4,8 +4,10 @@ import Quickshell
 import Quickshell.Wayland
 import Caelestia
 import Caelestia.Config
+import qs.components
 import qs.modules.drawers
 import qs.modules.launcher.services
+import qs.services as Services
 
 // The launcher and session use the production ContentWindow and its card-sized
 // focus companion. Drawers without a companion must still provide a visible,
@@ -32,6 +34,8 @@ ShellRoot {
     property real lastFilterHeight: -1
     property int hoverInsideAttempts: 0
     property int hoverOutsideAttempts: 0
+    property int wallpaperSettledFrames: 0
+    property real lastWallpaperWidth: -1
     property string selectedAppId: ""
 
     readonly property var win: content
@@ -43,6 +47,52 @@ ShellRoot {
         screen: Quickshell.screens[0]
         visible: true
         interactionEnabled: true
+    }
+
+    Item {
+        id: shearHost
+        width: 300
+        height: 300
+
+        Item {
+            id: shearSource
+            width: 300
+            height: 300
+        }
+
+        QtObject {
+            id: shearFocusWindow
+            property string surface: "shear"
+            property Item contentHost: shearHost
+            property real contentX: 0
+            property real contentY: 0
+            property real viewportX: 0
+            property real viewportY: 0
+            property real viewportWidth: 300
+            property real viewportHeight: 300
+            property bool viewportClips: true
+        }
+
+        FocusCardProxy {
+            id: shearProxy
+            focusWindow: shearFocusWindow
+            sourceItem: shearSource
+            focusSurface: "shear"
+            inputTransformMatrix: Qt.matrix4x4(1, 0.5, 0, -25,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1)
+            contentItem: shearContent
+            active: true
+
+            Item {
+                id: shearContent
+                x: 0
+                y: 0
+                width: 100
+                height: 100
+            }
+        }
     }
 
     QtObject {
@@ -156,8 +206,8 @@ ShellRoot {
         check(focusWindow.color.a === 0, label + ": companion background is transparent");
         check(focusWindow.surface === surface,
             label + ": companion targets " + surface);
-        check(focusWindow.width > 0 && focusWindow.width <= win.width - focusWindow.fullscreenWidthClearance,
-            label + ": companion keeps the fullscreen width clearance");
+        check(focusWindow.width > 0 && focusWindow.width <= win.width - focusWindow.minimumFullscreenWidthClearance,
+            label + ": companion keeps the guaranteed fullscreen width clearance");
         check(focusWindow.height > 0 && focusWindow.height <= win.height,
             label + ": companion height stays within the monitor");
         checkGrabTarget(focusWindow, label);
@@ -188,8 +238,8 @@ ShellRoot {
             label + ": companion native y stays at the monitor top");
         check(focusWindow.implicitWidth === focusWindow.bandWidth,
             label + ": companion native width matches the stable surface band");
-        check(focusWindow.implicitWidth <= focusWindow.screen.width - focusWindow.fullscreenWidthClearance,
-            label + ": companion native width keeps the fullscreen clearance");
+        check(focusWindow.implicitWidth <= focusWindow.screen.width - focusWindow.minimumFullscreenWidthClearance,
+            label + ": companion native width keeps the guaranteed fullscreen clearance");
         check(focusWindow.implicitHeight === Math.max(1, Math.round(focusWindow.screen.height)),
             label + ": companion native height matches the fixed band height");
     }
@@ -283,6 +333,12 @@ ShellRoot {
             : transformed;
         checkRectClose(focusWindow.inputBounds, expected, label);
         const expectedRegion = integerBounds(expected);
+        if (proxy.inputHasShear) {
+            check(focusWindow.inputRegion.width === 0 && focusWindow.inputRegion.height === 0
+                && proxy.inputMaskSlices.length > 0,
+                label + ": sheared input uses banded slices instead of one rectangular mask");
+            return;
+        }
         check(Math.abs(focusWindow.inputRegion.x - expectedRegion.x) <= 1
             && Math.abs(focusWindow.inputRegion.y - expectedRegion.y) <= 1
             && Math.abs(focusWindow.inputRegion.width - expectedRegion.width) <= 1
@@ -302,6 +358,22 @@ ShellRoot {
             label + ": search stays inside the companion instead of clipping off the bottom");
         check(bounds.y + bounds.height <= focusWindow.inputBounds.y + focusWindow.inputBounds.height + 1,
             label + ": search bottom stays inside the animated launcher card");
+    }
+
+    function checkLauncherBandContains(bounds, label): void {
+        const panels = content.interactionWrapper.panels;
+        const bandLeft = focusWindow.margins.left;
+        const bandRight = bandLeft + focusWindow.width;
+        check(panels.x >= bandLeft - 1 && panels.x + panels.width <= bandRight + 1,
+            label + ": companion band contains the settled panels span");
+        check(bounds.width >= 700,
+            label + ": wallpaper fixture uses a wide launcher card");
+        const sceneLeft = bounds.x + bandLeft;
+        const sceneRight = sceneLeft + bounds.width;
+        const visibleLeft = Math.max(0, sceneLeft);
+        const visibleRight = Math.min(focusWindow.screen.width, sceneRight);
+        check(visibleLeft >= bandLeft - 1 && visibleRight <= bandRight + 1,
+            label + ": visible wide card geometry stays inside the companion band");
     }
 
     function highlightIsAligned(appList): bool {
@@ -355,6 +427,20 @@ ShellRoot {
         Apps.frequencyStoreOverride = appStore;
         Apps.enabledOverride = true;
         Apps.launchEnabledOverride = true;
+
+        check(shearProxy.inputHasShear, "shear fixture: proxy detects off-diagonal transform terms");
+        check(shearProxy.inputBounds.width > 100,
+            "shear fixture: test point is inside the axis-aligned bounding box");
+        check(!shearProxy.containsPoint(100, 1),
+            "shear fixture: inverse hit-test rejects a point inside the bounds but outside the quad");
+        check(shearProxy.containsPoint(50, 50),
+            "shear fixture: inverse hit-test accepts an interior point");
+        check(!shearProxy.maskContainsPoint(100, 1),
+            "shear fixture: banded input mask rejects a point outside the quad");
+        check(shearProxy.maskContainsPoint(50, 50),
+            "shear fixture: banded input mask accepts an interior point");
+        check(shearProxy.inputRegionBounds.width === 0 && shearProxy.inputMaskSlices.length > 0,
+            "shear fixture: sheared cards use banded input slices instead of one rectangular mask");
 
         GlobalConfig.launcher.enabled = true;
         GlobalConfig.session.enabled = true;
@@ -442,12 +528,57 @@ ShellRoot {
             check(appList !== null, "launcher: Windows combined app list is present");
             launcherHeightBeforeFilter = launcher.height;
             initialLauncherCount = appList.count;
+            const wallpapers = [];
+            for (let i = 0; i < 5; i++) {
+                wallpapers.push({
+                    path: "C:/fixture/wallpaper-" + i + ".webp",
+                    relativePath: "wallpaper-" + i + ".webp",
+                    name: "wallpaper-" + i + ".webp",
+                    parentDir: "C:/fixture",
+                    onDisk: false
+                });
+            }
+            Services.Wallpapers.files = wallpapers;
+            const search = findObject(focusWindow.contentHost, "launcherSearch");
+            check(search !== null, "launcher wallpaper: search field is present");
+            search.text = ">wallpaper ";
+            wallpaperSettledFrames = 0;
+            lastWallpaperWidth = -1;
+            step = 30;
+        } else if (step === 30) {
+            const search = findObject(focusWindow.contentHost, "launcherSearch");
+            const wallpaperList = findObject(focusWindow.contentHost, "launcherWallpaperList");
+            if (!search || !wallpaperList || search.text !== ">wallpaper " || wallpaperList.count < 2)
+                return;
+            const bounds = focusWindow.inputBounds;
+            const widthDelta = lastWallpaperWidth < 0 ? Infinity : Math.abs(bounds.width - lastWallpaperWidth);
+            if (bounds.width >= 700 && widthDelta <= 0.01)
+                wallpaperSettledFrames++;
+            else
+                wallpaperSettledFrames = 0;
+            lastWallpaperWidth = bounds.width;
+            checkNativeGeometryStable("launcher wallpaper");
+            checkInputTracking("launcher wallpaper");
+            if (wallpaperSettledFrames < 3)
+                return;
+            check(wallpaperList.count >= 2, "launcher wallpaper: fixture entries fill the wide picker");
+            checkLauncherBandContains(bounds, "launcher wallpaper");
+            search.text = "";
+            step = 31;
+        } else if (step === 31) {
+            const search = findObject(focusWindow.contentHost, "launcherSearch");
+            const appList = findLauncherAppList(focusWindow.contentHost);
+            const launcher = content.interactionWrapper.panels.launcher;
+            if (!search || !appList)
+                return;
+            if (search.text !== "" || appList.count !== initialLauncherCount
+                || Math.abs(launcher.height - launcherHeightBeforeFilter) > 1)
+                return;
             filterSamples = 0;
             intermediateFilterSamples = 0;
             settledFilterFrames = 0;
             lastFilterHeight = -1;
             input.keyClick(Qt.Key_W);
-            const search = findObject(focusWindow.contentHost, "launcherSearch");
             check(search.text.length === 1, "launcher: typing reaches the companion search field");
             checkNativeGeometryStable("launcher typing");
             step = 4;

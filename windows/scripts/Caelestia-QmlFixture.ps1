@@ -76,6 +76,7 @@ function Invoke-QmlFixture {
         [switch]$UseQuickshell,
         [switch]$Render,
         [string]$ShellConfig,
+        [string]$ShellTokens,
         [string[]]$FakeDirectories = @(),
         [string]$RunName,
         [string]$LogSuffix,
@@ -162,6 +163,9 @@ function Invoke-QmlFixture {
     }
     if ($ShellConfig) {
         $ShellConfig | Set-Content -LiteralPath (Join-Path $profile 'config\shell.json') -Encoding UTF8
+    }
+    if ($ShellTokens) {
+        $ShellTokens | Set-Content -LiteralPath (Join-Path $profile 'config\shell-tokens.json') -Encoding UTF8
     }
     $stagedSources = foreach ($source in $Sources) {
         $relative = if ($KeepRelativePaths) { $source } else { Split-Path -Leaf $source }
