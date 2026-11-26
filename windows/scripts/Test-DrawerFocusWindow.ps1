@@ -7,4 +7,3 @@ $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name draw
     -Marker CAELESTIA_DRAWER_FOCUS -MinimumAssertions 112 -TimeoutMs 30000
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Drawer focus companion fixture failed. See $($result.stderr)." }
-

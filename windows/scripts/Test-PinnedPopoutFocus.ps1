@@ -8,4 +8,3 @@ $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name pinn
     -ShellConfig '{"bar":{"workspaces":{"showWindows":false}}}'
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Pinned popout focus fixture failed. See $($result.stderr)." }
-
