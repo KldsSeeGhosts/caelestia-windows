@@ -137,6 +137,7 @@ StyledWindow {
         }
 
         readonly property alias contentHost: focusContent
+        readonly property alias inputRegion: focusInputRegion
 
         screen: root.screen
         name: "drawers-focus"

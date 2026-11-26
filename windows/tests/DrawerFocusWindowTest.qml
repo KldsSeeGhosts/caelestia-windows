@@ -23,7 +23,16 @@ ShellRoot {
     property real sessionOpenLeft: 0
     property var nativeGeometry: null
     property real launcherHeightBeforeFilter: 0
+    property int initialLauncherCount: 0
+    property int launcherOpenSamples: 0
+    property int sessionOpenSamples: 0
     property int filterSamples: 0
+    property int intermediateFilterSamples: 0
+    property int settledFilterFrames: 0
+    property real lastFilterHeight: -1
+    property int hoverInsideAttempts: 0
+    property int hoverOutsideAttempts: 0
+    property string selectedAppId: ""
 
     readonly property var win: content
     readonly property var focusWindow: content.focusWindow
@@ -42,11 +51,13 @@ ShellRoot {
         property var applications: ({ values: [] })
         property bool scanCompleted: false
         property string scanError: ""
+        property var executed: []
 
         function lookup(appId): var {
             return (applications.values ?? []).find(entry => entry.id === appId) ?? null;
         }
         function execute(entry): bool {
+            executed.push(entry?.id ?? "");
             return true;
         }
     }
@@ -111,6 +122,10 @@ ShellRoot {
         return null;
     }
 
+    function findLauncherAppList(object): var {
+        return findObject(object, "combinedLauncherAppList") ?? findObject(object, "launcherAppList");
+    }
+
     function checkGrabTarget(target, label): void {
         check(grab.windows.length === 1 && grab.windows[0] === target,
             label + ": focus grab targets " + (target === focusWindow ? "the companion" : "the drawer host"));
@@ -141,10 +156,10 @@ ShellRoot {
         check(focusWindow.color.a === 0, label + ": companion background is transparent");
         check(focusWindow.surface === surface,
             label + ": companion targets " + surface);
-        check(focusWindow.width > 0 && focusWindow.width <= win.width - 2,
-            label + ": companion is at least 2 px narrower than the monitor");
-        check(focusWindow.height > 0 && focusWindow.height <= win.height - 2,
-            label + ": companion is at least 2 px shorter than the monitor");
+        check(focusWindow.width > 0 && focusWindow.width <= win.width - focusWindow.fullscreenWidthClearance,
+            label + ": companion keeps the fullscreen width clearance");
+        check(focusWindow.height > 0 && focusWindow.height <= win.height,
+            label + ": companion height stays within the monitor");
         checkGrabTarget(focusWindow, label);
     }
 
@@ -167,12 +182,16 @@ ShellRoot {
     }
 
     function checkNativeGeometry(label): void {
-        check(focusWindow.margins.left === 1 && focusWindow.margins.top === 1,
-            label + ": companion native origin stays at the one-pixel inset");
-        check(focusWindow.implicitWidth > 0 && focusWindow.implicitWidth <= win.width - 2,
-            label + ": companion native width stays strictly below the monitor");
-        check(focusWindow.implicitHeight > 0 && focusWindow.implicitHeight <= win.height - 2,
-            label + ": companion native height stays strictly below the monitor");
+        check(focusWindow.margins.left === focusWindow.bandX,
+            label + ": companion native x matches the stable surface band");
+        check(focusWindow.margins.top === 0,
+            label + ": companion native y stays at the monitor top");
+        check(focusWindow.implicitWidth === focusWindow.bandWidth,
+            label + ": companion native width matches the stable surface band");
+        check(focusWindow.implicitWidth <= focusWindow.screen.width - focusWindow.fullscreenWidthClearance,
+            label + ": companion native width keeps the fullscreen clearance");
+        check(focusWindow.implicitHeight === Math.max(1, Math.round(focusWindow.screen.height)),
+            label + ": companion native height matches the fixed band height");
     }
 
     function checkNativeGeometryStable(label): void {
@@ -197,19 +216,131 @@ ShellRoot {
         return Qt.point(panels.x + x, panels.y + y);
     }
 
+    function itemBoundsInHost(item, host): rect {
+        if (!item || !host)
+            return Qt.rect(0, 0, 0, 0);
+        const points = [
+            item.mapToItem(host, 0, 0),
+            item.mapToItem(host, item.width, 0),
+            item.mapToItem(host, 0, item.height),
+            item.mapToItem(host, item.width, item.height)
+        ];
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+        for (const point of points) {
+            left = Math.min(left, point.x);
+            top = Math.min(top, point.y);
+            right = Math.max(right, point.x);
+            bottom = Math.max(bottom, point.y);
+        }
+        if (!isFinite(left) || right <= left || bottom <= top)
+            return Qt.rect(0, 0, 0, 0);
+        return Qt.rect(left, top, right - left, bottom - top);
+    }
+
+    function intersectBounds(first, second): rect {
+        const left = Math.max(first.x, second.x);
+        const top = Math.max(first.y, second.y);
+        const right = Math.min(first.x + first.width, second.x + second.width);
+        const bottom = Math.min(first.y + first.height, second.y + second.height);
+        if (right <= left || bottom <= top)
+            return Qt.rect(0, 0, 0, 0);
+        return Qt.rect(left, top, right - left, bottom - top);
+    }
+
+    function integerBounds(bounds): rect {
+        if (!bounds || bounds.width <= 0 || bounds.height <= 0)
+            return Qt.rect(0, 0, 0, 0);
+        const left = Math.floor(bounds.x);
+        const top = Math.floor(bounds.y);
+        const right = Math.ceil(bounds.x + bounds.width);
+        const bottom = Math.ceil(bounds.y + bounds.height);
+        return Qt.rect(left, top, right - left, bottom - top);
+    }
+
+    function rectText(bounds): string {
+        return "(" + bounds.x + "," + bounds.y + " " + bounds.width + "x" + bounds.height + ")";
+    }
+
+    function checkRectClose(actual, expected, label): void {
+        check(Math.abs(actual.x - expected.x) <= 0.76
+            && Math.abs(actual.y - expected.y) <= 0.76
+            && Math.abs(actual.width - expected.width) <= 0.76
+            && Math.abs(actual.height - expected.height) <= 0.76,
+            label + ": bounds " + rectText(actual) + " match transformed card " + rectText(expected));
+    }
+
+    function checkInputTracking(label): void {
+        const proxy = focusWindow.inputItem;
+        check(proxy !== null, label + ": input region uses the reparented card");
+        if (!proxy || !proxy.contentItem)
+            return;
+        const transformed = itemBoundsInHost(proxy.contentItem, focusWindow.contentHost);
+        const expected = proxy.clip
+            ? intersectBounds(transformed, Qt.rect(proxy.x, proxy.y, proxy.width, proxy.height))
+            : transformed;
+        checkRectClose(focusWindow.inputBounds, expected, label);
+        const expectedRegion = integerBounds(expected);
+        check(Math.abs(focusWindow.inputRegion.x - expectedRegion.x) <= 1
+            && Math.abs(focusWindow.inputRegion.y - expectedRegion.y) <= 1
+            && Math.abs(focusWindow.inputRegion.width - expectedRegion.width) <= 1
+            && Math.abs(focusWindow.inputRegion.height - expectedRegion.height) <= 1,
+            label + ": native mask " + rectText(Qt.rect(focusWindow.inputRegion.x, focusWindow.inputRegion.y,
+                focusWindow.inputRegion.width, focusWindow.inputRegion.height))
+            + " follows the transformed clipped card " + rectText(expectedRegion));
+    }
+
+    function checkSearchInside(search, label): void {
+        const bounds = itemBoundsInHost(search, focusWindow.contentHost);
+        check(bounds.width > 0 && bounds.height > 0,
+            label + ": search has measurable companion geometry");
+        check(bounds.x >= -1 && bounds.y >= -1
+            && bounds.x + bounds.width <= focusWindow.width + 1
+            && bounds.y + bounds.height <= focusWindow.height + 1,
+            label + ": search stays inside the companion instead of clipping off the bottom");
+        check(bounds.y + bounds.height <= focusWindow.inputBounds.y + focusWindow.inputBounds.height + 1,
+            label + ": search bottom stays inside the animated launcher card");
+    }
+
+    function highlightIsAligned(appList): bool {
+        return !!appList && !!appList.currentItem && !!appList.highlightItem
+            && Math.abs(appList.highlightItem.y - appList.currentItem.y) <= 1
+            && Math.abs(appList.highlightItem.implicitHeight - appList.currentItem.implicitHeight) <= 1;
+    }
+
+    function checkHighlightAligned(appList, label): void {
+        if (!appList || !appList.currentItem)
+            return;
+        check(appList.highlightItem !== null && appList.highlightItem !== undefined,
+            label + ": app list has a live highlight item");
+        if (!appList.highlightItem)
+            return;
+        check(Math.abs(appList.highlightItem.y - appList.currentItem.y) <= 1,
+            label + ": highlight y " + appList.highlightItem.y + " follows current row y " + appList.currentItem.y);
+        check(Math.abs(appList.highlightItem.implicitHeight - appList.currentItem.implicitHeight) <= 1,
+            label + ": highlight height follows the current row");
+    }
+
     function checkGeometry(panel, label): void {
         const expected = layoutPosition(panel);
         check(Math.abs(focusWindow.contentX - (expected.x - focusWindow.margins.left)) <= 1,
             label + ": content x " + focusWindow.contentX + " tracks panel x " + expected.x);
         check(Math.abs(focusWindow.contentY - (expected.y - focusWindow.margins.top)) <= 1,
             label + ": content y " + focusWindow.contentY + " tracks panel y " + expected.y);
-        check(focusWindow.inputItem !== null, label + ": input region uses the reparented card");
-        if (!focusWindow.inputItem)
-            return;
-        check(Math.abs(focusWindow.inputItem.width - panel.width) <= 1,
-            label + ": input width " + focusWindow.inputItem.width + " matches panel width " + panel.width);
-        check(Math.abs(focusWindow.inputItem.height - panel.height) <= 1,
-            label + ": input height " + focusWindow.inputItem.height + " matches panel height " + panel.height);
+        checkInputTracking(label);
+    }
+
+    function resetNativeGeometryBaseline(): void {
+        nativeGeometry = null;
+    }
+
+    function ensureNativeGeometryBaseline(label): void {
+        if (nativeGeometry === null)
+            nativeGeometry = captureNativeGeometry();
+        else
+            checkNativeGeometryStable(label);
     }
 
     Component.onCompleted: {
@@ -223,6 +354,7 @@ ShellRoot {
         Apps.catalogOverride = appCatalog;
         Apps.frequencyStoreOverride = appStore;
         Apps.enabledOverride = true;
+        Apps.launchEnabledOverride = true;
 
         GlobalConfig.launcher.enabled = true;
         GlobalConfig.session.enabled = true;
@@ -234,7 +366,7 @@ ShellRoot {
     }
 
     Timer {
-        interval: 100
+        interval: 16
         repeat: true
         running: true
 
@@ -249,45 +381,172 @@ ShellRoot {
     }
 
     function advance(): void {
-        if (++attempts > 120)
+        if (++attempts > 900)
             throw new Error("timed out at step " + step);
 
         if (step === 0) {
             checkClosed("closed");
+            resetNativeGeometryBaseline();
+            launcherOpenSamples = 0;
             content.screenState.launcher = true;
             step = 1;
         } else if (step === 1) {
             const search = findObject(focusWindow.contentHost, "launcherSearch");
-            const appList = findObject(focusWindow.contentHost, "launcherAppList");
+            const appList = findLauncherAppList(focusWindow.contentHost);
             const launcher = content.interactionWrapper.panels.launcher;
-            if (!search || !search.activeFocus || launcher.offsetScale > 0.001)
+            if (focusWindow.surface === "launcher")
+                ensureNativeGeometryBaseline("launcher opening");
+            if (launcher.offsetScale > 0.001) {
+                if (launcher.offsetScale < 1) {
+                    launcherOpenSamples++;
+                    checkNativeGeometryStable("launcher opening");
+                    if (focusWindow.inputItem?.contentItem)
+                        checkInputTracking("launcher opening");
+                }
                 return;
+            }
+            if (!search || !search.activeFocus || !appList)
+                return;
+            check(launcherOpenSamples >= 2, "launcher: opening animation was sampled across frames");
             checkOpen("launcher", "launcher");
             checkNativeGeometry("launcher");
             checkGeometry(launcher, "launcher");
             check(search.Window.window === focusWindow.contentHost.Window.window,
                 "launcher: search lives in the companion");
+            check(appList.count === 7, "launcher: unfiltered result count is seven");
             input.parent = focusWindow.contentHost;
-            nativeGeometry = captureNativeGeometry();
-            launcherHeightBeforeFilter = launcher.height;
-            input.keyClick(Qt.Key_W);
-            check(search.text.length === 1, "launcher: typing reaches the companion search field");
-            checkNativeGeometryStable("launcher typing");
-            input.keyClick(Qt.Key_Escape);
+            hoverInsideAttempts = 0;
             step = 2;
         } else if (step === 2) {
+            const bounds = focusWindow.inputBounds;
+            if (!focusWindow.pointerHovered) {
+                check(hoverInsideAttempts < 8, "launcher: hover inside the transformed card reaches the companion");
+                hoverInsideAttempts++;
+                input.mouseMove(focusWindow.contentHost, bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+                return;
+            }
+            check(true, "launcher: hover inside the transformed card is accepted");
+            input.mouseMove(focusWindow.contentHost, 1, 1);
+            hoverOutsideAttempts = 0;
+            step = 3;
+        } else if (step === 3) {
+            if (focusWindow.pointerHovered) {
+                check(hoverOutsideAttempts < 8, "launcher: hover outside the transformed card leaves the companion predicate");
+                hoverOutsideAttempts++;
+                input.mouseMove(focusWindow.contentHost, 1, 1);
+                return;
+            }
+            check(true, "launcher: hover outside the transformed card is rejected");
+            const appList = findLauncherAppList(focusWindow.contentHost);
+            const launcher = content.interactionWrapper.panels.launcher;
+            check(appList !== null, "launcher: Windows combined app list is present");
+            launcherHeightBeforeFilter = launcher.height;
+            initialLauncherCount = appList.count;
+            filterSamples = 0;
+            intermediateFilterSamples = 0;
+            settledFilterFrames = 0;
+            lastFilterHeight = -1;
+            input.keyClick(Qt.Key_W);
+            const search = findObject(focusWindow.contentHost, "launcherSearch");
+            check(search.text.length === 1, "launcher: typing reaches the companion search field");
+            checkNativeGeometryStable("launcher typing");
+            step = 4;
+        } else if (step === 4) {
+            const search = findObject(focusWindow.contentHost, "launcherSearch");
+            const appList = findLauncherAppList(focusWindow.contentHost);
+            const launcher = content.interactionWrapper.panels.launcher;
+            if (!search || !appList)
+                return;
+            filterSamples++;
+            checkNativeGeometryStable("launcher filtering");
+            checkInputTracking("launcher filtering");
+            checkSearchInside(search, "launcher filtering");
+            checkHighlightAligned(appList, "launcher filtering");
+
+            const height = launcher.height;
+            const delta = lastFilterHeight < 0 ? Infinity : Math.abs(height - lastFilterHeight);
+            if (height < launcherHeightBeforeFilter - 1 && delta > 0.01)
+                intermediateFilterSamples++;
+            if (appList.count === 2 && height < launcherHeightBeforeFilter - 1) {
+                if (delta <= 0.01)
+                    settledFilterFrames++;
+                else
+                    settledFilterFrames = 0;
+            } else {
+                settledFilterFrames = 0;
+            }
+            lastFilterHeight = height;
+            if (settledFilterFrames < 3)
+                return;
+
+            check(appList.count === 2, "launcher: filtering reaches the two real Window results");
+            check(launcher.height < launcherHeightBeforeFilter,
+                "launcher: filtering shrinks the card height");
+            check(intermediateFilterSamples >= 2,
+                "launcher: filtering height animation was sampled across intermediate frames");
+            check(filterSamples >= intermediateFilterSamples + 3,
+                "launcher: filtering was observed beyond the final settle frames");
+            check(appList.currentIndex === 0, "launcher: filtering resets the current row");
+            input.keyClick(Qt.Key_Down);
+            check(appList.currentIndex === 1, "launcher: Down moves keyboard selection");
+            step = 5;
+        } else if (step === 5) {
+            const appList = findLauncherAppList(focusWindow.contentHost);
+            check(appList !== null, "launcher keyboard down: app list remains live");
+            if (!highlightIsAligned(appList))
+                return;
+            checkHighlightAligned(appList, "launcher keyboard down");
+            input.keyClick(Qt.Key_Up);
+            check(appList.currentIndex === 0, "launcher: Up moves keyboard selection back");
+            step = 6;
+        } else if (step === 6) {
+            const appList = findLauncherAppList(focusWindow.contentHost);
+            input.keyClick(Qt.Key_Down);
+            check(appList.currentIndex === 1, "launcher: Down selects the second filtered row");
+            step = 7;
+        } else if (step === 7) {
+            const appList = findLauncherAppList(focusWindow.contentHost);
+            check(appList !== null, "launcher keyboard selection: app list remains live");
+            if (!highlightIsAligned(appList))
+                return;
+            checkHighlightAligned(appList, "launcher keyboard selection");
+            const filtered = Apps.search("W");
+            check(filtered.length === 2, "launcher: keyboard selection uses the filtered result model");
+            selectedAppId = filtered[appList.currentIndex]?.id ?? "";
+            check(selectedAppId.length > 0, "launcher: keyboard selection has an application");
+            input.keyClick(Qt.Key_Return);
+            check(appCatalog.executed.indexOf(selectedAppId) >= 0,
+                "launcher: Enter launches the keyboard-selected application; requests "
+                + Apps.launchRequests + " state " + Apps.lastLaunchState + " error " + Apps.lastLaunchError);
+            check(!content.screenState.launcher, "launcher: confirmed selection closes the drawer");
+            step = 8;
+        } else if (step === 8) {
             if (content.screenState.launcher || focusWindow.surface !== "")
                 return;
             checkClosed("launcher closed");
+            resetNativeGeometryBaseline();
+            sessionOpenSamples = 0;
             content.screenState.session = true;
-            step = 3;
-        } else if (step === 3) {
+            step = 9;
+        } else if (step === 9) {
             const logout = findObject(focusWindow.contentHost, "logoutButton");
             const session = content.interactionWrapper.panels.session;
-            if (!logout || !logout.activeFocus || session.offsetScale > 0.001)
+            if (focusWindow.surface === "session")
+                ensureNativeGeometryBaseline("session opening");
+            if (session.offsetScale > 0.001) {
+                if (session.offsetScale < 1) {
+                    sessionOpenSamples++;
+                    checkNativeGeometryStable("session opening");
+                    if (focusWindow.inputItem?.contentItem)
+                        checkInputTracking("session opening");
+                }
                 return;
+            }
+            if (!logout || !logout.activeFocus)
+                return;
+            check(sessionOpenSamples >= 2, "session: opening animation was sampled across frames");
             checkOpen("session", "session");
-            checkNativeGeometryStable("session");
+            checkNativeGeometry("session");
             checkGeometry(session, "session");
             check(logout.Window.window === focusWindow.contentHost.Window.window,
                 "session: controls live in the companion");
@@ -299,10 +558,9 @@ ShellRoot {
             check(focusWindow.visible, "session: companion stays visible during exit");
             check(logout.Window.window === focusWindow.contentHost.Window.window,
                 "session: controls stay parented to the companion during exit");
-            step = 4;
-        } else if (step === 4) {
+            step = 10;
+        } else if (step === 10) {
             const session = content.interactionWrapper.panels.session;
-            const wrapper = content.interactionWrapper.panels.sessionWrapper;
             if (session.offsetScale < 1) {
                 check(session.offsetScale > 0, "session exiting: slide animation is progressing");
                 check(session.usesFocusWindow, "session exiting: companion remains requested");
@@ -321,28 +579,28 @@ ShellRoot {
             check(!session.usesFocusWindow, "session closed: companion request released");
             checkClosed("session closed");
             content.screenState.sidebar = true;
-            step = 5;
-        } else if (step === 5) {
+            step = 11;
+        } else if (step === 11) {
             const sidebar = content.interactionWrapper.panels.sidebar;
             if (sidebar.offsetScale > 0.001)
                 return;
             checkDrawerHostGrab("sidebar");
             content.screenState.sidebar = false;
-            step = 6;
-        } else if (step === 6) {
+            step = 12;
+        } else if (step === 12) {
             const sidebar = content.interactionWrapper.panels.sidebar;
             if (sidebar.offsetScale < 1)
                 return;
             content.screenState.dashboard = true;
-            step = 7;
-        } else if (step === 7) {
+            step = 13;
+        } else if (step === 13) {
             const dashboard = content.interactionWrapper.panels.dashboard;
             if (dashboard.offsetScale > 0.001)
                 return;
             checkDrawerHostGrab("dashboard");
             content.screenState.dashboard = false;
-            step = 8;
-        } else if (step === 8) {
+            step = 14;
+        } else if (step === 14) {
             const dashboard = content.interactionWrapper.panels.dashboard;
             if (dashboard.offsetScale < 1)
                 return;
@@ -356,5 +614,3 @@ ShellRoot {
         }
     }
 }
-
-
