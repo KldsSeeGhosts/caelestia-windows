@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Windows as Native
 import Caelestia.Config
+import Caelestia.Services
 import Caelestia.State
 import Caelestia.Windows
 import qs.services
