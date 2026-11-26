@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 Set-Content -LiteralPath (Join-Path $CaseRoot 'fixture-mm-taskbar') -Value '1' -Encoding ASCII
 $source = [IO.File]::ReadAllText($SourcePath).Replace("`r`n", "`n")
 function Replace-One([string]$Text, [string]$Old, [string]$New) {
+    # Here-strings keep the checkout's line endings; the source is LF-normalized.
+    $Old = $Old.Replace("`r`n", "`n"); $New = $New.Replace("`r`n", "`n")
     if ([regex]::Matches($Text, [regex]::Escape($Old)).Count -ne 1) { throw 'fixture boundary changed' }
     return $Text.Replace($Old, $New)
 }
