@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
+# Child pwsh processes inherit plain-text rendering, so their CLIXML error
+# streams carry no ANSI escapes the parent cannot parse.
+$env:NO_COLOR = '1'
+# Validation logs show the stdout tail; echo a failure there before rethrowing.
+trap { Write-Output ('EDGE_CASES_FAILURE: ' + $_.Exception.Message); throw }
 . (Join-Path $PSScriptRoot 'Caelestia-InstallCommon.ps1')
 . (Join-Path $PSScriptRoot 'Caelestia-Versions.ps1')
 $root = Join-Path ([IO.Path]::GetTempPath()) ('caelestia-edge-cases-' + [guid]::NewGuid().ToString('N'))
@@ -147,6 +152,8 @@ exit 0
     $assemblyHarnessText = @'
 param([string]$Mode, [string]$Installer, [string]$RepoRoot, [string]$BuildRoot, [string]$QtPrefix, [string]$VCRuntimeRoot, [string]$Prefix, [string]$ProfileRoot, [string]$FakeAppData, [string]$FakeHome)
 $ErrorActionPreference = 'Stop'
+# Plain text keeps ANSI escapes out of the CLIXML error stream the parent parses.
+$PSStyle.OutputRendering = 'PlainText'
 $env:LOCALAPPDATA = $FakeAppData
 $env:USERPROFILE = $FakeHome
 $arguments = @{
