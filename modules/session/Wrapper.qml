@@ -46,6 +46,8 @@ Item {
         focusWindow: root.focusWindow
         sourceItem: root
         focusSurface: "session"
+        inputTransformMatrix: root.focusTransformMatrix
+        contentItem: content
         active: root.inFocusWindow
 
         Loader {

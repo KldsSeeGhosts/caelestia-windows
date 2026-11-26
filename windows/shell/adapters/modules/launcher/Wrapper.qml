@@ -58,6 +58,8 @@ Item {
         focusWindow: root.focusWindow
         sourceItem: root
         focusSurface: "launcher"
+        inputTransformMatrix: root.focusTransformMatrix
+        contentItem: content
         active: root.usesFocusWindow
 
         Loader {

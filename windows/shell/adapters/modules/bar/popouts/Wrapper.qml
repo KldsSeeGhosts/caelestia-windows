@@ -167,6 +167,8 @@ Item {
         focusWindow: root.focusWindow
         sourceItem: root
         focusSurface: "popouts"
+        inputTransformMatrix: root.focusTransformMatrix
+        contentItem: content
         active: root.inFocusWindow
 
         Comp {

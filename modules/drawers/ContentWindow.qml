@@ -33,8 +33,8 @@ StyledWindow {
     // The monitor-sized window stays permanently non-activating. Interactive
     // drawers move their loader into this companion so typing, IME and focus
     // return target a window that cannot trigger Wallpaper Engine's fullscreen
-    // pause rule. The one-pixel inset keeps the companion strictly smaller than
-    // the monitor without resizing it for every animated panel frame.
+    // pause rule. Each surface uses a fixed band with at least 64 logical px
+    // less width than the monitor, so animated card geometry never resizes it.
     StyledWindow {
         id: drawerFocusWindow
 
@@ -50,6 +50,15 @@ StyledWindow {
             : surface === "session" ? panels.sessionWrapper
             : surface === "popouts" ? panels.popoutsWrapper : null
         readonly property bool active: surface !== "" && target !== null
+        readonly property int fullscreenWidthClearance: 64
+        readonly property int nonFullscreenWidth: Math.max(1, Math.round(screen.width - fullscreenWidthClearance))
+        readonly property int launcherBandWidth: nonFullscreenWidth
+        readonly property int sessionBandWidth: Math.min(nonFullscreenWidth, 640)
+        readonly property int popoutBandWidth: Math.min(nonFullscreenWidth, 640)
+        readonly property int bandWidth: surface === "session" ? sessionBandWidth
+            : surface === "popouts" ? popoutBandWidth : launcherBandWidth
+        readonly property int bandX: surface === "session" ? Math.max(0, Math.round(screen.width - bandWidth))
+            : surface === "launcher" ? Math.max(0, Math.round((screen.width - bandWidth) / 2)) : 0
         readonly property Item card: surface === "launcher" ? panels.launcher
             : surface === "session" ? panels.session
             : surface === "popouts" ? panels.popouts : null
@@ -106,7 +115,7 @@ StyledWindow {
         readonly property real viewportY: viewportSceneY - margins.top
         readonly property real viewportWidth: viewportSource?.width ?? 0
         readonly property real viewportHeight: viewportSource?.height ?? 0
-        readonly property Item inputItem: {
+        readonly property var inputItem: {
             if (!active)
                 return null;
             for (const child of focusContent.children) {
@@ -115,12 +124,16 @@ StyledWindow {
             }
             return null;
         }
+        readonly property rect inputBounds: inputItem?.inputBounds ?? Qt.rect(0, 0, 0, 0)
+        readonly property rect inputRegionBounds: inputItem?.inputRegionBounds ?? Qt.rect(0, 0, 0, 0)
         readonly property bool pointerHovered: {
             if (!active || !inputItem || !cardHover.hovered)
                 return false;
+            const bounds = inputBounds;
             const pos = cardHover.point.scenePosition;
-            return pos.x >= inputItem.x && pos.x < inputItem.x + inputItem.width
-                && pos.y >= inputItem.y && pos.y < inputItem.y + inputItem.height;
+            return bounds.width > 0 && bounds.height > 0
+                && pos.x >= bounds.x && pos.x < bounds.x + bounds.width
+                && pos.y >= bounds.y && pos.y < bounds.y + bounds.height;
         }
 
         readonly property alias contentHost: focusContent
@@ -136,15 +149,18 @@ StyledWindow {
         mask: focusInputRegion
         anchors.top: true
         anchors.left: true
-        margins.left: 1
-        margins.top: 1
-        implicitWidth: Math.max(1, Math.round(screen.width - 2))
-        implicitHeight: Math.max(1, Math.round(screen.height - 2))
+        margins.left: bandX
+        margins.top: 0
+        implicitWidth: bandWidth
+        implicitHeight: Math.max(1, Math.round(screen.height))
 
         Region {
             id: focusInputRegion
 
-            item: drawerFocusWindow.inputItem
+            x: drawerFocusWindow.inputRegionBounds.x
+            y: drawerFocusWindow.inputRegionBounds.y
+            width: drawerFocusWindow.inputRegionBounds.width
+            height: drawerFocusWindow.inputRegionBounds.height
         }
 
         FocusScope {
