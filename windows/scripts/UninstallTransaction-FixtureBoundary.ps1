@@ -1,6 +1,10 @@
 # Test-only external boundaries, loaded AFTER the unchanged common/version
 # helpers by instrumented copies of the three production entrypoints.
 # No registry, COM shortcut, task, native payload or desktop process is used.
+# Hosted CI runners are elevated. These fixtures install inert data into a
+# disposable prefix, so the per-user elevation gate is covered by
+# Test-InstallerUpdateEdgeCases instead of here.
+function Assert-CaelestiaInstallerNotElevated { param([object]$Elevated = $null, [string]$TokenUser = '', [string]$ConsoleSessionUser = '') }
 function Assert-FixturePrefix([string]$Path) {
     if ((Resolve-CaelestiaDirectory $Path) -ne $env:CAELESTIA_FIXTURE_PREFIX) { throw 'Unexpected process boundary prefix.' }
 }
