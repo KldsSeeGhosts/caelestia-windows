@@ -170,24 +170,31 @@ if ($Mode -eq 'assembly') { $arguments.PayloadAssembly = $true }
     $assemblyProfile = Join-Path $assemblyFixture 'scratch-profile'
     $assemblyAppData = Join-Path $assemblyFixture 'fake-localappdata'
     $assemblyHome = Join-Path $assemblyFixture 'fake-home'
-    $assemblyOutput = @(& $pwsh -NoProfile -NonInteractive -File $assemblyHarness `
-        -Mode assembly -Installer $installerCopy -RepoRoot $repoRoot -BuildRoot $assemblyBuild -QtPrefix $assemblyQt `
-        -VCRuntimeRoot $assemblyVc -Prefix $assemblyPrefix -ProfileRoot $assemblyProfile -FakeAppData $assemblyAppData -FakeHome $assemblyHome 2>&1)
-    $assemblyExit = $LASTEXITCODE
-    Assert ($assemblyExit -eq 0) ("Payload assembly under the simulated elevated token failed:`n" + ($assemblyOutput | Out-String))
-    Assert ((($assemblyOutput | Out-String) -match 'Payload assembled') -and -not (($assemblyOutput | Out-String).Contains('SIMULATED-ELEVATED-TOKEN'))) 'Payload assembly consulted the per-user elevation guard.'
-    Assert (Test-Path -LiteralPath (Join-Path $assemblyPrefix 'install.json') -PathType Leaf) 'Payload assembly did not publish its selector record.'
-    # Redirecting USERPROFILE makes the pwsh host itself write its telemetry
-    # and startup cache there. Those host artifacts are fixture noise; the
-    # assertion is for Caelestia install, integration or profile state.
-    $caelestiaUserWrites = @()
-    foreach ($simulatedRoot in @($assemblyAppData, $assemblyHome)) {
-        if (Test-Path -LiteralPath $simulatedRoot) {
-            $caelestiaUserWrites += @(Get-ChildItem -LiteralPath $simulatedRoot -Recurse -Force -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -match '^caelestia' })
+    # Payload assembly copies submodule licenses. Packaging shards do not fetch
+    # submodules, so the assembly bypass runs only in a full checkout; the
+    # normal-mode refusal below needs no submodule and always runs.
+    if (Test-Path -LiteralPath (Join-Path $repoRoot 'windows\deps\m3shapes\LICENSE')) {
+        $assemblyOutput = @(& $pwsh -NoProfile -NonInteractive -File $assemblyHarness `
+            -Mode assembly -Installer $installerCopy -RepoRoot $repoRoot -BuildRoot $assemblyBuild -QtPrefix $assemblyQt `
+            -VCRuntimeRoot $assemblyVc -Prefix $assemblyPrefix -ProfileRoot $assemblyProfile -FakeAppData $assemblyAppData -FakeHome $assemblyHome 2>&1)
+        $assemblyExit = $LASTEXITCODE
+        Assert ($assemblyExit -eq 0) ("Payload assembly under the simulated elevated token failed:`n" + ($assemblyOutput | Out-String))
+        Assert ((($assemblyOutput | Out-String) -match 'Payload assembled') -and -not (($assemblyOutput | Out-String).Contains('SIMULATED-ELEVATED-TOKEN'))) 'Payload assembly consulted the per-user elevation guard.'
+        Assert (Test-Path -LiteralPath (Join-Path $assemblyPrefix 'install.json') -PathType Leaf) 'Payload assembly did not publish its selector record.'
+        # Redirecting USERPROFILE makes the pwsh host itself write its telemetry
+        # and startup cache there. Those host artifacts are fixture noise; the
+        # assertion is for Caelestia install, integration or profile state.
+        $caelestiaUserWrites = @()
+        foreach ($simulatedRoot in @($assemblyAppData, $assemblyHome)) {
+            if (Test-Path -LiteralPath $simulatedRoot) {
+                $caelestiaUserWrites += @(Get-ChildItem -LiteralPath $simulatedRoot -Recurse -Force -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -match '^caelestia' })
+            }
         }
+        Assert ($caelestiaUserWrites.Count -eq 0) 'Payload assembly wrote Caelestia state to the simulated user profile.'
+    } else {
+        Write-Output 'NOTE payload assembly bypass skipped: submodules are not checked out.'
     }
-    Assert ($caelestiaUserWrites.Count -eq 0) 'Payload assembly wrote Caelestia state to the simulated user profile.'
 
     $normalPrefix = Join-Path $assemblyFixture 'normal-prefix'
     $normalProfile = Join-Path $assemblyFixture 'normal-profile'
