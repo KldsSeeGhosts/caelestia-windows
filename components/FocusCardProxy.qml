@@ -43,10 +43,10 @@ Item {
             Qt.point(baseX + matrix.m14, baseY + matrix.m24),
             Qt.point(baseX + matrix.m11 * contentWidth + matrix.m14,
                 baseY + matrix.m21 * contentWidth + matrix.m24),
-            Qt.point(baseX + matrix.m12 * contentHeight + matrix.m14,
-                baseY + matrix.m22 * contentHeight + matrix.m24),
             Qt.point(baseX + matrix.m11 * contentWidth + matrix.m12 * contentHeight + matrix.m14,
-                baseY + matrix.m21 * contentWidth + matrix.m22 * contentHeight + matrix.m24)
+                baseY + matrix.m21 * contentWidth + matrix.m22 * contentHeight + matrix.m24),
+            Qt.point(baseX + matrix.m12 * contentHeight + matrix.m14,
+                baseY + matrix.m22 * contentHeight + matrix.m24)
         ];
     }
 
