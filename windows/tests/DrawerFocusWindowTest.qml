@@ -430,15 +430,23 @@ ShellRoot {
 
         check(shearProxy.inputHasShear, "shear fixture: proxy detects off-diagonal transform terms");
         check(shearProxy.inputBounds.width > 100,
-            "shear fixture: test point is inside the axis-aligned bounding box");
-        check(!shearProxy.containsPoint(100, 1),
-            "shear fixture: inverse hit-test rejects a point inside the bounds but outside the quad");
-        check(shearProxy.containsPoint(50, 50),
-            "shear fixture: inverse hit-test accepts an interior point");
-        check(!shearProxy.maskContainsPoint(100, 1),
-            "shear fixture: banded input mask rejects a point outside the quad");
-        check(shearProxy.maskContainsPoint(50, 50),
-            "shear fixture: banded input mask accepts an interior point");
+            "shear fixture: axis-aligned bounding box is wider than the card");
+        check(shearProxy.containsPoint(10, 50),
+            "shear fixture: inverse hit-test accepts an interior point near the left edge");
+        check(shearProxy.containsPoint(90, 50),
+            "shear fixture: inverse hit-test accepts an interior point near the right edge");
+        check(!shearProxy.containsPoint(-10, 50),
+            "shear fixture: inverse hit-test rejects a point inside the bounds but left of the quad");
+        check(!shearProxy.containsPoint(110, 50),
+            "shear fixture: inverse hit-test rejects a point inside the bounds but right of the quad");
+        check(shearProxy.maskContainsPoint(10, 50),
+            "shear fixture: banded input mask accepts an interior point near the left edge");
+        check(shearProxy.maskContainsPoint(90, 50),
+            "shear fixture: banded input mask accepts an interior point near the right edge");
+        check(!shearProxy.maskContainsPoint(-10, 50),
+            "shear fixture: banded input mask rejects a point inside the bounds but left of the quad");
+        check(!shearProxy.maskContainsPoint(110, 50),
+            "shear fixture: banded input mask rejects a point inside the bounds but right of the quad");
         check(shearProxy.inputRegionBounds.width === 0 && shearProxy.inputMaskSlices.length > 0,
             "shear fixture: sheared cards use banded input slices instead of one rectangular mask");
 
