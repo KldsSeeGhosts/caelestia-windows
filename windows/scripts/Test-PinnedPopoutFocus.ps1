@@ -1,10 +1,11 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([Parameter(Mandatory)][string]$QtPrefix, [Parameter(Mandatory)][string]$BuildRoot)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\Caelestia-QmlFixture.ps1"
 $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name pinned-popout-focus -ShellFixture -UseQuickshell `
     -Sources @('windows/tests/PinnedPopoutFocusTest.qml') -FixtureFile 'windows/tests/PinnedPopoutFocusTest.qml' `
-    -Marker CAELESTIA_PINNED_FOCUS -MinimumAssertions 49 -TimeoutMs 30000 `
+    -Marker CAELESTIA_PINNED_FOCUS -MinimumAssertions 65 -TimeoutMs 30000 `
     -ShellConfig '{"bar":{"workspaces":{"showWindows":false}}}'
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Pinned popout focus fixture failed. See $($result.stderr)." }
+

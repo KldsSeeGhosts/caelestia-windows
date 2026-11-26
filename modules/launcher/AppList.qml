@@ -17,6 +17,8 @@ StyledListView {
     required property ScreenState screenState
 
     property string displayText
+    objectName: "launcherAppList"
+
     // While rows are displaced by a filter change, follow the animated row
     // position directly. A Behavior does not retarget every frame of that row
     // animation, so it leaves the pill behind in empty space.

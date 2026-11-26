@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import Caelestia
 import Caelestia.Config
 import qs.modules.drawers
+import qs.modules.launcher.services
 
 // The launcher and session use the production ContentWindow and its card-sized
 // focus companion. Drawers without a companion must still provide a visible,
@@ -20,6 +21,9 @@ ShellRoot {
     property int attempts: 0
     property var input
     property real sessionOpenLeft: 0
+    property var nativeGeometry: null
+    property real launcherHeightBeforeFilter: 0
+    property int filterSamples: 0
 
     readonly property var win: content
     readonly property var focusWindow: content.focusWindow
@@ -32,6 +36,45 @@ ShellRoot {
         interactionEnabled: true
     }
 
+    QtObject {
+        id: appCatalog
+
+        property var applications: ({ values: [] })
+        property bool scanCompleted: false
+        property string scanError: ""
+
+        function lookup(appId): var {
+            return (applications.values ?? []).find(entry => entry.id === appId) ?? null;
+        }
+        function execute(entry): bool {
+            return true;
+        }
+    }
+
+    QtObject {
+        id: appStore
+
+        property var frequencies: ({})
+
+        function frequencyFor(id): int {
+            return 0;
+        }
+        function increment(id): int {
+            return 1;
+        }
+    }
+
+    readonly property Component entryComponent: Component {
+        QtObject {
+            property string id
+            property string name
+            property string comment: ""
+            property string execString: ""
+            property var command: []
+            property string icon: ""
+        }
+    }
+
     Component {
         id: keyComponent
         TestCase { when: false }
@@ -41,6 +84,31 @@ ShellRoot {
         assertions++;
         if (!value)
             throw new Error(description);
+    }
+
+    function findObject(object, name, seen): var {
+        seen = seen ?? [];
+        if (!object || seen.indexOf(object) >= 0)
+            return null;
+        seen.push(object);
+        if (object.objectName === name)
+            return object;
+        for (const child of object.children ?? []) {
+            const found = findObject(child, name, seen);
+            if (found)
+                return found;
+        }
+        for (const child of object.data ?? []) {
+            const found = findObject(child, name, seen);
+            if (found)
+                return found;
+        }
+        for (const child of [object.item, object.contentItem]) {
+            const found = child && child !== object ? findObject(child, name, seen) : null;
+            if (found)
+                return found;
+        }
+        return null;
     }
 
     function checkGrabTarget(target, label): void {
@@ -89,21 +157,73 @@ ShellRoot {
         checkGrabTarget(win, label);
     }
 
-    function checkGeometry(panel, label): void {
+    function captureNativeGeometry(): var {
+        return {
+            left: focusWindow.margins.left,
+            top: focusWindow.margins.top,
+            width: focusWindow.implicitWidth,
+            height: focusWindow.implicitHeight
+        };
+    }
+
+    function checkNativeGeometry(label): void {
+        check(focusWindow.margins.left === 1 && focusWindow.margins.top === 1,
+            label + ": companion native origin stays at the one-pixel inset");
+        check(focusWindow.implicitWidth > 0 && focusWindow.implicitWidth <= win.width - 2,
+            label + ": companion native width stays strictly below the monitor");
+        check(focusWindow.implicitHeight > 0 && focusWindow.implicitHeight <= win.height - 2,
+            label + ": companion native height stays strictly below the monitor");
+    }
+
+    function checkNativeGeometryStable(label): void {
+        check(nativeGeometry !== null, label + ": native geometry baseline exists");
+        check(focusWindow.margins.left === nativeGeometry.left
+            && focusWindow.margins.top === nativeGeometry.top
+            && focusWindow.implicitWidth === nativeGeometry.width
+            && focusWindow.implicitHeight === nativeGeometry.height,
+            label + ": native margins and implicit size remain stable");
+    }
+
+    function layoutPosition(item): point {
         const panels = content.interactionWrapper.panels;
-        const expectedX = Math.round(panels.x + panel.x);
-        const expectedY = Math.round(panels.y + panel.y);
-        check(Math.abs(focusWindow.margins.left - expectedX) <= 1,
-            label + ": companion x " + focusWindow.margins.left + " follows panel x " + expectedX);
-        check(Math.abs(focusWindow.margins.top - expectedY) <= 1,
-            label + ": companion y " + focusWindow.margins.top + " follows panel y " + expectedY);
-        check(Math.abs(focusWindow.width - Math.round(panel.width)) <= 1,
-            label + ": companion width " + focusWindow.width + " matches panel width " + panel.width);
-        check(Math.abs(focusWindow.height - Math.round(panel.height)) <= 1,
-            label + ": companion height " + focusWindow.height + " matches panel height " + panel.height);
+        let x = item.x;
+        let y = item.y;
+        let parent = item.parent;
+        while (parent && parent !== panels) {
+            x += parent.x;
+            y += parent.y;
+            parent = parent.parent;
+        }
+        return Qt.point(panels.x + x, panels.y + y);
+    }
+
+    function checkGeometry(panel, label): void {
+        const expected = layoutPosition(panel);
+        check(Math.abs(focusWindow.contentX - (expected.x - focusWindow.margins.left)) <= 1,
+            label + ": content x " + focusWindow.contentX + " tracks panel x " + expected.x);
+        check(Math.abs(focusWindow.contentY - (expected.y - focusWindow.margins.top)) <= 1,
+            label + ": content y " + focusWindow.contentY + " tracks panel y " + expected.y);
+        check(focusWindow.inputItem !== null, label + ": input region uses the reparented card");
+        if (!focusWindow.inputItem)
+            return;
+        check(Math.abs(focusWindow.inputItem.width - panel.width) <= 1,
+            label + ": input width " + focusWindow.inputItem.width + " matches panel width " + panel.width);
+        check(Math.abs(focusWindow.inputItem.height - panel.height) <= 1,
+            label + ": input height " + focusWindow.inputItem.height + " matches panel height " + panel.height);
     }
 
     Component.onCompleted: {
+        const entries = [];
+        for (let i = 0; i < 5; i++)
+            entries.push(entryComponent.createObject(root, { id: "alpha-" + i, name: "Alpha " + i }));
+        entries.push(entryComponent.createObject(root, { id: "window-0", name: "Window zero" }));
+        entries.push(entryComponent.createObject(root, { id: "window-1", name: "Window one" }));
+        appCatalog.applications = ({ values: entries });
+        appCatalog.scanCompleted = true;
+        Apps.catalogOverride = appCatalog;
+        Apps.frequencyStoreOverride = appStore;
+        Apps.enabledOverride = true;
+
         GlobalConfig.launcher.enabled = true;
         GlobalConfig.session.enabled = true;
         GlobalConfig.sidebar.enabled = true;
@@ -137,17 +257,22 @@ ShellRoot {
             content.screenState.launcher = true;
             step = 1;
         } else if (step === 1) {
-            const search = CUtils.findChild(focusWindow.contentHost, "launcherSearch");
+            const search = findObject(focusWindow.contentHost, "launcherSearch");
+            const appList = findObject(focusWindow.contentHost, "launcherAppList");
             const launcher = content.interactionWrapper.panels.launcher;
             if (!search || !search.activeFocus || launcher.offsetScale > 0.001)
                 return;
             checkOpen("launcher", "launcher");
+            checkNativeGeometry("launcher");
             checkGeometry(launcher, "launcher");
             check(search.Window.window === focusWindow.contentHost.Window.window,
                 "launcher: search lives in the companion");
             input.parent = focusWindow.contentHost;
-            input.keyClick(Qt.Key_A);
+            nativeGeometry = captureNativeGeometry();
+            launcherHeightBeforeFilter = launcher.height;
+            input.keyClick(Qt.Key_W);
             check(search.text.length === 1, "launcher: typing reaches the companion search field");
+            checkNativeGeometryStable("launcher typing");
             input.keyClick(Qt.Key_Escape);
             step = 2;
         } else if (step === 2) {
@@ -157,15 +282,16 @@ ShellRoot {
             content.screenState.session = true;
             step = 3;
         } else if (step === 3) {
-            const logout = CUtils.findChild(focusWindow.contentHost, "logoutButton");
+            const logout = findObject(focusWindow.contentHost, "logoutButton");
             const session = content.interactionWrapper.panels.session;
             if (!logout || !logout.activeFocus || session.offsetScale > 0.001)
                 return;
             checkOpen("session", "session");
-            checkGeometry(content.interactionWrapper.panels.sessionWrapper, "session");
+            checkNativeGeometryStable("session");
+            checkGeometry(session, "session");
             check(logout.Window.window === focusWindow.contentHost.Window.window,
                 "session: controls live in the companion");
-            sessionOpenLeft = focusWindow.margins.left;
+            sessionOpenLeft = focusWindow.contentX;
             input.keyClick(Qt.Key_Escape);
             check(!content.screenState.session, "session: Escape requests close");
             check(session.usesFocusWindow, "session: companion stays requested during exit");
@@ -182,10 +308,11 @@ ShellRoot {
                 check(session.usesFocusWindow, "session exiting: companion remains requested");
                 check(focusWindow.surface === "session", "session exiting: companion surface is retained");
                 check(focusWindow.visible, "session exiting: companion remains visible");
-                check(focusWindow.margins.left > sessionOpenLeft,
-                    "session exiting: companion follows the slide offset");
-                checkGeometry(wrapper, "session exiting");
-                const logout = CUtils.findChild(focusWindow.contentHost, "logoutButton");
+                checkNativeGeometryStable("session exiting");
+                check(focusWindow.contentX > sessionOpenLeft,
+                    "session exiting: content follows the slide offset");
+                checkGeometry(session, "session exiting");
+                const logout = findObject(focusWindow.contentHost, "logoutButton");
                 check(logout && logout.Window.window === focusWindow.contentHost.Window.window,
                     "session exiting: controls remain parented to the companion");
             }
@@ -220,8 +347,14 @@ ShellRoot {
             if (dashboard.offsetScale < 1)
                 return;
             checkDrawerHostGrab("drawers closed");
+            Apps.launchEnabledOverride = null;
+            Apps.enabledOverride = null;
+            Apps.catalogOverride = null;
+            Apps.frequencyStoreOverride = null;
             console.log("CAELESTIA_DRAWER_FOCUS_PASS " + assertions);
             Qt.quit();
         }
     }
 }
+
+

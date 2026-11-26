@@ -23,6 +23,7 @@ ShellRoot {
     property var fixtureWindowB
     property var pill
     property var keys
+    property var nativeGeometry: null
 
     readonly property var win: content
     readonly property var focusWindow: content.focusWindow
@@ -89,6 +90,26 @@ ShellRoot {
             label + ": focus grab targets " + (target === focusWindow ? "the companion" : "the drawer host"));
         check(grab.windows.every(window => window.visible),
             label + ": every focus grab target is visible");
+    }
+
+    function captureNativeGeometry(): var {
+        return {
+            left: focusWindow.margins.left,
+            top: focusWindow.margins.top,
+            width: focusWindow.implicitWidth,
+            height: focusWindow.implicitHeight
+        };
+    }
+
+    function checkNativeGeometryStable(label): void {
+        check(nativeGeometry !== null, label + ": native geometry baseline exists");
+        check(focusWindow.margins.left === nativeGeometry.left
+            && focusWindow.margins.top === nativeGeometry.top
+            && focusWindow.implicitWidth === nativeGeometry.width
+            && focusWindow.implicitHeight === nativeGeometry.height,
+            label + ": native margins and implicit size remain stable");
+        check(focusWindow.implicitWidth <= win.width - 2 && focusWindow.implicitHeight <= win.height - 2,
+            label + ": companion stays strictly smaller than the monitor");
     }
 
     function list(): var {
@@ -189,6 +210,8 @@ ShellRoot {
                 "pinned: the popout list lives in the companion");
             check(popouts.pinned === true, "pinned: the popouts wrapper holds the pin");
             checkGrabTarget(focusWindow, "pinned");
+            check(focusWindow.inputItem !== null, "pinned: input region uses the popout viewport");
+            nativeGeometry = captureNativeGeometry();
             keys.parent = focusWindow.contentHost;
             keys.keyClick(Qt.Key_Escape, Qt.NoModifier, 0);
             check(!popouts.hasCurrent, "Escape closes the pinned popout");
@@ -208,6 +231,7 @@ ShellRoot {
                 check(focusWindow.visible, "closing: companion remains visible");
                 check(popouts.content.Window.window === focusWindow.contentHost.Window.window,
                     "closing: popout content remains in the companion");
+                checkNativeGeometryStable("closing");
                 check(Math.abs(popouts.content.x - popouts.slideOffset) <= 1,
                     "closing: popout content preserves the animated slide offset");
                 check(Math.abs(popouts.content.width - popouts.nonAnimWidth) <= 1,
