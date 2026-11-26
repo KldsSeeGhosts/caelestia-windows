@@ -11,6 +11,24 @@ public static class LaunchJobFixture {
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
     [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool QueryInformationJobObject(IntPtr job, int type, IntPtr info, uint length, IntPtr returned);
+    // True when an enclosing job (for example a hosted CI runner's) forbids
+    // breakaway, so no nested job can grant it.
+    public static bool OuterJobForbidsBreakaway() {
+        bool inJob;
+        if (!IsProcessInJob(GetCurrentProcess(), IntPtr.Zero, out inJob)) throw new Win32Exception();
+        if (!inJob) return false;
+        const int size = 144;
+        var info = Marshal.AllocHGlobal(size);
+        try {
+            Marshal.Copy(new byte[size], 0, info, size);
+            if (!QueryInformationJobObject(IntPtr.Zero, 9, info, size, IntPtr.Zero)) throw new Win32Exception();
+            return (Marshal.ReadInt32(info, 16) & (0x800 | 0x1000)) == 0;
+        } finally {
+            Marshal.FreeHGlobal(info);
+        }
+    }
     public static void Enter(bool allowBreakaway) {
         var job = CreateJobObject(IntPtr.Zero, null);
         if (job == IntPtr.Zero) throw new Win32Exception();
@@ -33,6 +51,11 @@ public static class LaunchJobFixture {
     }
 }
 '@
+if ($AllowBreakaway -and [LaunchJobFixture]::OuterJobForbidsBreakaway()) {
+    'LAUNCH-JOB-SKIP: an enclosing job forbids breakaway, so the allowed case cannot be exercised here.'
+    'LAUNCH-JOB-PASS'
+    exit 0
+}
 [LaunchJobFixture]::Enter($AllowBreakaway.IsPresent)
 $childProcess = $null
 $refusal = ''
