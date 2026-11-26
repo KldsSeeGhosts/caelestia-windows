@@ -10,6 +10,7 @@ import qs.components.controls
 import qs.services
 import qs.utils
 import qs.modules.nexus.common
+import "BluetoothPairingLogic.js" as PairingLogic
 
 // Windows adaptation of modules/nexus/pages/bluetooth/BluetoothPairing.qml.
 //
@@ -23,7 +24,7 @@ import qs.modules.nexus.common
 PageBase {
     id: root
 
-    readonly property var newDevices: [...WindowsBluetooth.devices].filter(device => device && device.bonded !== true).sort((a, b) => (b.pairing - a.pairing) || (!a.deviceName - !b.deviceName) || (a.name ?? "").localeCompare(b.name ?? ""))
+    readonly property var newDevices: [...WindowsBluetooth.devices].filter(device => device && device.bonded !== true).sort(PairingLogic.compareDevices)
 
     // Caller-scoped discovery: the Bluetooth page can stay registered beneath
     // this sub-page, and another Nexus window may also be scanning.

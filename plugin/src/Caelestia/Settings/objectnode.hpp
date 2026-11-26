@@ -20,6 +20,12 @@ public:
     [[nodiscard]] QJsonValue toJson(bool sparse = true) const override;
     bool syncJson(const QJsonValue& json, QList<Diagnostic>& diagnostics) override;
 
+protected:
+    // Called while the file write scope is active after any key in this object
+    // produced a diagnostic. Nodes whose fields are one executable unit can
+    // disable themselves rather than run with quarantined/defaulted fields.
+    virtual void onJsonDecoded(bool valid);
+
 private:
     void quarantineKey(const QString& key, const QJsonValue& value);
 

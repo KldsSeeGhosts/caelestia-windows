@@ -8,14 +8,15 @@ import Caelestia.Config
 import qs.components
 import qs.modules.bar.popouts
 import qs.modules.nexus
+import qs.modules.windowinfo as WindowInfoModule
 
 // Platform boundary derived from upstream modules/bar/popouts/Wrapper.qml.
 // The combined prototype keeps the original popout state, content loader and
-// open/close animation. The detached winfo overlay and the Wayland
-// HyprlandFocusGrab stay out because no reviewed Windows facade exists for
-// them, so a winfo detach closes the popout instead of leaving a detached state
-// with nothing on screen (ContentWindow dims the shell while detachedMode is
-// set). close() still restores the attached state.
+// open/close animation. The Wayland HyprlandFocusGrab and in-overlay detached
+// winfo mode stay out because they have no Windows equivalent. A winfo detach
+// instead opens the reviewed floating WindowInfo window and closes the popout,
+// so ContentWindow never dims the shell for an empty detached overlay.
+// close() still restores the attached state.
 //
 // The two other detach targets in the staged UI (the audio and Bluetooth
 // popouts) used to be dropped here. Since modules/nexus is staged, they now use
@@ -71,21 +72,21 @@ Item {
     }
 
     function detach(mode: string): void {
-        setAnims(true);
-        if (mode === "winfo") {
-            // modules/windowinfo is not staged: the original detached window
-            // inspector has no Windows client model. Closing the popout is the
-            // truthful outcome; leaving detachedMode set would dim the whole
-            // shell (ContentWindow reads it) with nothing on screen.
-            setAnims(false);
-            root.close();
+        if (mode === "winfo")
             return;
-        }
+        setAnims(true);
         const page = root.detachedPages.indexOf(mode);
         setAnims(false);
         WindowFactory.openPage(page >= 0 ? page : 0);
         root.hasCurrent = false;
         detachedMode = "";
+    }
+
+    function detachWindowInfo(client: var): void {
+        if (!client)
+            return;
+        WindowInfoModule.WindowInfoFactory.openForClient(client);
+        root.close();
     }
 
     function close(): void {
@@ -152,6 +153,7 @@ Item {
         id: popoutState
 
         onDetachRequested: mode => root.detach(mode)
+        onInspectWindowRequested: client => root.detachWindowInfo(client)
     }
 
     Comp {

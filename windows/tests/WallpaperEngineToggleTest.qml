@@ -51,9 +51,7 @@ QtObject {
             monitors: {Monitor0: {path: "C:/we/project.json", preview: "C:/we/preview.jpg"}}};
     }
     function finishScan(): void {
-        scan.stdout.text = JSON.stringify(snapshot());
-        scan.running = false;
-        scan.exited(0);
+        scan.stdout.read(JSON.stringify(snapshot()));
     }
     function finishControl(): void {
         control.running = false;
@@ -66,9 +64,11 @@ QtObject {
         check(Wallpapers.sourceFresh, "the fixture did not start with a fresh profile");
         control = childNamed(WallpaperEngine, "wallpaperEngineDesktopControl");
         for (const child of WallpaperEngine.data)
-            if (child.command?.[2] === "snapshot")
+            if (child.command?.[2] === "--serve")
                 scan = child;
         check(scan && scan.running, "startup discovery did not run");
+        check(scan.writes.length === 1 && !JSON.parse(scan.writes[0]).statusOnly,
+            "startup did not send a full snapshot request");
         finishScan();
         later(function() {
             check(control.running && control.command[2] === "stop", "disabled startup did not stop playback");
@@ -86,6 +86,8 @@ QtObject {
             // fullScanNeeded and must not consume the enable's fresh scan.
             WallpaperEngine.refresh(false);
             check(scan.statusOnly, "the established snapshot did not use cheap polling");
+            check(scan.running && scan.writes.length === 2 && JSON.parse(scan.writes[1]).statusOnly,
+                "polling did not reuse the worker for a status request");
             finishScan();
             WallpaperEngine.refresh(true);
             check(!scan.statusOnly, "the disabled-era full scan did not start");

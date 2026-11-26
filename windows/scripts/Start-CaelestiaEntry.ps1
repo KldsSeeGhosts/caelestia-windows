@@ -13,6 +13,7 @@ param(
     [string]$TilingExcluded = '',
     [switch]$SkipSchemeRuntime,
     [switch]$PreparedSchemeRuntime,
+    [string]$ReadinessRecordPath = '',
     [switch]$Wait
 )
 if ($DisableAutostart -and $Command -ne 'Quit') { throw '-DisableAutostart requires -Command Quit.' }
@@ -47,6 +48,12 @@ foreach ($key in $PSBoundParameters.Keys) {
     # The stable root already consumed this switch.
     if ($key -eq 'DisableAutostart') { continue }
     $arguments[$key] = $PSBoundParameters[$key]
+}
+# Recovery can switch the selector between task registration and startup.
+# Older payloads do not understand the readiness record argument.
+if ($arguments.ContainsKey('ReadinessRecordPath') -and
+    -not (Test-CaelestiaLauncherSupportsReadiness (Join-Path $runtime 'Start-Caelestia.ps1'))) {
+    $arguments.Remove('ReadinessRecordPath')
 }
 # A retained pre-versioning payload can neither consume the prepared record
 # nor be trusted to skip provisioning on its own. During activation, disable

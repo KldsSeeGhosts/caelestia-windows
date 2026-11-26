@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 import winreg
 
@@ -399,9 +400,34 @@ def control_desktop(action: str) -> None:
         raise ValueError("Wallpaper Engine could not change desktop playback") from None
 
 
+def handle_bridge_request(request: dict) -> dict:
+    if request.get("command") != "snapshot":
+        return {"ok": False, "error": "unsupported wallpaper engine bridge command"}
+    try:
+        return snapshot(status_only=request.get("statusOnly") is True)
+    except Exception as error:
+        return {"ok": False, "error": str(error)}
+
+
+def serve() -> int:
+    for line in sys.stdin:
+        try:
+            request = json.loads(line)
+            if not isinstance(request, dict):
+                raise ValueError("request must be a JSON object")
+        except (json.JSONDecodeError, ValueError):
+            response = {"ok": False, "error": "invalid wallpaper engine bridge request"}
+        else:
+            response = handle_bridge_request(request)
+        print(json.dumps(response, ensure_ascii=True), flush=True)
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["snapshot", "open", "stop", "play"])
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("command", nargs="?", choices=["snapshot", "open", "stop", "play"])
+    mode.add_argument("--serve", action="store_true")
     parser.add_argument("--status-only", action="store_true")
     parser.add_argument("--project")
     targets = parser.add_mutually_exclusive_group()
@@ -410,6 +436,8 @@ def main() -> None:
     targets.add_argument("--all-displays", action="store_true")
     args = parser.parse_args()
     try:
+        if args.serve:
+            raise SystemExit(serve())
         if args.command == "snapshot":
             result = snapshot(status_only=args.status_only)
         elif args.command in ("stop", "play"):

@@ -2,6 +2,9 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Caelestia
+import Caelestia.I18n
+import qs.services
 
 // Windows stand-in for services/Hypr.qml, staged at services/Hypr.qml only by
 // the hypr prototype. It keeps the property/function surface that the original
@@ -30,6 +33,8 @@ HyprService {
     // Observable construction policy: false unless the observation opt-in
     // requests the native facade. The facade is what constructs Hyprland.
     readonly property bool nativeRequested: nativeLoader.active
+    // pinSupported and tilingActive are inherited from HyprService; they read
+    // the injected backend's capability projection and fail closed when absent.
 
     readonly property Loader _nativeLoader: Loader {
         id: nativeLoader
@@ -62,6 +67,28 @@ HyprService {
 
     property string lastSpecialWorkspace: ""
     property bool statusLogged: false
+
+    function describeWindowAction(action): string {
+        switch (String(action ?? "")) {
+        case "close": return Tr.tr("close");
+        case "minimize": return Tr.tr("minimize");
+        case "maximize": return Tr.tr("maximize");
+        case "move": return Tr.tr("move");
+        case "togglefloating": return Tr.tr("float or tile");
+        case "pin": return Tr.tr("pin");
+        default: return String(action ?? Tr.tr("change"));
+        }
+    }
+
+    Component.onCompleted: {
+        root.actionRefused.connect((action, reason, elevated) => {
+            const verb = root.describeWindowAction(action);
+            const message = elevated
+                ? Tr.tr("Windows blocked the attempt to %1 this window because it runs as administrator.").arg(verb)
+                : (reason || Tr.tr("Windows blocked the attempt to %1 this window.").arg(verb));
+            Toaster.toast(Tr.tr("Window action blocked"), message, "admin_panel_settings", Toast.Warning);
+        });
+    }
 
     // Upstream emits this when Hyprland reports configreloaded. The pinned
     // Windows backend never emits that event, so this signal is present for

@@ -21,8 +21,16 @@ try {
         [Caelestia.Takeover.Supervisor]::RecoverActive()
     }
     if ($RestartExplorer) {
-        # Explicit opt-in only: affects existing Explorer windows.
-        Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process
+        # Explicit opt-in only, and only for this logon session. Fast user
+        # switching and remote sessions can each own an explorer.exe with the
+        # same image name; killing all of them would sign another user out of
+        # their shell. AccessDenied from another session is filtered before
+        # Stop-Process rather than treated as this session's failure.
+        $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+        foreach ($explorer in @(Get-Process -Name explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $sessionId })) {
+            try { Stop-Process -InputObject $explorer -Force -ErrorAction Stop }
+            catch { Write-Warning "Could not stop Explorer PID $($explorer.Id): $($_.Exception.Message)" }
+        }
         Start-Process explorer.exe
         Start-Sleep -Seconds 3
     }

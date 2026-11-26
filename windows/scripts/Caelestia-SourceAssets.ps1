@@ -254,18 +254,28 @@ function Export-SourceTarMembers([string]$Archive, [string[]]$Members, [string]$
     Assert-SourceNoLinks $Destination
 }
 
+function Get-SourceTarExecutable {
+    # Invoke Windows' inbox bsdtar explicitly. A POSIX shell inherited by a
+    # local test runner can otherwise resolve MSYS tar.exe, which treats the
+    # drive colon in a Windows archive path as a remote host separator.
+    $systemTar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    if (Test-Path -LiteralPath $systemTar -PathType Leaf) { return $systemTar }
+    return 'tar.exe'
+}
+
 function Export-SourceTarBatches([string]$Archive, [string[]]$membersUnique, [string]$Destination) {
     # Select only recorded members. Never unpack a whole supplier tree or
     # follow archive symlinks/hardlinks. Batch below Windows' command-line limit.
+    $tarExecutable = Get-SourceTarExecutable
     for ($offset = 0; $offset -lt $membersUnique.Count; $offset += 40) {
         $last = [Math]::Min($membersUnique.Count - 1, $offset + 39)
         $batch = @($membersUnique[$offset..$last])
-        $listing = @(& tar.exe -tvf $Archive -- @batch)
+        $listing = @(& $tarExecutable -tvf $Archive -- @batch)
         if ($LASTEXITCODE -ne 0 -or $listing.Count -ne $batch.Count -or
             @($listing | Where-Object { $_ -notmatch '^-' -or $_ -match ' link to | -> ' }).Count) {
             throw 'Missing, nonregular, or linked supplier notice member.'
         }
-        & tar.exe -xf $Archive -C $Destination -- @batch
+        & $tarExecutable -xf $Archive -C $Destination -- @batch
         if ($LASTEXITCODE -ne 0) { throw 'Supplier notice extraction failed.' }
     }
 }

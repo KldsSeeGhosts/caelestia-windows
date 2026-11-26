@@ -23,6 +23,8 @@ import qs.modules.clipboard
 import qs.modules.launcher.services
 import qs.modules.nexus as Nexus
 import qs.modules.tiling
+import qs.modules.windowinfo as WindowInfoModule
+import qs.ipc
 
 // Original upstream drawer geometry and motion, with the combined Windows
 // facades, per-monitor AppBar reservation and opt-in Windows controllers.
@@ -43,6 +45,7 @@ ShellRoot {
     // Offscreen public smoke: skip the native monitor/panel schedule below and
     // exit after the drawers present two frames and readiness settles.
     readonly property bool smokeCi: Quickshell.env("CAELESTIA_SHELL_SMOKE_CI") === "1"
+    readonly property bool parityEnabled: !smoke && !smokeCi
     // Isolated install validation may reserve only the secondary monitor.
     // Normal starts always retain the complete per-monitor shell.
     readonly property int smokeScreenIndex: Number(Quickshell.env("CAELESTIA_SHELL_SCREEN") || "-1")
@@ -65,6 +68,8 @@ ShellRoot {
 
     WindowsBackground { id: desktopBackground }
     IdleInhibit { id: idleInhibitor }
+    BatteryMonitor { active: root.parityEnabled }
+    IdleMonitors { active: root.parityEnabled }
     Shortcuts {}
 
     // Windows' own clipboard history behind the Caelestia picker. Gated by
@@ -179,6 +184,65 @@ ShellRoot {
         function onReloadCallbackChanged(): void { reportSupervisorPause(); }
     }
 
+    function ipcDrawerNames(): var {
+        return ["launcher", "dashboard", "session", "sidebar", "utilities", "osd", "bar", "quota"];
+    }
+    function ipcDrawerScreen(): var {
+        const cursor = Native.Input.cursorScreenForFocus();
+        const focused = Hypr.focusedMonitor;
+        return (cursor ? root.shellScreens.find(screen => screen.name === cursor) : null)
+            ?? (focused ? root.shellScreens.find(screen => Hypr.monitorFor(screen) === focused) : null)
+            ?? root.shellScreens[0] ?? null;
+    }
+    function ipcDrawerState(): var {
+        if (!root.parityEnabled)
+            return null;
+        const screen = ipcDrawerScreen();
+        return screen ? ShellState.forScreen(screen) : null;
+    }
+    function ipcSetDrawer(name: string, open: bool): bool {
+        if (ipcDrawerNames().indexOf(name) < 0)
+            return false;
+        const state = ipcDrawerState();
+        if (!state)
+            return false;
+        state[name] = open;
+        return true;
+    }
+    function ipcActiveMonitor(): var {
+        return root.parityEnabled ? Brightness.activeMonitor : null;
+    }
+    function ipcActivePlayer(): var {
+        return root.parityEnabled ? Players.active : null;
+    }
+    function ipcPlayerName(player): string {
+        // GSMTC uses the raw AUMID as the identity when no friendly name is known.
+        const name = Players.getIdentity(player);
+        const sessionName = String(player.dbusName ?? "");
+        const rawId = sessionName.startsWith("gsmtc:") ? sessionName.slice(6, sessionName.lastIndexOf("#")) : "";
+        return !name || name === rawId ? "Unknown media player" : name;
+    }
+    function ipcBrightnessValue(value: string, current: real): real {
+        const text = String(value).trim();
+        let target;
+        if (text.endsWith("%-")) {
+            target = current - parseFloat(text.slice(0, -2)) / 100;
+        } else if (text.startsWith("+") && text.endsWith("%")) {
+            target = current + parseFloat(text.slice(1, -1)) / 100;
+        } else if (text.endsWith("%")) {
+            target = parseFloat(text.slice(0, -1)) / 100;
+        } else if (text.startsWith("+")) {
+            target = current + parseFloat(text.slice(1));
+        } else if (text.endsWith("-")) {
+            target = current - parseFloat(text.slice(0, -1));
+        } else if (text.includes("%") || text.includes("-") || text.includes("+")) {
+            return NaN;
+        } else {
+            target = parseFloat(text);
+        }
+        return Number.isFinite(target) ? target : NaN;
+    }
+
     IpcHandler {
         target: "shell"
         // IpcHandler invokes QML on the GUI thread. A transport worker or a
@@ -238,6 +302,216 @@ ShellRoot {
         }
     }
 
+    IpcHandler {
+        target: "drawers"
+
+        function toggle(drawer: string): void {
+            const state = root.ipcDrawerState();
+            if (state)
+                root.ipcSetDrawer(drawer, !state[drawer]);
+        }
+        function open(drawer: string): bool { return root.ipcSetDrawer(drawer, true); }
+        function close(drawer: string): bool { return root.ipcSetDrawer(drawer, false); }
+        function isOpen(drawer: string): string {
+            if (!root.parityEnabled || root.ipcDrawerNames().indexOf(drawer) < 0)
+                return "unknown";
+            return root.ipcDrawerState()?.[drawer] === true ? "1" : "0";
+        }
+        function list(): string { return root.ipcDrawerNames().join("\n"); }
+    }
+
+    IpcHandler {
+        target: "notifs"
+
+        function clear(): void {
+            if (root.parityEnabled)
+                Notifs.clearAll();
+        }
+        function isDndEnabled(): bool { return root.parityEnabled && Notifs.doNotDisturb === true; }
+        function toggleDnd(): void {
+            if (root.parityEnabled)
+                Notifs.doNotDisturb = !Notifs.doNotDisturb;
+        }
+        function enableDnd(): void {
+            if (root.parityEnabled)
+                Notifs.doNotDisturb = true;
+        }
+        function disableDnd(): void {
+            if (root.parityEnabled)
+                Notifs.doNotDisturb = false;
+        }
+        function open(): bool { return root.ipcSetDrawer("sidebar", true); }
+        function close(): bool { return root.ipcSetDrawer("sidebar", false); }
+        function list(): string {
+            return JSON.stringify({count: root.parityEnabled ? Notifs.list.length : 0, doNotDisturb: isDndEnabled()});
+        }
+    }
+
+    IpcHandler {
+        target: "mpris"
+
+        function list(): string {
+            if (!root.parityEnabled)
+                return "";
+            return Players.list.map(player => root.ipcPlayerName(player)).join("\n");
+        }
+        function getActive(prop: string): string {
+            const active = root.ipcActivePlayer();
+            if (!active)
+                return "No active player";
+            if (prop === "identity")
+                return root.ipcPlayerName(active);
+            // Exclude raw app/session identifiers, artwork URLs (local cache
+            // paths), and metadata maps (arbitrary URLs or identifiers).
+            if (prop === "canStop" && active.canStop === undefined)
+                return String(Players.canStop(active));
+            const publicProperties = ["trackTitle", "trackArtist", "trackArtists", "trackAlbum", "trackAlbumArtist",
+                "length", "lengthSupported", "position", "positionSupported", "volume", "volumeSupported",
+                "playbackState", "isPlaying", "canPlay", "canPause", "canSeek", "canGoNext", "canGoPrevious",
+                "canControl", "canTogglePlaying", "canStop", "canQuit", "canRaise", "canSetFullscreen",
+                "shuffle", "shuffleSupported", "loopState", "loopSupported", "rate", "minRate", "maxRate",
+                "fullscreen", "supportedUriSchemes", "supportedMimeTypes"];
+            return publicProperties.includes(prop) ? String(active[prop] ?? "Invalid property") : "Invalid property";
+        }
+        function play(): void {
+            const active = root.ipcActivePlayer();
+            if (active && Players.canPlay(active))
+                active.play();
+        }
+        function pause(): void {
+            const active = root.ipcActivePlayer();
+            if (active && Players.canPause(active))
+                active.pause();
+        }
+        function playPause(): void {
+            const active = root.ipcActivePlayer();
+            if (active && Players.canTogglePlaying(active))
+                active.togglePlaying();
+        }
+        function next(): void {
+            const active = root.ipcActivePlayer();
+            if (active && Players.canGoNext(active))
+                active.next();
+        }
+        function previous(): void {
+            const active = root.ipcActivePlayer();
+            if (active && Players.canGoPrevious(active))
+                active.previous();
+        }
+        function stop(): void {
+            const active = root.ipcActivePlayer();
+            if (active && Players.canStop(active))
+                active.stop();
+        }
+    }
+
+    ToasterIpc { parityEnabled: root.parityEnabled }
+
+    IpcHandler {
+        target: "windowinfo"
+
+        function open(): bool {
+            if (!root.parityEnabled)
+                return false;
+            const client = Hypr.activeToplevel;
+            return !!client && WindowInfoModule.WindowInfoFactory.openForClient(client) !== null;
+        }
+        function close(): bool {
+            if (!root.parityEnabled || WindowInfoModule.WindowInfoFactory.windowCount === 0)
+                return false;
+            WindowInfoModule.WindowInfoFactory.closeAll();
+            return true;
+        }
+        function isOpen(): string {
+            return root.parityEnabled && WindowInfoModule.WindowInfoFactory.windowCount > 0 ? "1" : "0";
+        }
+    }
+
+    IpcHandler {
+        target: "audio"
+
+        function volumeUp(): bool { return root.parityEnabled && Audio.incrementVolume(Audio.audioIncrement); }
+        function volumeDown(): bool { return root.parityEnabled && Audio.decrementVolume(Audio.audioIncrement); }
+        function volumeSet(value: real): bool { return root.parityEnabled && Audio.setVolume(value); }
+        function mute(): bool { return root.parityEnabled && Audio.setMuted(true); }
+        function unmute(): bool { return root.parityEnabled && Audio.setMuted(false); }
+        function toggleMute(): bool { return root.parityEnabled && Audio.setMuted(!Audio.muted); }
+        function micMute(): bool { return root.parityEnabled && Audio.setSourceMuted(true); }
+        function micUnmute(): bool { return root.parityEnabled && Audio.setSourceMuted(false); }
+        function toggleMicMute(): bool { return root.parityEnabled && Audio.setSourceMuted(!Audio.sourceMuted); }
+        function cycleOutput(): void {
+            if (root.parityEnabled)
+                Audio.cycleNextAudioOutput();
+        }
+    }
+
+    IpcHandler {
+        target: "brightness"
+
+        function up(): bool {
+            const monitor = root.ipcActiveMonitor();
+            return !!monitor && Brightness.nudge(monitor.screenName, Brightness.brightnessIncrement);
+        }
+        function down(): bool {
+            const monitor = root.ipcActiveMonitor();
+            return !!monitor && Brightness.nudge(monitor.screenName, -Brightness.brightnessIncrement);
+        }
+        function set(value: string): string {
+            return setFor("active", value);
+        }
+        function setFor(query: string, value: string): string {
+            if (!root.parityEnabled)
+                return "Brightness IPC is disabled in smoke mode.";
+            const monitor = Brightness.getMonitor(query);
+            if (!monitor)
+                return "Invalid monitor";
+            const target = root.ipcBrightnessValue(value, monitor.brightness);
+            if (!Number.isFinite(target))
+                return `Failed to parse value: ${value}
+Expected: 0.1, +0.1, 0.1-, 10%, +10%, 10%-`;
+            if (!Brightness.write(monitor.screenName, target))
+                return "Windows brightness refused the write.";
+            return `Set brightness to ${+monitor.brightness.toFixed(2)}`;
+        }
+        function get(): real { return getFor("active"); }
+        function getFor(query: string): real {
+            return root.parityEnabled ? Brightness.getMonitor(query)?.brightness ?? -1 : -1;
+        }
+    }
+
+    function openNexus(): bool {
+        return root.parityEnabled && !!Nexus.WindowFactory.create(null, {});
+    }
+
+    IpcHandler {
+        target: "nexus"
+        function open(): void {
+            root.openNexus();
+        }
+        function openPage(pageIdx: int): bool {
+            if (!root.parityEnabled || pageIdx < 0)
+                return false;
+            Nexus.WindowFactory.openPage(pageIdx);
+            return true;
+        }
+        function close(): bool {
+            if (!root.parityEnabled || Nexus.WindowFactory.windowCount === 0)
+                return false;
+            Nexus.WindowFactory.closeAll();
+            return true;
+        }
+        function toggle(): bool {
+            if (!root.parityEnabled)
+                return false;
+            if (Nexus.WindowFactory.windowCount > 0) {
+                Nexus.WindowFactory.closeAll();
+            } else {
+                return root.openNexus();
+            }
+            return true;
+        }
+    }
+
     // Explicit panel-off through Windows display power. This is not
     // Displays::setEnabled: it changes no display path, topology or setting.
     // A keybind chord is still held when this runs, so the keyboard hook waits
@@ -274,7 +548,9 @@ ShellRoot {
         return {
             lifecycle: {
                 generation: root.generation,
-                ready: readiness.ready
+                ready: readiness.ready,
+                payloadPath: Quickshell.env("CAELESTIA_PAYLOAD_ROOT") || "",
+                supervisorPid: Number(Quickshell.env("CAELESTIA_SUPERVISOR_PID") || "0")
             },
             smoke: root.smoke,
             smokeComplete: root.smoke && smokeCheck.step >= 5,

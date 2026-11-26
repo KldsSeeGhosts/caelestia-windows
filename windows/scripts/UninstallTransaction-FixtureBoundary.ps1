@@ -1,6 +1,10 @@
 # Test-only external boundaries, loaded AFTER the unchanged common/version
 # helpers by instrumented copies of the three production entrypoints.
 # No registry, COM shortcut, task, native payload or desktop process is used.
+# Hosted CI runners are elevated. These fixtures install inert data into a
+# disposable prefix, so the per-user elevation gate is covered by
+# Test-InstallerUpdateEdgeCases instead of here.
+function Assert-CaelestiaInstallerNotElevated { param([object]$Elevated = $null, [string]$TokenUser = '', [string]$ConsoleSessionUser = '') }
 function Assert-FixturePrefix([string]$Path) {
     if ((Resolve-CaelestiaDirectory $Path) -ne $env:CAELESTIA_FIXTURE_PREFIX) { throw 'Unexpected process boundary prefix.' }
 }
@@ -111,7 +115,8 @@ function Set-CaelestiaSchemeRuntimeForRevision { return $null }
 function Remove-CaelestiaSchemeGenerations { }
 function New-CaelestiaLaunchTask { return 'fixture-no-task' }
 function Get-FixtureTaskPath([string]$TaskName) {
-    if ($TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-[a-f0-9]{32}$') { throw 'Blocked unexpected task name.' }
+    if ($TaskName -notmatch '^Caelestia-Maintenance(?:Watch)?-[a-f0-9]{32}$' -and
+        $TaskName -notmatch '^Caelestia-Start-[A-Za-z0-9-]+$') { throw 'Blocked unexpected task name.' }
     return Join-Path $env:CAELESTIA_FIXTURE_CASE "tasks\$TaskName.json"
 }
 function New-ScheduledTaskAction {
@@ -134,8 +139,9 @@ function Register-ScheduledTask {
 }
 function Get-ScheduledTask {
     param($TaskName, $TaskPath, $ErrorAction)
-    if ($TaskName -eq 'Caelestia-Maintenance*') {
-        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CASE 'tasks') -File) {
+    if ($TaskName -eq 'Caelestia-Maintenance*' -or $TaskName -eq 'Caelestia-Start-*') {
+        $pattern = if ($TaskName -eq 'Caelestia-Maintenance*') { 'Caelestia-Maintenance*.json' } else { 'Caelestia-Start-*.json' }
+        foreach ($file in Get-ChildItem -LiteralPath (Join-Path $env:CAELESTIA_FIXTURE_CASE 'tasks') -Filter $pattern -File) {
             Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
         }
         return

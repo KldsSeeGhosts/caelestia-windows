@@ -163,11 +163,15 @@ Singleton {
     property bool fullScanNeeded: true
     property int statusTicks: 0
     property bool scanPending: false
+    property bool scanInFlight: false
+    property bool scanWorkerStartPending: false
+    property bool scanWorkerStopRequested: false
+    property bool scanTimedOut: false
+    property int scanRestartAttempts: 0
     // An enable can arrive during an idle scan. Preserve its full refresh
     // even if that older result clears fullScanNeeded before it exits.
     property bool refreshPending: false
     property bool deepRefreshPending: false
-    property bool scanTimedOut: false
     // The config watcher starts a status scan immediately; a scan that is
     // already running gets one queued status pass instead of being dropped.
     property bool activeScan: false
@@ -187,7 +191,7 @@ Singleton {
         }
         if (deep === true)
             fullScanNeeded = true;
-        if (scan.running || scanPending) {
+        if (scanInFlight || scanPending) {
             refreshPending = true;
             deepRefreshPending = deepRefreshPending || deep === true;
             return;
@@ -195,21 +199,156 @@ Singleton {
         startScan(!fullScanNeeded && haveSnapshot && statusTicks < 20);
     }
 
-    function startScan(statusOnly: bool): void {
-        if (scan.running || scanPending)
+    function ensureScanWorker(): void {
+        if (scan.running || scanWorkerStartPending || scanRestartTimer.running)
             return;
-        scan.statusOnly = statusOnly;
-        scanTimedOut = false;
-        scanPending = true;
+        scanWorkerStopRequested = false;
+        scanWorkerStartPending = true;
+        scanWatchdog.restart();
+        scan.stdinEnabled = true;
+        scan.running = true;
+    }
+
+    function sendScanRequest(): void {
+        if (!scanPending || scanInFlight || !scan.running || scanWorkerStopRequested)
+            return;
+        scanInFlight = true;
         scanStartedAt = Date.now();
         scanWatchdog.restart();
-        scan.running = true;
-        if (!scan.running && scanPending) {
-            // FailedToStart clears running without emitting exited.
-            scanPending = false;
-            scanWatchdog.stop();
-            scanFailed("wallpaper engine helper failed to start");
+        scan.write(JSON.stringify({command: "snapshot", statusOnly: scan.statusOnly}) + "\n");
+    }
+
+    function startScan(statusOnly: bool): void {
+        if (scanInFlight || scanPending)
+            return;
+        scan.statusOnly = statusOnly;
+        scanPending = true;
+        ensureScanWorker();
+        // QProcess does not buffer stdin written before started(). A starting
+        // worker receives this request from onStarted instead.
+        if (!scanWorkerStartPending)
+            sendScanRequest();
+    }
+
+    function scanWorkerWanted(): bool {
+        return (enabled || running) && python !== "";
+    }
+
+    function maintainScanWorker(): void {
+        if (!scanWorkerWanted() && scan.running && !scanInFlight && !scanPending) {
+            scanWorkerStopRequested = true;
+            scan.stdinEnabled = false;
         }
+    }
+
+    function scheduleScanWorkerRestart(): void {
+        if (scanWorkerStopRequested)
+            return;
+        if (!scanWorkerWanted())
+            return;
+        scanRestartTimer.interval = Math.min(15000, 1000 * Math.pow(2, scanRestartAttempts));
+        scanRestartAttempts++;
+        scanRestartTimer.restart();
+    }
+
+    function drainScanQueue(): void {
+        if (refreshPending) {
+            refreshPending = false;
+            activeScanPending = false;
+            const deep = deepRefreshPending;
+            deepRefreshPending = false;
+            Qt.callLater(() => refresh(deep));
+        } else if (activeScanPending) {
+            activeScanPending = false;
+            Qt.callLater(() => refreshActive());
+        } else {
+            Qt.callLater(maintainScanWorker);
+        }
+    }
+
+    function validateScanResponse(data, statusOnly: bool): void {
+        const isRecord = value => !!value && typeof value === "object" && !Array.isArray(value);
+        const isProject = value => isRecord(value) && typeof value.path === "string"
+            && (value.preview === undefined || typeof value.preview === "string");
+        const isProjectMap = value => isRecord(value) && Object.values(value).every(isProject);
+        if (!isRecord(data) || (data.ok !== true && data.ok !== false))
+            throw new Error("Invalid discovery response");
+        if (!data.ok)
+            throw new Error(typeof data.error === "string" && data.error || "Discovery failed");
+        if (typeof data.running !== "boolean")
+            throw new Error("Invalid discovery process state");
+        if (data.discoveryError !== undefined) {
+            if (typeof data.discoveryError !== "string" || !data.discoveryError)
+                throw new Error("Invalid discovery error");
+            return;
+        }
+        if (typeof data.detected !== "boolean" || !isProjectMap(data.monitors)
+            || (data.displays !== undefined && !isProjectMap(data.displays))
+            || (data.configPath !== undefined && typeof data.configPath !== "string")
+            || (!statusOnly && (!Array.isArray(data.items) || !data.items.every(isProject))))
+            throw new Error("Invalid discovery snapshot");
+    }
+
+    function finishScan(text: string): void {
+        if (!scanInFlight)
+            return;
+        // Validate the protocol payload before treating the worker as healthy.
+        // Malformed output followed by process exit is a restart loop, so its
+        // backoff must keep increasing instead of resetting to one second.
+        let data = null;
+        try {
+            data = JSON.parse(text);
+            validateScanResponse(data, scan.statusOnly);
+        } catch (error) {
+            scanFailed(String(error));
+            scanPending = false;
+            scanInFlight = false;
+            activeScan = false;
+            scanWatchdog.stop();
+            drainScanQueue();
+            return;
+        }
+        scanRestartAttempts = 0;
+        scanPending = false;
+        scanInFlight = false;
+        scanWatchdog.stop();
+        if (activeScan) {
+            activeScan = false;
+            console.debug("CAELESTIA_PALETTE_TIMING stage=active_scan_done ts=" + Date.now() + " elapsed_ms=" + (Date.now() - scanStartedAt));
+        }
+        try {
+            if (data.discoveryError)
+                applyDiscoveryFailure(data);
+            else if (scan.statusOnly)
+                applyStatus(data);
+            else
+                applySnapshot(data);
+        } catch (error) {
+            scanFailed(String(error));
+        }
+        drainScanQueue();
+    }
+
+    function failScanWorker(message: string): void {
+        scanWatchdog.stop();
+        scanWorkerStartPending = false;
+        if (scanWorkerStopRequested && scanPending) {
+            Qt.callLater(ensureScanWorker);
+            return;
+        }
+        const hadRequest = scanPending || scanInFlight;
+        if (hadRequest) {
+            scanPending = false;
+            scanInFlight = false;
+            activeScan = false;
+            scanFailed(message);
+        }
+        const wasStopping = scanWorkerStopRequested;
+        scheduleScanWorkerRestart();
+        if (hadRequest)
+            drainScanQueue();
+        else if (wasStopping && scanWorkerWanted())
+            Qt.callLater(() => refresh(false));
     }
 
     // A selection change only moves the active projects; the workshop
@@ -219,7 +358,7 @@ Singleton {
     function refreshActive(): void {
         if (!python || !haveSnapshot)
             return;
-        if (scan.running || scanPending) {
+        if (scanInFlight || scanPending) {
             activeScanPending = true;
             return;
         }
@@ -460,10 +599,17 @@ Singleton {
         } else {
             status = python ? "disabled" : "unavailable";
         }
+        Qt.callLater(maintainScanWorker);
     }
     Component.onCompleted: {
         seedDesktopClaim();
         refresh(false);
+    }
+    Component.onDestruction: {
+        scanWorkerStopRequested = true;
+        scanRestartTimer.stop();
+        if (scan.running)
+            scan.stdinEnabled = false;
     }
 
     FileView {
@@ -636,67 +782,54 @@ Singleton {
         id: scanWatchdog
         interval: 10000
         onTriggered: {
-            if (root.scanPending || scan.running) {
-                root.scanPending = false;
-                root.scanTimedOut = true;
+            if (root.scanPending || root.scanInFlight) {
                 if (scan.running) {
+                    root.scanTimedOut = true;
                     scan.signal(9);
+                } else {
                     scan.running = false;
+                    root.failScanWorker("wallpaper engine scan timed out");
                 }
-                root.scanFailed("wallpaper engine scan timed out");
+            }
+        }
+    }
+    Timer {
+        id: scanRestartTimer
+        objectName: "wallpaperEngineScanRestart"
+        repeat: false
+        onTriggered: {
+            if (root.scanPending) {
+                root.ensureScanWorker();
+            } else if (root.scanWorkerWanted()) {
+                root.refresh(false);
             }
         }
     }
     Process {
         id: scan
+        objectName: "wallpaperEngineScan"
         property bool statusOnly: false
-        command: [root.python, root.helper, "snapshot"].concat(statusOnly ? ["--status-only"] : [])
-        stdout: StdioCollector { id: scanOutput }
-        onRunningChanged: {
-            if (!scan.running && root.scanPending) {
-                Qt.callLater(() => {
-                    if (!scan.running && root.scanPending) {
-                        root.scanPending = false;
-                        scanWatchdog.stop();
-                        root.scanFailed("wallpaper engine helper failed to start");
-                    }
-                });
-            }
+        command: [root.python, root.helper, "--serve"]
+        environment: ({
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8"
+        })
+        stdout: SplitParser {
+            onRead: data => root.finishScan(data)
         }
-        onExited: code => {
-            root.scanPending = false;
-            scanWatchdog.stop();
-            const timedOut = root.scanTimedOut;
+        onStarted: {
+            root.scanWorkerStartPending = false;
+            root.sendScanRequest();
+        }
+        onRunningChanged: {
+            if (!scan.running && root.scanWorkerStartPending)
+                root.failScanWorker("wallpaper engine helper failed to start");
+        }
+        onExited: {
+            const message = root.scanTimedOut ? "wallpaper engine scan timed out"
+                : "wallpaper engine helper exited unexpectedly";
             root.scanTimedOut = false;
-            if (root.activeScan) {
-                root.activeScan = false;
-                console.debug("CAELESTIA_PALETTE_TIMING stage=active_scan_done ts=" + Date.now() + " elapsed_ms=" + (Date.now() - root.scanStartedAt));
-            }
-            if (!timedOut) {
-                try {
-                    const data = JSON.parse(scanOutput.text);
-                    if (code !== 0 || !data.ok)
-                        throw new Error(data.error || "discovery failed");
-                    if (data.discoveryError)
-                        root.applyDiscoveryFailure(data);
-                    else if (scan.statusOnly)
-                        root.applyStatus(data);
-                    else
-                        root.applySnapshot(data);
-                } catch (error) {
-                    root.scanFailed(String(error));
-                }
-            }
-            if (root.refreshPending) {
-                root.refreshPending = false;
-                root.activeScanPending = false;
-                const deep = root.deepRefreshPending;
-                root.deepRefreshPending = false;
-                Qt.callLater(() => root.refresh(deep));
-            } else if (root.activeScanPending) {
-                root.activeScanPending = false;
-                Qt.callLater(() => root.refreshActive());
-            }
+            root.failScanWorker(message);
         }
     }
     // A selection whose helper never returns must not keep action.running true

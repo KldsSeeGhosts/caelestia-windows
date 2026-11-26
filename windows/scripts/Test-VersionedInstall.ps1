@@ -255,6 +255,14 @@ public static class FakeSchemePython {
         for (int i = 0; i + 1 < args.Length; i++) {
             if (args[i] == "-m" && args[i + 1] == "pip") {
                 Log("pip-start");
+                foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables()) {
+                    string name = (string)entry.Key;
+                    if (name.StartsWith("PIP_", StringComparison.OrdinalIgnoreCase) &&
+                        !name.Equals("PIP_CONFIG_FILE", StringComparison.OrdinalIgnoreCase)) return 20;
+                }
+                if (Environment.GetEnvironmentVariable("PIP_CONFIG_FILE") != "nul") return 21;
+                if (Array.IndexOf(args, "--require-hashes") < 0 &&
+                    (Array.IndexOf(args, "--no-build-isolation") < 0 || Array.IndexOf(args, "--no-deps") < 0)) return 22;
                 string failText = Environment.GetEnvironmentVariable("CAELESTIA_TEST_PIP_FAIL");
                 if (!String.IsNullOrEmpty(failText)) {
                     Console.Error.WriteLine("ERROR: could not open " + failText);
@@ -2821,18 +2829,25 @@ public static extern bool FreeLibrary(System.IntPtr module);
     $oldPath = $env:PATH
     $oldProvisionLog = $env:CAELESTIA_TEST_PROVISION_LOG
     $oldPipSeconds = $env:CAELESTIA_TEST_PIP_SECONDS
+    $oldPipIndex = $env:PIP_INDEX_URL
+    $oldPipConfig = $env:PIP_CONFIG_FILE
     try {
         $env:PATH = "$fakeDirectory;$oldPath"
         $env:CAELESTIA_TEST_PROVISION_LOG = $fakeLog
         $env:CAELESTIA_TEST_PIP_SECONDS = '2'
+        $env:PIP_INDEX_URL = 'https://example.invalid/simple'
+        $env:PIP_CONFIG_FILE = 'fixture-pip.ini'
         # Both installer preparation and Start-Caelestia run this provisioning
         # step; drive it directly with the same lock waits they use.
         $calculator = Join-Path $PSScriptRoot 'Install-SchemeRuntime.ps1'
+        $cliArchiveFixture = Join-Path $PSScriptRoot '..\tests\scheme\caelestia-cli-5e804b10c146c9f3278b2da37c8e4b5d8e9708d9.tar.gz'
+        Assert ((Get-FileHash -LiteralPath $cliArchiveFixture -Algorithm SHA256).Hash -eq (Get-CaelestiaSchemeArchiveSha256 $PSScriptRoot)) 'The hermetic CLI archive fixture does not match its pin.'
         function Start-SchemeProvision([int]$LockWaitSeconds, [string]$Name, [string]$Profile = $generationProfile) {
             $stdout = Join-Path $root "$Name.out"
             $stderr = Join-Path $root "$Name.err"
             $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
-                '" -ProfileRoot "' + $Profile + '" -LockWaitSeconds ' + $LockWaitSeconds
+                '" -ProfileRoot "' + $Profile + '" -LockWaitSeconds ' + $LockWaitSeconds +
+                ' -Python "' + $fakePython + '" -CliArchive "' + $cliArchiveFixture + '"'
             $process = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments `
                 -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
             return [pscustomobject]@{ Process = $process; Stdout = $stdout }
@@ -2894,7 +2909,8 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $cacheOut = Join-Path $root 'cache.out'
         $cacheErr = Join-Path $root 'cache.err'
         $cacheArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
-            '" -ProfileRoot "' + $generationProfile + '" -LockWaitSeconds 30'
+            '" -ProfileRoot "' + $generationProfile + '" -LockWaitSeconds 30' +
+            ' -Python "' + $fakePython + '" -CliArchive "' + $cliArchiveFixture + '"'
         $cacheRun = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $cacheArguments `
             -WindowStyle Hidden -PassThru -RedirectStandardOutput $cacheOut -RedirectStandardError $cacheErr
         if (-not $cacheRun.WaitForExit(120000)) {
@@ -2908,7 +2924,8 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $repairOut = Join-Path $root 'repair.out'
         $repairErr = Join-Path $root 'repair.err'
         $repairArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $calculator +
-            '" -ProfileRoot "' + $generationProfile + '" -Force -LockWaitSeconds 30'
+            '" -ProfileRoot "' + $generationProfile + '" -Force -LockWaitSeconds 30' +
+            ' -Python "' + $fakePython + '" -CliArchive "' + $cliArchiveFixture + '"'
         $repair = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $repairArguments `
             -WindowStyle Hidden -PassThru -RedirectStandardOutput $repairOut -RedirectStandardError $repairErr
         if (-not $repair.WaitForExit(120000)) {
@@ -2975,11 +2992,17 @@ public static extern bool FreeLibrary(System.IntPtr module);
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "scheme\$name") -Destination (Join-Path $ip 'scheme')
         }
         $ipProfile = Join-Path $root 'ipp'
+        $ipRevision = Get-CaelestiaSchemeRevision $PSScriptRoot
+        [ordered]@{ schemaVersion = 1; schemeCli = [ordered]@{
+            repository = 'https://github.com/caelestia-dots/cli.git'; revision = $ipRevision
+            archiveSha256 = Get-CaelestiaSchemeArchiveSha256 $PSScriptRoot
+        } } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $root 'sources.lock.json') -Encoding UTF8
         function Invoke-Provisioner([string[]]$Extra = @()) {
             $out = Join-Path $root ('prov-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.out')
             $err = $out + '.err'
             $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $ip 'Install-SchemeRuntime.ps1') +
-                '" -ProfileRoot "' + $ipProfile + '" -CliRevision rev-x -LockWaitSeconds 30 ' + ($Extra -join ' ')
+                '" -ProfileRoot "' + $ipProfile + '" -CliRevision ' + $ipRevision + ' -LockWaitSeconds 30' +
+                ' -Python "' + $fakePython + '" -CliArchive "' + $cliArchiveFixture + '" ' + ($Extra -join ' ')
             $run = Start-Process -FilePath (Get-CaelestiaPowerShellPath) -ArgumentList $arguments -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput $out -RedirectStandardError $err
             if (-not $run.WaitForExit(120000)) { $run.Kill(); $run.WaitForExit(); throw 'The provisioner timed out.' }
@@ -3000,7 +3023,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
         $newShim = Join-Path $runtimes "$($run3.Result.generation)\venv\Lib\site-packages\fcntl.py"
         Assert ((Get-Content -LiteralPath $newShim -Raw).Trim() -eq 'a different shim') 'The new generation does not contain the new shim.'
         $newMeta = Get-Content -LiteralPath (Join-Path $runtimes "$($run3.Result.generation)\generation.json") -Raw | ConvertFrom-Json
-        Assert ($newMeta.identity -eq (Get-CaelestiaSchemeIdentity $ip 'rev-x').Id -and $newMeta.shimSha256) 'The generation does not record the identity it was built from.'
+        Assert ($newMeta.identity -eq (Get-CaelestiaSchemeIdentity $ip $ipRevision).Id -and $newMeta.shimSha256) 'The generation does not record the identity it was built from.'
 
         $pyvenvCfg = Join-Path $runtimes "$($run3.Result.generation)\venv\pyvenv.cfg"
         [IO.File]::WriteAllText($pyvenvCfg, "home = $(Join-Path $root 'gone-python')`r`n")
@@ -3008,7 +3031,7 @@ public static extern bool FreeLibrary(System.IntPtr module);
         Assert ($run4.Result.available -eq $true -and $run4.Result.generation -ne $run3.Result.generation) 'A lost base interpreter was not repaired with a new generation.'
         $heldPointer = Read-Pointer $ipProfile
         Assert ($heldPointer.generation -eq $run4.Result.generation) 'The repaired generation was not published.'
-        $kept = Update-SchemeRuntimeForRevision $ipProfile 'rev-x' $ip
+        $kept = Update-SchemeRuntimeForRevision $ipProfile $ipRevision $ip
         Assert ($kept.generation -eq $run4.Result.generation -and (Read-Pointer $ipProfile).generation -eq $run4.Result.generation) 'Activation swapped the repaired generation back to the broken one.'
         Write-Output 'PASS identity: a shim change builds a new generation; a lost base interpreter is repaired and stays repaired.'
 
@@ -3027,14 +3050,16 @@ public static extern bool FreeLibrary(System.IntPtr module);
         ) -join "`n"
         Assert ($leakSources -match 'could not open <path>\.py') 'The failure record lost its redacted detail.'
         $failedState = Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision-state.json') -Raw | ConvertFrom-Json
-        Assert ($failedState.exitCode -eq '1' -and $failedState.step -match 'materialyoucolor') 'The step and exit code are not recorded as fields of their own.'
-        Assert ((Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision.log') -Raw) -match 'FAILED step=installing materialyoucolor/pillow exit=1 :') 'The history line lost the step and exit code.'
+        Assert ($failedState.exitCode -eq '1' -and $failedState.step -eq 'installing locked Python wheels') 'The step and exit code are not recorded as fields of their own.'
+        Assert ((Get-Content -LiteralPath (Join-Path $ipProfile 'scheme\provision.log') -Raw) -match 'FAILED step=installing locked Python wheels exit=1 :') 'The history line lost the step and exit code.'
         Assert ($leakSources -notmatch 'Zq|Py 3\.12') 'A custom-prefix path reached provisioning diagnostics.'
         Write-Output 'PASS diagnostics: a custom-prefix path is redacted from warnings, state and history.'
     } finally {
         $env:PATH = $oldPath
         $env:CAELESTIA_TEST_PROVISION_LOG = $oldProvisionLog
         $env:CAELESTIA_TEST_PIP_SECONDS = $oldPipSeconds
+        $env:PIP_INDEX_URL = $oldPipIndex
+        $env:PIP_CONFIG_FILE = $oldPipConfig
     }
 
     # The installer phase itself is non-throwing and reports its own elapsed
@@ -3524,6 +3549,29 @@ namespace Caelestia.Takeover {
         Set-Item -Path function:Get-CaelestiaShortPath -Value $savedShortPath2
     }
 
+    # Fallback ordering: legacy migration backups are never preferred over a
+    # real timestamped or semantic-versioned payload merely because 'l' sorts
+    # after digits in plain descending text order.
+    $orderPrefix = Join-Path $root 'version-order'
+    [IO.Directory]::CreateDirectory((Join-Path $orderPrefix 'versions')) | Out-Null
+    foreach ($id in @('legacy-20200101', '0.9.9', '1.2.3', '20240101T000000Z-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbb')) {
+        $runtime = Join-Path $orderPrefix "versions\$id"
+        [IO.Directory]::CreateDirectory($runtime) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $runtime 'qs.exe'), $id)
+        [ordered]@{
+            product = 'caelestia-windows'; version = 1; prefix = $runtime
+            profile = (Join-Path $root 'profile'); installId = 'version-test'
+            installRoot = $orderPrefix; versionId = $id
+            executableSha256 = (Get-FileHash -LiteralPath (Join-Path $runtime 'qs.exe') -Algorithm SHA256).Hash
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtime 'install.json') -Encoding UTF8
+    }
+    $timestampedOrderId = '20240101T000000Z-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbb'
+    Assert ((Select-CaelestiaExistingVersion $orderPrefix) -eq $timestampedOrderId) 'Fallback ordering did not choose the newest timestamped payload.'
+    Assert ((Select-CaelestiaExistingVersion $orderPrefix @($timestampedOrderId)) -eq '1.2.3') 'Fallback ordering chose legacy-* over a semantic version.'
+    Assert ((Select-CaelestiaExistingVersion $orderPrefix @($timestampedOrderId, '1.2.3')) -eq '0.9.9') 'Fallback ordering skipped the next semantic version.'
+    Assert ((Select-CaelestiaExistingVersion $orderPrefix @($timestampedOrderId, '1.2.3', '0.9.9')) -eq 'legacy-20200101') 'Fallback ordering did not retain legacy-* as the last resort.'
+    Write-Output 'PASS version ordering: timestamped and SemVer payloads outrank legacy-* migration backups.'
+
     # BOM-less UTF-8 manifests under inbox Windows PowerShell 5.1. PowerShell
     # 5.1's default decoding is the ANSI code page, so every JSON read in the
     # release verifier must name -Encoding UTF8 explicitly. Prove it: write a
@@ -3564,6 +3612,7 @@ Write-Output $parsed.releaseId
     Assert ($LASTEXITCODE -eq 0) ('The 5.1 manifest read failed: ' + $readOutput)
     Assert ($readOutput.Trim() -ceq $nonAscii) 'Inbox Windows PowerShell 5.1 mangled the BOM-less UTF-8 manifest metadata.'
     Write-Output 'PASS manifest encoding: a BOM-less UTF-8 release.json with non-ASCII metadata reads accurately under powershell.exe 5.1.'
+    & (Join-Path $PSScriptRoot 'Test-InstallerUpdateEdgeCases.ps1')
 } finally {
     if (Test-Path -LiteralPath $script:registryTestRoot) {
         $registryItem = Get-Item -LiteralPath $script:registryTestRoot

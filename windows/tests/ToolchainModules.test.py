@@ -25,6 +25,16 @@ def main():
     args = parser.parse_args()
     root = args.output_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
+    # The validation command intentionally reuses its output root for logs.
+    # Remove only archives this fixture created on earlier runs; a stale copy
+    # otherwise suppresses the fake download and is checked against the digest
+    # of the newly timestamped fixture zip.
+    for name in ("normal", "inherited"):
+        downloads = root / (name + "-downloads")
+        for archive_name in ("synthetic.zip", "bad.zip", "timeout.zip"):
+            stale = downloads / archive_name
+            if stale.is_file():
+                stale.unlink()
     helper = Path(__file__).resolve().parents[1] / "scripts/Caelestia-Toolchain.ps1"
     prepare = helper.with_name("Prepare-Toolchain.ps1")
     archive = root / "fixture.zip"

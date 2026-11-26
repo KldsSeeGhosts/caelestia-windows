@@ -38,7 +38,9 @@
       "materialyoucolor": "3.0.4",
       "pillow": "13.0.0"
     },
-    "role": "Dynamic Material You scheme generation. Installed into a virtual environment under the isolated combined profile, never into the repository; only its scheme/material modules are used, not the Linux theme writer."
+    "role": "Dynamic Material You scheme generation. Installed into a virtual environment under the isolated combined profile, never into the repository; only its scheme/material modules are used, not the Linux theme writer.",
+    "archiveSha256": "c24c54acc9469db93474b36b24cefc48d2afe2a1b25e11800842edfc2ebd32b9",
+    "buildBackend": "hatchling 1.27.0 with hatch-vcs 0.4.0 and transitive build requirements pinned by SHA-256 in windows/scripts/scheme/requirements.lock.txt"
   },
   "iiWindowsReference": {
     "repository": "https://github.com/nunreasonable/ii-windows.git",

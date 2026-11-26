@@ -1,2 +1,4 @@
 module Quickshell
 singleton DesktopEntries 1.0 DesktopEntries.qml
+PersistentProperties 1.0 PersistentProperties.qml
+ShellScreen 1.0 ShellScreen.qml

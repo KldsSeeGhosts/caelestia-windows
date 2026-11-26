@@ -39,3 +39,9 @@ target_link_libraries(caelestia-config PUBLIC
     caelestia-core
     caelestia-settings
 )
+if(CAELESTIA_WINDOWS_TESTS)
+    add_executable(launcher-action-tests test/launcheraction_test.cpp)
+    target_include_directories(launcher-action-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(launcher-action-tests PRIVATE caelestia-config Qt::Qml Qt::Test)
+    add_test(NAME launcher-action COMMAND launcher-action-tests)
+endif()

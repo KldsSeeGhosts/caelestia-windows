@@ -131,6 +131,10 @@ function Invoke-PackageInstall([string]$Bundle, [string]$Prefix, [string]$Profil
     $Injection = @'
 function New-CaelestiaLaunchTask { throw 'Package tests must never request a launch task.' }
 function Start-CaelestiaDetached { throw 'Package tests must never launch the shell.' }
+# Hosted packaging runs can have an administrator token. The lifecycle cases
+# exercise payload transactions, not elevation policy, so the fixture boundary
+# neutralizes that one imported guard here; production scripts keep the guard.
+function Assert-CaelestiaInstallerNotElevated { param([object]$Elevated = $null, [string]$TokenUser = '', [string]$ConsoleSessionUser = '') }
 '@ + "`n" + $Injection
     if ($Injection) {
         $boundary = ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')"

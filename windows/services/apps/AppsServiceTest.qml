@@ -2,7 +2,12 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import Quickshell
+import Quickshell.Windows as Native
+import "../../../components" as Components
 import "AppStoragePath.js" as StoragePath
+import "ElevationLogic.js" as ElevationLogic
+import "ShellActionSchema.js" as ShellActions
+import "../../shell/adapters/modules/launcher/services/LauncherActionMigration.js" as ActionMigration
 
 // Standalone fixture for the Windows app catalog/search state object.
 // Quickshell.DesktopEntries is the small fake module under
@@ -15,6 +20,21 @@ import "AppStoragePath.js" as StoragePath
 QtObject {
     id: test
 
+    readonly property Components.ScreenState launcherState: Components.ScreenState {
+        modelData: ShellScreen {}
+    }
+    readonly property Window launchWindow: Window {
+        Item { id: launcherItem }
+    }
+    readonly property QtObject ownerProbe: QtObject {
+        property Item received
+        function launchShellAction(spec, parentWindow: Item): var {
+            test.check(test.launcherState.launcher, "the launcher is still open at native dispatch");
+            received = parentWindow;
+            return {status: "started"};
+        }
+    }
+
     component FakeEntry: QtObject {
         property string id: ""
         property string name: ""
@@ -26,10 +46,14 @@ QtObject {
         property var keywords: []
         property string icon: ""
         property bool runInTerminal: false
+        property var command: []
+        property string workingDirectory: ""
+        property var executeResult: true
         property int executions: 0
 
-        function execute(): void {
+        function execute(): var {
             executions++;
+            return executeResult;
         }
     }
 
@@ -38,6 +62,8 @@ QtObject {
     }
 
     component FakeCatalog: QtObject {
+        signal launchFinished(string requestId, string status, string error)
+
         property var applications: null
         property bool scanCompleted: false
         property string scanError: ""
@@ -55,13 +81,19 @@ QtObject {
             return lookupResults[appId] ?? null;
         }
 
-        function execute(entry): bool {
+        function execute(entry): var {
             if (!entry || typeof entry.execute !== "function")
-                return false;
+                return { state: "refused", requestId: "", error: "Unknown application entry." };
             executions++;
             lastExecutedId = entry.id;
-            entry.execute();
-            return true;
+            const result = entry.execute();
+            if (result === true)
+                return { state: "confirmed", requestId: "", error: "" };
+            if (result === false)
+                return { state: "refused", requestId: "", error: "fixture refusal" };
+            if (typeof result === "string" && result.length > 0)
+                return { state: "pending", requestId: result, error: "" };
+            return { state: "unconfirmed", requestId: "", error: "" };
         }
     }
 
@@ -155,6 +187,23 @@ QtObject {
     property FakeEntry duplicateB: null
 
     property int assertions: 0
+    property var terminalCalls: []
+    property int terminalLauncherCalls: 0
+    property var terminalLaunchResult: true
+    property string terminalLaunchFailure: ""
+
+    function fakeTerminalLauncher(entry, terminal): bool {
+        terminalLauncherCalls++;
+        terminalCalls.push({
+            id: entry?.id ?? "",
+            command: entry?.command ?? [],
+            terminal: terminal
+        });
+        service.terminalLauncherError = terminalLaunchResult ? "" : terminalLaunchFailure;
+        if (typeof terminalLaunchResult === "string" && terminalLaunchResult.length > 0)
+            return { state: "pending", requestId: terminalLaunchResult, error: "" };
+        return terminalLaunchResult;
+    }
 
     function buildFixture(): void {
         firefox = entryComponent.createObject(test, {
@@ -180,7 +229,8 @@ QtObject {
         });
         terminal = entryComponent.createObject(test, {
             id: "terminal", name: "Terminal", comment: "Command line",
-            execString: "/usr/bin/foot", runInTerminal: true, icon: "utilities-terminal"
+            execString: "C:/Tools/terminal-app.exe", command: ["C:/Tools/terminal-app.exe", "--echo"],
+            workingDirectory: "C:/Tools", runInTerminal: true, icon: "utilities-terminal"
         });
         duplicateA = entryComponent.createObject(test, {
             id: "dup-a", name: "Duplicate", icon: "appicon:dup-a"
@@ -226,6 +276,66 @@ QtObject {
             "icon resolution and the original image-missing fallback");
         check(service.nameFor(firefox) === "Firefox" && service.nameFor(null) === "",
             "name resolution");
+
+        // Qt on Windows sets KeypadModifier for numeric keypad Enter. The
+        // helper accepts both main Return and keypad Enter for Ctrl+Shift.
+        const keyConstants = {
+            returnKey: Qt.Key_Return,
+            enterKey: Qt.Key_Enter,
+            controlModifier: Qt.ControlModifier,
+            shiftModifier: Qt.ShiftModifier,
+            keypadModifier: Qt.KeypadModifier
+        };
+        const ctrlShift = Qt.ControlModifier | Qt.ShiftModifier;
+        check(ElevationLogic.isCtrlShiftEnter(Qt.Key_Return, ctrlShift, keyConstants),
+            "Ctrl+Shift+Return is the elevation chord");
+        check(ElevationLogic.isCtrlShiftEnter(Qt.Key_Enter, ctrlShift | Qt.KeypadModifier, keyConstants),
+            "Ctrl+Shift+numeric keypad Enter is the elevation chord");
+        check(ElevationLogic.isCtrlShiftEnter(Qt.Key_Enter, ctrlShift, keyConstants),
+            "Ctrl+Shift+Enter without the keypad bit is accepted");
+        check(!ElevationLogic.isCtrlShiftEnter(Qt.Key_Return, Qt.ControlModifier, keyConstants),
+            "Ctrl+Return without Shift is not elevation");
+        check(!ElevationLogic.isCtrlShiftEnter(Qt.Key_A, ctrlShift, keyConstants),
+            "Ctrl+Shift+A is not elevation");
+
+        // The pure native-action helpers fail closed for a browse-only catalog:
+        // neither elevation nor inline sudo reaches the backend. When launch is
+        // enabled, inline sudo still rechecks the Microsoft Sudo mode at click time.
+        let elevationDispatches = 0;
+        let shellDispatches = 0;
+        let inlineSudoEnabled = true;
+        let lastInlineSpec = null;
+        const nativeActionFake = {
+            runAsAdminDetailed: function() {
+                elevationDispatches++;
+                return {status: "started"};
+            },
+            isInlineSudoEnabled: function() {
+                return inlineSudoEnabled;
+            },
+            launchShellAction: function(spec) {
+                shellDispatches++;
+                lastInlineSpec = spec;
+                return {status: "started"};
+            }
+        };
+        const blockedElevation = ElevationLogic.runAsAdminDetailed(nativeActionFake, "terminal", null, false);
+        check(blockedElevation.status === "refused" && elevationDispatches === 0,
+            "browse-only elevation never dispatches");
+        const blockedInline = ElevationLogic.launchInlineSudo(nativeActionFake, terminal, null, false);
+        check(blockedInline.status === "refused" && shellDispatches === 0,
+            "browse-only inline sudo never dispatches");
+        const allowedInline = ElevationLogic.launchInlineSudo(nativeActionFake, terminal, null, true);
+        check(allowedInline.status === "started" && shellDispatches === 1,
+            "enabled inline sudo dispatches once");
+        check(lastInlineSpec.target === "wt.exe"
+            && JSON.stringify(lastInlineSpec.args) === JSON.stringify(["new-tab", "--", "sudo.exe", "--inline", "powershell.exe"]),
+            "inline sudo passes an explicit shell command");
+        inlineSudoEnabled = false;
+        const staleInline = ElevationLogic.launchInlineSudo(nativeActionFake, terminal, null, true);
+        check(staleInline.status === "refused" && staleInline.inlineSudoEnabled === false
+            && shellDispatches === 1,
+            "click-time inline sudo recheck blocks dispatch");
 
         // The adapter must expose the preserved launcher members and no
         // Database/AppDb surface.
@@ -529,7 +639,16 @@ QtObject {
         // --- Interactive launch policy ---------------------------------------
         service.launchEnabled = true;
         check(service.canLaunch(firefox) === true, "launch opt-in permits a listed entry");
-        check(service.canLaunch(terminal) === false, "terminal entries are not launchable");
+        check(service.canLaunch(terminal) === false, "terminal entries need a terminal launcher");
+        service.terminalCommand = ["wt.exe"];
+        service.terminalLauncher = fakeTerminalLauncher;
+        const argv = terminal.command;
+        terminal.command = [];
+        check(!service.canLaunch(terminal) && !service.launch(terminal),
+            "a marked entry without argv is refused rather than launched unshelled");
+        terminal.command = argv;
+        check(service.terminalLaunchSupported === true, "configured terminal support is exposed");
+        check(service.canLaunch(terminal) === true, "terminal entries are launchable through the terminal");
         check(service.canLaunch({id: "foreign", name: "Foreign"}) === false,
             "foreign entries are not launchable");
         check(service.canLaunch(null) === false, "null entries are not launchable");
@@ -551,11 +670,59 @@ QtObject {
         check(service.lastLaunchError.length > 0,
             "foreign launch reason");
 
-        check(service.launch(terminal) === false, "terminal launch is refused");
+        check(service.launch(terminal) === true, "terminal launch uses the configured terminal");
+        check(terminalLauncherCalls === 1 && terminalCalls.length === 1 && terminalCalls[0].id === "terminal"
+            && terminalCalls[0].terminal[0] === "wt.exe", "terminal launcher receives entry and configuration");
         check(terminal.executions === 0 && catalog.executions === 2,
-            "terminal launch executes nothing");
-        check(service.lastLaunchError.length > 0, "terminal refusal reason");
-        check(store.frequencyFor("terminal") === 0, "terminal refusal records no frequency");
+            "terminal launch bypasses the non-terminal catalog execute path");
+        check(store.frequencyFor("terminal") === 1, "successful terminal launch records its frequency");
+
+        terminalLaunchResult = false;
+        terminalLaunchFailure = "fixture terminal refusal";
+        check(service.launch(terminal) === false, "a refused terminal launch fails explicitly");
+        check(service.lastLaunchError === "fixture terminal refusal", "terminal refusal reason is preserved");
+        check(store.frequencyFor("terminal") === 1, "failed terminal launch does not record frequency");
+        terminalLaunchResult = true;
+        terminalLaunchFailure = "";
+
+        calculator.executeResult = false;
+        const frequencyBeforeFailedCatalogLaunch = store.increments;
+        check(service.launch(calculator) === false, "a failed catalog launch returns false");
+        check(service.lastLaunchError.length > 0, "failed catalog launch has a reason");
+        check(store.increments === frequencyBeforeFailedCatalogLaunch,
+            "failed catalog launch does not record frequency");
+        calculator.executeResult = true;
+
+        // A void pinned-backend dispatch is accepted as unconfirmed work, but
+        // it never increments frequency without an explicit outcome.
+        calculator.executeResult = undefined;
+        const beforeUnconfirmed = store.increments;
+        check(service.launch(calculator) === true, "a void backend dispatch is unconfirmed rather than refused");
+        check(service.lastLaunchState === "unconfirmed", "the launcher can distinguish dispatch from confirmation");
+        check(store.increments === beforeUnconfirmed, "a void backend dispatch does not record frequency");
+
+        calculator.executeResult = "req-calculator";
+        check(service.launch(calculator) === true, "an asynchronous backend dispatch is accepted as pending");
+        check(service.lastLaunchState === "pending", "the launcher can distinguish pending from confirmation");
+        check(store.increments === beforeUnconfirmed, "a pending dispatch does not record frequency early");
+        catalog.launchFinished("req-calculator", "succeeded", "");
+        check(store.frequencyFor("calc") === 1 && store.increments === beforeUnconfirmed + 1,
+            "a successful asynchronous completion records frequency once");
+        calculator.executeResult = "req-calculator-failure";
+        check(service.launch(calculator) === true, "a second asynchronous dispatch is accepted as pending");
+        catalog.launchFinished("req-calculator-failure", "failed", "fixture launch failure");
+        check(store.frequencyFor("calc") === 1 && store.increments === beforeUnconfirmed + 1,
+            "a failed asynchronous completion does not record frequency");
+        check(service.lastLaunchError === "fixture launch failure", "asynchronous failure is surfaced");
+        service.lastLaunchError = "";
+        calculator.executeResult = true;
+
+        terminalLaunchResult = "req-terminal";
+        check(service.launch(terminal) === true, "a terminal launch can be pending");
+        check(store.frequencyFor("terminal") === 1, "a pending terminal launch does not record frequency early");
+        catalog.launchFinished("req-terminal", "succeeded", "");
+        check(store.frequencyFor("terminal") === 2, "terminal asynchronous completion records frequency");
+        terminalLaunchResult = true;
 
         check(service.launch(null) === false && service.launch("firefox") === false,
             "invalid entries are refused");
@@ -564,7 +731,7 @@ QtObject {
         // A stale entry removed by a rescan is refused.
         model.values = [files];
         check(service.canLaunch(firefox) === false, "removed entry is no longer launchable");
-        check(service.launch(firefox) === false && catalog.executions === 2,
+        check(service.launch(firefox) === false && catalog.executions === 6,
             "removed entry launch is refused without executing");
 
         // --- Running-application middle-click launch -------------------------
@@ -577,10 +744,10 @@ QtObject {
             "an app id matched by the catalog starts a new instance");
         check(catalog.lookups === 1 && catalog.lastLookupId === "running-firefox",
             "the running app id goes through the catalog's own lookup");
-        check(catalog.executions === 3 && firefox.executions === 3,
+        check(catalog.executions === 7 && firefox.executions === 3,
             "middle-click dispatches exactly one catalog execute");
         check(service.launchRequests === middleRequests + 1
-            && service.launchesIssued === 3, "middle-click is one launch request");
+            && service.launchesIssued === 8, "middle-click is one launch request");
         check(service.lastLaunchId === "firefox", "the matched entry is the launch target");
 
         // An unmatched app is inert and never reaches launch().
@@ -592,14 +759,14 @@ QtObject {
         check(catalog.lookups === missLookups + 1, "the catalog was consulted");
         check(service.launchRequests === missRequests,
             "an unmatched app never makes a launch request");
-        check(catalog.executions === 3, "an unmatched app executes nothing");
+        check(catalog.executions === 7, "an unmatched app executes nothing");
 
         // A matched entry that the launch policy refuses stays inert.
         catalog.lookupResults = {"running-terminal": terminal};
-        check(service.launchForAppId("running-terminal") === false,
-            "a matched terminal entry is not launchable");
-        check(terminal.executions === 0 && catalog.executions === 3,
-            "a refused match executes nothing");
+        check(service.launchForAppId("running-terminal") === true,
+            "a matched terminal entry launches through the configured terminal");
+        check(terminalLauncherCalls === 4 && terminal.executions === 0 && catalog.executions === 7,
+            "a terminal match uses the terminal launcher without catalog execute");
 
         // Without the launch opt-in nothing is matched and nothing is called.
         service.launchEnabled = false;
@@ -612,7 +779,7 @@ QtObject {
             "a disabled launch does not consult the catalog");
         check(service.launchRequests === disabledRequests,
             "a disabled launch makes no launch request");
-        check(catalog.executions === 3 && firefox.executions === 3,
+        check(catalog.executions === 7 && firefox.executions === 3,
             "a disabled middle-click executes nothing");
         service.launchEnabled = true;
         catalog.lookupResults = {};
@@ -633,7 +800,7 @@ QtObject {
         checkNativeCatalogSnapshot();
 
         // Final native/no-op invariant across the whole fixture.
-        check(catalog.executions === 3, "only the three permitted launches reached the catalog");
+        check(catalog.executions === 7, "the permitted launches and the failed attempt reached the catalog");
         check(firefox.executions === 3, "only explicit and middle-click launches reached DesktopEntry.execute");
 
         console.log("CAELESTIA_APPS_FIXTURE_PASS " + JSON.stringify({assertions: assertions}));
@@ -645,6 +812,15 @@ QtObject {
     // previous scan's applications: no applicationsChanged will arrive until
     // the next scan. The adapter must see that snapshot immediately.
     function checkNativeCatalogSnapshot(): void {
+        const migrated = ActionMigration.migrateActions([{name: "Settings", command: ["caelestia", "shell", "nexus", "open"]}]);
+        check(migrated[0].command[0] === "settings", "QJSEngine loads and runs the staged launcher migration");
+        launcherState.launcher = true;
+        const ownerResult = ShellActions.dispatchLauncherAction(ownerProbe, {verb: "runas"}, launcherItem);
+        check(ownerResult.status === "started" && ownerProbe.received === launcherItem
+            && launcherItem.Window.window === launchWindow,
+            "the native owner is the actual QQuickItem attached to its QQuickWindow");
+        launcherState.launcher = false;
+
         DesktopEntries.completeScan([firefox, files, calculator, settings, terminal]);
 
         const readyService = nativeServiceComponent.createObject(test);
@@ -655,6 +831,8 @@ QtObject {
         check(readyService.count === 5, "an existing snapshot exposes every application");
         check(readyService.search("fire").length === 1 && readyService.search("fire")[0] === firefox,
             "search reads the existing snapshot");
+        check(readyService.search("@t ").length === 1 && readyService.search("@t ")[0] === terminal,
+            "the terminal filter matches explicit flags only, not ordinary Windows entries");
         const lateCatalog = nativeCatalogComponent.createObject(test);
         check(lateCatalog !== null && lateCatalog.scanCompleted === true,
             "a catalog built over an existing snapshot records the completed scan");
@@ -678,6 +856,72 @@ QtObject {
         check(DesktopEntries.byIdCalls === callsBefore + 4,
             "only non-empty app ids reach DesktopEntries.byId");
         DesktopEntries.aliases = {};
+
+        settings.executeResult = undefined;
+        const voidOutcome = lateCatalog.execute(settings);
+        check(voidOutcome.state === "unconfirmed", "the production catalog keeps void execute unconfirmed");
+        settings.executeResult = false;
+        check(lateCatalog.execute(settings).state === "refused", "the production catalog preserves explicit refusal");
+        settings.executeResult = "req-native";
+        const pendingOutcome = lateCatalog.execute(settings);
+        check(pendingOutcome.state === "pending" && pendingOutcome.requestId === "req-native",
+            "the production catalog preserves asynchronous request correlation");
+        let nativeCompletion = null;
+        lateCatalog.launchFinished.connect((id, status, error) => nativeCompletion = [id, status, error]);
+        Native.AppActions.emitFinished("req-native", "failed", "fixture asynchronous refusal");
+        check(nativeCompletion?.join("|") === "req-native|failed|fixture asynchronous refusal",
+            "the production catalog forwards the backend completion signal");
+        settings.executeResult = true;
+        check(lateCatalog.execute(settings).state === "confirmed", "the production catalog preserves explicit confirmation");
+
+        readyService.launchEnabled = true;
+        const nativeStore = Qt.createQmlObject("import QtQuick; QtObject { property int increments: 0; function increment(id) { increments++; } }", test);
+        readyService.frequencyStore = nativeStore;
+        const entry = entryComponent.createObject(test, {
+            id: "native", name: "Native fixture", command: ["Vendor.App!Main"],
+            execString: "ignored fallback", workingDirectory: "C:/Fixture", executeResult: undefined
+        });
+        DesktopEntries.completeScan([entry]);
+        check(readyService.search("@t ").length === 0, "an AppsFolder-only catalog has no terminal filter results");
+        launcherState.launcher = true;
+        Native.AppActions.reply = {status: "queued", requestId: 51, errorCode: 0, error: ""};
+        check(readyService.launch(entry, launcherState) && readyService.lastLaunchState === "pending"
+            && nativeStore.increments === 0 && launcherState.launcher,
+            "the production catalog queues an ordinary launch without ranking early");
+        const spec = Native.AppActions.lastSpec;
+        check(spec.verb === "open" && spec.aumid === entry.command[0] && spec.workingDir === entry.workingDirectory
+            && entry.executions === 0, "the native request preserves the AppsFolder token and working directory");
+        Native.AppActions.emitFinished("51", "started", "");
+        check(nativeStore.increments === 1 && !launcherState.launcher,
+            "a started native completion raises rank and dismisses its launcher session");
+
+        launcherState.launcher = true;
+        Native.AppActions.reply = {status: "queued", requestId: 53};
+        check(readyService.launch(entry, launcherState), "launch queues before the user reopens the drawer");
+        launcherState.launcher = false;
+        launcherState.launcher = true;
+        Native.AppActions.emitFinished("53", "started", "");
+        check(nativeStore.increments === 2 && launcherState.launcher,
+            "a stale success raises rank but keeps the newly opened session");
+
+        let nativeError = "";
+        readyService.asynchronousLaunchFailed.connect(message => nativeError = message);
+        Native.AppActions.reply = {status: "queued", requestId: 52};
+        check(readyService.launch(entry, launcherState), "another native launch queues");
+        Native.AppActions.emitFinished("52", "refused", "fixture OS refusal");
+        check(nativeError === "fixture OS refusal" && nativeStore.increments === 2 && launcherState.launcher,
+            "a refused native completion keeps the drawer open and reaches launcher feedback without ranking");
+        const appFolderToken = entry.command[0];
+        entry.command = [];
+        entry.execString = "shell:AppsFolder\\" + appFolderToken;
+        Native.AppActions.reply = {status: "notSupported", error: "fixture unsupported route"};
+        check(!readyService.launch(entry) && readyService.lastLaunchError === "fixture unsupported route"
+            && Native.AppActions.lastSpec.aumid === appFolderToken && entry.executions === 0,
+            "execString drops the legacy prefix and a native refusal never falls through to DesktopEntry.execute");
+        readyService.catalog.appActions = null;
+        check(readyService.launch(entry) && readyService.lastLaunchState === "unconfirmed"
+            && entry.executions === 1 && nativeStore.increments === 2,
+            "an old backend falls back to the unconfirmed, unranked void dispatch");
 
         // The same wrapper, created before any scan, still completes from the
         // backend signal: empty first, then populated.

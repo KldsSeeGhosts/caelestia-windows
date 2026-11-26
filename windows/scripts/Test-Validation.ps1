@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 # One inventory for both the unsharded Unit suite and hosted shards. After the
 # socket-retry, fixture-template and staging fixes, the previously dominant
-# checks are seconds long, so the 23 tests split evenly 8/8/7. Shard 3 keeps
+# checks are seconds long, so the 24 tests split evenly 8/8/8. Shard 3 keeps
 # every check that needs full git history or Node: version metadata reads
 # tags and the fetched Pages ref, and `javascript` pairs with setup-node.
 $unitTests = @(
@@ -39,6 +39,7 @@ $unitTests = @(
     @{ name = 'public-release-metadata'; shard = 3; kind = 'python'; arguments = @('-B', 'windows/tests/TestPublicReleaseMetadata.py') }
     @{ name = 'Test-Versioning'; shard = 3; kind = 'script' }
     @{ name = 'history-version'; shard = 3; kind = 'python'; arguments = @('-I', '-B', 'windows/tests/test_history_version.py'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
+    @{ name = 'scheme-archive'; shard = 3; kind = 'python'; arguments = @('-B', '-m', 'unittest', 'discover', '-s', 'windows/tests/scheme', '-v'); testCountPattern = '(?m)^Ran ([0-9]+) tests?\b' }
     @{ name = 'Test-DesktopSupervisorStop'; shard = 3; kind = 'script' }
     @{ name = 'Test-ValidationCounts'; shard = 3; kind = 'script' }
     @{ name = 'javascript'; shard = 3; kind = 'node'; testCountPattern = '(?m)^# tests ([0-9]+)\s*$' }
@@ -294,11 +295,11 @@ try {
             @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'Test-*Service.ps1' -File | Sort-Object Name | ForEach-Object BaseName)
         } else {
             @('Test-AccessibilityLauncher', 'Test-AccessibilityNotifications',
-              'Test-CaptureBackendApi', 'Test-CapturePicker', 'Test-CaptureThumbnail', 'Test-CaptureRecording', 'Test-DragPreview', 'Test-DrawerFocusWindow', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-IdleWork', 'Test-LauncherHoverClose',
+              'Test-AppInfoActions', 'Test-CaptureBackendApi', 'Test-CapturePicker', 'Test-CaptureThumbnail', 'Test-CaptureRecording', 'Test-DragPreview', 'Test-DrawerFocusWindow', 'Test-HotplugTeardown', 'Test-IdleInhibitStatus', 'Test-IdleWork', 'Test-LauncherHoverClose',
               'Test-NexusWindow', 'Test-PerMonitorFullscreen', 'Test-PinnedPopoutFocus', 'Test-QuotaPopovers', 'Test-ShellReadiness',
-              'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-WallpaperColours',
+              'Test-QuotaProviderKeyboard', 'Test-SessionSwitchBack', 'Test-ToasterIpc', 'Test-WallpaperColours',
               'Test-WallpaperDefaults', 'Test-WallpaperFolder', 'Test-WallpaperHandback',
-              'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowsBackground', 'Test-WindowsHoverRegions',
+              'Test-WallpaperIpc', 'Test-WallpaperPreview', 'Test-WindowInfoWindow', 'Test-WindowsBackground', 'Test-WindowsHoverRegions',
               'Test-UpdateManager', 'Test-UpdatesPage', 'Test-FileUrls')
         }
         if (-not $scripts.Count) { throw 'No QML regressions were discovered.' }

@@ -16,8 +16,11 @@ function Assert($Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 function Replace-Exactly([string]$Text, [string]$Old, [string]$New) {
-    Assert ([regex]::Matches($Text, [regex]::Escape($Old)).Count -eq 1) ("Fixture injection boundary changed; refusing to run: " + $Old)
-    return $Text.Replace($Old, $New)
+    $normalizedText = $Text.Replace("`r`n", "`n")
+    $normalizedOld = $Old.Replace("`r`n", "`n")
+    $normalizedNew = $New.Replace("`r`n", "`n")
+    Assert ([regex]::Matches($normalizedText, [regex]::Escape($normalizedOld)).Count -eq 1) ("Fixture injection boundary changed; refusing to run: " + $Old)
+    return $normalizedText.Replace($normalizedOld, $normalizedNew)
 }
 function Start-FixtureProcess([string]$Executable, [string]$Arguments, [string]$Directory, [string]$Log) {
     $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -WorkingDirectory $Directory `
@@ -53,7 +56,7 @@ $statusPath = $null
 function New-PatchedSupervisorSource([string]$Token, [string]$CaseRoot) {
     $mutexName = 'Local\CaelestiaDesktopTakeover-Test-' + $Token
     $fixtureAppBarKey = 'Software\Quickshell\AppBars-Fixture-' + $Token
-    $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs'))
+    $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'DesktopTakeover.cs')).Replace("`r`n", "`n")
     Assert ($source.Contains('public const int ReadyTimeoutMs = 20000;')) 'Production first-frame budget changed.'
     $source = Replace-Exactly $source 'public const int ReadyTimeoutMs = 20000;' 'public const int ReadyTimeoutMs = 2500;'
     # Assert production thresholds before shortening only time in the fixture.
@@ -90,12 +93,50 @@ foreach (var path in Directory.GetFiles(Environment.CurrentDirectory, "slow-read
     $source = Replace-Exactly $source `
         'return RunCore(specPath, false, true, false, name, name + "-Recovery", true, logDelayMs);' `
         'return RunCore(specPath, true, true, true, name, name + "-Recovery", true, logDelayMs);'
+    $source = Replace-Exactly $source @'
+            using (var key = Registry.CurrentUser.OpenSubKey(ExplorerAdvanced)) {
+                var value = key == null ? null : key.GetValue("MMTaskbarEnabled");
+                return value is int ? (int?)(int)value : null;
+            }
+'@ @'
+            string path = Path.Combine(Environment.CurrentDirectory, "fixture-mm-taskbar");
+            return File.Exists(path) ? Int32.Parse(File.ReadAllText(path)) : 1;
+'@
+    $source = Replace-Exactly $source @'
+            using (var key = Registry.CurrentUser.CreateSubKey(ExplorerAdvanced)) {
+                if (value.HasValue) key.SetValue("MMTaskbarEnabled", value.Value, RegistryValueKind.DWord);
+                else key.DeleteValue("MMTaskbarEnabled", false);
+            }
+            // Preserve Settings' notification semantics, outside the message pump.
+            NotifyTraySettings();
+'@ @'
+            string path = Path.Combine(Environment.CurrentDirectory, "fixture-mm-taskbar");
+            if (value.HasValue) File.WriteAllText(path, value.Value.ToString());
+            else File.Delete(path);
+'@
+    $source = Replace-Exactly $source `
+        'const string TaskbarCoordinationKey = @"Software\Caelestia\Windows\TaskbarSuppression";' `
+        ('const string TaskbarCoordinationKey = @"Software\CaelestiaTest-' + $Token + '\TaskbarSuppression";')
     $source = Replace-Exactly $source 'Native.SuppressSecondaryTaskbars(saved, SaveSnapshot);' `
-        'File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "secondary\n");'
+        'Native.SuppressSecondaryTaskbars(saved, SaveSnapshot); File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "secondary\n");'
     $source = Replace-Exactly $source 'Native.Hide(recordUnchanged);' `
         'File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "hide\n"); Native.Hide(recordUnchanged);'
     $source = Replace-Exactly $source 'if (!isolatedTest) Native.RestoreOwned(saved, -1, false, true);' `
-        'TaskbarEventFixture.Restore(launch.WorkingDirectory, saved); File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "release\n");'
+        'Native.RestoreSecondaryTaskbars(saved); TaskbarEventFixture.Restore(launch.WorkingDirectory, saved); File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "release\n");'
+    $source = Replace-Exactly $source @'
+                if (!isolatedTest)
+                    Native.RestoreOwned(saved, -1, false, true);
+'@ @'
+                Native.RestoreSecondaryTaskbars(saved);
+                TaskbarEventFixture.Restore(launch.WorkingDirectory, saved);
+                File.AppendAllText(Path.Combine(launch.StateDirectory, "takeover-actions.txt"), "session-end\n");
+'@
+    # Deliver the test through the message pump without depending on Windows
+    # allowing one application to send another app's system session messages.
+    $source = Replace-Exactly $source 'if (message.Msg == 0x02B1) { // WM_WTSSESSION_CHANGE' @'
+            if (message.Msg == 0x8204) message.Msg = message.LParam.ToInt32();
+            if (message.Msg == 0x02B1) { // WM_WTSSESSION_CHANGE
+'@
     $source = Replace-Exactly $source `
         'return @"Local\CaelestiaDesktopTakeover-" + Process.GetCurrentProcess().SessionId;' `
         ('return @"' + $mutexName + '";')
@@ -219,6 +260,30 @@ namespace Caelestia.Takeover {
             }
         }
         [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
+        delegate bool EnumWindowsCallback(IntPtr window, IntPtr lparam);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr lparam);
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int count);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr w, IntPtr l, uint flags, uint milliseconds, out IntPtr result);
+        public static bool SendSessionMessage(uint ownerPid, uint message, bool active) {
+            IntPtr found = IntPtr.Zero;
+            EnumWindowsCallback callback = delegate(IntPtr window, IntPtr lparam) {
+                uint pid; GetWindowThreadProcessId(window, out pid);
+                if (pid != ownerPid) return true;
+                var text = new System.Text.StringBuilder(128);
+                GetWindowText(window, text, text.Capacity);
+                if (text.ToString() != "Caelestia desktop watchdog") return true;
+                found = window;
+                return false;
+            };
+            EnumWindows(callback, IntPtr.Zero);
+            GC.KeepAlive(callback);
+            if (found == IntPtr.Zero) return false;
+            IntPtr result;
+            return SendMessageTimeout(found, 0x8204, active ? new IntPtr(1) : IntPtr.Zero,
+                new IntPtr(message), 2, 3000, out result) != IntPtr.Zero;
+        }
         public static bool Visible(string directory) {
             var bar = Read(directory);
             return bar != null && Native.EventTaskbar(new IntPtr(bar.Handle), bar.Owner).Visible;
@@ -438,6 +503,24 @@ function Invoke-PipeCase([string]$Mode) {
                 $replacement.taskbarSuppressed -and -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case)) 'Explorer restart did not reconcile once before settling.'
             Assert (-not (Test-Path -LiteralPath (Join-Path $prefix 'legacy-probes.txt'))) 'Authenticated liveness spawned a legacy probe.'
             Assert (-not (Test-Path -LiteralPath (Join-Path $case 'pipe-dead-appbars'))) 'The supervisor attempted cleanup while the pipe child was alive.'
+
+            # Session-end messages are sent only to this watchdog's hidden
+            # window. Querying shutdown restores the fixture taskbar at once;
+            # a cancelled session re-applies suppression so the rest of the
+            # lifecycle test continues under the same desktop state.
+            $preference = Join-Path $case 'fixture-mm-taskbar'
+            Assert ([IO.File]::ReadAllText($preference) -eq '0') 'Takeover did not suppress the secondary taskbar preference.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::SendSessionMessage($watchdog.Id, 0x0011, $true)) 'Could not target the supervisor session-end window.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'WM_QUERYENDSESSION did not restore the taskbar immediately.'
+            Assert ([IO.File]::ReadAllText($preference) -eq '1') 'WM_QUERYENDSESSION did not restore MMTaskbarEnabled.'
+            Wait-Until { (Test-Path -LiteralPath (Join-Path $state 'takeover-actions.txt')) -and ((Get-Content -LiteralPath (Join-Path $state 'takeover-actions.txt') -Raw) -match 'session-end') } 'Session-end restore did not use the durable snapshot path.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::SendSessionMessage($watchdog.Id, 0x0016, $false)) 'Could not target the supervisor session-cancel window.'
+            Wait-Until { -not [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'A cancelled session did not re-suppress the taskbar.'
+            Assert ([IO.File]::ReadAllText($preference) -eq '0') 'A cancelled session did not re-suppress MMTaskbarEnabled.'
+            Assert ([Caelestia.Takeover.TaskbarEventFixture]::SendSessionMessage($watchdog.Id, 0x0016, $true)) 'Could not target the supervisor for confirmed session end.'
+            Assert ([IO.File]::ReadAllText($preference) -eq '1') 'WM_ENDSESSION did not restore MMTaskbarEnabled.'
+            Wait-Until { [Caelestia.Takeover.TaskbarEventFixture]::Visible($case) } 'WM_ENDSESSION did not leave the taskbar visible.'
+            Write-Output 'PASS session end: query and confirmed end restore taskbars and MMTaskbarEnabled; cancellation re-suppresses both.'
         } else {
             Wait-Until { Test-Path -LiteralPath (Join-Path $case 'pipe-rejected') } 'Invalid pipe hello was not disconnected.'
             Wait-Until {
@@ -847,6 +930,7 @@ if (Test-Path -LiteralPath $order) {
                         # The Start entrypoint uses this exact profile-scoped helper.
                         # Shorten only the recovery wait in the disposable copy.
                         $definition = ${function:Stop-CaelestiaSupervisor}.ToString().Replace('[int]$RecoveryTimeoutMs = 60000', '[int]$RecoveryTimeoutMs = 1000')
+                        $definition = $definition.Replace('-ScriptRoot $PSScriptRoot', '-ScriptRoot $scripts')
                         Set-Item Function:Stop-CaelestiaSupervisor ([scriptblock]::Create($definition))
                         Repair-CaelestiaStaleSupervisors $profile
                     } else {
@@ -1010,7 +1094,7 @@ try {
     }
     $exitCode = 0
 } catch {
-    Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
+    Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message + " [line " + $_.InvocationInfo.ScriptLineNumber + ": " + $_.InvocationInfo.Line.Trim() + "]")
     if ($statusPath -and (Test-Path -LiteralPath $statusPath)) { Get-Content -LiteralPath $statusPath }
     if ($case) {
         foreach ($log in @('watchdog.out', 'watchdog.err', 'quit.err')) {
@@ -1567,7 +1651,7 @@ public static class SupervisorStopFixture {
         }
     }
 } catch {
-    Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message)
+    Write-Output ("FAIL supervisor fixture: " + $_.Exception.Message + " [line " + $_.InvocationInfo.ScriptLineNumber + ": " + $_.InvocationInfo.Line.Trim() + "]")
     if ($statusPath -and (Test-Path -LiteralPath $statusPath)) { Get-Content -LiteralPath $statusPath }
     if ($case) {
         foreach ($log in @('watchdog.out', 'watchdog.err', 'quit.err')) {

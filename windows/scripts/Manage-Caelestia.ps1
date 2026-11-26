@@ -79,6 +79,7 @@ if ($Command -eq 'Status') {
 $installLock = Enter-CaelestiaInstallLock $Prefix
 $operationFile = ''
 $tracked = $false
+$CaelestiaTrackedOperationId = ''
 $terminalWritten = $false
 $queuedTask = ''
 $operationKind = if ($Command -eq 'Update') { 'update' } else { 'rollback' }
@@ -105,6 +106,25 @@ function Read-Operation {
         ($state.prefix -and -not (Test-CaelestiaSamePath $state.prefix $Prefix)) -or
         ($state.installId -and $state.installId -ne $record.installId)) { return $null }
     return $state
+}
+function Write-PolicyRefusal([string]$Id) {
+    Write-Operation $Id 'failed'
+    $scriptPath = (Join-Path $Prefix 'Manage-Caelestia.ps1').Replace("'", "''")
+    $quotedPrefix = $Prefix.Replace("'", "''")
+    $manual = "& '$scriptPath' -Prefix '$quotedPrefix' -Command $Command -Wait -ExpectedCurrent '$($record.current)'"
+    if ($Command -eq 'Update') { $manual += " -ExpectedBuild '$ExpectedBuild' -Channel '$Channel'" }
+    $response = @{
+        schema = 1; operationId = $Id; phase = 'failed'; code = 'scheduler-policy'
+        message = 'Task Scheduler blocked the request. Run this command in an unelevated PowerShell window:'
+        manualCommand = $manual
+    } | ConvertTo-Json -Compress
+    # ASCII JSON is also UTF-8, even when the hidden host writes through an
+    # OEM code page. Escape UTF-16 code units after JSON serialization so
+    # backslashes, apostrophes and surrogate pairs round-trip unchanged.
+    [regex]::Replace($response, '[^\x00-\x7f]', {
+        param($match)
+        '\u{0:x4}' -f [int][char]$match.Value
+    })
 }
 function Get-OperationTasks([string]$Id) {
     foreach ($name in @("Caelestia-Maintenance-$Id", "Caelestia-MaintenanceWatch-$Id")) {
@@ -140,6 +160,16 @@ try {
         $state = Read-Operation
         if ($state -and [string]$state.operationId -eq $OperationId -and $state.phase -in @('queued', 'working')) {
             if ($state.kind -eq 'update') { $operationKind = 'update' }
+            if ($state.phase -eq 'working' -and $state.installId -ceq $record.installId -and
+                $state.handoff.phase -eq 'stopping' -and $state.handoff.wasRunning -eq $true -and
+                $state.handoff.sessionId -eq [Diagnostics.Process]::GetCurrentProcess().SessionId) {
+                try {
+                    if (-not @(Get-CaelestiaProcesses $Prefix).Count -and -not @(Get-CaelestiaSupervisors $record.profile).Count) {
+                        $committed = Resolve-CaelestiaRuntimePrefix $Prefix
+                        Start-CaelestiaDetached $Prefix -LegacyReady -PreparedSchemeRuntime -RuntimePrefix $committed
+                    }
+                } catch { Write-Warning 'Could not restart the committed Caelestia version. Start Caelestia from the Start menu.' }
+            }
             Write-Operation $OperationId 'failed'
         }
         Unregister-ScheduledTask -TaskName ('Caelestia-MaintenanceWatch-' + $OperationId) -Confirm:$false -ErrorAction SilentlyContinue
@@ -207,15 +237,20 @@ try {
                     '" -Prefix "' + $Prefix + '" -Command Watch -OperationId "' + $operationId + '" -TaskName "' + $watchName + '"')
             $watchTrigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddSeconds($PhaseTimeoutSeconds))
             $watchSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-                -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::FromSeconds(30)) `
+                -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::FromSeconds(180)) `
                 -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
             Register-ScheduledTask -TaskName $watchName -Action $watchAction -Trigger $watchTrigger -Principal $principal -Settings $watchSettings -ErrorAction Stop | Out-Null
             Write-Operation $operationId 'queued'
             Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null
             $queuedTask = $name
         } catch {
+            $registrationError = $_
             Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
             Unregister-ScheduledTask -TaskName $watchName -Confirm:$false -ErrorAction SilentlyContinue
+            if (Test-CaelestiaTaskSchedulerAccessDenied $registrationError) {
+                Write-PolicyRefusal $operationId
+                return
+            }
             Write-Operation $operationId 'failed'
             throw
         }
@@ -237,7 +272,10 @@ try {
         try {
             if ($record.version -ne 2 -or ($Command -eq 'Rollback' -and -not $record.previous)) { throw 'No previous version is retained.' }
             if ($ExpectedCurrent -and $record.current -ne $ExpectedCurrent) { throw 'The selected version changed before rollback could start.' }
-            if ($tracked) { Write-Operation $operationId 'working' }
+            if ($tracked) {
+                Write-Operation $operationId 'working'
+                $CaelestiaTrackedOperationId = $operationId
+            }
             if ($Command -eq 'Update') {
                 Invoke-CaelestiaUpdateInstall $Prefix $ExpectedCurrent $ExpectedBuild $Channel $trust {
                     param($step, [long]$completed = 0, [long]$total = 0, [string]$unit = '')
@@ -262,8 +300,22 @@ try {
 }
 if ($queuedTask) {
     # The worker takes the same lock. Starting it only after release avoids a
-    # queue-vs-own-worker race. If start fails, the retained watchdog owns the
-    # bounded failure report; the request process also exits nonzero to the UI.
-    Start-ScheduledTask -TaskName $queuedTask -ErrorAction Stop
+    # queue-vs-own-worker race. On explicit policy denial no worker started;
+    # fence this request in the journal and remove both registrations.
+    try { Start-ScheduledTask -TaskName $queuedTask -ErrorAction Stop }
+    catch {
+        if (-not (Test-CaelestiaTaskSchedulerAccessDenied $_)) { throw }
+        $settleLock = Enter-CaelestiaInstallLock $Prefix
+        if (-not $settleLock) { throw } # A concurrent holder may own the request.
+        try {
+            $record = Read-CaelestiaInstall $Prefix
+            $state = Read-Operation
+            if (-not $state -or $state.operationId -cne $operationId -or $state.phase -cne 'queued') { throw }
+            Write-PolicyRefusal $operationId
+            Unregister-ScheduledTask -TaskName $queuedTask -Confirm:$false -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName ('Caelestia-MaintenanceWatch-' + $operationId) -Confirm:$false -ErrorAction SilentlyContinue
+        } finally { Exit-CaelestiaInstallLock $settleLock }
+        return
+    }
     @{ operationId = $operationId } | ConvertTo-Json -Compress
 }

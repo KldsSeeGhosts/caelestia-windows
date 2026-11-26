@@ -1,0 +1,187 @@
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Layouts
+import Caelestia.Config
+import Caelestia.I18n
+import qs.components
+import qs.services
+
+ColumnLayout {
+    id: root
+
+    required property var client
+    property bool moveToWsExpanded
+    readonly property bool moveWorkspaceAvailable: Hypr.dispatchEnabled
+        && Hypr.desktopControlCapability?.availability === "available"
+        && Hypr.desktopControlCapability?.operations?.move === true
+
+    anchors.fill: parent
+    spacing: Tokens.spacing.small
+
+    RowLayout {
+        Layout.topMargin: Tokens.padding.large
+        Layout.leftMargin: Tokens.padding.large
+        Layout.rightMargin: Tokens.padding.large
+
+        spacing: Tokens.spacing.medium
+
+        StyledText {
+            Layout.fillWidth: true
+            text: Tr.tr("Move to workspace")
+            elide: Text.ElideRight
+        }
+
+        StyledRect {
+            color: Colours.palette.m3primary
+            radius: Tokens.rounding.medium
+
+            implicitWidth: moveToWsIcon.implicitWidth + Tokens.padding.small
+            implicitHeight: moveToWsIcon.implicitHeight + Tokens.padding.extraSmall
+
+            StateLayer {
+                color: Colours.palette.m3onPrimary
+                onClicked: root.moveToWsExpanded = !root.moveToWsExpanded
+            }
+
+            MaterialIcon {
+                id: moveToWsIcon
+
+                anchors.centerIn: parent
+
+                animate: true
+                text: root.moveToWsExpanded ? "expand_more" : "keyboard_arrow_right"
+                color: Colours.palette.m3onPrimary
+                fontStyle: Tokens.font.icon.large
+            }
+        }
+    }
+
+    GridLayout {
+        id: wsGrid
+
+        Layout.fillWidth: true
+        Layout.leftMargin: Tokens.padding.large
+        Layout.rightMargin: Tokens.padding.large
+        Layout.bottomMargin: root.moveToWsExpanded ? Tokens.spacing.medium : 0
+        Layout.preferredHeight: root.moveToWsExpanded ? implicitHeight : 0
+        opacity: root.moveToWsExpanded ? 1 : 0
+        clip: true
+
+        rowSpacing: Tokens.spacing.small
+        columnSpacing: Tokens.spacing.small
+        columns: 5
+
+        Behavior on Layout.bottomMargin {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
+
+        Behavior on Layout.preferredHeight {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
+
+        Behavior on opacity {
+            Anim {
+                type: Anim.DefaultEffects
+            }
+        }
+
+        Repeater {
+            model: 10
+
+            WButton {
+                required property int index
+                objectName: "windowInfoMoveWorkspaceButton" + (index + 1)
+                readonly property int wsId: Math.floor((Hypr.activeWsId - 1) / 10) * 10 + index + 1
+                readonly property bool isCurrent: root.client?.workspace?.id === wsId
+
+                onClicked: {
+                    Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.move({ window = "address:0x${root.client?.address}", workspace = "${wsId}", follow = true })` : `movetoworkspace ${wsId},address:0x${root.client?.address}`);
+                }
+
+                color: isCurrent ? Colours.tPalette.m3surfaceContainerHighest : Colours.palette.m3tertiaryContainer
+                textColor: isCurrent ? Colours.palette.m3onSurface : Colours.palette.m3onTertiaryContainer
+                text: wsId
+                disabled: isCurrent || !root.moveWorkspaceAvailable
+            }
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.leftMargin: Tokens.padding.large
+        Layout.rightMargin: Tokens.padding.large
+        Layout.bottomMargin: Tokens.padding.large
+
+        spacing: root.client?.lastIpcObject?.floating ? Tokens.spacing.medium : Tokens.spacing.small
+
+        WButton {
+            objectName: "windowInfoFloatTileButton"
+            color: Colours.palette.m3secondaryContainer
+            textColor: Colours.palette.m3onSecondaryContainer
+            text: root.client?.lastIpcObject?.floating ? Tr.tr("Tile") : Tr.tr("Float")
+            disabled: !Hypr.dispatchEnabled || !Hypr.tilingActive
+            onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.float({ window = "address:0x${root.client?.address}" })` : `togglefloating address:0x${root.client?.address}`)
+        }
+
+        Loader {
+            asynchronous: true
+            active: root.client?.lastIpcObject?.floating ?? false
+            Layout.fillWidth: active
+            Layout.leftMargin: active ? 0 : -parent.spacing
+            Layout.rightMargin: active ? 0 : -parent.spacing
+
+            sourceComponent: WButton {
+                objectName: "windowInfoPinButton"
+                color: Colours.palette.m3secondaryContainer
+                textColor: Colours.palette.m3onSecondaryContainer
+                text: root.client?.lastIpcObject?.pinned ? Tr.tr("Unpin") : Tr.tr("Pin")
+                disabled: !Hypr.dispatchEnabled || !Hypr.pinSupported
+                onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.pin({ window = "address:0x${root.client?.address}" })` : `pin address:0x${root.client?.address}`)
+            }
+        }
+
+        WButton {
+            objectName: "windowInfoKillButton"
+            color: Colours.palette.m3errorContainer
+            textColor: Colours.palette.m3onErrorContainer
+            text: Tr.tr("Kill")
+            disabled: !Hypr.dispatchEnabled
+            onClicked: Hypr.dispatch(Hypr.usingLua ? `hl.dsp.window.kill({ window = "address:0x${root.client?.address}" })` : `killwindow address:0x${root.client?.address}`)
+        }
+    }
+
+    component WButton: StyledRect {
+        property color textColor: Colours.palette.m3onSurface
+        property alias disabled: stateLayer.disabled
+        property alias text: label.text
+
+        signal clicked
+
+        radius: Tokens.rounding.medium
+
+        Layout.fillWidth: true
+        implicitHeight: label.implicitHeight + Tokens.padding.small
+
+        StateLayer {
+            id: stateLayer
+
+            color: parent.textColor
+            onClicked: parent.clicked()
+        }
+
+        StyledText {
+            id: label
+
+            anchors.centerIn: parent
+
+            animate: true
+            color: parent.textColor
+            font: Tokens.font.body.medium
+        }
+    }
+}

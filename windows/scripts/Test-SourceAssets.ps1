@@ -237,7 +237,7 @@ $tarRoot = Join-Path $OutputDirectory 'supplier'
 [IO.Directory]::CreateDirectory($tarRoot) | Out-Null
 [IO.File]::WriteAllText((Join-Path $tarRoot 'LICENSE'), 'supplier legal text')
 $tar = Join-Path $OutputDirectory 'supplier.tar'
-& tar.exe -cf $tar -C $tarRoot LICENSE
+& (Get-SourceTarExecutable) -cf $tar -C $tarRoot LICENSE
 if ($LASTEXITCODE -ne 0) { throw 'Fixture tar creation failed.' }
 $extract = Join-Path $OutputDirectory 'extracted'
 Export-SourceTarMembers $tar @('LICENSE') $extract

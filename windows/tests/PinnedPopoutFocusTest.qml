@@ -5,6 +5,8 @@ import Quickshell.Wayland
 import Caelestia
 import qs.services as Services
 import qs.modules.drawers
+import qs.modules.nexus as Nexus
+import qs.modules.windowinfo as WindowInfoModule
 
 // The running-apps popout keyboard focus on the production host. The real
 // ContentWindow and its popouts wrapper run here, not a FloatingWindow, so the
@@ -18,6 +20,7 @@ ShellRoot {
     property int step: 0
     property int attempts: 0
     property var fixtureWindow
+    property var fixtureWindowB
     property var pill
     property var keys
 
@@ -51,6 +54,25 @@ ShellRoot {
         }
     }
 
+    QtObject {
+        id: hyprBackend
+
+        property bool initialized: true
+        property bool foregroundValidated: true
+        property var monitors: ({ values: [] })
+        property var workspaces: ({ values: [] })
+        property var toplevels: ({ values: [] })
+        property var activeToplevel: null
+        property var focusedWorkspace: null
+        property var focusedMonitor: null
+        property bool capsLock: false
+        property bool numLock: false
+        property string kbLayout: "us"
+        property string kbLayoutFull: "US"
+        function dispatch(): void {
+        }
+    }
+
     Component {
         id: keyComponent
         TestCase { when: false }
@@ -75,8 +97,19 @@ ShellRoot {
     }
 
     Component.onCompleted: {
-        fixtureWindow = fixture.createObject(root);
-        Services.RunningApps.source = [fixtureWindow];
+        fixtureWindow = fixture.createObject(root, {
+            address: "1",
+            title: "Foreground fixture window"
+        });
+        fixtureWindowB = fixture.createObject(root, {
+            address: "2",
+            title: "Previewed fixture window"
+        });
+        hyprBackend.toplevels = ({ values: [fixtureWindow, fixtureWindowB] });
+        hyprBackend.activeToplevel = fixtureWindow;
+        Services.Hypr.enabled = true;
+        Services.Hypr.backend = hyprBackend;
+        Services.RunningApps.source = [fixtureWindow, fixtureWindowB];
         Services.RunningApps.actionsEnabled = true;
         content.screenState.bar = true;
     }
@@ -126,6 +159,7 @@ ShellRoot {
             check(focusWindow.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None,
                 "hover open: companion keyboardFocus is None");
             checkGrabTarget(win, "hover open");
+
             popouts.hasCurrent = false;
             check(win.WlrLayershell.keyboardFocus === WlrKeyboardFocus.None, "hover close: keyboardFocus stays None");
 
@@ -190,6 +224,59 @@ ShellRoot {
             check(!focusWindow.focusable, "after Escape: companion is not focusable again");
             check(!focusWindow.visible, "after Escape: companion is hidden again");
             checkGrabTarget(win, "after Escape");
+
+            // Reopen the popout for the non-foreground window after the focus
+            // lifecycle assertions. The next timer pass activates the real
+            // chevron once the popout content exists.
+            Services.RunningApps.previewGroupId = "fixture-app";
+            Services.RunningApps.previewWindowId = "2";
+            popouts.currentName = "activewindow";
+            popouts.hasCurrent = true;
+            step = 4;
+        } else if (step === 4) {
+            if (!list())
+                return;
+            const state = popouts.current?.popouts ?? null;
+            check(state !== null, "detach: active window popout exposes its state");
+            check(Services.Hypr.activeToplevel === fixtureWindow,
+                "detach precondition: foreground remains the first window");
+
+            hyprBackend.toplevels = ({ values: [fixtureWindow] });
+            check(popouts.current.previewClient === null,
+                "missing preview: the tracked client lookup is empty");
+            state.detachRequested("winfo");
+            check(WindowInfoModule.WindowInfoFactory.windowCount === 0,
+                "missing preview: detach opens no WindowInfo window");
+            check(popouts.hasCurrent === true,
+                "missing preview: detach leaves the popout unchanged");
+
+            hyprBackend.toplevels = ({ values: [fixtureWindow, fixtureWindowB] });
+            check(popouts.current.previewClient === fixtureWindowB,
+                "detach target: the previewed non-foreground window resolves");
+            state.detachRequested("winfo");
+            check(WindowInfoModule.WindowInfoFactory.windowCount === 1,
+                "detach opens one WindowInfo window");
+            check(WindowInfoModule.WindowInfoFactory.windows[0].client === fixtureWindowB,
+                "detach inspects the previewed non-foreground window");
+            check(WindowInfoModule.WindowInfoFactory.windows[0].client !== fixtureWindow,
+                "detach never falls back to the foreground window");
+            WindowInfoModule.WindowInfoFactory.closeAll();
+            check(WindowInfoModule.WindowInfoFactory.windowCount === 0,
+                "detach test releases the WindowInfo window");
+
+            state.detachRequested("audio");
+            check(Nexus.WindowFactory.windowCount === 1,
+                "one-argument audio detach opens Nexus without an argument error");
+            Nexus.WindowFactory.closeAll();
+            attempts = 0;
+            step = 5;
+        } else if (step === 5) {
+            if (Nexus.WindowFactory.windowCount !== 0 && ++attempts < 10)
+                return;
+            check(Nexus.WindowFactory.windowCount === 0,
+                "audio detach test releases Nexus");
+            Services.Hypr.backend = null;
+            Services.Hypr.enabled = false;
             console.log("CAELESTIA_PINNED_FOCUS_PASS " + assertions);
             Qt.quit();
         }

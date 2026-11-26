@@ -70,6 +70,8 @@ $fixtures = @(
         marker = 'CAELESTIA_WALLPAPER_ENGINE_ACTION'; minimum = 14 },
     [ordered]@{ name = 'wallpaper-engine-toggle'; source = 'windows/tests/WallpaperEngineToggleTest.qml'
         marker = 'CAELESTIA_WALLPAPER_ENGINE_TOGGLE'; minimum = 28 },
+    [ordered]@{ name = 'wallpaper-engine-malformed-scan'; source = 'windows/tests/WallpaperEngineMalformedScanTest.qml'
+        marker = 'CAELESTIA_WALLPAPER_ENGINE_MALFORMED'; minimum = 11 },
     # One scenario, two profiles: the released behaviour for an existing
     # profile and the fresh-profile policy are asserted from the same code.
     [ordered]@{ name = 'wallpaper-engine-handback-existing'; source = 'windows/tests/WallpaperEngineHandbackExistingTest.qml'

@@ -732,13 +732,15 @@ function Test-CaelestiaCurrentHostMatchesTarget([string]$TargetHost) {
 }
 
 # Invoke a payload's Start-Caelestia.ps1 on the host it targets, preserving the
-# exact bound-parameter set the caller built. Same-edition payloads run
-# in-process; cross-edition payloads run out-of-process through a small encoded
-# bootstrap that rebuilds the hashtable and splats it, so values the -File
-# dispatcher would corrupt survive: a bound switch set to $false, an empty
-# string, embedded quotes and a trailing backslash. The child's exit code is
-# recorded on $global:CaelestiaLastPayloadExitCode before a nonzero exit throws,
-# so a caller that needs the exact code can exit with it instead of 1.
+# exact bound-parameter set the caller built. Payload commands always run
+# out-of-process through a small encoded bootstrap that rebuilds the hashtable
+# and splats it. PowerShell cannot unload DesktopTakeover assemblies, so even a
+# same-edition incoming payload must never share a process with the outgoing
+# version's assembly during an update. The bootstrap also preserves values the
+# -File dispatcher would corrupt: a bound switch set to $false, an empty string,
+# embedded quotes and a trailing backslash. The child's exit code is recorded on
+# $global:CaelestiaLastPayloadExitCode before a nonzero exit throws, so a caller
+# that needs the exact code can exit with it instead of 1.
 function Invoke-CaelestiaPayloadCommand([string]$RuntimePrefix, [hashtable]$Arguments) {
     # Reset before discovery so a discovery failure never reuses a stale code.
     $global:CaelestiaLastPayloadExitCode = 0
@@ -751,17 +753,6 @@ function Invoke-CaelestiaPayloadCommand([string]$RuntimePrefix, [hashtable]$Argu
     # and the shell files beside it, and the stable install root is never a
     # valid -Prefix for a versioned payload's own record.
     $argsCopy['Prefix'] = $RuntimePrefix
-    if (Test-CaelestiaCurrentHostMatchesTarget $targetHost) {
-        $global:LASTEXITCODE = 0
-        & $payloadScript @argsCopy
-        $childExit = $global:LASTEXITCODE
-        if ($null -eq $childExit) { $childExit = 0 }
-        $global:CaelestiaLastPayloadExitCode = $childExit
-        if ($childExit -ne 0) {
-            throw "Caelestia payload command failed on $targetEdition host (exit $childExit)."
-        }
-        return
-    }
     # Serialize the bound set as typed entries. SwitchParameter serializes as a
     # bool that binds positionally, so kind carries it separately and the
     # bootstrap rebuilds a real SwitchParameter with IsPresent from the value.
@@ -793,6 +784,7 @@ function Invoke-CaelestiaPayloadCommand([string]$RuntimePrefix, [hashtable]$Argu
     # type name so -Switch:$false stays bound with IsPresent=$false and the
     # payload's $PSBoundParameters.ContainsKey check still observes it.
     $bootstrap = @'
+$ErrorActionPreference = 'Stop'
 $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__ARGSB64__'))
 $script = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__SCRIPTB64__'))
 $entries = $json | ConvertFrom-Json
@@ -816,7 +808,7 @@ if ($null -ne $code -and $code -ne 0) { exit $code }
     $bootstrap = $bootstrap.Replace('__ARGSB64__', $argsB64).Replace('__SCRIPTB64__', $scriptB64)
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($bootstrap))
     $global:LASTEXITCODE = 0
-    & $targetHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encoded
+    & $targetHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -OutputFormat Text -EncodedCommand $encoded
     $childExit = $global:LASTEXITCODE
     if ($null -eq $childExit) { $childExit = 0 }
     $global:CaelestiaLastPayloadExitCode = $childExit
@@ -864,6 +856,7 @@ function Get-CaelestiaDesktopTakeoverReferences {
         'System.Runtime', 'System.Runtime.Extensions', 'System.Runtime.InteropServices',
         'System.Text.RegularExpressions',
         'Microsoft.Win32.Registry', 'Microsoft.Win32.Primitives',
+        'System.Security.Principal', 'System.Security.Principal.Windows', 'System.Security.Claims',
         'netstandard'
     )
 }
@@ -872,33 +865,46 @@ function Get-CaelestiaDesktopTakeoverReferences {
 # falling back to source when the DLL is missing or targets the other CLR. A
 # legacy .NET Framework DLL fails to load on Core and a Core build fails on
 # Desktop; either way the source compiles cleanly for the current runtime.
+# PowerShell cannot unload a type once it is loaded. A silent type-present
+# no-op is therefore unsafe during version activation: prove that the loaded
+# image came from this payload's input bytes, or refuse the mismatched payload
+# clearly instead of running new scripts against an old supervisor protocol.
 function Import-CaelestiaDesktopTakeover([string]$ScriptRoot = $PSScriptRoot, [switch]$SourceOnly) {
-    if ('Caelestia.Takeover.Supervisor' -as [type]) { return }
     $dll = Join-Path $ScriptRoot 'DesktopTakeover.dll'
-    if (-not $SourceOnly -and (Test-Path -LiteralPath $dll -PathType Leaf)) {
-        if (Test-CaelestiaDesktopTakeoverBuildMetadata $ScriptRoot) {
-            $validated = $false
-            try {
-                $validated = Test-CaelestiaDesktopTakeoverAssembly $dll
-            } catch {
-                # A probe that itself fails (for example Add-Type throwing on a
-                # Desktop host without WinForms) is not a validated image: fall
-                # through so the source is compiled instead.
-                $validated = $false
-            }
-            if ($validated) {
-                try {
-                    Add-Type -Path $dll -ErrorAction Stop
-                    return
-                } catch {
-                    # A DLL that passed metadata but still fails to bind is not a
-                    # partial success: fall through and compile from source.
-                }
-            }
+    $source = Join-Path $ScriptRoot 'DesktopTakeover.cs'
+    $useDll = $false
+    if (-not $SourceOnly -and (Test-Path -LiteralPath $dll -PathType Leaf) -and (Test-CaelestiaDesktopTakeoverBuildMetadata $ScriptRoot)) {
+        try { $useDll = Test-CaelestiaDesktopTakeoverAssembly $dll } catch { $useDll = $false }
+    }
+    $inputPath = $(if ($useDll) { $dll } else { $source })
+    if (-not (Test-Path -LiteralPath $inputPath -PathType Leaf)) { throw "Desktop takeover input is missing: $inputPath" }
+    $inputHash = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $inputKind = $(if ($useDll) { 'assembly' } else { 'source' })
+    $type = 'Caelestia.Takeover.Supervisor' -as [type]
+    if ($type) {
+        $record = $global:CaelestiaDesktopTakeoverInput
+        if ($record -and $record.Kind -eq $inputKind -and $record.Sha256 -eq $inputHash) { return }
+        $loadedPath = ''
+        try { $loadedPath = [string]$type.Assembly.Location } catch { }
+        # No receipt means the bytes on disk may no longer be the image
+        # already loaded. Its location is useful only for the diagnostic.
+        $loadedDescription = $(if ($loadedPath) { $loadedPath } else { 'an in-memory or source-compiled assembly' })
+        throw ("A different Caelestia desktop takeover assembly is already loaded in this process ({0}); " +
+            "the requested payload input is {1}. Start the payload command in a fresh PowerShell process.") -f $loadedDescription, $inputPath
+    }
+    if ($useDll) {
+        try {
+            Add-Type -Path $dll -ErrorAction Stop
+            $global:CaelestiaDesktopTakeoverInput = [pscustomobject]@{ Kind = $inputKind; Sha256 = $inputHash; Path = $inputPath }
+            return
+        } catch {
+            # A DLL that passed metadata but still fails to bind is not a
+            # partial success: fall through and compile from source.
         }
     }
-    Add-Type -Path (Join-Path $ScriptRoot 'DesktopTakeover.cs') `
-        -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop
+    Add-Type -Path $source -ReferencedAssemblies (Get-CaelestiaDesktopTakeoverReferences) -ErrorAction Stop
+    $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    $global:CaelestiaDesktopTakeoverInput = [pscustomobject]@{ Kind = 'source'; Sha256 = $sourceHash; Path = $source }
 }
 
 # A precompiled payload DLL is only trusted when its build metadata exists and
@@ -1127,20 +1133,119 @@ function New-CaelestiaTestExecutable([string]$OutputPath, [string]$Source, [stri
     }
 }
 
-# Scheme CLI revision pinned by a repository or installed payload.
-function Get-CaelestiaSchemeRevision([string]$RuntimePrefix) {
+# Resolve Python without consulting PATH. SystemRoot's py.exe is preferred;
+# PyLauncher and PythonCore registry keys are the only fallback. An explicit
+# override remains available to tests and support scenarios.
+function Test-CaelestiaLocalExecutableFile([string]$Path, [string]$RequiredLeaf = '') {
+    if (-not $Path -or -not [IO.Path]::IsPathRooted($Path) -or $Path.IndexOfAny([char[]]@('"', "`r", "`n")) -ge 0) { return $false }
+    try {
+        $full = Get-CaelestiaLongPath $Path
+        if ($RequiredLeaf -and (Split-Path -Leaf $full) -cne $RequiredLeaf) { return $false }
+        if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $false }
+        $item = Get-Item -LiteralPath $full -Force -ErrorAction Stop
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $full -match '(?i)[\/]WindowsApps[\/]') { return $false }
+        return $full
+    } catch { return $false }
+}
+
+function Get-CaelestiaPythonRegistryCandidate([string]$Root) {
+    try {
+        $key = Get-ItemProperty -LiteralPath $Root -ErrorAction SilentlyContinue
+        if (-not $key) { return '' }
+        foreach ($value in @([string]$key.'(default)', [string]$key.InstallDir, [string]$key.InstallPath)) {
+            if (-not $value) { continue }
+            $candidate = $value.Trim().TrimEnd('\')
+            if ((Split-Path -Leaf $candidate) -cne 'py.exe') { $candidate = Join-Path $candidate 'py.exe' }
+            $valid = Test-CaelestiaLocalExecutableFile $candidate 'py.exe'
+            if ($valid) { return $valid }
+        }
+    } catch { }
+    return ''
+}
+
+function Resolve-CaelestiaPythonHost([string]$Python = '') {
+    if ($Python) {
+        $override = Test-CaelestiaLocalExecutableFile ([IO.Path]::GetFullPath($Python))
+        if (-not $override) { throw "Python override is not an existing local executable file: $Python" }
+        return [pscustomobject]@{ Executable = $override; IsLauncher = ((Split-Path -Leaf $override) -ieq 'py.exe') }
+    }
+    $systemLauncher = Test-CaelestiaLocalExecutableFile (Join-Path $env:SystemRoot 'py.exe') 'py.exe'
+    if ($systemLauncher) { return [pscustomobject]@{ Executable = $systemLauncher; IsLauncher = $true } }
+    foreach ($root in @('HKLM:\SOFTWARE\Python\PyLauncher', 'HKLM:\SOFTWARE\Wow6432Node\Python\PyLauncher', 'HKCU:\SOFTWARE\Python\PyLauncher')) {
+        $candidate = Get-CaelestiaPythonRegistryCandidate $root
+        if ($candidate) { return [pscustomobject]@{ Executable = $candidate; IsLauncher = $true } }
+    }
+    foreach ($hive in @('HKLM:\SOFTWARE\Python\PythonCore', 'HKLM:\SOFTWARE\Wow6432Node\Python\PythonCore', 'HKCU:\SOFTWARE\Python\PythonCore')) {
+        foreach ($version in @(Get-ChildItem -LiteralPath $hive -ErrorAction SilentlyContinue | Sort-Object Name -Descending)) {
+            try {
+                $install = Get-ItemProperty -LiteralPath (Join-Path $version.PSPath 'InstallPath') -ErrorAction SilentlyContinue
+                if (-not $install) { continue }
+                foreach ($candidate in @([string]$install.ExecutablePath, [string]$install.'(default)')) {
+                    if (-not $candidate) { continue }
+                    $candidate = $candidate.Trim().TrimEnd('\')
+                    if ((Split-Path -Leaf $candidate) -ine 'python.exe') { $candidate = Join-Path $candidate 'python.exe' }
+                    $valid = Test-CaelestiaLocalExecutableFile $candidate 'python.exe'
+                    if ($valid) { return [pscustomobject]@{ Executable = $valid; IsLauncher = $false } }
+                }
+            } catch { }
+        }
+    }
+    throw 'the Python launcher/interpreter is not installed in SystemRoot or registered under Python\PyLauncher or Python\PythonCore'
+}
+
+# Read the scheme dependency lock exactly as the runtime payload sees it.
+function Get-CaelestiaSchemeLock([string]$RuntimePrefix) {
     try {
         $lockPath = Join-Path $RuntimePrefix '..\sources.lock.json'
         if (Test-Path -LiteralPath (Join-Path $RuntimePrefix 'install.json')) {
             $installed = Join-Path $RuntimePrefix 'licenses\sources.lock.json'
             if (Test-Path -LiteralPath $installed -PathType Leaf) { $lockPath = $installed }
         }
-        if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { return '' }
-        $lock = Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        return [string]$lock.schemeCli.revision
+        if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { return $null }
+        return (Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json)
     } catch {
-        return ''
+        return $null
     }
+}
+
+function Get-CaelestiaSchemeArchiveSha256([string]$RuntimePrefix) {
+    $lock = Get-CaelestiaSchemeLock $RuntimePrefix
+    if (-not $lock -or -not $lock.schemeCli) { return '' }
+    return [string]$lock.schemeCli.archiveSha256
+}
+
+# Caelestia is a per-user Medium-integrity installation. Elevation is never a
+# supported shortcut around prerequisite consent: a same-user elevated token
+# creates High-IL named objects that the Medium-IL shell cannot release, and an
+# over-the-shoulder token can write integration for the wrong user/session.
+function Assert-CaelestiaInstallerNotElevated([object]$Elevated = $null, [string]$TokenUser = '', [string]$ConsoleSessionUser = '') {
+    $isElevated = $false
+    if ($null -ne $Elevated) { $isElevated = [bool]$Elevated }
+    else {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        $isElevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    if (-not $isElevated) { return }
+    if (-not $TokenUser) { $TokenUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name }
+    if (-not $ConsoleSessionUser) {
+        try { $ConsoleSessionUser = [string](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).UserName } catch { $ConsoleSessionUser = '' }
+    }
+    $elevationKind = 'same-user elevation'
+    if ($ConsoleSessionUser -and $TokenUser -and $ConsoleSessionUser -ine $TokenUser) {
+        $elevationKind = 'over-the-shoulder elevation'
+    }
+    throw (("Caelestia cannot be installed from an elevated PowerShell process ({0}). " +
+        'Caelestia is a per-user Medium-integrity installation. Run Install.cmd or the installer again as the desktop user without administrator elevation. ' +
+        'Same-user elevation creates High-integrity mutexes the Medium-integrity shell cannot release; over-the-shoulder elevation can write per-user integration for the wrong session. ' +
+        'No Caelestia installation files were changed.') -f $elevationKind)
+}
+
+# Scheme CLI revision pinned by a repository or installed payload.
+function Get-CaelestiaSchemeRevision([string]$RuntimePrefix) {
+    $lock = Get-CaelestiaSchemeLock $RuntimePrefix
+    if (-not $lock -or -not $lock.schemeCli) { return '' }
+    return [string]$lock.schemeCli.revision
 }
 
 # Total time one generation search may spend probing candidates, and the slice
@@ -1185,14 +1290,18 @@ function Get-CaelestiaCanonicalPath([string]$Path) {
 
 # Hash of every input that goes into a scheme runtime generation, in one place
 # so the provisioner, the cache check, the repoint and activation all compare
-# the same freshly computed identity: the pinned CLI revision, the lock file,
-# the helper and the fcntl shim copied into the venv.
+# the same freshly computed identity: the CLI revision and archive digest,
+# the wheel lock, the helper and the fcntl shim copied into the venv.
 function Get-CaelestiaSchemeIdentity([string]$RuntimePrefix, [string]$Revision) {
     try {
         $directory = Join-Path $RuntimePrefix 'scheme'
         $hashes = @{}
         $material = [Text.StringBuilder]::new()
         $null = $material.Append($Revision)
+        $schemeLock = Get-CaelestiaSchemeLock $RuntimePrefix
+        if ($schemeLock -and $schemeLock.schemeCli.revision -ceq $Revision -and $schemeLock.schemeCli.archiveSha256) {
+            $null = $material.Append("`narchiveSha256=").Append([string]$schemeLock.schemeCli.archiveSha256)
+        }
         foreach ($name in @('requirements.lock.txt', 'win_scheme.py', 'fcntl.py')) {
             $path = Join-Path $directory $name
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
@@ -1261,6 +1370,8 @@ function Invoke-CaelestiaBounded([string]$File, [string]$Arguments, [int]$Timeou
         $info.CreateNoWindow = $true
         $info.RedirectStandardOutput = $true
         $info.RedirectStandardError = $true
+        $info.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+        $info.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
         $info.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
         $process = [Diagnostics.Process]::Start($info)
         $outTask = $process.StandardOutput.ReadToEndAsync()
@@ -1284,21 +1395,13 @@ function Invoke-CaelestiaBounded([string]$File, [string]$Arguments, [int]$Timeou
 # preparing, under a time limit; activation reads it from runtime.json and
 # never starts Python itself.
 function Resolve-CaelestiaSystemPython([int]$TimeoutSeconds = 15) {
-    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
-    if (-not $launcher) { return '' }
-    # Discovery must never activate an App Execution Alias or an install
-    # manager. Only the classic, already-installed launcher is supported by
-    # the optional provisioner. A refusal is caught by Start/installer callers
-    # and leaves the basic shell on its fixed palette.
-    $item = Get-Item -LiteralPath $launcher.Source -Force -ErrorAction Stop
-    if ($launcher.CommandType -ne 'Application' -or
-        $launcher.Source -match '(?i)[\\/]WindowsApps[\\/]' -or
-        ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
-        $item.VersionInfo.FileDescription -ne 'Python Launcher' -or
-        $env:PYLAUNCHER_ALLOW_INSTALL) {
-        throw 'Optional scheme preparation requires an installed classic Python launcher with automatic installation disabled; no Python launcher was executed.'
+    # Never activate an App Execution Alias, an install manager or a PATH shim.
+    if ($env:PYLAUNCHER_ALLOW_INSTALL) {
+        throw 'Optional scheme preparation requires automatic Python installation to be disabled; no Python launcher was executed.'
     }
-    $result = Invoke-CaelestiaBounded $launcher.Source '-3 -c "import sys; print(sys.executable)"' $TimeoutSeconds
+    try { $hostSpec = Resolve-CaelestiaPythonHost } catch { return '' }
+    $arguments = $(if ($hostSpec.IsLauncher) { '-3 -X utf8 -c "import sys; print(sys.executable)"' } else { '-X utf8 -c "import sys; print(sys.executable)"' })
+    $result = Invoke-CaelestiaBounded $hostSpec.Executable $arguments $TimeoutSeconds
     if (-not $result -or $result.ExitCode -ne 0) { return '' }
     $line = @($result.Output -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
     if ($line.Count -and [IO.Path]::IsPathRooted($line[0].Trim()) -and (Test-Path -LiteralPath $line[0].Trim() -PathType Leaf)) {
@@ -1456,20 +1559,26 @@ function Exit-CaelestiaSchemeLock($Lock) {
 # pip or the network. A failure is returned instead of thrown: the shell keeps
 # its fixed palette and the installation remains valid. The wait is bounded and
 # only used outside the readiness budget.
-function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$ProfileRoot) {
+function Install-CaelestiaSchemeRuntime([string]$RuntimePrefix, [string]$ProfileRoot, [string]$Python = '', [string]$CliArchive = '') {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $record = $null
     $message = ''
     try {
         $scriptPath = Join-Path $RuntimePrefix 'Install-SchemeRuntime.ps1'
         $targetHost = Get-CaelestiaPayloadPowerShellPath $RuntimePrefix
+        $schemeArguments = @{ ProfileRoot = $ProfileRoot; LockWaitSeconds = 900 }
+        if ($Python) { $schemeArguments['Python'] = $Python }
+        if ($CliArchive) { $schemeArguments['CliArchive'] = $CliArchive }
         if (Test-CaelestiaCurrentHostMatchesTarget $targetHost) {
-            $record = & $scriptPath -ProfileRoot $ProfileRoot -LockWaitSeconds 900 |
+            $record = & $scriptPath @schemeArguments |
                 Select-Object -Last 1 | ConvertFrom-Json
         } else {
+            $hostArguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath,
+                '-ProfileRoot', $ProfileRoot, '-LockWaitSeconds', '900')
+            if ($Python) { $hostArguments += @('-Python', $Python) }
+            if ($CliArchive) { $hostArguments += @('-CliArchive', $CliArchive) }
             $global:LASTEXITCODE = 0
-            $output = & $targetHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath `
-                -ProfileRoot $ProfileRoot -LockWaitSeconds 900
+            $output = & $targetHost @hostArguments
             if ($global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
                 throw "Scheme provisioning exited with code $($global:LASTEXITCODE)."
             }
@@ -2083,6 +2192,8 @@ function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs 
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    $info.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $info.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
     $process = [Diagnostics.Process]::Start($info)
     try {
         $outTask = $process.StandardOutput.ReadToEndAsync()
@@ -2096,59 +2207,186 @@ function Invoke-CaelestiaIpc([string]$Prefix, [string]$Command, [int]$TimeoutMs 
     } finally { $process.Dispose() }
 }
 
+# The scheduled launcher and the transactional installer can race: Task
+# Scheduler marks the launcher Ready as soon as the short-lived PowerShell
+# launcher exits successfully, while the supervised shell it started keeps
+# running. This per-launch record is the launcher's durable account of that
+# handoff. It is small public state only and is replaced atomically.
+function Get-CaelestiaReadinessRecordPath([string]$Prefix, [string]$LaunchId) {
+    if ($LaunchId -notmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,95}$') { throw 'Invalid Caelestia launch identifier.' }
+    $profile = ''
+    try { $profile = [string](Read-CaelestiaInstall $Prefix).profile } catch { }
+    if (-not $profile) { $profile = Join-Path $Prefix 'profile' }
+    return Join-Path $profile ('runtime\launch-readiness\' + $LaunchId + '.json')
+}
+
+function Write-CaelestiaReadinessRecord([string]$Path, [string]$GenerationId, [int]$ProcessId, [int]$ExitCode, [bool]$Ready, [string]$PayloadPath = '', [int]$SupervisorPid = 0) {
+    if (-not $Path) { return }
+    $directory = [IO.Path]::GetDirectoryName($Path)
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    Write-CaelestiaJsonAtomic $Path ([ordered]@{
+        generationId = $GenerationId
+        pid = $ProcessId
+        exitCode = $ExitCode
+        ready = $Ready
+        payloadPath = $PayloadPath
+        supervisorPid = $SupervisorPid
+        timestampUtc = [DateTime]::UtcNow.ToString('o')
+    })
+}
+
+function Read-CaelestiaReadinessRecord([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try {
+        $record = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+        if ($null -eq $record.PSObject.Properties['generationId'] -or
+            $null -eq $record.PSObject.Properties['pid'] -or
+            $null -eq $record.PSObject.Properties['exitCode'] -or
+            $null -eq $record.PSObject.Properties['ready'] -or
+            $null -eq $record.PSObject.Properties['timestampUtc']) { return $null }
+        return $record
+    } catch {
+        return $null
+    }
+}
+
+function Test-CaelestiaReadyState($State, [string]$PreviousGeneration = '', [switch]$LegacyReady) {
+    if (-not $State) { return $false }
+    $ready = $State.lifecycle.ready -eq $true -or
+        ($LegacyReady -and -not $State.PSObject.Properties['lifecycle'] -and $State.screens -gt 0 -and $State.windows.Count -eq $State.screens)
+    return $ready -and (-not $PreviousGeneration -or $State.lifecycle.generation -ne $PreviousGeneration)
+}
+
+function Test-CaelestiaPayloadSupportsIdentity([string]$RuntimePrefix) {
+    $shell = Join-Path $RuntimePrefix 'shell\shell.qml'
+    if (-not [IO.File]::Exists($shell)) { return $false }
+    $text = [IO.File]::ReadAllText($shell)
+    return $text.Contains('payloadPath') -and $text.Contains('supervisorPid')
+}
+
+# New payloads publish the payload directory and supervisor owner in public
+# IPC state. Requiring those fields keeps an already-running older payload,
+# including a legacy payload that predates the fields, from satisfying a new
+# activation. A restarted child is acceptable only under the same supervisor.
+function Test-CaelestiaReadyIdentity($State, [string]$ExpectedPayload = '', [int]$ExpectedSupervisorPid = 0, [switch]$RequireIdentity) {
+    if (-not $State -or -not $State.PSObject.Properties['lifecycle'] -or -not $State.lifecycle) { return (-not $RequireIdentity) }
+    $lifecycle = $State.lifecycle
+    $hasPayload = $null -ne $lifecycle.PSObject.Properties['payloadPath']
+    if ($hasPayload -and $ExpectedPayload -and -not (Test-CaelestiaSamePath ([string]$lifecycle.payloadPath) $ExpectedPayload)) { return $false }
+    if ($RequireIdentity -and $ExpectedPayload -and -not $hasPayload) { return $false }
+    $hasSupervisor = $null -ne $lifecycle.PSObject.Properties['supervisorPid']
+    if ($hasSupervisor -and $ExpectedSupervisorPid -gt 0 -and [int]$lifecycle.supervisorPid -ne $ExpectedSupervisorPid) { return $false }
+    if ($RequireIdentity -and $ExpectedSupervisorPid -gt 0 -and -not $hasSupervisor) { return $false }
+    return $true
+}
+
+function Get-CaelestiaExpectedPayload([string]$Prefix) {
+    if (Get-Command Resolve-CaelestiaRuntimePrefix -ErrorAction SilentlyContinue) {
+        try { return Resolve-CaelestiaRuntimePrefix $Prefix } catch { }
+    }
+    return $Prefix
+}
+
 # Readiness covers only the new shell starting. Optional provisioning must
 # complete before the handoff (Install-CaelestiaSchemeRuntime), never here.
-function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string]$PreviousGeneration = '', [switch]$LegacyReady, [string]$TaskName = '') {
+function Wait-CaelestiaReady([string]$Prefix, [int]$TimeoutSeconds = 20, [string]$PreviousGeneration = '', [switch]$LegacyReady, [string]$TaskName = '', [switch]$PassThru, [string]$ExpectedPayload = '', [int]$ExpectedSupervisorPid = 0, [switch]$RequireIdentity) {
+    if (-not $ExpectedPayload) { $ExpectedPayload = Get-CaelestiaExpectedPayload $Prefix }
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $clock = [Diagnostics.Stopwatch]::StartNew()
+    $launcherFinished = $false
+    $launcherFailed = $false
+    $observedSupervisor = $ExpectedSupervisorPid
+    $receiptObserved = $false
+    $recordPath = if ($TaskName) { Get-CaelestiaReadinessRecordPath $Prefix $TaskName }
     do {
-        try {
-            $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
-            if ($remaining -le 0) { break }
-            $state = Invoke-CaelestiaIpc $Prefix state ([Math]::Min(1000, $remaining)) | ConvertFrom-Json
-            if (($state.lifecycle.ready -eq $true -or ($LegacyReady -and -not $state.PSObject.Properties['lifecycle'] -and
-                    $state.screens -gt 0 -and $state.windows.Count -eq $state.screens)) -and
-                (-not $PreviousGeneration -or $state.lifecycle.generation -ne $PreviousGeneration)) { return }
-        } catch { }
-        if ($TaskName -and $clock.Elapsed.TotalSeconds -ge 1) {
-            # A constructor/launcher failure must not consume the entire
-            # readiness timeout before a safe retry or rollback.
+        if ($recordPath -and -not $receiptObserved) {
+            $record = Read-CaelestiaReadinessRecord $recordPath
+            if ($record -and $record.ready -eq $true -and $record.exitCode -eq 0 -and
+                $record.pid -gt 0 -and $record.generationId -and
+                (-not $record.payloadPath -or (Test-CaelestiaSamePath $record.payloadPath $ExpectedPayload))) {
+                $receiptSupervisor = if ($record.supervisorPid -gt 0) { [int]$record.supervisorPid } else { [int]$record.pid }
+                if ($observedSupervisor -and $observedSupervisor -ne $receiptSupervisor) {
+                    throw 'The launch receipt names an unexpected desktop supervisor.'
+                }
+                # The supervisor may replace its first child generation.
+                $observedSupervisor = $receiptSupervisor
+                $receiptObserved = $true
+            }
+        }
+        if ($TaskName -and -not $launcherFinished -and $clock.Elapsed.TotalSeconds -ge 1) {
             $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
             if ($task.State -eq 'Ready') {
                 $result = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction Stop
-                if ($result.LastRunTime.Year -gt 2000) { throw 'Scheduled Caelestia launch exited before readiness.' }
+                if ($result.LastRunTime.Year -gt 2000) {
+                    $launcherFinished = $true
+                    $launcherFailed = $result.LastTaskResult -ne 0
+                    # A clean exit does not stop the polling budget, even when
+                    # the launcher could not write its best-effort receipt.
+                }
             }
         }
+        try {
+            $remaining = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
+            if ($remaining -le 0 -and -not $launcherFailed) { break }
+            $probeTimeout = [Math]::Max(1, [Math]::Min(1000, $remaining))
+            $state = Invoke-CaelestiaIpc $Prefix state $probeTimeout | ConvertFrom-Json
+            if ((Test-CaelestiaReadyState $state $PreviousGeneration -LegacyReady:$LegacyReady) -and
+                (Test-CaelestiaReadyIdentity $state $ExpectedPayload $observedSupervisor -RequireIdentity:($RequireIdentity -or $observedSupervisor -gt 0))) {
+                if ($PassThru) { return $state }
+                return
+            }
+        } catch { }
+        # The launcher can time out while its supervisor is still starting.
+        # Only fail after checking the live shell against the same identity.
+        if ($launcherFailed) { throw 'Scheduled Caelestia launch exited before readiness.' }
         Start-Sleep -Milliseconds 50
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "Caelestia did not become ready within $TimeoutSeconds seconds. See the profile logs and runtime\supervisor-*\watchdog*.log."
 }
 
+function Test-CaelestiaLauncherSupportsReadiness([string]$Launcher) {
+    if (-not [IO.File]::Exists($Launcher)) { return $false }
+    return [IO.File]::ReadAllText($Launcher) -match '\[string\]\s*\$ReadinessRecordPath\b'
+}
+
 # Task Scheduler owns the process tree, not the invoking agent/terminal's job.
 # On-demand only, interactive and non-elevated, with no autostart registration.
-function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '') {
-    $taskName = 'Caelestia-Start-' + [guid]::NewGuid().ToString('N')
+function Get-CaelestiaLaunchPlan([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '', [string]$LaunchId = '', [switch]$ReplacingRoot) {
     $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
-    # The scheduled child runs on the host the selected payload needs: PS 7
-    # for current installs, 5.1 for a rolled-back legacy payload.
-    # An explicit -RuntimePrefix names the incoming payload directly, so the
-    # task is measured against the version about to be activated rather than
-    # whatever the still-uncommitted selector happens to point at. Without it
-    # the selector is resolved as before.
-    $runtimePrefix = $RuntimePrefix
-    if (-not $runtimePrefix) {
-        $runtimePrefix = $Prefix
+    # The child runs on the host the selected payload needs: PS 7 for current
+    # installs, 5.1 for a rolled-back legacy payload. An explicit RuntimePrefix
+    # measures the version about to be activated, not the uncommitted selector.
+    $resolvedRuntime = $RuntimePrefix
+    if (-not $resolvedRuntime) {
+        $resolvedRuntime = $Prefix
         if (Get-Command Resolve-CaelestiaRuntimePrefix -ErrorAction SilentlyContinue) {
-            try { $runtimePrefix = Resolve-CaelestiaRuntimePrefix $Prefix } catch { $runtimePrefix = $Prefix }
+            try { $resolvedRuntime = Resolve-CaelestiaRuntimePrefix $Prefix } catch { $resolvedRuntime = $Prefix }
         }
     }
-    $shellHost = Get-CaelestiaPayloadPowerShellPath $runtimePrefix
+    $shellHost = Get-CaelestiaPayloadPowerShellPath $resolvedRuntime
     $launchArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcher + '" -Prefix "' + $Prefix + '"'
+    $runtimeLauncher = Join-Path $resolvedRuntime 'Start-Caelestia.ps1'
+    $rootLauncher = if ($ReplacingRoot) { Join-Path $resolvedRuntime 'Start-CaelestiaEntry.ps1' } else { $launcher }
+    if ($LaunchId -and (Test-CaelestiaLauncherSupportsReadiness $rootLauncher) -and
+        (Test-CaelestiaLauncherSupportsReadiness $runtimeLauncher)) {
+        $recordPrefix = if ($ReplacingRoot) { $resolvedRuntime } else { $Prefix }
+        $readinessRecordPath = Get-CaelestiaReadinessRecordPath $recordPrefix $LaunchId
+        $launchArguments += ' -ReadinessRecordPath "' + $readinessRecordPath + '"'
+    }
     # Activation only consumes the scheme runtime prepared before the handoff.
     if ($PreparedSchemeRuntime) { $launchArguments += ' -PreparedSchemeRuntime' }
     elseif ($DisableSchemeProvisioning) { $launchArguments += ' -SkipSchemeRuntime' }
-    $action = New-ScheduledTaskAction -Execute $shellHost `
-        -Argument $launchArguments `
+    return [pscustomobject]@{
+        ShellHost = $shellHost
+        Arguments = $launchArguments
+    }
+}
+
+function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '', [switch]$ReplacingRoot) {
+    $taskName = 'Caelestia-Start-' + [guid]::NewGuid().ToString('N')
+    $plan = Get-CaelestiaLaunchPlan $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning -RuntimePrefix $RuntimePrefix -LaunchId $taskName -ReplacingRoot:$ReplacingRoot
+    $action = New-ScheduledTaskAction -Execute $plan.ShellHost `
+        -Argument $plan.Arguments `
         -WorkingDirectory $env:USERPROFILE
     $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
@@ -2156,21 +2394,158 @@ function New-CaelestiaLaunchTask([string]$Prefix, [switch]$PreparedSchemeRuntime
     return $taskName
 }
 
-function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning) {
-    if (-not $TaskName) {
-        $TaskName = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning
+function Test-CaelestiaTaskSchedulerAccessDenied($ErrorRecord) {
+    if (-not $ErrorRecord) { return $false }
+    if ($ErrorRecord.Exception -is [UnauthorizedAccessException]) { return $true }
+    $text = ((@([string]$ErrorRecord, [string]$ErrorRecord.Exception.Message, [string]$ErrorRecord.FullyQualifiedErrorId) -join ' '))
+    return $text -match 'access is denied|accessdenied|0x80070005|2147024891|0x800704ec|2147023636|group policy|permissiondenied'
+}
+
+
+# Start-Process has no job-object escape control. Group Policy fallback runs
+# from installers that may themselves be inside kill-on-close jobs, so use
+# Check the suspended child itself: in nested jobs a breakaway request can
+# succeed without leaving every job. Do not run anything until it is outside
+# all jobs, so no caller can inadvertently tear down the desktop on exit.
+function Start-CaelestiaOutOfJobProcess([string]$FilePath, [string]$Arguments, [string]$WorkingDirectory) {
+    if (-not ('CaelestiaProcessIsolation.DetachedProcess' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace CaelestiaProcessIsolation {
+    public sealed class DetachedProcess : IDisposable {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        class StartupInfo {
+            public int cb; public string reserved, desktop, title;
+            public int x, y, xSize, ySize, xCountChars, yCountChars, fillAttribute, flags;
+            public short showWindow, reserved2; public IntPtr reserved3, stdInput, stdOutput, stdError;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        class ProcessInformation { public IntPtr process, thread; public int processId, threadId; }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool CreateProcess(string application, StringBuilder commandLine, IntPtr processSecurity, IntPtr threadSecurity,
+            bool inheritHandles, uint flags, IntPtr environment, string currentDirectory, StartupInfo startup, ProcessInformation information);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool IsProcessInJob(SafeWaitHandle process, IntPtr job, out bool result);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern uint ResumeThread(SafeWaitHandle thread);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool TerminateProcess(SafeWaitHandle process, uint exitCode);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern uint WaitForSingleObject(SafeWaitHandle process, uint milliseconds);
+        const uint CreateNewProcessGroup = 0x00000200, CreateNoWindow = 0x08000000, CreateUnicodeEnvironment = 0x00000400,
+            CreateBreakawayFromJob = 0x01000000, CreateSuspended = 0x00000004;
+        readonly SafeWaitHandle handle;
+        public int Id { get; private set; }
+        DetachedProcess(ProcessInformation information) {
+            handle = new SafeWaitHandle(information.process, true);
+            Id = information.processId;
+        }
+        public bool WaitForExit(uint milliseconds) {
+            uint result = WaitForSingleObject(handle, milliseconds);
+            if (result == 0xffffffff) throw new System.ComponentModel.Win32Exception();
+            return result == 0;
+        }
+        public bool HasExited { get { return WaitForExit(0); } }
+        public void Kill() {
+            if (!TerminateProcess(handle, 1) && !HasExited) throw new System.ComponentModel.Win32Exception();
+        }
+        public void Dispose() { handle.Dispose(); }
+        public static DetachedProcess Start(string application, string arguments, string workingDirectory) {
+            string command = "\"" + application + "\" " + arguments;
+            uint baseFlags = CreateNewProcessGroup | CreateNoWindow | CreateUnicodeEnvironment | CreateSuspended;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                uint flags = baseFlags | (attempt == 0 ? CreateBreakawayFromJob : 0);
+                var startup = new StartupInfo(); startup.cb = Marshal.SizeOf(startup);
+                var information = new ProcessInformation();
+                var mutableCommand = new StringBuilder(command);
+                if (!CreateProcess(application, mutableCommand, IntPtr.Zero, IntPtr.Zero, false, flags, IntPtr.Zero, workingDirectory, startup, information)) {
+                    int error = Marshal.GetLastWin32Error();
+                    if (attempt == 0 && error == 5) continue; // ERROR_ACCESS_DENIED: job forbids breakaway.
+                    throw new System.ComponentModel.Win32Exception(error);
+                }
+                var child = new DetachedProcess(information);
+                using (var thread = new SafeWaitHandle(information.thread, true)) {
+                    try {
+                        bool inJob;
+                        if (!IsProcessInJob(child.handle, IntPtr.Zero, out inJob)) throw new System.ComponentModel.Win32Exception();
+                        if (inJob) throw new InvalidOperationException(
+                            "Windows could not detach Caelestia from the caller's job. Start Caelestia from the Start menu, or rerun the installer from an unelevated PowerShell window opened outside this job.");
+                        if (ResumeThread(thread) == 0xffffffff) throw new System.ComponentModel.Win32Exception();
+                        return child;
+                    } catch {
+                        try { child.Kill(); } finally { child.Dispose(); }
+                        throw;
+                    }
+                }
+            }
+            throw new InvalidOperationException("CreateProcess did not run.");
+        }
     }
-    $launcher = Join-Path $Prefix 'Start-Caelestia.ps1'
+}
+'@ -ErrorAction Stop
+    }
+    return [CaelestiaProcessIsolation.DetachedProcess]::Start($FilePath, $Arguments, $WorkingDirectory)
+}
+
+# Task Scheduler can be disabled by Group Policy. Use the same verified host
+# and arguments, but only report success if the launcher can run independently
+# of the caller's job. The scheduled task remains the primary path.
+function Start-CaelestiaDirectDetached([string]$Prefix, [switch]$LegacyReady, [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '') {
+    $plan = Get-CaelestiaLaunchPlan $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning -RuntimePrefix $RuntimePrefix
+    Write-Warning 'Task Scheduler refused the Caelestia launch (access denied or Group Policy). Starting Caelestia directly for this session instead; startup remains unregistered and non-elevated.'
+    $expectedPayload = if ($RuntimePrefix) { $RuntimePrefix } else { Get-CaelestiaExpectedPayload $Prefix }
+    $requireIdentity = Test-CaelestiaPayloadSupportsIdentity $expectedPayload
+    $process = Start-CaelestiaOutOfJobProcess $plan.ShellHost $plan.Arguments $env:USERPROFILE
+    try {
+        Wait-CaelestiaReady $Prefix -TimeoutSeconds 75 -LegacyReady:$LegacyReady -ExpectedPayload $expectedPayload -RequireIdentity:$requireIdentity
+    } catch {
+        $launchError = $_
+        try {
+            if (-not $process.HasExited) { $process.Kill(); $null = $process.WaitForExit(1000) }
+            Invoke-CaelestiaPayloadCommand (Resolve-CaelestiaRuntimePrefix $Prefix -Running) @{ Command = 'Quit' } | Out-Null
+        } catch {
+            Write-Warning "Caelestia cleanup after a failed direct launch did not complete: $($_.Exception.Message)"
+        }
+        throw $launchError
+    } finally {
+        if ($process) { $process.Dispose() }
+    }
+}
+
+function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]$TaskName = '', [switch]$PreparedSchemeRuntime, [switch]$DisableSchemeProvisioning, [string]$RuntimePrefix = '', [switch]$ReplacingRoot) {
+    if (-not $TaskName) {
+        try {
+            $TaskName = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning -RuntimePrefix $RuntimePrefix -ReplacingRoot:$ReplacingRoot
+        } catch {
+            if (Test-CaelestiaTaskSchedulerAccessDenied $_) {
+                Start-CaelestiaDirectDetached $Prefix -LegacyReady:$LegacyReady -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning -RuntimePrefix $RuntimePrefix
+                return
+            }
+            throw
+        }
+    }
     try {
         for ($attempt = 0; $attempt -lt 2; $attempt++) {
+            $taskStarted = $false
             try {
                 Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
+                $taskStarted = $true
                 # Scheduled activation includes the launcher's banner replay
                 # and first-frame gate, not only the child's 20 s render budget.
-                Wait-CaelestiaReady $Prefix -TimeoutSeconds 75 -LegacyReady:$LegacyReady -TaskName $taskName
+                $expectedPayload = if ($RuntimePrefix) { $RuntimePrefix } else { Get-CaelestiaExpectedPayload $Prefix }
+                $requireIdentity = Test-CaelestiaPayloadSupportsIdentity $expectedPayload
+                Wait-CaelestiaReady $Prefix -TimeoutSeconds 75 -LegacyReady:$LegacyReady -TaskName $taskName -ExpectedPayload $expectedPayload -RequireIdentity:$requireIdentity
                 return
             } catch {
                 $launchError = $_
+                if (-not $taskStarted -and (Test-CaelestiaTaskSchedulerAccessDenied $launchError)) {
+                    Write-Warning "Task Scheduler could not start the Caelestia launch task: $($launchError.Exception.Message)"
+                    Start-CaelestiaDirectDetached $Prefix -LegacyReady:$LegacyReady -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning -RuntimePrefix $RuntimePrefix
+                    return
+                }
                 try {
                     # Do not allow a slow launcher to start later over a retry or
                     # rollback. Restore owned state before attempting another run.
@@ -2180,6 +2555,8 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
                     # pointing at the incoming payload while the outgoing one
                     # still serves the desktop.
                     Invoke-CaelestiaPayloadCommand (Resolve-CaelestiaRuntimePrefix $Prefix -Running) @{ Command = 'Quit' } | Out-Null
+                    $recordPath = Get-CaelestiaReadinessRecordPath $Prefix $TaskName
+                    if ([IO.File]::Exists($recordPath)) { [IO.File]::Delete($recordPath) }
                 } catch {
                     # Cleanup must not replace the startup error, and if the
                     # launcher/task state cannot be verified, never retry over it.
@@ -2187,6 +2564,18 @@ function Start-CaelestiaDetached([string]$Prefix, [switch]$LegacyReady, [string]
                     throw $launchError
                 }
                 if ($attempt -eq 1) { throw $launchError }
+                # A readiness receipt is bound to one launch identifier. Never
+                # reuse the failed task's identifier: replacement shells under
+                # the same supervisor are valid, but a stale receipt from the
+                # failed launcher is not. The caller's cleanup of the original
+                # name is harmless after this re-registration.
+                try {
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                    $taskName = New-CaelestiaLaunchTask $Prefix -PreparedSchemeRuntime:$PreparedSchemeRuntime -DisableSchemeProvisioning:$DisableSchemeProvisioning -RuntimePrefix $RuntimePrefix -ReplacingRoot:$ReplacingRoot
+                } catch {
+                    Write-Warning "Caelestia startup could not register a fresh retry launch: $($_.Exception.Message)"
+                    throw $launchError
+                }
                 Write-Warning 'Caelestia startup failed; retrying once after cleanup.'
             }
         }

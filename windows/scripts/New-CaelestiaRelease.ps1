@@ -276,7 +276,7 @@ try {
     $arguments = @{
         BuildRoot = $BuildRoot; QtPrefix = $QtPrefix; Prefix = $assemblyPrefix
         ProfileRoot = $assemblyProfile; SourceRoot = $repoRoot
-        NoIntegration = $true; SkipSchemeRuntime = $true
+        NoIntegration = $true; SkipSchemeRuntime = $true; PayloadAssembly = $true
     }
     if ($VCRuntimeRoot) { $arguments.VCRuntimeRoot = $VCRuntimeRoot }
     # One production assembler, source map, font verifier, notice exporter,

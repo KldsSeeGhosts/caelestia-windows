@@ -2,7 +2,10 @@ pragma Singleton
 
 import QtQuick
 import Quickshell
+import Caelestia
 import Caelestia.Config
+import Caelestia.I18n
+import qs.services
 // The facade is staged next to the original launcher services, so this
 // relative import resolves to windows/services/apps in both the repository and
 // the staged prototype tree.
@@ -24,18 +27,44 @@ import "../../../windows/services/apps"
 AppsService {
     id: root
 
-    enabled: Quickshell.env("CAELESTIA_WINDOWS_APPS") === "1"
-    launchEnabled: enabled && Quickshell.env("CAELESTIA_WINDOWS_APP_LAUNCH") === "1"
+    // Nullable overrides keep QML tests hermetic without overwriting the
+    // production environment bindings or activating the native loaders.
+    property var enabledOverride: null
+    property var launchEnabledOverride: null
+    property var catalogOverride: null
+    property var frequencyStoreOverride: null
 
-    catalog: nativeLoader.item ?? null
+    enabled: enabledOverride !== null ? enabledOverride === true
+        : Quickshell.env("CAELESTIA_WINDOWS_APPS") === "1"
+    launchEnabled: launchEnabledOverride !== null ? launchEnabledOverride === true
+        : enabled && Quickshell.env("CAELESTIA_WINDOWS_APP_LAUNCH") === "1"
+
+    catalog: catalogOverride ?? nativeLoader.item ?? null
     catalogError: nativeLoader.status === Loader.Error
         ? "The Windows app catalog component failed to load." : ""
-    frequencyStore: storeLoader.item ?? null
+    frequencyStore: frequencyStoreOverride ?? storeLoader.item ?? null
 
     favouriteApps: GlobalConfig.launcher.favouriteApps
     hiddenApps: GlobalConfig.launcher.hiddenApps
     specialPrefix: GlobalConfig.launcher.specialPrefix
     useFuzzy: GlobalConfig.launcher.useFuzzy.apps
+    // Windows AppsFolder does not publish runInTerminal or a command argv
+    // for terminal entries. The configured terminal is not an @t launcher.
+
+    onAsynchronousLaunchFailed: message => showLaunchFailure(message)
+
+    function showLaunchFailure(message: string): void {
+        Toaster.toast(Tr.tr("Could not start app"),
+            message || Tr.tr("Windows could not start the application."), "error", Toast.Error);
+    }
+
+    function launchWithFeedback(entry, screenState): void {
+        if (!launch(entry, screenState))
+            showLaunchFailure(lastLaunchError);
+        else if (lastLaunchState === "unconfirmed")
+            Toaster.toast(Tr.tr("Launch requested"), Tr.tr("This Windows backend cannot confirm whether the app started."),
+                "info", Toast.Info);
+    }
 
     // Observable construction policy for host/smoke assertions.
     readonly property bool nativeRequested: nativeLoader.active
@@ -55,14 +84,14 @@ AppsService {
     readonly property Loader _nativeLoader: Loader {
         id: nativeLoader
 
-        active: root.enabled
-        sourceComponent: root.enabled ? root._catalogComponent : null
+        active: root.enabled && root.catalogOverride === null
+        sourceComponent: active ? root._catalogComponent : null
     }
 
     readonly property Loader _storeLoader: Loader {
         id: storeLoader
 
-        active: root.enabled
-        sourceComponent: root.enabled ? root._storeComponent : null
+        active: root.enabled && root.frequencyStoreOverride === null
+        sourceComponent: active ? root._storeComponent : null
     }
 }

@@ -19,6 +19,8 @@ import QtQuick
 //   desktopControlSupported (optional) bool; absent means workspace control is
 //                      unavailable.
 //   desktopControl     (optional) object with capability and lastCommand maps.
+//   pinSupported       (optional) bool; absent means pin actions unsupported.
+//   tilingActive       (optional) bool; absent means float/tile unsupported.
 //
 // Per-monitor workspace ownership is NOT claimed. The pinned backend binds every
 // monitor's `activeWorkspace` and every workspace's `monitor` to the single
@@ -35,6 +37,8 @@ import QtQuick
 //   workspace name:<safe-name>          (backend resolves existing names only)
 //   movetoworkspace <1..9999>[,address:0x<hex>]
 //   killwindow address:0x<hex>   -> closewindow address:0x<hex> (graceful close)
+//   togglefloating address:0x<hex>
+//   pin address:0x<hex>
 // Workspace forms additionally require the backend's native desktop-control
 // `desktopControlSupported === true`. Without it they are refused with reason
 // `desktop-control-unavailable` and never reach the backend.
@@ -48,6 +52,19 @@ QtObject {
     id: root
 
     property var backend: null
+
+    // Native UIPI/refusal observations. The facade decides how to present
+    // these; this pure service only forwards the backend contract.
+    signal actionRefused(string action, string reason, bool elevated)
+
+    readonly property Connections _backendActionRefusals: Connections {
+        target: root.backend
+        ignoreUnknownSignals: true
+
+        function onActionRefused(action, reason, elevated): void {
+            root.actionRefused(action, reason, elevated);
+        }
+    }
 
     // Observation opt-in. Disabled construction exposes empty models and a null
     // focused monitor, matching the M1 contract adapter.
@@ -68,6 +85,11 @@ QtObject {
     readonly property bool available: root.nativeInitialized
     readonly property bool usingLua: false
     readonly property bool globalFocusPerMonitor: true
+
+    readonly property bool pinSupported:
+        root.nativeInitialized && root.backend.pinSupported === true
+    readonly property bool tilingActive:
+        root.nativeInitialized && root.backend.tilingActive === true
 
     readonly property var desktopControlCapability: {
         const unsupported = { switch: false, create: false, move: false, remove: false, pin: false };
@@ -394,6 +416,16 @@ QtObject {
             root._send(request, translated, "closewindow");
             return;
         }
+        const toggleFloating = /^togglefloating address:0x([0-9a-fA-F]{1,16})$/.exec(request);
+        if (toggleFloating) {
+            root._send(request, "togglefloating address:0x" + toggleFloating[1].toLowerCase(), "togglefloating");
+            return;
+        }
+        const pin = /^pin address:0x([0-9a-fA-F]{1,16})$/.exec(request);
+        if (pin) {
+            root._send(request, "pin address:0x" + pin[1].toLowerCase(), "pin");
+            return;
+        }
         if (/^togglespecialworkspace(?: [A-Za-z0-9_.-]{1,64})?$/.test(request)) {
             root._consume(request,
                 "Special workspaces are not available on Windows; request consumed.");
@@ -418,6 +450,12 @@ QtObject {
             root._refuse(request, "invalid",
                 "Hypr dispatch refused " + root._display(request)
                 + ": expected killwindow address:0x<hex>.");
+            return;
+        case "togglefloating":
+        case "pin":
+            root._refuse(request, "invalid",
+                "Hypr dispatch refused " + root._display(request)
+                + ": expected " + verb + " address:0x<hex>.");
             return;
         case "togglespecialworkspace":
             root._refuse(request, "invalid",

@@ -137,6 +137,16 @@ ShellRoot {
             check(primary.disabled && status.text.indexOf("may still run") >= 0, "unconfirmed operation lost duplicate protection");
             UpdateManager.operationState = "complete";
             check(primary.disabled && progress.value === 1, "complete operation did not fill bar and block duplicate");
+            UpdateManager.operationState = "failed";
+            UpdateManager.refusalMessage = "Scheduler blocked maintenance";
+            UpdateManager.manualCommand = "& 'C:/fixture/Manage-Caelestia.ps1' -Command Rollback -Wait";
+            const manual = find(page, "manualMaintenanceCommand");
+            check(status.text === UpdateManager.refusalMessage, "the page hid the scheduler refusal");
+            check(manual.visible && manual.text === UpdateManager.manualCommand && manual.readOnly && manual.selectByMouse,
+                "manual recovery command was hidden or could not be selected");
+            UpdateManager.refusalMessage = "";
+            UpdateManager.manualCommand = "";
+            check(!manual.visible, "the page retained stale recovery instructions");
             UpdateManager.operationState = "idle";
             UpdateManager.progressTotal = 0;
             page.detailsExpanded = false;

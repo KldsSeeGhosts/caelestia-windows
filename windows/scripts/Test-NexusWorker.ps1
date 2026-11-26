@@ -78,7 +78,7 @@ function Prepare-Case([string]$Name, [string]$Mutation = '') {
     # verified supplied common helper import.
     $bootstrap = [IO.File]::ReadAllText("$bundle\Install-CaelestiaRelease.ps1")
     $releaseImport = ". (Join-Path `$payloadSource 'Caelestia-InstallCommon.ps1')"
-    $bootstrap = Replace-Exactly $bootstrap $releaseImport `
+    $bootstrap = Replace-Exactly $bootstrap ($releaseImport + $importBoundary) `
         ($releaseImport + "`r`n. '" + (Join-Path $PSScriptRoot 'NexusWorker-FixtureBoundary.ps1').Replace("'", "''") + "'")
     Write-FixtureText "$bundle\Install-CaelestiaRelease.ps1" $bootstrap
     # New bootstrap compatibility fields are intentionally additive to this
@@ -158,7 +158,68 @@ function Queue([string]$Case) {
 function TaskArgs([string]$Case, [string]$Id) {
     return (Get-Content "$Case\tasks\Caelestia-Maintenance-$Id.json" -Raw | ConvertFrom-Json).Actions[0].Arguments
 }
+function Test-InterruptedHandoff([switch]$LegacyWorker) {
+    $case = Prepare-Case $(if ($LegacyWorker) { 'interrupted-first-upgrade' } else { 'interrupted-root-copy' })
+    $workerPath = "$case\prefix\Manage-Caelestia.ps1"
+    if ($LegacyWorker) {
+        # Model the installed worker on main: it validates TaskName, sets
+        # tracked/operationId, and writes a schema-1 journal, but neither sets
+        # the new handoff variable nor handles shell recovery in Watch.
+        # Leave the signed incoming bundle unchanged.
+        $outgoing = [IO.File]::ReadAllText($workerPath)
+        $handoffVariable = '(?m)^[ \t]*\$CaelestiaTrackedOperationId = [^\r\n]*\r?\n'
+        Assert ([regex]::Matches($outgoing, $handoffVariable).Count -eq 2) 'The installed legacy-worker fixture boundary changed.'
+        $tokens = $null; $parseErrors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseInput($outgoing, [ref]$tokens, [ref]$parseErrors)
+        $recovery = $ast.Find({ param($node)
+            $node -is [Management.Automation.Language.IfStatementAst] -and
+            $node.Clauses[0].Item1.Extent.Text.Contains('$state.handoff.phase')
+        }, $true)
+        Assert ($parseErrors.Count -eq 0 -and $null -ne $recovery) 'The installed legacy-watchdog fixture boundary changed.'
+        $outgoing = $outgoing.Remove($recovery.Extent.StartOffset, $recovery.Extent.EndOffset - $recovery.Extent.StartOffset)
+        Write-FixtureText $workerPath ([regex]::Replace($outgoing, $handoffVariable, ''))
+    }
+    Write-FixtureText "$case\running-shell" 'v2'
+    $outgoingLauncher = "$case\prefix\versions\v2\Start-Caelestia.ps1"
+    Add-Content -LiteralPath $outgoingLauncher -Value "`r`n" -NoNewline
+    Add-Content -LiteralPath $outgoingLauncher -Value '[IO.File]::Delete((Join-Path $env:CAELESTIA_FIXTURE_CASE ''running-shell''))'
+    $before = (Get-FileHash "$case\prefix\install.json").Hash
+    $startRouter = (Get-FileHash "$case\prefix\Start-Caelestia.ps1").Hash
+    $id = Queue $case
+    $watchTask = Get-Content "$case\tasks\Caelestia-MaintenanceWatch-$id.json" -Raw | ConvertFrom-Json
+    $pause = if ($LegacyWorker) { 'before-copy-root-entries' } else { 'after-copy-root-entries' }
+    $worker = Start-Worker $case (TaskArgs $case $id) $pause
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while (-not (Test-Path "$($worker.control)\ready")) {
+        if ($worker.process.HasExited -or $clock.Elapsed.TotalSeconds -gt 20) {
+            throw ('Root copy interruption boundary not reached. ' + $(if ($worker.process.HasExited) { $worker.stderr.GetAwaiter().GetResult() }))
+        }
+        Start-Sleep -Milliseconds 20
+    }
+    if ($LegacyWorker) {
+        Assert ((Get-FileHash "$case\prefix\Start-Caelestia.ps1").Hash -ceq $startRouter) 'The legacy kill test reached the ordinary root copy.'
+        Assert ([IO.File]::ReadAllText($workerPath).Contains('$state.handoff.phase')) 'The legacy watchdog was not armed before stopping the shell.'
+    }
+    $handoff = (Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).handoff
+    Assert ($handoff.phase -ceq 'stopping' -and $handoff.wasRunning -eq $true -and -not (Test-Path "$case\running-shell")) 'The live shell stop was not journaled before the kill.'
+    $worker.process.Kill(); $worker.process.WaitForExit()
+    $watch = Start-Worker $case $watchTask.Actions[0].Arguments
+    $null = Finish $watch
+    Assert ([IO.File]::ReadAllText((Join-Path $watch.control 'launched-runtime')) -ceq "$case\prefix\versions\v2") 'The watchdog did not relaunch the committed shell after the worker stopped it.'
+    Assert ((Get-FileHash "$case\prefix\install.json").Hash -ceq $before) 'Interrupted root copy changed the committed selector.'
+    Assert (Test-CaelestiaVersionPayload "$case\prefix" 'v2') 'Interrupted root copy damaged the committed payload.'
+    Assert ((Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).phase -ceq 'failed') 'Watchdog did not settle interrupted root copy.'
+}
 try {
+    foreach ($denial in @('policy-register', 'policy-start')) {
+        $case = Prepare-Case $denial
+        $reply = Finish (Start-Worker $case (Args $case '-Command Update -ExpectedCurrent v2 -ExpectedBuild 0.2.0-dev.1.2.1 -Channel development') $denial) |
+            ConvertFrom-Json
+        $state = Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json
+        Assert ($reply.code -ceq 'scheduler-policy' -and $reply.phase -ceq 'failed' -and $state.operationId -ceq $reply.operationId -and
+            $state.phase -ceq 'failed' -and -not @(Get-ChildItem "$case\tasks").Count) 'Policy refusal did not settle the update request and remove its tasks.'
+        Assert ($reply.manualCommand -ceq "& '$case\prefix\Manage-Caelestia.ps1' -Prefix '$case\prefix' -Command Update -Wait -ExpectedCurrent 'v2' -ExpectedBuild '0.2.0-dev.1.2.1' -Channel 'development'") 'Policy refusal did not preserve the exact authenticated update arguments.'
+    }
     $case = Prepare-Case 'happy'
     $profileHash = (Get-FileHash "$case\profile\config\sentinel.txt").Hash
     $configHashes = @{}
@@ -278,6 +339,10 @@ try {
     $null = Finish (Start-Worker $case (Args $case ("-Command Watch -OperationId $id")))
     Assert ((Get-Content "$case\profile\state\update-operation.json" -Raw | ConvertFrom-Json).phase -ceq 'failed') 'Watchdog did not settle interrupted update.'
     Assert ((Read-CaelestiaInstall "$case\prefix").current -eq 'v2') 'Interrupted download changed selector.'
+    # Force termination after the new router is published but before the
+    # selector commit. Recovery must still use the old immutable payload.
+    Test-InterruptedHandoff
+    Test-InterruptedHandoff -LegacyWorker
     # A watchdog that wins before a queued worker fences its later start.
     $case = Prepare-Case 'watchdog'
     $id = Queue $case; $arguments = TaskArgs $case $id

@@ -19,7 +19,11 @@ using util::i18n::mark;
 class CAELESTIA_CONFIG_API GeneralApps : public settings::ObjectNode {
     CONFIG_NODE(GeneralApps, settings::ObjectNode)
 
+#ifdef Q_OS_WIN
+    CONFIG_PROPERTY(QStringList, terminal, { u"wt.exe"_s })
+#else
     CONFIG_PROPERTY(QStringList, terminal, { u"foot"_s })
+#endif
     CONFIG_PROPERTY(QStringList, audio, { u"pwvucontrol"_s })
     CONFIG_PROPERTY(QStringList, playback, { u"mpv"_s })
     CONFIG_PROPERTY(QStringList, explorer, { u"thunar"_s })
