@@ -1295,6 +1295,10 @@ class Pipeline(unittest.TestCase):
             "warnings": {},
         }
         receipt = deps.advisory_receipt(report, exceptions, inventory, cargo_lock_sha, checked_at=now)
+        for updated in ("2026-10-28T00:00:00Z", "2026-11-14T00:00:00Z"):
+            bad_report = dict(report, database={**report["database"], "last-updated": updated})
+            with self.subTest(updated=updated), self.assertRaisesRegex(ValueError, "stale or future-dated"):
+                deps.advisory_receipt(bad_report, exceptions, inventory, cargo_lock_sha, checked_at=now)
         class AdvisoryGitHub:
             def __init__(self, runs, artifacts, blobs):
                 self.runs, self.artifacts, self.blobs = runs, artifacts, blobs
