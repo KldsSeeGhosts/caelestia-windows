@@ -3,6 +3,7 @@ import QtTest
 import Quickshell
 import Quickshell.Wayland
 import Caelestia
+import Caelestia.Config
 import qs.services as Services
 import qs.modules.drawers
 import qs.modules.nexus as Nexus
@@ -23,6 +24,7 @@ ShellRoot {
     property var fixtureWindowB
     property var pill
     property var keys
+    property var nativeGeometry: null
 
     readonly property var win: content
     readonly property var focusWindow: content.focusWindow
@@ -89,6 +91,100 @@ ShellRoot {
             label + ": focus grab targets " + (target === focusWindow ? "the companion" : "the drawer host"));
         check(grab.windows.every(window => window.visible),
             label + ": every focus grab target is visible");
+    }
+
+    function captureNativeGeometry(): var {
+        return {
+            left: focusWindow.margins.left,
+            top: focusWindow.margins.top,
+            width: focusWindow.implicitWidth,
+            height: focusWindow.implicitHeight
+        };
+    }
+
+    function checkNativeGeometryStable(label): void {
+        check(nativeGeometry !== null, label + ": native geometry baseline exists");
+        check(focusWindow.margins.left === nativeGeometry.left
+            && focusWindow.margins.top === nativeGeometry.top
+            && focusWindow.implicitWidth === nativeGeometry.width
+            && focusWindow.implicitHeight === nativeGeometry.height,
+            label + ": native margins and implicit size remain stable; expected "
+            + JSON.stringify(nativeGeometry) + " got left " + focusWindow.margins.left
+            + " top " + focusWindow.margins.top + " width " + focusWindow.implicitWidth
+            + " height " + focusWindow.implicitHeight);
+        check(focusWindow.implicitWidth <= win.width - focusWindow.minimumFullscreenWidthClearance,
+            label + ": companion keeps the guaranteed fullscreen width clearance");
+        check(focusWindow.implicitHeight <= win.height,
+            label + ": companion height stays within the monitor");
+    }
+
+    function itemBoundsInHost(item, host): rect {
+        const points = [
+            item.mapToItem(host, 0, 0),
+            item.mapToItem(host, item.width, 0),
+            item.mapToItem(host, 0, item.height),
+            item.mapToItem(host, item.width, item.height)
+        ];
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+        for (const point of points) {
+            left = Math.min(left, point.x);
+            top = Math.min(top, point.y);
+            right = Math.max(right, point.x);
+            bottom = Math.max(bottom, point.y);
+        }
+        return right <= left || bottom <= top ? Qt.rect(0, 0, 0, 0)
+            : Qt.rect(left, top, right - left, bottom - top);
+    }
+
+    function intersectBounds(first, second): rect {
+        const left = Math.max(first.x, second.x);
+        const top = Math.max(first.y, second.y);
+        const right = Math.min(first.x + first.width, second.x + second.width);
+        const bottom = Math.min(first.y + first.height, second.y + second.height);
+        return right <= left || bottom <= top ? Qt.rect(0, 0, 0, 0)
+            : Qt.rect(left, top, right - left, bottom - top);
+    }
+
+    function integerBounds(bounds): rect {
+        if (!bounds || bounds.width <= 0 || bounds.height <= 0)
+            return Qt.rect(0, 0, 0, 0);
+        const left = Math.floor(bounds.x);
+        const top = Math.floor(bounds.y);
+        return Qt.rect(left, top, Math.ceil(bounds.x + bounds.width) - left,
+            Math.ceil(bounds.y + bounds.height) - top);
+    }
+
+    function rectText(bounds): string {
+        return "(" + bounds.x + "," + bounds.y + " " + bounds.width + "x" + bounds.height + ")";
+    }
+
+    function checkInputTracking(label): void {
+        const proxy = focusWindow.inputItem;
+        check(proxy !== null, label + ": input region uses the popout viewport");
+        if (!proxy || !proxy.contentItem)
+            return;
+        const transformed = itemBoundsInHost(proxy.contentItem, focusWindow.contentHost);
+        const expected = proxy.clip
+            ? intersectBounds(transformed, Qt.rect(proxy.x, proxy.y, proxy.width, proxy.height))
+            : transformed;
+        check(Math.abs(focusWindow.inputBounds.x - expected.x) <= 0.76
+            && Math.abs(focusWindow.inputBounds.y - expected.y) <= 0.76
+            && Math.abs(focusWindow.inputBounds.width - expected.width) <= 0.76
+            && Math.abs(focusWindow.inputBounds.height - expected.height) <= 0.76,
+            label + ": input bounds " + rectText(focusWindow.inputBounds)
+            + " track the transformed clipped card " + rectText(expected));
+        const region = integerBounds(expected);
+        if (proxy.inputHasShear) {
+            check(focusWindow.inputRegion.width === 0 && focusWindow.inputRegion.height === 0
+                && proxy.inputMaskSlices.length > 0,
+                label + ": sheared input uses banded slices instead of one rectangular mask");
+            return;
+        }
+        check(Math.abs(focusWindow.inputRegion.x - region.x) <= 1
+            && Math.abs(focusWindow.inputRegion.y - region.y) <= 1
+            && Math.abs(focusWindow.inputRegion.width - region.width) <= 1
+            && Math.abs(focusWindow.inputRegion.height - region.height) <= 1,
+            label + ": native mask follows the transformed clipped card");
     }
 
     function list(): var {
@@ -180,15 +276,36 @@ ShellRoot {
                 "pinned: companion uses the overlay layer");
             check(focusWindow.color.a === 0, "pinned: companion background is transparent");
             check(focusWindow.surface === "popouts", "pinned: companion targets the popout");
-            check(focusWindow.width > 0 && focusWindow.width <= win.width - 2,
-                "pinned: companion is at least 2 px narrower than the monitor");
-            check(focusWindow.height > 0 && focusWindow.height <= win.height - 2,
-                "pinned: companion is at least 2 px shorter than the monitor");
+            check(focusWindow.width > 0 && focusWindow.width <= win.width - focusWindow.minimumFullscreenWidthClearance,
+                "pinned: companion keeps the guaranteed fullscreen width clearance");
+            check(focusWindow.height > 0 && focusWindow.height <= win.height,
+                "pinned: companion height stays within the monitor");
+            check(Tokens.sizes.bar.windowPreviewSize === 640,
+                "wide popout fixture: token config raises the preview width to 640");
+            check(popouts.nonAnimWidth >= 640,
+                "wide popout fixture: settled popout width reaches the 640 px preview");
+            check(focusWindow.width > 640,
+                "wide popout fixture: companion band is not capped at 640 px");
+            check(focusWindow.width + 1 >= content.interactionWrapper.panels.x + popouts.nonAnimWidth + focusWindow.popoutBandMargin,
+                "wide popout fixture: companion band covers the settled popout edge plus margin; width "
+                + focusWindow.width + " panels.x " + content.interactionWrapper.panels.x
+                + " nonAnimWidth " + popouts.nonAnimWidth + " margin " + focusWindow.popoutBandMargin
+                + " frozen " + focusWindow.popoutBandContentWidth);
+            check(focusWindow.inputBounds.x >= -1
+                && focusWindow.inputBounds.x + focusWindow.inputBounds.width <= focusWindow.width + 1,
+                "wide popout fixture: transformed input stays inside the companion band");
+            check(focusWindow.margins.left === focusWindow.bandX && focusWindow.margins.top === 0
+                && focusWindow.implicitWidth === focusWindow.bandWidth,
+                "pinned: native geometry matches the stable popout band");
             check(list().activeFocus, "pinned: the window list has active focus");
             check(list().Window.window === focusWindow.contentHost.Window.window,
                 "pinned: the popout list lives in the companion");
             check(popouts.pinned === true, "pinned: the popouts wrapper holds the pin");
             checkGrabTarget(focusWindow, "pinned");
+            check(focusWindow.inputItem !== null, "pinned: input region uses the popout viewport");
+            check(focusWindow.inputItem.clip === true, "pinned: popout viewport clips the transformed card");
+            checkInputTracking("pinned");
+            nativeGeometry = captureNativeGeometry();
             keys.parent = focusWindow.contentHost;
             keys.keyClick(Qt.Key_Escape, Qt.NoModifier, 0);
             check(!popouts.hasCurrent, "Escape closes the pinned popout");
@@ -208,6 +325,8 @@ ShellRoot {
                 check(focusWindow.visible, "closing: companion remains visible");
                 check(popouts.content.Window.window === focusWindow.contentHost.Window.window,
                     "closing: popout content remains in the companion");
+                checkNativeGeometryStable("closing");
+                checkInputTracking("closing");
                 check(Math.abs(popouts.content.x - popouts.slideOffset) <= 1,
                     "closing: popout content preserves the animated slide offset");
                 check(Math.abs(popouts.content.width - popouts.nonAnimWidth) <= 1,

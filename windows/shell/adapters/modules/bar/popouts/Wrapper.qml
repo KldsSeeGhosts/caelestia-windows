@@ -32,6 +32,11 @@ Item {
     required property real offsetScale
     required property var focusWindow
 
+    readonly property matrix4x4 identityFocusTransform: Qt.matrix4x4(1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1)
+    property matrix4x4 focusTransformMatrix: identityFocusTransform
     readonly property alias content: content
 
     readonly property real nonAnimWidth: children.find(c => c.shouldBeActive)?.implicitWidth ?? content.implicitWidth
@@ -156,18 +161,32 @@ Item {
         onInspectWindowRequested: client => root.detachWindowInfo(client)
     }
 
-    Comp {
-        id: content
+    FocusCardProxy {
+        id: focusProxy
 
-        shouldBeActive: root.hasCurrent && !root.detachedMode
-        parent: root.inFocusWindow ? root.focusWindow.contentHost : root
-        x: root.inFocusWindow ? root.slideOffset : 0
-        y: 0
-        width: root.inFocusWindow ? root.nonAnimWidth : root.width
-        height: root.inFocusWindow ? root.nonAnimHeight : root.height
+        focusWindow: root.focusWindow
+        sourceItem: root
+        focusSurface: "popouts"
+        inputTransformMatrix: root.focusTransformMatrix
+        contentItem: content
+        active: root.inFocusWindow
 
-        sourceComponent: Content {
-            popouts: popoutState
+        Comp {
+            id: content
+
+            shouldBeActive: root.hasCurrent && !root.detachedMode
+            parent: focusProxy
+            x: root.inFocusWindow ? focusProxy.contentOffsetX : 0
+            y: root.inFocusWindow ? focusProxy.contentOffsetY : 0
+            width: root.inFocusWindow ? root.nonAnimWidth : root.width
+            height: root.inFocusWindow ? root.nonAnimHeight : root.height
+            transform: Matrix4x4 {
+                matrix: root.inFocusWindow ? root.focusTransformMatrix : root.identityFocusTransform
+            }
+
+            sourceComponent: Content {
+                popouts: popoutState
+            }
         }
     }
 

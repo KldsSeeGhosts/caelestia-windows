@@ -31,9 +31,10 @@ StyledWindow {
     readonly property ScreenState screenState: ShellState.forScreen(screen) ?? teardownState
 
     // The monitor-sized window stays permanently non-activating. Interactive
-    // drawers move their card-sized loader into this window so typing, IME and
-    // focus return target a window that cannot trigger Wallpaper Engine's
-    // fullscreen pause rule.
+    // drawers move their loader into this companion so typing, IME and focus
+    // return target a window that cannot trigger Wallpaper Engine's fullscreen
+    // pause rule. Each surface uses a fixed band with at least 64 logical px
+    // less width than the monitor, so animated card geometry never resizes it.
     StyledWindow {
         id: drawerFocusWindow
 
@@ -49,34 +50,161 @@ StyledWindow {
             : surface === "session" ? panels.sessionWrapper
             : surface === "popouts" ? panels.popoutsWrapper : null
         readonly property bool active: surface !== "" && target !== null
-        readonly property real targetWidth: !target ? 0
-            : Math.max(1, Math.min(screen.width - 2,
-                target.width > 0 ? target.width : target.implicitWidth))
-        readonly property real targetHeight: !target ? 0
-            : Math.max(1, Math.min(screen.height - 2,
-                target.height > 0 ? target.height : target.implicitHeight))
-        property bool pointerHovered: false
+        readonly property int fullscreenWidthClearance: 64
+        readonly property int minimumFullscreenWidthClearance: 32
+        readonly property int nonFullscreenWidth: Math.max(1, Math.round(screen.width - fullscreenWidthClearance))
+        readonly property int maximumNonFullscreenWidth: Math.max(1, Math.round(screen.width - minimumFullscreenWidthClearance))
+        readonly property real settledPanelLeft: Math.max(panels.x, bar.contentWidth)
+        readonly property real settledPanelRight: screen.width - root.borderLayoutThickness
+        readonly property real settledPanelWidth: Math.max(0, settledPanelRight - settledPanelLeft)
+        readonly property real launcherCenterX: settledPanelLeft + settledPanelWidth / 2
+        readonly property real launcherSettledWidth: Math.max(settledPanelWidth, panels.launcher.maximumFocusWidth ?? 0)
+        readonly property int launcherBandWidth: Math.max(1, Math.min(maximumNonFullscreenWidth, Math.ceil(launcherSettledWidth)))
+        readonly property int launcherBandX: {
+            const maximumX = Math.max(0, Math.round(screen.width - launcherBandWidth));
+            return Math.max(0, Math.min(maximumX, Math.round(launcherCenterX - launcherBandWidth / 2)));
+        }
+        readonly property int sessionBandWidth: Math.min(nonFullscreenWidth, 640)
+        readonly property int popoutBandMargin: 33
+        property real popoutBandContentWidth: 0
+        readonly property real popoutBandWidthSource: Math.round(popoutBandContentWidth > 0 ? popoutBandContentWidth : panels.popouts.nonAnimWidth)
+        readonly property real popoutSettledWidth: Math.round(settledPanelLeft) + popoutBandWidthSource + popoutBandMargin
+        readonly property int popoutBandWidth: Math.max(1, Math.min(maximumNonFullscreenWidth, Math.ceil(popoutSettledWidth)))
+        readonly property int bandWidth: surface === "session" ? sessionBandWidth
+            : surface === "popouts" ? popoutBandWidth : launcherBandWidth
+        readonly property int bandX: surface === "session" ? Math.max(0, Math.round(screen.width - bandWidth))
+            : surface === "launcher" ? launcherBandX : 0
+        readonly property Item card: surface === "launcher" ? panels.launcher
+            : surface === "session" ? panels.session
+            : surface === "popouts" ? panels.popouts : null
+        readonly property Item viewportSource: {
+            if (!active)
+                return null;
+            if (surface === "popouts")
+                return panels.popoutsWrapper;
+            if (surface === "session")
+                return panels.sessionWrapper.clip ? panels.sessionWrapper : panels.session;
+            return panels.launcher;
+        }
+        readonly property bool viewportClips: surface === "session" ? panels.sessionWrapper.clip
+            : surface === "popouts" ? panels.popoutsWrapper.clip : false
+        readonly property real cardSceneX: {
+            if (!card)
+                return 0;
+            if (surface === "session")
+                return panels.x + panels.sessionWrapper.x + panels.session.x;
+            if (surface === "popouts")
+                return panels.x + panels.popoutsWrapper.x + panels.popouts.x;
+            return panels.x + card.x;
+        }
+        readonly property real cardSceneY: {
+            if (!card)
+                return 0;
+            if (surface === "session")
+                return panels.y + panels.sessionWrapper.y + panels.session.y;
+            if (surface === "popouts")
+                return panels.y + panels.popoutsWrapper.y + panels.popouts.y;
+            return panels.y + card.y;
+        }
+        readonly property real viewportSceneX: {
+            if (!viewportSource)
+                return 0;
+            if (surface === "session")
+                return viewportSource === panels.session ? cardSceneX : panels.x + panels.sessionWrapper.x;
+            if (surface === "popouts")
+                return panels.x + panels.popoutsWrapper.x;
+            return cardSceneX;
+        }
+        readonly property real viewportSceneY: {
+            if (!viewportSource)
+                return 0;
+            if (surface === "session")
+                return viewportSource === panels.session ? cardSceneY : panels.y + panels.sessionWrapper.y;
+            if (surface === "popouts")
+                return panels.y + panels.popoutsWrapper.y;
+            return cardSceneY;
+        }
+        readonly property real contentX: cardSceneX - margins.left
+        readonly property real contentY: cardSceneY - margins.top
+        readonly property real viewportX: viewportSceneX - margins.left
+        readonly property real viewportY: viewportSceneY - margins.top
+        readonly property real viewportWidth: viewportSource?.width ?? 0
+        readonly property real viewportHeight: viewportSource?.height ?? 0
+        readonly property var inputItem: {
+            if (!active)
+                return null;
+            for (const child of focusContent.children) {
+                if (child.objectName === "drawerFocusCard" && child.focusSurface === surface)
+                    return child;
+            }
+            return null;
+        }
+        readonly property rect inputBounds: inputItem?.inputBounds ?? Qt.rect(0, 0, 0, 0)
+        readonly property rect inputRegionBounds: inputItem?.inputRegionBounds ?? Qt.rect(0, 0, 0, 0)
+        readonly property bool pointerHovered: {
+            if (!active || !inputItem || !cardHover.hovered)
+                return false;
+            const pos = cardHover.point.scenePosition;
+            return inputItem.containsPoint(pos.x, pos.y);
+        }
 
         readonly property alias contentHost: focusContent
+        readonly property alias inputRegion: focusInputRegion
+
+        onSurfaceChanged: {
+            if (surface === "popouts")
+                popoutBandContentWidth = panels.popouts.nonAnimWidth;
+            else if (surface === "")
+                popoutBandContentWidth = 0;
+        }
 
         screen: root.screen
         name: "drawers-focus"
         visible: active
-        onVisibleChanged: {
-            if (!visible)
-                pointerHovered = false;
-        }
         exclusionMode: ExclusionMode.Ignore
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: (launcherFocus || sessionFocus)
             ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
+        mask: focusInputRegion
         anchors.top: true
         anchors.left: true
-        margins.left: target ? Math.round(panels.x + target.x) : 0
-        margins.top: target ? Math.round(panels.y + target.y) : 0
-        implicitWidth: Math.round(targetWidth)
-        implicitHeight: Math.round(targetHeight)
+        margins.left: bandX
+        margins.top: 0
+        implicitWidth: bandWidth
+        implicitHeight: Math.max(1, Math.round(screen.height))
+
+        Region {
+            id: focusInputRegion
+
+            x: drawerFocusWindow.inputRegionBounds.x
+            y: drawerFocusWindow.inputRegionBounds.y
+            width: drawerFocusWindow.inputRegionBounds.width
+            height: drawerFocusWindow.inputRegionBounds.height
+            regions: focusInputSlices.instances
+        }
+
+        Variants {
+            id: focusInputSlices
+
+            model: {
+                const count = drawerFocusWindow.inputItem?.inputMaskSlices.length ?? 0;
+                const indices = [];
+                for (let i = 0; i < count; i++)
+                    indices.push(i);
+                return indices;
+            }
+
+            Region {
+                required property int modelData
+                readonly property rect slice: drawerFocusWindow.inputItem?.inputMaskSlices[modelData] ?? Qt.rect(0, 0, 0, 0)
+
+                x: slice.x
+                y: slice.y
+                width: slice.width
+                height: slice.height
+            }
+        }
 
         FocusScope {
             id: focusContent
@@ -94,7 +222,7 @@ StyledWindow {
             }
 
             HoverHandler {
-                onHoveredChanged: drawerFocusWindow.pointerHovered = hovered
+                id: cardHover
             }
         }
     }
@@ -403,9 +531,11 @@ StyledWindow {
             quota.transform: Matrix4x4 {
                 matrix: quotaBg.deformMatrix
             }
+            launcher.focusTransformMatrix: launcherBg.deformMatrix
             launcher.transform: Matrix4x4 {
                 matrix: launcherBg.deformMatrix
             }
+            session.focusTransformMatrix: sessionBg.deformMatrix
             session.transform: Matrix4x4 {
                 matrix: sessionBg.deformMatrix
             }
@@ -421,6 +551,7 @@ StyledWindow {
             utilities.transform: Matrix4x4 {
                 matrix: utilsBg.deformMatrix
             }
+            popouts.focusTransformMatrix: popoutBg.deformMatrix
             popouts.transform: Matrix4x4 {
                 matrix: popoutBg.deformMatrix
             }

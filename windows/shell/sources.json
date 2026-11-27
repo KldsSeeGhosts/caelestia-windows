@@ -12,6 +12,7 @@
   "components/AnimLoader.qml": "components/AnimLoader.qml",
   "components/CAnim.qml": "components/CAnim.qml",
   "components/ClipRect.qml": "components/ClipRect.qml",
+  "components/FocusCardProxy.qml": "components/FocusCardProxy.qml",
   "components/containers/StyledFlickable.qml": "components/containers/StyledFlickable.qml",
   "components/containers/StyledListView.qml": "components/containers/StyledListView.qml",
   "components/containers/StyledWindow.qml": "components/containers/StyledWindow.qml",
