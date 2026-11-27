@@ -37,6 +37,7 @@ ShellRoot {
     property int wallpaperSettledFrames: 0
     property real lastWallpaperWidth: -1
     property string selectedAppId: ""
+    property var wallpaperFixture: []
 
     readonly property var win: content
     readonly property var focusWindow: content.focusWindow
@@ -314,6 +315,51 @@ ShellRoot {
         return "(" + bounds.x + "," + bounds.y + " " + bounds.width + "x" + bounds.height + ")";
     }
 
+    function wallpaperFixtureMatches(): bool {
+        const files = Services.Wallpapers.files ?? [];
+        if (files.length !== wallpaperFixture.length)
+            return false;
+        for (let i = 0; i < wallpaperFixture.length; i++)
+            if (files[i]?.path !== wallpaperFixture[i]?.path)
+                return false;
+        return true;
+    }
+
+    function restoreWallpaperFixture(): void {
+        if (wallpaperFixture.length === 0 || wallpaperFixtureMatches())
+            return;
+        Services.Wallpapers.listRequest = -1;
+        Services.Wallpapers.files = wallpaperFixture;
+    }
+
+    function expectedWallpaperCardWidth(wallpaperList): real {
+        const listWidth = Math.max(Tokens.sizes.launcher.itemWidth * 1.2, wallpaperList.implicitWidth);
+        return listWidth + Tokens.padding.large * 2;
+    }
+
+    function launcherMaximumFocusWidthFor(screenWidth: real): real {
+        const wallpaperItemWidth = Tokens.sizes.launcher.wallpaperWidth * 0.8 + Tokens.padding.medium * 2;
+        const availableWidth = screenWidth - win.borderRounding * 4 - win.borderLayoutThickness * 2;
+        const wallpaperCount = wallpaperItemWidth > 0
+            ? Math.min(GlobalConfig.launcher.maxWallpapers, Math.max(0, Math.floor(availableWidth / wallpaperItemWidth)))
+            : 0;
+        const wallpaperListWidth = Math.max(Tokens.sizes.launcher.itemWidth * 1.2, wallpaperCount * wallpaperItemWidth);
+        return Math.max(Tokens.sizes.launcher.itemWidth, wallpaperListWidth) + Tokens.padding.large * 2;
+    }
+
+    function launcherBandGeometryFor(screenWidth: real, panelX: real, borderThickness: real,
+            barContentWidth: real, maximumFocusWidth: real): rect {
+        const maximumWidth = Math.max(1, Math.round(screenWidth - focusWindow.minimumFullscreenWidthClearance));
+        const settledPanelLeft = Math.max(panelX, barContentWidth);
+        const settledPanelWidth = Math.max(0, screenWidth - borderThickness - settledPanelLeft);
+        const centerX = settledPanelLeft + settledPanelWidth / 2;
+        const settledWidth = Math.max(settledPanelWidth, maximumFocusWidth);
+        const bandWidth = Math.max(1, Math.min(maximumWidth, Math.ceil(settledWidth)));
+        const maximumX = Math.max(0, Math.round(screenWidth - bandWidth));
+        const bandX = Math.max(0, Math.min(maximumX, Math.round(centerX - bandWidth / 2)));
+        return Qt.rect(bandX, 0, bandWidth, 0);
+    }
+
     function checkRectClose(actual, expected, label): void {
         check(Math.abs(actual.x - expected.x) <= 0.76
             && Math.abs(actual.y - expected.y) <= 0.76
@@ -360,20 +406,42 @@ ShellRoot {
             label + ": search bottom stays inside the animated launcher card");
     }
 
-    function checkLauncherBandContains(bounds, label): void {
+    function checkLauncherBandContains(bounds, expectedWidth, label): void {
         const panels = content.interactionWrapper.panels;
         const bandLeft = focusWindow.margins.left;
         const bandRight = bandLeft + focusWindow.width;
+        const expectedMaximumFocusWidth = launcherMaximumFocusWidthFor(focusWindow.screen.width);
+        check(Math.abs(panels.launcher.maximumFocusWidth - expectedMaximumFocusWidth) <= 0.01,
+            label + ": launcher maximum focus width " + panels.launcher.maximumFocusWidth
+            + " matches active-screen expectation " + expectedMaximumFocusWidth);
+        const expectedBand = launcherBandGeometryFor(focusWindow.screen.width, panels.x,
+            win.borderLayoutThickness, panels.bar.contentWidth, expectedMaximumFocusWidth);
+        check(focusWindow.margins.left === expectedBand.x && focusWindow.width === expectedBand.width,
+            label + ": companion band matches the settled launcher geometry; expected "
+            + expectedBand.x + "/" + expectedBand.width + " got " + bandLeft + "/" + focusWindow.width);
         check(panels.x >= bandLeft - 1 && panels.x + panels.width <= bandRight + 1,
             label + ": companion band contains the settled panels span");
-        check(bounds.width >= 700,
-            label + ": wallpaper fixture uses a wide launcher card");
+        check(Math.abs(panels.launcher.width - expectedWidth) <= 1,
+            label + ": launcher width " + panels.launcher.width + " matches expected wallpaper content width " + expectedWidth);
+        check(Math.abs(bounds.width - panels.launcher.width) <= 1,
+            label + ": transformed wallpaper card width " + bounds.width + " follows the launcher width " + panels.launcher.width);
         const sceneLeft = bounds.x + bandLeft;
         const sceneRight = sceneLeft + bounds.width;
         const visibleLeft = Math.max(0, sceneLeft);
         const visibleRight = Math.min(focusWindow.screen.width, sceneRight);
+        check(visibleRight - visibleLeft > 0,
+            label + ": wallpaper card has visible geometry on the active screen");
         check(visibleLeft >= bandLeft - 1 && visibleRight <= bandRight + 1,
             label + ": visible wide card geometry stays inside the companion band");
+
+        const narrowScreenWidth = 880;
+        const narrowPanelWidth = narrowScreenWidth - win.borderLayoutThickness - panels.bar.contentWidth;
+        const narrowMaximumFocusWidth = launcherMaximumFocusWidthFor(narrowScreenWidth);
+        const narrowBand = launcherBandGeometryFor(narrowScreenWidth, panels.bar.contentWidth,
+            win.borderLayoutThickness, panels.bar.contentWidth, narrowMaximumFocusWidth);
+        check(narrowPanelWidth === 810 && narrowMaximumFocusWidth < narrowPanelWidth
+            && narrowBand.x === panels.bar.contentWidth && narrowBand.width === narrowPanelWidth,
+            label + ": narrow-display calculation keeps the 810 px settled-panel band");
     }
 
     function highlightIsAligned(appList): bool {
@@ -546,7 +614,10 @@ ShellRoot {
                     onDisk: false
                 });
             }
-            Services.Wallpapers.files = wallpapers;
+            wallpaperFixture = wallpapers;
+            Services.WallpaperFolderService.reloadWallpapers = () => {};
+            Services.Wallpapers.listRequest = -1;
+            Services.Wallpapers.files = wallpaperFixture;
             const search = findObject(focusWindow.contentHost, "launcherSearch");
             check(search !== null, "launcher wallpaper: search field is present");
             search.text = ">wallpaper ";
@@ -554,13 +625,15 @@ ShellRoot {
             lastWallpaperWidth = -1;
             step = 30;
         } else if (step === 30) {
+            restoreWallpaperFixture();
             const search = findObject(focusWindow.contentHost, "launcherSearch");
             const wallpaperList = findObject(focusWindow.contentHost, "launcherWallpaperList");
-            if (!search || !wallpaperList || search.text !== ">wallpaper " || wallpaperList.count < 2)
+            if (!search || !wallpaperList || search.text !== ">wallpaper " || wallpaperList.count !== wallpaperFixture.length)
                 return;
             const bounds = focusWindow.inputBounds;
+            const expectedWidth = expectedWallpaperCardWidth(wallpaperList);
             const widthDelta = lastWallpaperWidth < 0 ? Infinity : Math.abs(bounds.width - lastWallpaperWidth);
-            if (bounds.width >= 700 && widthDelta <= 0.01)
+            if (Math.abs(bounds.width - expectedWidth) <= 1 && widthDelta <= 0.01)
                 wallpaperSettledFrames++;
             else
                 wallpaperSettledFrames = 0;
@@ -569,8 +642,11 @@ ShellRoot {
             checkInputTracking("launcher wallpaper");
             if (wallpaperSettledFrames < 3)
                 return;
-            check(wallpaperList.count >= 2, "launcher wallpaper: fixture entries fill the wide picker");
-            checkLauncherBandContains(bounds, "launcher wallpaper");
+            check(wallpaperFixtureMatches(),
+                "launcher wallpaper: fixture entries remain installed");
+            check(wallpaperList.count === wallpaperFixture.length,
+                "launcher wallpaper: fixture entries fill the picker");
+            checkLauncherBandContains(bounds, expectedWidth, "launcher wallpaper");
             search.text = "";
             step = 31;
         } else if (step === 31) {
