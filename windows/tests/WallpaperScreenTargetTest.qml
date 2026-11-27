@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import Quickshell.Windows as Native
 import qs.services
 
@@ -15,6 +16,7 @@ QtObject {
         try {
             const primary = {name: "primary"};
             const secondary = {name: "secondary"};
+            Quickshell.screens = [primary, secondary];
             // This fixture exercises targeting, so opt in as a user would and
             // follow Windows as an existing profile does. The fresh default is
             // covered by WallpaperDefaultsTest.
@@ -61,6 +63,30 @@ QtObject {
             check(!Wallpapers.setWallpaper("C:/walls/picked.jpg", captured), "reused screen name retargeted pending pick");
             check(Native.Wallpaper.screenCalls.length === 1, "invalid target changed a wallpaper");
             Native.Wallpaper.screenIds = {primary: "primary-id", secondary: "secondary-id"};
+
+            check(Wallpapers.defaultPickerTarget(secondary)?.targetId === "secondary-id",
+                "the launcher did not keep individual display choices");
+            // Nexus passes undefined for its explicit "All displays" item,
+            // even when the launcher default is a specific display.
+            const nexusTarget = undefined;
+            check(Wallpapers.setWallpaper("C:/walls/primary.jpg", nexusTarget), "All displays was rejected");
+            check(Native.Wallpaper.calls.length === 1 && Native.Wallpaper.screenCalls.length === 1,
+                "All displays went through the single-display setter");
+            for (const screen of [primary, secondary]) {
+                check(Wallpapers.currentForScreen(screen) === "C:/walls/primary.jpg",
+                    "All displays did not update the " + screen.name + " shell image");
+                check(Native.Wallpaper.screenPaths[screen.name] === "C:/walls/primary.jpg",
+                    "All displays did not reach " + screen.name + " in Windows");
+                check(Wallpapers.windowsStatus(screen) === "applied",
+                    "All displays did not confirm " + screen.name);
+            }
+            check(Wallpapers.defaultPickerTarget(secondary) === undefined,
+                "the launcher default did not return to sharing after All displays");
+            check(Wallpapers.setWallpaper("C:/walls/picked.jpg", captured),
+                "a display pick after All displays was rejected");
+            check(Native.Wallpaper.screenPaths.primary === "C:/walls/primary.jpg"
+                && Native.Wallpaper.screenPaths.secondary === "C:/walls/picked.jpg",
+                "a display pick after All displays changed the other display");
 
             WallpaperEngine.running = true;
             check(Wallpapers.currentForScreen(primary) === "C:/walls/primary.jpg", "engine changed primary underlay");

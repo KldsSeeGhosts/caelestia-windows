@@ -38,6 +38,12 @@ toggle still calls the same facade, preserves `windows.wallpaperEngine` keys,
 and stops or resumes desktop playback on all displays without quitting the
 engine.
 
+If integration is off at startup and Wallpaper Engine is already idle, the
+shell can restore an existing profile's Windows images without waiting for a
+wallpaper window to close. It requires a successful stop request and an active
+desktop host with no active external underlay or embed refusal. This uses
+Windows' current per-display images, not the cached palette image.
+
 A Nexus project pick follows the selector, including "All displays". The bridge
 resolves all connected physical displays against Wallpaper Engine's saved
 mapping before dispatching any `openWallpaper -location` commands. An absent
