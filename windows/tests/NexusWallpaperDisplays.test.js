@@ -30,6 +30,18 @@ test("Nexus and launcher picks do not infer a target from their window", () => {
         /Wallpapers\.choose\(Wallpapers\.defaultPickerTarget/);
 });
 
+test("Nexus sends the All displays item as an omitted target", () => {
+    const control = read(base + "components/wallpaper/WallpaperDisplays.qml");
+    assert.match(control, /model: \[\{name: "", targetId: ""\},/);
+    assert.match(control, /screenTarget: modelData\.name \? modelData : undefined/);
+    assert.match(control, /root\.targetSelected\(item\.screenTarget\)/);
+    const selector = read(base + "modules/nexus/pages/wallandstyle/WallpaperSelect.qml");
+    assert.match(selector, /onTargetSelected: screen => root\.nState\.wallpaperTarget = screen/);
+    assert.match(selector, /browseDialog\.targetScreen = root\.nState\.wallpaperTarget/);
+    assert.match(selector, /Wallpapers\.setWallpaper\(path, targetScreen\)/);
+    assert.match(selector, /Wallpapers\.setRandom\(root\.nState\.wallpaperTarget\)/);
+});
+
 test("Windows stages native Nexus display and engine controls with searchable routes", () => {
     const manifest = JSON.parse(read("windows/shell/sources.json"));
     const main = base + "modules/nexus/pages/WallpaperAndStyle.qml";

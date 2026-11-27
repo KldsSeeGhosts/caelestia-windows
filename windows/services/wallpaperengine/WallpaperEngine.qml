@@ -74,8 +74,8 @@ Singleton {
     property var desktopLayer: Native.DesktopLayer
     // This is an ownership guard, NOT rendered-output readiness. The bridge
     // has no first-frame or per-screen presentation acknowledgement.
-    // Yield before discovery when a helper is configured, and keep yielding
-    // to a known running process even if integration is disabled. Startup
+    // Yield before discovery when a helper is configured, and initially
+    // guard a known running process even if integration is disabled. Startup
     // scan failure falls back to the shell; it cannot prove WE is absent.
     //
     // a detected process is an ownership claim, not proof of ownership.
@@ -94,19 +94,31 @@ Singleton {
     readonly property bool embedRefused: embedRefusedSupported && root.desktopLayer.embedRefused
     property bool desktopClaimed: false
     property bool desktopHandedBack: false
-    readonly property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack)
+    // After a restart the engine can already be idle, so there is no prior
+    // acknowledgement to withdraw. A successful stop plus an active native
+    // host reporting no underlay lets the shell use its Windows images.
+    // This is not a handback: Windows reads must remain available to an
+    // existing profile whose own startup images were not adopted yet.
+    property bool unclaimedStopSucceeded: false
+    readonly property bool stoppedWithoutClaim: unclaimedStopSucceeded && !enabled && !desktopClaimed
+        && underlaySupported && embedRefusedSupported && !underlayActive && !embedRefused
+        && desktopLayer.enabled && desktopLayer.active && desktopLayer.externalWallpaperEnabled === true
+        && desktopLayer.aboveIcons.length === 0
+    readonly property bool ownsDesktop: !snapshotReady || (running && !desktopHandedBack && !stoppedWithoutClaim)
     onRunningChanged: {
         // A stop is still engine-era discovery: keep the handback latch so a
         // native wallpaper notification cannot replace the verified source
         // after the claim is gone. A process start clears the latch and has no
         // claim yet: fail closed until the backend finds its wallpaper window
         // in the desktop host.
+        unclaimedStopSucceeded = false;
         desktopClaimed = running && underlayActive;
         if (running)
             desktopHandedBack = false;
     }
     onUnderlayActiveChanged: {
         if (underlayActive) {
+            unclaimedStopSucceeded = false;
             desktopClaimed = true;
             desktopHandedBack = false;
         } else if (embedRefusedSupported && desktopClaimed && !embedRefused
@@ -594,6 +606,7 @@ Singleton {
         // from the disabled era until a process-start edge or a shell reload.
         // This is a claim, not a rendered-output acknowledgement.
         if (enabled) {
+            unclaimedStopSucceeded = false;
             seedDesktopClaim();
             refresh(true);
         } else {
@@ -898,11 +911,15 @@ Singleton {
         }
         onExited: code => {
             root.desktopControlAwaitingExit = false;
-            // Dispatch is not visible-output acknowledgement. Keep native
-            // ownership/handback detection as the physical desktop authority.
+            // Stop success is not a presentation acknowledgement. The native
+            // host still has to report no active underlay before we
+            // release an unacknowledged startup claim.
             if (code !== 0) {
                 root.desktopControlError = "Wallpaper Engine could not change desktop playback";
                 Toaster.toast("Wallpaper Engine", root.desktopControlError, "wallpaper");
+            } else if (desktopControl.command[2] === "stop" && root.running && !root.enabled
+                    && !root.desktopClaimed && !root.desktopHandedBack) {
+                root.unclaimedStopSucceeded = true;
             }
         }
     }

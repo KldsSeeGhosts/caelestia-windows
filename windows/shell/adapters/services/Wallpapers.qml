@@ -136,12 +136,10 @@ Singleton {
     // WallpaperEngine.ownsDesktop keeps the physical claim even for a running
     // process this profile did not opt into, so the underlay, handback latch
     // and above-icons guard still protect issue #25's ownership boundary.
-    // The enabled-dependent visible source applies only to a fresh profile.
-    // An existing profile keeps the released build's behaviour exactly: a
-    // running engine owns the visible desktop whether or not this profile
-    // enabled the integration, so a saved enabled:false does not change what
-    // it shows. A fresh profile shows Caelestia's own wallpaper while the
-    // integration is off.
+    // An existing profile honours that guard whether or not it enabled the
+    // integration. With integration off, an idle engine can release it after
+    // a confirmed stop and native host check, even without a handback edge.
+    // A fresh profile shows its own wallpaper while integration is off.
     readonly property bool externalWallpaperActive: WallpaperEngine.ownsDesktop
         && (!root.sourceFresh || WallpaperEngine.enabled)
     property var files: []

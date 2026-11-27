@@ -7,6 +7,6 @@ $result = Invoke-QmlFixture -QtPrefix $QtPrefix -BuildRoot $BuildRoot -Name wall
     -FakeDirectories @('windows/tests/fakes/shell', 'windows/tests/fakes/native', 'windows/tests/fakes/wallpaper') `
     -Sources @('windows/tests/WallpaperScreenTargetTest.qml') -FixtureFile 'windows/tests/WallpaperScreenTargetTest.qml' `
     -Environment @{ CAELESTIA_COMBINED_LIVE = '1' } `
-    -Marker CAELESTIA_WALLPAPER_SCREEN_TARGET -MinimumAssertions 20
+    -Marker CAELESTIA_WALLPAPER_SCREEN_TARGET -MinimumAssertions 33
 $result | ConvertTo-Json -Depth 8
 if (-not $result.passed) { throw "Wallpaper screen target fixture failed. See $($result.stderr)." }

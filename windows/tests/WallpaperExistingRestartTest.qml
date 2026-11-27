@@ -68,8 +68,11 @@ QtObject {
     function stopCompleted(): void {
         const control = process("wallpaperEngineDesktopControl");
         check(control.running && control.command[2] === "stop", "disabled startup did not dispatch stop");
-        control.exited(0);
+        Native.DesktopLayer.embedRefused = false;
+        check(WallpaperEngine.ownsDesktop, "the unconfirmed stop released the startup guard");
+        Native.DesktopLayer.embedRefused = true;
         control.running = false;
+        control.exited(0);
         check(WallpaperEngine.ownsDesktop, "stop alone released a refused desktop host");
         Native.DesktopLayer.active = false;
         Native.DesktopLayer.embedRefused = false;
