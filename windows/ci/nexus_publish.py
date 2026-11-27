@@ -253,7 +253,7 @@ def verify_current_advisory(github, shell, work, *, now=None):
             continue
         try:
             deps.verify_advisory_result(result, inventory, exceptions, cargo_lock_sha, now=now)
-            deps.check_audit(report, exceptions, inventory, 0)
+            deps.check_audit(report, exceptions, inventory, 0, today=now.date())
             return result
         except ValueError as error:
             if "stale" in str(error).lower() or "expired" in str(error).lower():

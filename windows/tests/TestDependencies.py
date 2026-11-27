@@ -160,7 +160,7 @@ class Dependencies(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must not claim patched"):
             deps.validate_exceptions(changed, self.inventory, today=dt.date(2026, 11, 12))
 
-    def audit_fixture(self, vulnerable=False):
+    def audit_fixture(self, vulnerable=False, updated=None):
         # Known vulnerable windows 0.31 fixture, not an assertion about the
         # current resolved windows 0.62.2 or an execution of a RustSec scan.
         package = deps.tomllib.loads((ROOT / "windows/tests/fixtures/dependencies/vulnerable.Cargo.lock").read_text())["package"][0]
@@ -170,8 +170,9 @@ class Dependencies(unittest.TestCase):
             "id": deps.crate_id(package), "version": package["version"], "classification": "runtime payload"})
         findings = [{"advisory": {"id": "RUSTSEC-2022-0008"},
                      "package": package}] if vulnerable else []
+        database_date = updated or dt.date.today()
         return {
-            "database": {"last-commit": "a" * 40, "last-updated": dt.date.today().isoformat() + "T00:00:00Z"},
+            "database": {"last-commit": "a" * 40, "last-updated": database_date.isoformat() + "T00:00:00Z"},
             "vulnerabilities": {"count": len(findings), "list": findings}, "warnings": {},
         }
 
@@ -244,11 +245,16 @@ class Dependencies(unittest.TestCase):
         self.assertIn("advisory-result.json", workflow)
 
     def test_advisory_receipt_verification_and_freshness_policy(self):
-        report = self.audit_fixture()
         cargo_lock_sha = deps.sha((ROOT / "windows/capture/Cargo.lock").read_bytes())
         now = dt.datetime(2026, 11, 12, 12, 0, 0, tzinfo=dt.timezone.utc)
+        report = self.audit_fixture(updated=now.date())
         receipt = deps.advisory_receipt(report, self.exceptions, self.inventory, cargo_lock_sha, checked_at=now)
         deps.verify_advisory_result(receipt, self.inventory, self.exceptions, cargo_lock_sha, now=now + dt.timedelta(days=7))
+        for label, database_date in (("stale", now.date() - dt.timedelta(days=15)),
+                                     ("future-dated", now.date() + dt.timedelta(days=2))):
+            bad_report = self.audit_fixture(updated=database_date)
+            with self.subTest(database=label), self.assertRaisesRegex(ValueError, "stale or future-dated"):
+                deps.advisory_receipt(bad_report, self.exceptions, self.inventory, cargo_lock_sha, checked_at=now)
         # Stale (> 7 days) fails.
         with self.assertRaisesRegex(ValueError, "stale"):
             deps.verify_advisory_result(

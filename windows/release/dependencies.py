@@ -198,15 +198,16 @@ def validate_exceptions(document, inventory, today=None):
     return document["exceptions"]
 
 
-def check_audit(report, exceptions, inventory, exit_code=0):
-    entries = validate_exceptions(exceptions, inventory)
+def check_audit(report, exceptions, inventory, exit_code=0, today=None):
+    today = today or dt.date.today()
+    entries = validate_exceptions(exceptions, inventory, today=today)
     require(exit_code in {0, 1} and not report.get("error"), "cargo audit unavailable or failed")
     require(isinstance(report.get("database", {}).get("last-commit"), str) and
             bool(report["database"]["last-commit"]), "Advisory database unavailable")
     updated = report["database"].get("last-updated")
     require(isinstance(updated, str), "Advisory database timestamp unavailable")
     database_date = dt.date.fromisoformat(updated[:10])
-    require(-dt.timedelta(days=1) <= dt.date.today() - database_date <= dt.timedelta(days=14),
+    require(-dt.timedelta(days=1) <= today - database_date <= dt.timedelta(days=14),
             "Advisory database is stale or future-dated")
     settings = report.get("settings", {})
     require(not settings.get("ignore") and not settings.get("severity") and
@@ -260,7 +261,7 @@ def advisory_receipt(report, exceptions, inventory, cargo_lock_sha256, checked_a
         checked_at = checked_at.replace(tzinfo=dt.timezone.utc)
     else:
         checked_at = checked_at.astimezone(dt.timezone.utc)
-    check_audit(report, exceptions, inventory, 0)
+    check_audit(report, exceptions, inventory, 0, today=checked_at.date())
     db = report["database"]
     return {
         "schema": "caelestia-advisory-result",
